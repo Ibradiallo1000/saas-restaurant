@@ -32,8 +32,8 @@ export default function SetupPage() {
   const [formData, setFormData] = React.useState({
     name: "",
     slug: "",
-    country: "FR",
-    currency: "EUR"
+    country: "CI",
+    currency: "XOF"
   })
 
   React.useEffect(() => {
@@ -153,7 +153,7 @@ export default function SetupPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Pays</Label>
+                <Label>Pays (Afrique de l'Ouest)</Label>
                 <Select 
                   defaultValue={formData.country} 
                   onValueChange={v => setFormData({...formData, country: v})}
@@ -162,10 +162,22 @@ export default function SetupPage() {
                     <SelectValue placeholder="Pays" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="FR">France</SelectItem>
+                    <SelectItem value="BJ">Bénin</SelectItem>
+                    <SelectItem value="BF">Burkina Faso</SelectItem>
+                    <SelectItem value="CV">Cap-Vert</SelectItem>
                     <SelectItem value="CI">Côte d'Ivoire</SelectItem>
+                    <SelectItem value="GM">Gambie</SelectItem>
+                    <SelectItem value="GH">Ghana</SelectItem>
+                    <SelectItem value="GN">Guinée</SelectItem>
+                    <SelectItem value="GW">Guinée-Bissau</SelectItem>
+                    <SelectItem value="LR">Libéria</SelectItem>
+                    <SelectItem value="ML">Mali</SelectItem>
+                    <SelectItem value="NE">Niger</SelectItem>
+                    <SelectItem value="NG">Nigéria</SelectItem>
                     <SelectItem value="SN">Sénégal</SelectItem>
-                    <SelectItem value="MA">Maroc</SelectItem>
+                    <SelectItem value="SL">Sierra Leone</SelectItem>
+                    <SelectItem value="TG">Togo</SelectItem>
+                    <SelectItem value="FR">France</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -179,9 +191,15 @@ export default function SetupPage() {
                     <SelectValue placeholder="Devise" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="EUR">Euro (€)</SelectItem>
                     <SelectItem value="XOF">FCFA (XOF)</SelectItem>
-                    <SelectItem value="MAD">Dirham (MAD)</SelectItem>
+                    <SelectItem value="GHS">Cédi (GHS)</SelectItem>
+                    <SelectItem value="NGN">Naira (NGN)</SelectItem>
+                    <SelectItem value="GNF">Franc Guinéen (GNF)</SelectItem>
+                    <SelectItem value="GMD">Dalasi (GMD)</SelectItem>
+                    <SelectItem value="LRD">Dollar Libérien (LRD)</SelectItem>
+                    <SelectItem value="SLL">Leone (SLL)</SelectItem>
+                    <SelectItem value="CVE">Escudo (CVE)</SelectItem>
+                    <SelectItem value="EUR">Euro (€)</SelectItem>
                     <SelectItem value="USD">Dollar ($)</SelectItem>
                   </SelectContent>
                 </Select>
