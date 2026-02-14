@@ -2,7 +2,7 @@
 "use client"
 
 import * as React from "react"
-import { Sparkles, Building2, ShieldCheck, Zap } from "lucide-react"
+import { Sparkles, ShieldCheck, Zap, LayoutGrid } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
@@ -16,13 +16,13 @@ export default function LandingPage() {
       <div className="text-center space-y-4 max-w-2xl">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold mb-4">
           <Sparkles className="h-3 w-3" />
-          Phase 1: Foundation SaaS
+          GastronomeAI • Phase 1: Fondation SaaS
         </div>
         <h1 className="text-5xl font-black tracking-tighter text-primary font-headline italic">
-          GastronomeAI
+          Ingénierie Hospitalière
         </h1>
         <p className="text-xl text-muted-foreground leading-relaxed">
-          La base de données multi-tenant haute performance pour la restauration et l'hôtellerie moderne.
+          Infrastructure multi-tenant sécurisée pour la digitalisation complète des restaurants et hôtels.
         </p>
       </div>
 
@@ -30,33 +30,33 @@ export default function LandingPage() {
         <FeatureCard 
           icon={ShieldCheck} 
           title="Isolation Multi-Tenant" 
-          description="Architecture stricte basée sur 'restaurantId' pour une sécurité totale des données." 
+          description="Architecture stricte basée sur 'restaurantId' pour une isolation totale des données." 
         />
         <FeatureCard 
-          icon={Building2} 
-          title="Structure Firestore" 
+          icon={LayoutGrid} 
+          title="Schéma Relationnel" 
           description="9 collections piliers prêtes pour le scale : plans, restaurants, menus, orders, etc." 
         />
         <FeatureCard 
           icon={Zap} 
-          title="Prêt pour le Temps Réel" 
-          description="Infrastructure optimisée pour les mises à jour instantanées en cuisine et au POS." 
+          title="Performance Temps Réel" 
+          description="Optimisé pour les listeners Firebase et une communication cuisine-salle instantanée." 
         />
       </div>
 
       <div className="flex gap-4">
         {isUserLoading ? (
-          <Button disabled variant="outline">Chargement...</Button>
+          <Button disabled variant="outline">Initialisation...</Button>
         ) : user ? (
-          <Link href="/dashboard">
-            <Button size="lg" className="px-8 shadow-xl hover:shadow-primary/20 transition-all">
-              Accéder au Dashboard
+          <Link href="/setup">
+            <Button size="lg" className="px-8 shadow-xl hover:shadow-primary/20 transition-all font-bold">
+              Accéder à la Configuration
             </Button>
           </Link>
         ) : (
           <Link href="/login">
-            <Button size="lg" className="px-8 shadow-xl hover:shadow-primary/20 transition-all">
-              Se Connecter
+            <Button size="lg" className="px-8 shadow-xl hover:shadow-primary/20 transition-all font-bold">
+              Démarrer la Fondation
             </Button>
           </Link>
         )}
