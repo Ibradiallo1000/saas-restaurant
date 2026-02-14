@@ -1,0 +1,209 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * RESTAURANT & HOTEL SAAS SECURITY RULES
+     * 
+     * Philosophy:
+     * This ruleset enforces a strict multi-tenant isolation model using 'restaurantId'.
+     * Access is partitioned into three tiers: Super Admins (global access), 
+     * Restaurant Staff (role-based access within their tenant), and QR Clients 
+     * (limited creation of orders).
+     *
+     * Data Structure:
+     * Most business entities (Menus, Tables, Rooms, Orders, Inventory, Customers) 
+     * are top-level collections or subcollections that MUST include a 'restaurantId' 
+     * field for authorization and query filtering.
+     *
+     * Key Security Decisions:
+     * 1. Multi-Tenancy: All staff operations are locked to the user's 'restaurantId' 
+     *    stored in their auth token (Custom Claims).
+     * 2. Denormalization: 'restaurantId' is denormalized onto sub-documents (like Products 
+     *    and OrderItems) to allow for high-performance rules without 'get()' calls.
+     * 3. QR Clients: Anonymous users are permitted to create 'Order' documents but 
+     *    cannot list or modify existing orders unless specifically authorized.
+     * 4. Prototyping Flexibility: Data types and full schema shapes are not validated 
+     *    to allow rapid UI iteration, focusing strictly on identity and relational integrity.
+     */
+
+    // --- HELPER FUNCTIONS ---
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.role == 'super_admin';
+    }
+
+    function getUserRestaurantId() {
+      return request.auth.token.restaurantId;
+    }
+
+    function getUserRole() {
+      return request.auth.token.role;
+    }
+
+    // Check if the user is a staff member of a specific restaurant
+    function isStaffMember(restaurantId) {
+      return isSignedIn() && (getUserRestaurantId() == restaurantId || isSuperAdmin());
+    }
+
+    // Check if user has specific management roles within the restaurant
+    function isManagement(restaurantId) {
+      return isStaffMember(restaurantId) && (getUserRole() == 'owner' || getUserRole() == 'manager' || isSuperAdmin());
+    }
+
+    // Validates that the restaurantId in the data matches the user's assigned restaurant
+    function belongsToUserRestaurant(data) {
+      return data.restaurantId == getUserRestaurantId() || isSuperAdmin();
+    }
+
+    // Validates that critical relational fields are not changed during updates
+    function isImmutable(field) {
+      return !(field in request.resource.data) || request.resource.data[field] == resource.data[field];
+    }
+
+    // Standard existence check for updates/deletes
+    function isExistingDocument() {
+      return resource != null;
+    }
+
+    // --- COLLECTION RULES ---
+
+    /**
+     * @description Global subscription plans available for view by all and managed by super admins.
+     * @path /plans/{planId}
+     * @allow (get) Any signed-in user or anonymous visitor.
+     * @deny (create) Any user without super_admin role.
+     * @principle Public read-only for global configuration data.
+     */
+    match /plans/{planId} {
+      allow get, list: if true;
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    /**
+     * @description Core restaurant profiles. Staff can view/edit their own restaurant.
+     * @path /restaurants/{restaurantId}
+     * @allow (update) An 'owner' or 'manager' assigned to this restaurantId.
+     * @deny (update) Staff from a different restaurant.
+     * @principle Multi-tenant isolation for establishment settings.
+     */
+    match /restaurants/{restaurantId} {
+      allow get: if isStaffMember(restaurantId);
+      allow list: if isSuperAdmin();
+      allow create: if isSuperAdmin();
+      allow update: if isExistingDocument() && isManagement(restaurantId);
+      allow delete: if isExistingDocument() && isSuperAdmin();
+    }
+
+    /**
+     * @description User profiles for staff and admins.
+     * @path /users/{userId}
+     * @allow (get) The user themselves or management of the same restaurant.
+     * @deny (update) Changing the 'role' or 'restaurantId' if not a super_admin.
+     * @principle Identity ownership and hierarchical management access.
+     */
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isStaffMember(resource.data.restaurantId));
+      allow list: if isSuperAdmin();
+      allow create: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+      allow update: if isExistingDocument() && (request.auth.uid == userId || isManagement(resource.data.restaurantId)) && isImmutable('role') && isImmutable('restaurantId');
+      allow delete: if isExistingDocument() && isSuperAdmin();
+    }
+
+    /**
+     * @description Menus and sub-products. Readable by QR clients for ordering.
+     * @path /menus/{menuId}
+     * @allow (list) Public read for QR client menu exploration.
+     * @deny (create) A 'server' or 'kitchen' staff member (management only).
+     * @principle Public consumption with restricted administrative writes.
+     */
+    match /menus/{menuId} {
+      allow get, list: if true;
+      allow create: if isManagement(request.resource.data.restaurantId);
+      allow update: if isExistingDocument() && isManagement(resource.data.restaurantId) && isImmutable('restaurantId');
+      allow delete: if isExistingDocument() && isManagement(resource.data.restaurantId);
+
+      match /products/{productId} {
+        allow get, list: if true;
+        allow create: if isManagement(request.resource.data.restaurantId);
+        allow update: if isExistingDocument() && isManagement(resource.data.restaurantId) && isImmutable('restaurantId') && isImmutable('menuId');
+        allow delete: if isExistingDocument() && isManagement(resource.data.restaurantId);
+      }
+    }
+
+    /**
+     * @description Physical location markers (tables/rooms) used to link orders.
+     * @path /tables/{tableId} /rooms/{roomId}
+     * @allow (get) Any user (needed for QR session lookup).
+     * @deny (update) Any non-staff user.
+     * @principle Resource availability for clients, management for staff.
+     */
+    match /tables/{tableId} {
+      allow get, list: if true;
+      allow create: if isManagement(request.resource.data.restaurantId);
+      allow update: if isExistingDocument() && isStaffMember(resource.data.restaurantId);
+      allow delete: if isExistingDocument() && isManagement(resource.data.restaurantId);
+    }
+    match /rooms/{roomId} {
+      allow get, list: if true;
+      allow create: if isManagement(request.resource.data.restaurantId);
+      allow update: if isExistingDocument() && isStaffMember(resource.data.restaurantId);
+      allow delete: if isExistingDocument() && isManagement(resource.data.restaurantId);
+    }
+
+    /**
+     * @description Orders and items. This is the core transactional path.
+     * @path /orders/{orderId}
+     * @allow (create) Anonymous users (QR clients) if they provide a restaurantId.
+     * @deny (list) Anonymous users attempting to see all restaurant orders.
+     * @principle Anonymous creation for frictionless ordering, staff-only management.
+     */
+    match /orders/{orderId} {
+      allow get: if isStaffMember(resource.data.restaurantId); // QR client should use specific 'get' with session if needed
+      allow list: if isSignedIn() && belongsToUserRestaurant(resource.data);
+      allow create: if request.resource.data.restaurantId != null; 
+      allow update: if isExistingDocument() && isStaffMember(resource.data.restaurantId) && isImmutable('restaurantId');
+      allow delete: if isExistingDocument() && isManagement(resource.data.restaurantId);
+
+      match /items/{itemId} {
+        allow get: if isStaffMember(resource.data.restaurantId);
+        allow list: if isSignedIn() && belongsToUserRestaurant(resource.data);
+        allow create: if request.resource.data.restaurantId != null;
+        allow update: if isExistingDocument() && isStaffMember(resource.data.restaurantId);
+        allow delete: if isExistingDocument() && isStaffMember(resource.data.restaurantId);
+      }
+    }
+
+    /**
+     * @description Inventory management for restaurants.
+     * @path /inventory/{itemId}
+     * @allow (update) Kitchen or Manager staff.
+     * @deny (get) Anonymous users.
+     * @principle Staff-only access for internal business operations.
+     */
+    match /inventory/{itemId} {
+      allow get, list: if isStaffMember(resource.data.restaurantId);
+      allow create: if isManagement(request.resource.data.restaurantId);
+      allow update: if isExistingDocument() && isStaffMember(resource.data.restaurantId) && isImmutable('restaurantId');
+      allow delete: if isExistingDocument() && isManagement(resource.data.restaurantId);
+    }
+
+    /**
+     * @description Customer loyalty records tracked by phone and restaurant.
+     * @path /customers/{customerUniqueId}
+     * @allow (create) Staff creating a loyalty profile.
+     * @deny (create) Mismatched customerUniqueId (must be restaurantId_phone).
+     * @principle Relational integrity for composite keys in a multi-tenant environment.
+     */
+    match /customers/{customerUniqueId} {
+      allow get, list: if isStaffMember(resource.data.restaurantId);
+      allow create: if isStaffMember(request.resource.data.restaurantId) && customerUniqueId == request.resource.data.restaurantId + '_' + request.resource.data.phone;
+      allow update: if isExistingDocument() && isStaffMember(resource.data.restaurantId) && isImmutable('restaurantId') && isImmutable('phone');
+      allow delete: if isExistingDocument() && isManagement(resource.data.restaurantId);
+    }
+  }
+}
