@@ -6,46 +6,15 @@
       "type": "object",
       "description": "Represents a subscription plan offered by the SaaS, defining features and limits for restaurants.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Plan entity."
-        },
-        "name": {
-          "type": "string",
-          "description": "Name of the subscription plan."
-        },
-        "priceMonthly": {
-          "type": "number",
-          "description": "Monthly price of the plan in the default currency."
-        },
-        "maxStaff": {
-          "type": "number",
-          "description": "Maximum number of staff accounts allowed for this plan."
-        },
-        "maxMenus": {
-          "type": "number",
-          "description": "Maximum number of distinct menus a restaurant can create for this plan."
-        },
-        "features": {
-          "type": "array",
-          "description": "List of features included in the plan.",
-          "items": {
-            "type": "string"
-          }
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the plan was created.",
-          "format": "date-time"
-        }
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "priceMonthly": { "type": "number" },
+        "maxStaff": { "type": "number" },
+        "maxMenus": { "type": "number" },
+        "features": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": [
-        "id",
-        "name",
-        "priceMonthly",
-        "features",
-        "createdAt"
-      ]
+      "required": ["id", "name", "priceMonthly", "features", "createdAt"]
     },
     "Restaurant": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -53,644 +22,83 @@
       "type": "object",
       "description": "Represents a restaurant or hotel establishment using the SaaS platform.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Restaurant entity."
-        },
-        "name": {
-          "type": "string",
-          "description": "Official name of the restaurant or hotel."
-        },
-        "slug": {
-          "type": "string",
-          "description": "Unique URL-friendly identifier for the restaurant, used in client-facing links (e.g., QR codes)."
-        },
-        "country": {
-          "type": "string",
-          "description": "ISO 3166-1 alpha-2 country code where the restaurant is located."
-        },
-        "currency": {
-          "type": "string",
-          "description": "ISO 4217 currency code used by the restaurant."
-        },
-        "planId": {
-          "type": "string",
-          "description": "Reference to the subscription plan this restaurant is currently using. (Relationship: Plan 1:N Restaurant)"
-        },
-        "logoUrl": {
-          "type": "string",
-          "description": "URL to the restaurant's logo image.",
-          "format": "uri"
-        },
-        "active": {
-          "type": "boolean",
-          "description": "Indicates if the restaurant account is currently active."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the restaurant account was created.",
-          "format": "date-time"
-        }
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "country": { "type": "string" },
+        "currency": { "type": "string" },
+        "planId": { "type": "string" },
+        "logoUrl": { "type": "string", "format": "uri" },
+        "active": { "type": "boolean" },
+        "trialStartDate": { "type": "string", "format": "date-time" },
+        "trialEndDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": [
-        "id",
-        "name",
-        "slug",
-        "country",
-        "currency",
-        "planId",
-        "active",
-        "createdAt"
-      ]
+      "required": ["id", "name", "slug", "country", "currency", "planId", "active", "createdAt"]
     },
     "User": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "User",
       "type": "object",
-      "description": "Represents a user account within the SaaS platform, associated with a specific restaurant or a super admin.",
+      "description": "Represents a user account within the SaaS platform.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the User entity."
-        },
-        "restaurantId": {
-          "type": "string",
-          "description": "Reference to the restaurant this user belongs to. Null for super_admin. (Relationship: Restaurant 1:N User)"
-        },
-        "role": {
-          "type": "string",
-          "description": "The role of the user, determining their permissions within the system. Allowed values: super_admin, owner, manager, cashier, kitchen, server."
-        },
-        "name": {
-          "type": "string",
-          "description": "Full name of the user."
-        },
-        "phone": {
-          "type": "string",
-          "description": "Phone number of the user."
-        },
-        "email": {
-          "type": "string",
-          "description": "Email address of the user.",
-          "format": "email"
-        },
-        "active": {
-          "type": "boolean",
-          "description": "Indicates if the user account is currently active."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the user account was created.",
-          "format": "date-time"
-        }
+        "id": { "type": "string" },
+        "restaurantId": { "type": "string" },
+        "role": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": [
-        "id",
-        "role",
-        "name",
-        "email",
-        "active",
-        "createdAt"
-      ]
+      "required": ["id", "role", "name", "email", "active", "createdAt"]
     },
-    "Menu": {
+    "CashierSession": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Menu",
+      "title": "CashierSession",
       "type": "object",
-      "description": "Represents a digital menu offered by a restaurant.",
+      "description": "Tracks a cashier's working shift and sales totals.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Menu entity."
-        },
-        "restaurantId": {
-          "type": "string",
-          "description": "Reference to the restaurant that owns this menu. (Relationship: Restaurant 1:N Menu)"
-        },
-        "name": {
-          "type": "string",
-          "description": "Name of the menu (e.g., 'Main Menu', 'Breakfast Menu')."
-        },
-        "isActive": {
-          "type": "boolean",
-          "description": "Indicates if this menu is currently active and visible to customers."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the menu was created.",
-          "format": "date-time"
-        }
+        "id": { "type": "string" },
+        "cashierId": { "type": "string" },
+        "restaurantId": { "type": "string" },
+        "openedAt": { "type": "string", "format": "date-time" },
+        "closedAt": { "type": "string", "format": "date-time" },
+        "totalCash": { "type": "number" },
+        "totalMobileMoney": { "type": "number" },
+        "totalSales": { "type": "number" },
+        "status": { "type": "string", "enum": ["open", "closed"] }
       },
-      "required": [
-        "id",
-        "restaurantId",
-        "name",
-        "isActive",
-        "createdAt"
-      ]
-    },
-    "Product": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Product",
-      "type": "object",
-      "description": "Represents a single item available for order on a menu, such as a dish or drink.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Product entity."
-        },
-        "restaurantId": {
-          "type": "string",
-          "description": "Reference to the restaurant this product belongs to. (Relationship: Restaurant 1:N Product)"
-        },
-        "menuId": {
-          "type": "string",
-          "description": "Reference to the menu this product is part of. (Relationship: Menu 1:N Product)"
-        },
-        "name": {
-          "type": "string",
-          "description": "Name of the product."
-        },
-        "category": {
-          "type": "string",
-          "description": "Category of the product (e.g., 'Appetizer', 'Main Course', 'Drink')."
-        },
-        "price": {
-          "type": "number",
-          "description": "Selling price of the product."
-        },
-        "imageUrl": {
-          "type": "string",
-          "description": "URL to the product's image.",
-          "format": "uri"
-        },
-        "available": {
-          "type": "boolean",
-          "description": "Indicates if the product is currently available for order."
-        },
-        "variants": {
-          "type": "array",
-          "description": "Optional list of variants for the product (e.g., 'small', 'medium', 'large' for a drink).",
-          "items": {
-            "type": "string"
-          }
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the product was created.",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "id",
-        "restaurantId",
-        "menuId",
-        "name",
-        "category",
-        "price",
-        "available",
-        "createdAt"
-      ]
-    },
-    "Table": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Table",
-      "type": "object",
-      "description": "Represents a physical table in a restaurant where customers can be seated.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Table entity."
-        },
-        "restaurantId": {
-          "type": "string",
-          "description": "Reference to the restaurant this table belongs to. (Relationship: Restaurant 1:N Table)"
-        },
-        "number": {
-          "type": "string",
-          "description": "Unique number or name identifying the table within the restaurant."
-        },
-        "activeSessionId": {
-          "type": "string",
-          "description": "Identifier for the currently active customer session at this table. Null if no active session."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the table record was created.",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "id",
-        "restaurantId",
-        "number",
-        "createdAt"
-      ]
-    },
-    "Room": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Room",
-      "type": "object",
-      "description": "Represents a room in a hotel where guests can order room service.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Room entity."
-        },
-        "restaurantId": {
-          "type": "string",
-          "description": "Reference to the hotel (treated as a restaurant) this room belongs to. (Relationship: Restaurant 1:N Room)"
-        },
-        "number": {
-          "type": "string",
-          "description": "Unique number or name identifying the room within the hotel."
-        },
-        "activeSessionId": {
-          "type": "string",
-          "description": "Identifier for the currently active customer session for room service in this room. Null if no active session."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the room record was created.",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "id",
-        "restaurantId",
-        "number",
-        "createdAt"
-      ]
+      "required": ["cashierId", "restaurantId", "openedAt", "status"]
     },
     "Order": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Order",
       "type": "object",
-      "description": "Represents a customer's order for food and drinks.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Order entity."
-        },
-        "restaurantId": {
-          "type": "string",
-          "description": "Reference to the restaurant that received this order. (Relationship: Restaurant 1:N Order)"
-        },
-        "type": {
-          "type": "string",
-          "description": "Type of order (e.g., 'table', 'room', 'takeaway', 'delivery').",
-          "format": "string",
-          "items": {
-            "type": "string"
-          }
-        },
-        "tableId": {
-          "type": "string",
-          "description": "Reference to the table if the order type is 'table'. Null for other types. (Relationship: Table 1:N Order)"
-        },
-        "roomId": {
-          "type": "string",
-          "description": "Reference to the room if the order type is 'room'. Null for other types. (Relationship: Room 1:N Order)"
-        },
-        "customerPhone": {
-          "type": "string",
-          "description": "Customer's phone number, used for loyalty program and communication."
-        },
-        "customerName": {
-          "type": "string",
-          "description": "Optional name of the customer for the order."
-        },
-        "status": {
-          "type": "string",
-          "description": "Current status of the order (pending, preparing, ready, served, delivered, cancelled).",
-          "format": "string",
-          "items": {
-            "type": "string"
-          }
-        },
-        "paymentStatus": {
-          "type": "string",
-          "description": "Current payment status of the order (unpaid, partial, paid).",
-          "format": "string",
-          "items": {
-            "type": "string"
-          }
-        },
-        "totalAmount": {
-          "type": "number",
-          "description": "Total amount of the order, including all items and any taxes/fees."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the order was created.",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "description": "Timestamp when the order was last updated.",
-          "format": "date-time"
-        }
+        "id": { "type": "string" },
+        "restaurantId": { "type": "string" },
+        "type": { "type": "string" },
+        "status": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "customerName": { "type": "string" },
+        "tableId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": [
-        "id",
-        "restaurantId",
-        "type",
-        "status",
-        "paymentStatus",
-        "totalAmount",
-        "createdAt",
-        "updatedAt"
-      ]
-    },
-    "OrderItem": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "OrderItem",
-      "type": "object",
-      "description": "Represents a single item within an order, with price snapshotting.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the OrderItem entity."
-        },
-        "orderId": {
-          "type": "string",
-          "description": "Reference to the order this item belongs to. (Relationship: Order 1:N OrderItem)"
-        },
-        "productId": {
-          "type": "string",
-          "description": "Reference to the product from which this item was ordered. (Relationship: Product 1:N OrderItem)"
-        },
-        "nameSnapshot": {
-          "type": "string",
-          "description": "Name of the product at the time of order (snapshot for historical accuracy)."
-        },
-        "priceSnapshot": {
-          "type": "number",
-          "description": "Price of the product at the time of order (snapshot for historical accuracy)."
-        },
-        "quantity": {
-          "type": "number",
-          "description": "Quantity of this product ordered."
-        },
-        "subtotal": {
-          "type": "number",
-          "description": "Subtotal for this specific order item (quantity * priceSnapshot)."
-        }
-      },
-      "required": [
-        "id",
-        "orderId",
-        "productId",
-        "nameSnapshot",
-        "priceSnapshot",
-        "quantity",
-        "subtotal"
-      ]
-    },
-    "InventoryItem": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "InventoryItem",
-      "type": "object",
-      "description": "Represents a trackable item in the restaurant's inventory.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the InventoryItem entity."
-        },
-        "restaurantId": {
-          "type": "string",
-          "description": "Reference to the restaurant this inventory item belongs to. (Relationship: Restaurant 1:N InventoryItem)"
-        },
-        "name": {
-          "type": "string",
-          "description": "Name of the inventory item (e.g., 'Tomatoes', 'Flour', 'Beef Steak')."
-        },
-        "quantity": {
-          "type": "number",
-          "description": "Current stock quantity of the item."
-        },
-        "threshold": {
-          "type": "number",
-          "description": "Minimum stock level at which an alert should be triggered."
-        },
-        "linkedProductIds": {
-          "type": "array",
-          "description": "References to products that consume this inventory item. (Relationship: InventoryItem N:N Product)",
-          "items": {
-            "type": "string"
-          }
-        },
-        "updatedAt": {
-          "type": "string",
-          "description": "Timestamp when the inventory item was last updated.",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "id",
-        "restaurantId",
-        "name",
-        "quantity",
-        "threshold",
-        "updatedAt"
-      ]
-    },
-    "CustomerLoyalty": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "CustomerLoyalty",
-      "type": "object",
-      "description": "Stores loyalty program data for a customer, uniquely identified by phone number within a restaurant.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the CustomerLoyalty entity, typically a composite of restaurantId_phone."
-        },
-        "restaurantId": {
-          "type": "string",
-          "description": "Reference to the restaurant for which this loyalty data is recorded. (Relationship: Restaurant 1:N CustomerLoyalty)"
-        },
-        "phone": {
-          "type": "string",
-          "description": "Customer's phone number, serving as the primary identifier for loyalty."
-        },
-        "name": {
-          "type": "string",
-          "description": "Optional name of the customer."
-        },
-        "visits": {
-          "type": "number",
-          "description": "Total number of visits or orders associated with this customer."
-        },
-        "totalSpent": {
-          "type": "number",
-          "description": "Total amount of money spent by this customer."
-        },
-        "loyaltyPoints": {
-          "type": "number",
-          "description": "Current loyalty points accumulated by the customer."
-        },
-        "lastVisit": {
-          "type": "string",
-          "description": "Timestamp of the customer's last recorded visit/order.",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "id",
-        "restaurantId",
-        "phone",
-        "visits",
-        "totalSpent",
-        "loyaltyPoints",
-        "lastVisit"
-      ]
+      "required": ["id", "restaurantId", "type", "status", "paymentStatus", "totalAmount", "createdAt"]
     }
   },
   "auth": {
-    "providers": [
-      "password",
-      "anonymous"
-    ]
+    "providers": ["password", "anonymous"]
   },
   "firestore": {
     "structure": [
-      {
-        "path": "plans/{planId}",
-        "definition": {
-          "entityName": "plan",
-          "schema": {
-            "$ref": "#/backend/entities/Plan"
-          },
-          "description": "Collection storing different subscription plans offered by the SaaS. Access is typically for super_admins or public read-only for subscription information. No 'restaurantId' needed as it's global."
-        }
-      },
-      {
-        "path": "restaurants/{restaurantId}",
-        "definition": {
-          "entityName": "restaurant",
-          "schema": {
-            "$ref": "#/backend/entities/Restaurant"
-          },
-          "description": "Root collection for each restaurant or hotel establishment. Documents contain core restaurant details and are managed by super_admins, with specific restaurant staff having read/update access to their own restaurant's data."
-        }
-      },
-      {
-        "path": "users/{userId}",
-        "definition": {
-          "entityName": "user",
-          "schema": {
-            "$ref": "#/backend/entities/User"
-          },
-          "description": "Stores user profiles for both super_admins and restaurant staff. Each user document contains their 'restaurantId' (null for super_admins) and 'role' for authorization. Access is typically by the user themselves, super_admins, or restaurant owners/managers for staff within their restaurant."
-        }
-      },
-      {
-        "path": "menus/{menuId}",
-        "definition": {
-          "entityName": "menu",
-          "schema": {
-            "$ref": "#/backend/entities/Menu"
-          },
-          "description": "Collection for digital menus. Each document includes 'restaurantId' for multi-tenancy. Managed by restaurant owners/managers, readable by clients via QR."
-        }
-      },
-      {
-        "path": "menus/{menuId}/products/{productId}",
-        "definition": {
-          "entityName": "product",
-          "schema": {
-            "$ref": "#/backend/entities/Product"
-          },
-          "description": "Subcollection for products belonging to a specific menu. Each document includes denormalized 'restaurantId' and 'menuId' for authorization independence and QAP compliance.",
-          "params": [
-            {
-              "name": "menuId",
-              "description": "The unique identifier of the parent menu."
-            },
-            {
-              "name": "productId",
-              "description": "The unique identifier of the product."
-            }
-          ]
-        }
-      },
-      {
-        "path": "tables/{tableId}",
-        "definition": {
-          "entityName": "table",
-          "schema": {
-            "$ref": "#/backend/entities/Table"
-          },
-          "description": "Collection for physical tables within a restaurant. Each document includes 'restaurantId'. Used for linking QR orders to a specific table."
-        }
-      },
-      {
-        "path": "rooms/{roomId}",
-        "definition": {
-          "entityName": "room",
-          "schema": {
-            "$ref": "#/backend/entities/Room"
-          },
-          "description": "Collection for rooms within a hotel (treated as a restaurant). Each document includes 'restaurantId'. Used for linking room service orders to a specific room."
-        }
-      },
-      {
-        "path": "orders/{orderId}",
-        "definition": {
-          "entityName": "order",
-          "schema": {
-            "$ref": "#/backend/entities/Order"
-          },
-          "description": "Root collection for all customer orders. Each document includes 'restaurantId', 'tableId' (optional), and 'roomId' (optional). Anonymous clients can create new orders, while staff manage status and payment."
-        }
-      },
-      {
-        "path": "orders/{orderId}/items/{itemId}",
-        "definition": {
-          "entityName": "orderItem",
-          "schema": {
-            "$ref": "#/backend/entities/OrderItem"
-          },
-          "description": "Subcollection for individual items within an order. Each document includes denormalized 'restaurantId' (implicitly required for multi-tenancy, though not explicitly in schema), 'orderId', 'productId', and price/name snapshots for data integrity.",
-          "params": [
-            {
-              "name": "orderId",
-              "description": "The unique identifier of the parent order."
-            },
-            {
-              "name": "itemId",
-              "description": "The unique identifier of the order item."
-            }
-          ]
-        }
-      },
-      {
-        "path": "inventory/{itemId}",
-        "definition": {
-          "entityName": "inventoryItem",
-          "schema": {
-            "$ref": "#/backend/entities/InventoryItem"
-          },
-          "description": "Collection for inventory items. Each document includes 'restaurantId' for multi-tenancy. Managed by restaurant owners/managers, with automatic decrement on order payment validation."
-        }
-      },
-      {
-        "path": "customers/{customerUniqueId}",
-        "definition": {
-          "entityName": "customerLoyalty",
-          "schema": {
-            "$ref": "#/backend/entities/CustomerLoyalty"
-          },
-          "description": "Collection for customer loyalty data. The document ID is a composite of 'restaurantId_phone' for unique identification within a restaurant. Each document includes 'restaurantId' and 'phone' fields. Managed by restaurant staff for loyalty program tracking.",
-          "params": [
-            {
-              "name": "customerUniqueId",
-              "description": "The unique identifier for the customer loyalty record, formatted as 'restaurantId_phone'."
-            }
-          ]
-        }
-      }
+      { "path": "plans/{planId}", "definition": { "entityName": "plan", "schema": { "$ref": "#/backend/entities/Plan" }, "description": "Global subscription plans." } },
+      { "path": "restaurants/{restaurantId}", "definition": { "entityName": "restaurant", "schema": { "$ref": "#/backend/entities/Restaurant" }, "description": "Tenants collection." } },
+      { "path": "users/{userId}", "definition": { "entityName": "user", "schema": { "$ref": "#/backend/entities/User" }, "description": "User profiles." } },
+      { "path": "orders/{orderId}", "definition": { "entityName": "order", "schema": { "$ref": "#/backend/entities/Order" }, "description": "Global orders collection." } },
+      { "path": "cashierSessions/{sessionId}", "definition": { "entityName": "cashierSession", "schema": { "$ref": "#/backend/entities/CashierSession" }, "description": "Cashier shift tracking." } }
     ],
-    "reasoning": "The recommended Firestore structure is designed for a multi-tenant SaaS application, prioritizing security, scalability, and debuggability according to the core design principles. The foundational element for multi-tenancy and authorization is the `restaurantId` field, which is explicitly included in almost every document that belongs to a specific restaurant. This adherence to a strict `restaurantId` per document is crucial for achieving authorization independence and enabling QAPs.\n\n**Authorization Independence via Denormalization:**\n1.  **`restaurantId` Denormalization:** For collections like `menus`, `tables`, `rooms`, `orders`, `inventory`, and `customers`, the `restaurantId` is a top-level field. Critically, for subcollections such as `menus/{menuId}/products/{productId}` and `orders/{orderId}/items/{itemId}`, the `restaurantId` (along with `menuId` and `orderId` respectively) is denormalized directly into the child documents (`product` and `orderItem`). This eliminates the need for `get()` calls in Firestore security rules to ascertain the parent document's `restaurantId` for authorization. Consequently, operations involving these child documents are atomic and do not suffer from hierarchical authorization dependencies, simplifying rule logic and improving transaction reliability.\n2.  **User Context in Token:** For authenticated staff users, their `restaurantId` and `role` are assumed to be present in `request.auth.token` (e.g., via Firebase Custom Claims updated from the `users/{userId}` document). This denormalizes the user's authorization context directly into the request, preventing repeated `get()` calls to the `users` collection within security rules. The `users/{userId}` collection remains the source of truth for these roles and `restaurantId`, aligning with the DBAC principle.\n3.  **Anonymous Order Creation:** For anonymous clients placing orders via QR codes, the `restaurantId`, `tableId`, or `roomId` are provided in the `resource.data` of the new `order` document. While a `get()` operation is used within the security rules to validate that the provided `tableId`/`roomId` actually belongs to the specified `restaurantId` and exists, this is a data integrity check on a newly created root-level document, not a hierarchical authorization dependency for accessing existing data. This is an acceptable trade-off for anonymous write access while maintaining data integrity.\n\n**QAPs (Queries Are Not Filters):**\n1.  **`restaurantId` as Primary Filter:** The mandate to include `restaurantId` in every restaurant-specific document ensures that all `list` operations (queries) can and *must* include a `where(\"restaurantId\", \"==\", currentRestaurantId)` clause. Firestore security rules will strictly enforce that `request.auth.token.restaurantId == resource.data.restaurantId` (for authenticated users) or specific validation for anonymous users, ensuring that a user can only ever retrieve data belonging to their assigned restaurant. This makes `list` operations inherently secure and QAP-compliant, as the database intrinsically filters by the authorization context, rather than relying on rules to filter results after a broad query.\n2.  **Structural Segregation:** Collections are designed with homogeneous security postures. `plans` are global or `super_admin`-specific. `restaurants` can be accessed globally by `super_admin` but read-only by relevant restaurant staff. Other collections like `menus`, `orders`, `inventory`, `customers`, `tables`, and `rooms` are strictly `restaurantId`-scoped. This segregation prevents mixing data with different access requirements, simplifying and clarifying security rules for each collection.\n3.  **Customer Loyalty by Composite ID:** The `customers/{restaurantId_phone}` path (with `restaurantId_phone` as the document ID) combined with an internal `restaurantId` field provides a robust, QAP-compliant way to query and manage customer loyalty data unique to each restaurant, optimizing for lookups by phone within a specific restaurant.\n\nThis structure facilitates simple, robust, and easily debuggable security rules by making authorization context explicit in every relevant document and leveraging Firebase's capabilities for efficient, secure multi-tenancy."
+    "reasoning": "Standard root-level multi-tenant structure using restaurantId for isolation and efficient querying."
   }
 }

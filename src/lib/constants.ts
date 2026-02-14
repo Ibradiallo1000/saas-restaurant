@@ -44,4 +44,5 @@ export const COLLECTION_NAMES = {
   TABLES: 'tables',
   ROOMS: 'rooms',
   REVIEWS: 'reviews',
+  CASHIER_SESSIONS: 'cashierSessions',
 } as const;

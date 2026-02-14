@@ -13,7 +13,9 @@ import {
   Package,
   ShoppingCart,
   Users2,
-  ListOrdered
+  ListOrdered,
+  ChefHat,
+  Monitor
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -60,6 +62,8 @@ export function AppSidebar() {
   ]
 
   const businessNav = profile?.restaurantId ? [
+    { name: "POS / Caisse", href: "/pos", icon: Monitor },
+    { name: "Cuisine", href: "/kitchen", icon: ChefHat },
     { name: "Commandes", href: "/orders", icon: ListOrdered },
     { name: "Menus", href: "/menus", icon: ShoppingCart },
     { name: "Inventaire", href: "/inventory", icon: Package },
