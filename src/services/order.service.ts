@@ -1,5 +1,10 @@
 'use client';
 
+/**
+ * @fileOverview Service gérant le cycle de vie complet des commandes.
+ * Centralise la création, les mises à jour de statut et le traitement des paiements.
+ */
+
 import { 
   Firestore, 
   doc, 
@@ -44,6 +49,10 @@ export class OrderService {
     this.loyaltyService = new LoyaltyService(db);
   }
 
+  /**
+   * Crée une nouvelle commande et enregistre ses articles dans une sous-collection.
+   * Calcule automatiquement les totaux et initialise le statut.
+   */
   async createOrder(input: OrderInput) {
     const subtotal = input.items.reduce((acc, item) => acc + (item.priceSnapshot * item.quantity), 0);
     const totalAmount = subtotal + (input.deliveryFee || 0) + (input.tipAmount || 0);
@@ -68,6 +77,7 @@ export class OrderService {
 
     const orderRef = await addDoc(collection(this.db, COLLECTION_NAMES.ORDERS), orderData);
 
+    // Enregistrement des articles de la commande (Snapshot des prix pour l'historique)
     for (const item of input.items) {
       const itemData = {
         ...item,
@@ -81,6 +91,9 @@ export class OrderService {
     return orderRef.id;
   }
 
+  /**
+   * Met à jour le statut opérationnel de la commande (ex: de 'pending' à 'preparing').
+   */
   async updateOrderStatus(orderId: string, status: string) {
     const orderRef = doc(this.db, COLLECTION_NAMES.ORDERS, orderId);
     await updateDoc(orderRef, {
@@ -89,10 +102,15 @@ export class OrderService {
     });
   }
 
+  /**
+   * Gère le processus de paiement de manière atomique via une transaction Firestore.
+   * Assure la cohérence entre le statut de paiement, les stocks et la fidélité.
+   */
   async processPayment(orderId: string, restaurantId: string, method: string) {
     const orderRef = doc(this.db, COLLECTION_NAMES.ORDERS, orderId);
     
-    // ATOMIC TRANSACTION: Prevent double payment and ensure data integrity
+    // TRANSACTION ATOMIQUE : Garantit qu'un paiement n'est traité qu'une seule fois
+    // et que les données restent cohérentes même en cas de concurrence.
     await runTransaction(this.db, async (transaction) => {
       const orderDoc = await transaction.get(orderRef);
       if (!orderDoc.exists()) throw new Error("Commande introuvable");
@@ -109,20 +127,20 @@ export class OrderService {
       });
     });
 
-    // Side effects after successful payment transaction
+    // Effets secondaires après transaction réussie
     const itemsSnapshot = await getDocs(collection(this.db, COLLECTION_NAMES.ORDERS, orderId, COLLECTION_NAMES.ORDER_ITEMS));
     const orderSnap = await (await doc(this.db, COLLECTION_NAMES.ORDERS, orderId)).get();
     const orderData = orderSnap.data();
 
     if (!orderData) return;
 
-    // Process inventory
+    // Mise à jour automatique de l'inventaire
     for (const itemDoc of itemsSnapshot.docs) {
       const item = itemDoc.data();
       await this.inventoryService.decrementStockForProduct(restaurantId, item.productId, item.quantity);
     }
 
-    // Loyalty Update
+    // Enregistrement de la visite pour le programme de fidélité
     if (orderData.customerPhone) {
       await this.loyaltyService.recordVisit(
         restaurantId, 
@@ -133,6 +151,9 @@ export class OrderService {
     }
   }
 
+  /**
+   * Enregistre un avis client associé à une commande.
+   */
   async submitReview(restaurantId: string, orderId: string, rating: number, comment: string) {
     const reviewData = {
       restaurantId,

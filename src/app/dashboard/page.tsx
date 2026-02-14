@@ -1,5 +1,10 @@
 "use client"
 
+/**
+ * @fileOverview Page d'accueil du tableau de bord propriétaire (Console Maître).
+ * Affiche les KPI financiers et les alertes opérationnelles en temps réel.
+ */
+
 import * as React from "react"
 import { useFirestore, useUser, useDoc, useMemoFirebase } from "@/firebase"
 import { doc } from "firebase/firestore"
@@ -15,7 +20,6 @@ import {
   Wallet, 
   Download,
   Calendar,
-  ChevronRight,
   Loader2,
   RefreshCcw,
   LayoutDashboard,
@@ -24,7 +28,6 @@ import {
 import { useTranslation } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AnalyticsService, DashboardStats } from "@/services/analytics.service"
 import { 
   CartesianGrid, 
@@ -45,6 +48,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = React.useState(true)
   const [refreshing, setRefreshing] = React.useState(false)
 
+  // Initialisation du service analytique
   const analytics = React.useMemo(() => db ? new AnalyticsService(db) : null, [db])
 
   const profileRef = useMemoFirebase(() => {
@@ -59,6 +63,10 @@ export default function DashboardPage() {
   }, [db, profile])
   const { data: restaurant } = useDoc(restaurantRef)
 
+  /**
+   * Charge les données analytiques via le service AnalyticsService.
+   * Récupère à la fois les KPI et les tendances de vente.
+   */
   const loadData = React.useCallback(async (isRefresh = false) => {
     if (!analytics || !profile?.restaurantId) return
     if (isRefresh) setRefreshing(true)
@@ -81,6 +89,7 @@ export default function DashboardPage() {
     loadData()
   }, [loadData])
 
+  // Calcul du temps d'essai restant
   const trialDaysLeft = React.useMemo(() => {
     if (!restaurant?.trialEndDate) return 0
     const end = new Date(restaurant.trialEndDate)
@@ -119,6 +128,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Cartes de statistiques avec indicateurs de tendance */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard 
           icon={TrendingUp} 
@@ -150,6 +160,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
+        {/* Graphique de tendance des ventes (Recharts) */}
         <Card className="lg:col-span-2 border-none shadow-xl overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between bg-secondary/10">
             <div>
@@ -182,6 +193,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
+        {/* Détail de la ventilation des paiements */}
         <div className="space-y-6">
           <Card className="border-none shadow-xl overflow-hidden">
             <CardHeader className="bg-primary text-primary-foreground">

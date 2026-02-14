@@ -1,5 +1,10 @@
 'use client';
 
+/**
+ * @fileOverview Service d'analyse et de calcul des KPI financiers.
+ * Fournit les données agrégées pour le tableau de bord propriétaire.
+ */
+
 import { 
   Firestore, 
   collection, 
@@ -43,15 +48,18 @@ export interface DashboardStats {
 export class AnalyticsService {
   constructor(private db: Firestore) {}
 
+  /**
+   * Calcule les statistiques globales de l'établissement.
+   * Compare les périodes actuelles avec les périodes précédentes (J-1, Semaine-1).
+   */
   async getDashboardOverview(restaurantId: string): Promise<DashboardStats> {
     const now = new Date();
     
-    // Current periods
+    // Définition des périodes temporelles
     const todayStart = startOfDay(now);
     const weekStart = startOfWeek(now);
     const monthStart = startOfMonth(now);
 
-    // Previous periods for comparison
     const yesterdayStart = startOfDay(subDays(now, 1));
     const yesterdayEnd = endOfDay(subDays(now, 1));
     const lastWeekStart = startOfWeek(subWeeks(now, 1));
@@ -59,7 +67,7 @@ export class AnalyticsService {
 
     const ordersRef = collection(this.db, COLLECTION_NAMES.ORDERS);
     
-    // Fetch all orders from start of last month to now for full metrics
+    // Requête principale filtrée par restaurant et statut payé
     const mainQuery = query(
       ordersRef,
       where('restaurantId', '==', restaurantId),
@@ -79,13 +87,13 @@ export class AnalyticsService {
       completedToday: 0
     };
 
+    // Agrégation manuelle des données pour optimiser les lectures Firestore
     snapshot.forEach(doc => {
       const data = doc.data();
       const amount = data.totalAmount || 0;
       const date = data.createdAt?.toDate();
       const method = data.paymentMethod;
 
-      // Sales aggregations
       if (date >= todayStart) {
         stats.today += amount;
         stats.completedToday++;
@@ -107,7 +115,7 @@ export class AnalyticsService {
         stats.lastMonth += amount;
       }
 
-      // Prep time
+      // Calcul du temps de préparation moyen
       if (data.status === ORDER_STATUS.SERVED || data.status === ORDER_STATUS.DELIVERED) {
         const start = data.createdAt?.toDate();
         const updated = data.updatedAt?.toDate();
@@ -123,7 +131,7 @@ export class AnalyticsService {
       return Math.round(((cur - prev) / prev) * 100);
     };
 
-    // Active Orders
+    // Récupération des commandes actives
     const activeQuery = query(
       ordersRef,
       where('restaurantId', '==', restaurantId),
@@ -131,7 +139,7 @@ export class AnalyticsService {
     );
     const activeSnapshot = await getDocs(activeQuery);
 
-    // Stock
+    // Analyse des stocks bas
     const inventoryRef = collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.INVENTORY);
     const lowStockSnapshot = await getDocs(inventoryRef);
     const lowStockCount = lowStockSnapshot.docs.filter(d => d.data().quantity <= d.data().threshold).length;
@@ -155,6 +163,9 @@ export class AnalyticsService {
     };
   }
 
+  /**
+   * Génère les données pour le graphique de tendance des ventes.
+   */
   async getSalesTrend(restaurantId: string, days: number = 7) {
     const startDate = subDays(new Date(), days);
     const ordersRef = collection(this.db, COLLECTION_NAMES.ORDERS);

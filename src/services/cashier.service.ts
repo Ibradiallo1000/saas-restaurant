@@ -1,5 +1,10 @@
 'use client';
 
+/**
+ * @fileOverview Service gérant les sessions de caisse.
+ * Assure la traçabilité des ouvertures et clôtures de caisse par établissement.
+ */
+
 import { 
   Firestore, 
   doc, 
@@ -18,8 +23,12 @@ import { COLLECTION_NAMES } from '@/lib/constants';
 export class CashierService {
   constructor(private db: Firestore) {}
 
+  /**
+   * Ouvre une nouvelle session de caisse pour un utilisateur donné.
+   * Vérifie d'abord qu'aucune session n'est déjà ouverte pour ce caissier.
+   */
   async openShift(restaurantId: string, cashierId: string) {
-    // SECURITY: Ensure no overlapping open sessions for the same cashier
+    // SÉCURITÉ : Empêche l'ouverture de plusieurs sessions simultanées pour un même caissier
     const existing = await this.getCurrentSession(restaurantId, cashierId);
     if (existing) {
       throw new Error("Une session est déjà ouverte pour ce caissier. Veuillez la clôturer d'abord.");
@@ -37,6 +46,9 @@ export class CashierService {
     return await addDoc(collection(this.db, COLLECTION_NAMES.CASHIER_SESSIONS), sessionData);
   }
 
+  /**
+   * Clôture la session de caisse active et enregistre les totaux finaux.
+   */
   async closeShift(sessionId: string, totals: { cash: number, mobileMoney: number }) {
     const sessionRef = doc(this.db, COLLECTION_NAMES.CASHIER_SESSIONS, sessionId);
     await updateDoc(sessionRef, {
@@ -48,6 +60,9 @@ export class CashierService {
     });
   }
 
+  /**
+   * Récupère la session ouverte actuelle d'un caissier.
+   */
   async getCurrentSession(restaurantId: string, cashierId: string) {
     const q = query(
       collection(this.db, COLLECTION_NAMES.CASHIER_SESSIONS),
