@@ -1,0 +1,35 @@
+
+{
+  "placeholderImages": [
+    {
+      "id": "hero-restaurant",
+      "description": "Sophisticated modern restaurant interior",
+      "imageUrl": "https://picsum.photos/seed/restaurant1/1200/600",
+      "imageHint": "restaurant interior"
+    },
+    {
+      "id": "dish-1",
+      "description": "Exquisite gourmet pasta dish",
+      "imageUrl": "https://picsum.photos/seed/pasta/400/300",
+      "imageHint": "gourmet pasta"
+    },
+    {
+      "id": "dish-2",
+      "description": "Fresh summer salad",
+      "imageUrl": "https://picsum.photos/seed/salad/400/300",
+      "imageHint": "fresh salad"
+    },
+    {
+      "id": "dish-3",
+      "description": "Artisanal cocktail with garnish",
+      "imageUrl": "https://picsum.photos/seed/cocktail/400/300",
+      "imageHint": "artisan cocktail"
+    },
+    {
+      "id": "dashboard-stat",
+      "description": "Abstract business growth representation",
+      "imageUrl": "https://picsum.photos/seed/growth/800/400",
+      "imageHint": "business growth"
+    }
+  ]
+}
