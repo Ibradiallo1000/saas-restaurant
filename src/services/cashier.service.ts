@@ -3,7 +3,6 @@
 import { 
   Firestore, 
   doc, 
-  setDoc, 
   addDoc, 
   collection, 
   serverTimestamp, 
@@ -20,6 +19,12 @@ export class CashierService {
   constructor(private db: Firestore) {}
 
   async openShift(restaurantId: string, cashierId: string) {
+    // SECURITY: Ensure no overlapping open sessions for the same cashier
+    const existing = await this.getCurrentSession(restaurantId, cashierId);
+    if (existing) {
+      throw new Error("Une session est déjà ouverte pour ce caissier. Veuillez la clôturer d'abord.");
+    }
+
     const sessionData = {
       restaurantId,
       cashierId,

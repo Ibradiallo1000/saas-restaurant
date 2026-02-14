@@ -1,14 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { useFirestore, useUser, useDoc, useCollection } from "@/firebase"
-import { doc, collection, query, where } from "firebase/firestore"
+import { useFirestore, useUser, useDoc, useMemoFirebase } from "@/firebase"
+import { doc } from "firebase/firestore"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { 
   TrendingUp, 
-  Users, 
   Clock, 
   CreditCard, 
   AlertTriangle, 
@@ -28,15 +27,13 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AnalyticsService, DashboardStats } from "@/services/analytics.service"
 import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer, 
   AreaChart, 
-  Area 
+  Area,
+  XAxis,
+  YAxis
 } from 'recharts';
 
 export default function DashboardPage() {
@@ -50,13 +47,13 @@ export default function DashboardPage() {
 
   const analytics = React.useMemo(() => db ? new AnalyticsService(db) : null, [db])
 
-  const profileRef = React.useMemo(() => {
+  const profileRef = useMemoFirebase(() => {
     if (!db || !user) return null
     return doc(db, COLLECTION_NAMES.USERS, user.uid)
   }, [db, user])
   const { data: profile } = useDoc(profileRef)
 
-  const restaurantRef = React.useMemo(() => {
+  const restaurantRef = useMemoFirebase(() => {
     if (!db || !profile?.restaurantId) return null
     return doc(db, COLLECTION_NAMES.RESTAURANTS, profile.restaurantId)
   }, [db, profile])
@@ -95,7 +92,7 @@ export default function DashboardPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <p className="text-sm font-bold animate-pulse uppercase tracking-widest text-muted-foreground">Initialisation Console Maître...</p>
+        <p className="text-sm font-bold animate-pulse uppercase tracking-widest text-muted-foreground text-center">Initialisation Console Maître...</p>
       </div>
     )
   }
@@ -125,16 +122,17 @@ export default function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard 
           icon={TrendingUp} 
-          title="Chiffre d'Affaires (Mois)" 
-          value={`${stats?.sales.month || 0} ${restaurant?.currency || ''}`} 
+          title="CA Mensuel" 
+          value={`${stats?.sales.month.current || 0} ${restaurant?.currency || ''}`} 
           description="Ventes encaissées"
-          trend="+12% vs mois dernier"
+          trend={stats?.sales.month.percentageChange}
         />
         <StatCard 
           icon={Wallet} 
           title="Ventes Aujourd'hui" 
-          value={`${stats?.sales.today || 0} ${restaurant?.currency || ''}`} 
+          value={`${stats?.sales.today.current || 0} ${restaurant?.currency || ''}`} 
           description={`${stats?.orders.completedToday || 0} commandes`}
+          trend={stats?.sales.today.percentageChange}
         />
         <StatCard 
           icon={Clock} 
@@ -216,48 +214,14 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
-
-      <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="bg-secondary/50 p-1 rounded-xl">
-          <TabsTrigger value="overview">Alertes Système</TabsTrigger>
-          <TabsTrigger value="history">Historique Sessions</TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview" className="mt-6">
-          <div className="grid gap-6 md:grid-cols-2">
-             <Card className="border-none shadow-md">
-               <CardHeader>
-                 <CardTitle className="text-sm font-bold uppercase flex items-center gap-2">
-                   <AlertTriangle className="h-4 w-4 text-destructive" /> Stock Critique
-                 </CardTitle>
-               </CardHeader>
-               <CardContent>
-                 {stats?.alerts.lowStockCount === 0 ? (
-                   <p className="text-sm text-muted-foreground italic">Aucune alerte de stock.</p>
-                 ) : (
-                   <p className="text-sm font-bold text-destructive">{stats?.alerts.lowStockCount} produits nécessitent votre attention.</p>
-                 )}
-                 <Button variant="link" className="px-0 mt-2 text-primary font-bold">Voir l'inventaire <ChevronRight className="ml-1 h-3 w-3" /></Button>
-               </CardContent>
-             </Card>
-             <Card className="border-none shadow-md">
-               <CardHeader>
-                 <CardTitle className="text-sm font-bold uppercase flex items-center gap-2 text-primary">
-                   <Users className="h-4 w-4" /> Personnel Actif
-                 </CardTitle>
-               </CardHeader>
-               <CardContent>
-                 <p className="text-sm text-muted-foreground">Toutes les sessions de caisse sont clôturées.</p>
-                 <Button variant="link" className="px-0 mt-2 text-primary font-bold">Gérer le staff <ChevronRight className="ml-1 h-3 w-3" /></Button>
-               </CardContent>
-             </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
     </div>
   )
 }
 
 function StatCard({ icon: Icon, title, value, description, trend, variant = "default" }: any) {
+  const isPositive = trend > 0;
+  const isZero = trend === 0;
+
   return (
     <Card className={cn(
       "border-none shadow-lg transition-all hover:scale-[1.02]",
@@ -268,12 +232,19 @@ function StatCard({ icon: Icon, title, value, description, trend, variant = "def
         <Icon className={cn("h-4 w-4", variant === "destructive" ? "text-destructive" : "text-primary")} />
       </CardHeader>
       <CardContent>
-        <div className={cn("text-3xl font-black italic tracking-tighter", variant === "destructive" ? "text-destructive" : "text-primary")}>
+        <div className={cn("text-2xl font-black italic tracking-tighter", variant === "destructive" ? "text-destructive" : "text-primary")}>
           {value}
         </div>
         <div className="flex items-center justify-between mt-1">
-          <p className="text-[11px] font-medium text-muted-foreground">{description}</p>
-          {trend && <span className="text-[10px] font-bold text-green-500">{trend}</span>}
+          <p className="text-[10px] font-medium text-muted-foreground">{description}</p>
+          {trend !== undefined && (
+            <span className={cn(
+              "text-[9px] font-bold px-1.5 py-0.5 rounded-md",
+              isZero ? "bg-muted text-muted-foreground" : isPositive ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
+            )}>
+              {isPositive ? '+' : ''}{trend}%
+            </span>
+          )}
         </div>
       </CardContent>
     </Card>

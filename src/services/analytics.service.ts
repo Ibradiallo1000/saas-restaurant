@@ -11,13 +11,19 @@ import {
   limit
 } from 'firebase/firestore';
 import { COLLECTION_NAMES, PAYMENT_STATUS, ORDER_STATUS } from '@/lib/constants';
-import { startOfDay, endOfDay, startOfWeek, startOfMonth, subDays, format } from 'date-fns';
+import { startOfDay, endOfDay, startOfWeek, startOfMonth, subDays, format, subWeeks, subMonths } from 'date-fns';
+
+export interface ComparisonMetric {
+  current: number;
+  previous: number;
+  percentageChange: number;
+}
 
 export interface DashboardStats {
   sales: {
-    today: number;
-    week: number;
-    month: number;
+    today: ComparisonMetric;
+    week: ComparisonMetric;
+    month: ComparisonMetric;
     breakdown: {
       cash: number;
       mobileMoney: number;
@@ -26,11 +32,7 @@ export interface DashboardStats {
   orders: {
     active: number;
     completedToday: number;
-    avgPrepTime: number; // in minutes
-  };
-  performance: {
-    topProducts: Array<{ name: string; quantity: number; total: number }>;
-    salesByCashier: Record<string, number>;
+    avgPrepTime: number; 
   };
   alerts: {
     lowStockCount: number;
@@ -43,33 +45,39 @@ export class AnalyticsService {
 
   async getDashboardOverview(restaurantId: string): Promise<DashboardStats> {
     const now = new Date();
+    
+    // Current periods
     const todayStart = startOfDay(now);
     const weekStart = startOfWeek(now);
     const monthStart = startOfMonth(now);
 
-    // 1. Fetch all paid orders for the current month (for deep analysis)
+    // Previous periods for comparison
+    const yesterdayStart = startOfDay(subDays(now, 1));
+    const yesterdayEnd = endOfDay(subDays(now, 1));
+    const lastWeekStart = startOfWeek(subWeeks(now, 1));
+    const lastMonthStart = startOfMonth(subMonths(now, 1));
+
     const ordersRef = collection(this.db, COLLECTION_NAMES.ORDERS);
-    const monthlyQuery = query(
+    
+    // Fetch all orders from start of last month to now for full metrics
+    const mainQuery = query(
       ordersRef,
       where('restaurantId', '==', restaurantId),
       where('paymentStatus', '==', PAYMENT_STATUS.PAID),
-      where('createdAt', '>=', Timestamp.fromDate(monthStart)),
+      where('createdAt', '>=', Timestamp.fromDate(lastMonthStart)),
       orderBy('createdAt', 'desc')
     );
 
-    const snapshot = await getDocs(monthlyQuery);
+    const snapshot = await getDocs(mainQuery);
     
-    let todaySales = 0;
-    let weekSales = 0;
-    let monthSales = 0;
-    let cashSales = 0;
-    let mmSales = 0;
-    let completedToday = 0;
-    let totalPrepTime = 0;
-    let prepTimeCount = 0;
-    
-    const productMap: Record<string, { quantity: number; total: number }> = {};
-    const cashierMap: Record<string, number> = {};
+    let stats = {
+      today: 0, yesterday: 0,
+      thisWeek: 0, lastWeek: 0,
+      thisMonth: 0, lastMonth: 0,
+      cash: 0, mm: 0,
+      prepTime: 0, prepCount: 0,
+      completedToday: 0
+    };
 
     snapshot.forEach(doc => {
       const data = doc.data();
@@ -77,31 +85,45 @@ export class AnalyticsService {
       const date = data.createdAt?.toDate();
       const method = data.paymentMethod;
 
-      // Aggregations
-      monthSales += amount;
-      if (date >= weekStart) weekSales += amount;
+      // Sales aggregations
       if (date >= todayStart) {
-        todaySales += amount;
-        completedToday++;
+        stats.today += amount;
+        stats.completedToday++;
+      } else if (date >= yesterdayStart && date <= yesterdayEnd) {
+        stats.yesterday += amount;
       }
 
-      // Method breakdown
-      if (method === 'cash') cashSales += amount;
-      if (method === 'mobile_money') mmSales += amount;
+      if (date >= weekStart) {
+        stats.thisWeek += amount;
+      } else if (date >= lastWeekStart && date < weekStart) {
+        stats.lastWeek += amount;
+      }
 
-      // Prep time calculation
+      if (date >= monthStart) {
+        stats.thisMonth += amount;
+        if (method === 'cash') stats.cash += amount;
+        if (method === 'mobile_money') stats.mm += amount;
+      } else if (date >= lastMonthStart && date < monthStart) {
+        stats.lastMonth += amount;
+      }
+
+      // Prep time
       if (data.status === ORDER_STATUS.SERVED || data.status === ORDER_STATUS.DELIVERED) {
         const start = data.createdAt?.toDate();
         const updated = data.updatedAt?.toDate();
         if (start && updated) {
-          const diff = (updated.getTime() - start.getTime()) / 60000;
-          totalPrepTime += diff;
-          prepTimeCount++;
+          stats.prepTime += (updated.getTime() - start.getTime()) / 60000;
+          stats.prepCount++;
         }
       }
     });
 
-    // 2. Fetch Active Orders
+    const calcChange = (cur: number, prev: number) => {
+      if (prev === 0) return cur > 0 ? 100 : 0;
+      return Math.round(((cur - prev) / prev) * 100);
+    };
+
+    // Active Orders
     const activeQuery = query(
       ordersRef,
       where('restaurantId', '==', restaurantId),
@@ -109,33 +131,26 @@ export class AnalyticsService {
     );
     const activeSnapshot = await getDocs(activeQuery);
 
-    // 3. Fetch Low Stock Alerts
+    // Stock
     const inventoryRef = collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.INVENTORY);
     const lowStockSnapshot = await getDocs(inventoryRef);
     const lowStockCount = lowStockSnapshot.docs.filter(d => d.data().quantity <= d.data().threshold).length;
 
     return {
       sales: {
-        today: todaySales,
-        week: weekSales,
-        month: monthSales,
-        breakdown: {
-          cash: cashSales,
-          mobileMoney: mmSales
-        }
+        today: { current: stats.today, previous: stats.yesterday, percentageChange: calcChange(stats.today, stats.yesterday) },
+        week: { current: stats.thisWeek, previous: stats.lastWeek, percentageChange: calcChange(stats.thisWeek, stats.lastWeek) },
+        month: { current: stats.thisMonth, previous: stats.lastMonth, percentageChange: calcChange(stats.thisMonth, stats.lastMonth) },
+        breakdown: { cash: stats.cash, mobileMoney: stats.mm }
       },
       orders: {
         active: activeSnapshot.size,
-        completedToday,
-        avgPrepTime: prepTimeCount > 0 ? Math.round(totalPrepTime / prepTimeCount) : 0
-      },
-      performance: {
-        topProducts: [], // Would require fetching orderItems subcollections (heavy for MVP overview)
-        salesByCashier: cashierMap
+        completedToday: stats.completedToday,
+        avgPrepTime: stats.prepCount > 0 ? Math.round(stats.prepTime / stats.prepCount) : 0
       },
       alerts: {
         lowStockCount,
-        unclosedSessions: 0 // Would query cashierSessions status == 'open'
+        unclosedSessions: 0
       }
     };
   }

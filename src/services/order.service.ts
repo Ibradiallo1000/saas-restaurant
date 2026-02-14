@@ -7,7 +7,8 @@ import {
   collection, 
   serverTimestamp, 
   updateDoc,
-  getDocs
+  getDocs,
+  runTransaction
 } from 'firebase/firestore';
 import { COLLECTION_NAMES, ORDER_STATUS, PAYMENT_STATUS } from '@/lib/constants';
 import { InventoryService } from './inventory.service';
@@ -91,27 +92,37 @@ export class OrderService {
   async processPayment(orderId: string, restaurantId: string, method: string) {
     const orderRef = doc(this.db, COLLECTION_NAMES.ORDERS, orderId);
     
-    // 1. Mark as Paid
-    await updateDoc(orderRef, {
-      paymentStatus: PAYMENT_STATUS.PAID,
-      paymentMethod: method,
-      updatedAt: serverTimestamp(),
+    // ATOMIC TRANSACTION: Prevent double payment and ensure data integrity
+    await runTransaction(this.db, async (transaction) => {
+      const orderDoc = await transaction.get(orderRef);
+      if (!orderDoc.exists()) throw new Error("Commande introuvable");
+      
+      const orderData = orderDoc.data();
+      if (orderData.paymentStatus === PAYMENT_STATUS.PAID) {
+        throw new Error("Cette commande a déjà été payée");
+      }
+
+      transaction.update(orderRef, {
+        paymentStatus: PAYMENT_STATUS.PAID,
+        paymentMethod: method,
+        updatedAt: serverTimestamp(),
+      });
     });
 
-    // 2. Fetch items to process inventory and loyalty
+    // Side effects after successful payment transaction
     const itemsSnapshot = await getDocs(collection(this.db, COLLECTION_NAMES.ORDERS, orderId, COLLECTION_NAMES.ORDER_ITEMS));
-    const orderSnap = await (await doc(this.db, COLLECTION_NAMES.ORDERS, orderId)).get(); // Minimal read for total/phone
+    const orderSnap = await (await doc(this.db, COLLECTION_NAMES.ORDERS, orderId)).get();
     const orderData = orderSnap.data();
 
     if (!orderData) return;
 
-    // 3. Automated Inventory Decrement
+    // Process inventory
     for (const itemDoc of itemsSnapshot.docs) {
       const item = itemDoc.data();
       await this.inventoryService.decrementStockForProduct(restaurantId, item.productId, item.quantity);
     }
 
-    // 4. Loyalty Update
+    // Loyalty Update
     if (orderData.customerPhone) {
       await this.loyaltyService.recordVisit(
         restaurantId, 

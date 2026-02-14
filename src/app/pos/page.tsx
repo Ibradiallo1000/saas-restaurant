@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useFirestore, useUser, useCollection, useDoc } from '@/firebase';
+import { useFirestore, useUser, useCollection, useDoc, useMemoFirebase } from '@/firebase';
 import { collection, query, where, orderBy, doc } from 'firebase/firestore';
 import { COLLECTION_NAMES, PAYMENT_STATUS } from '@/lib/constants';
 import { Search, CreditCard, Banknote, History, Filter, Loader2 } from 'lucide-react';
@@ -21,7 +21,7 @@ export default function POSPage() {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [processingId, setProcessingId] = React.useState<string | null>(null);
 
-  const userProfileRef = React.useMemo(() => {
+  const userProfileRef = useMemoFirebase(() => {
     if (!db || !user) return null;
     return doc(db, COLLECTION_NAMES.USERS, user.uid);
   }, [db, user]);
@@ -29,15 +29,14 @@ export default function POSPage() {
 
   const orderService = React.useMemo(() => db ? new OrderService(db) : null, [db]);
 
-  const posQuery = React.useMemo(() => {
+  const posQuery = useMemoFirebase(() => {
     if (!db || !profile?.restaurantId) return null;
-    const q = query(
+    return query(
       collection(db, COLLECTION_NAMES.ORDERS),
       where('restaurantId', '==', profile.restaurantId),
       where('paymentStatus', '==', PAYMENT_STATUS.UNPAID),
       orderBy('createdAt', 'desc')
     );
-    return Object.assign(q, { __memo: true });
   }, [db, profile]);
 
   const { data: orders, isLoading } = useCollection(posQuery);
@@ -56,12 +55,26 @@ export default function POSPage() {
       toast({
         variant: "destructive",
         title: "Erreur",
-        description: "Le traitement du paiement a échoué.",
+        description: error.message || "Le traitement du paiement a échoué.",
       });
     } finally {
       setProcessingId(null);
     }
   };
+
+  const filteredOrders = React.useMemo(() => {
+    if (!orders) return []
+    return orders.filter(o => 
+      o.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      o.tableId?.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  }, [orders, searchTerm])
+
+  if (isLoading) return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  )
 
   return (
     <div className="space-y-6">
@@ -87,23 +100,23 @@ export default function POSPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {orders?.map((order) => (
-          <Card key={order.id} className="border-none shadow-xl overflow-hidden group hover:ring-2 ring-primary/20 transition-all">
+        {filteredOrders.map((order) => (
+          <Card key={order.id} className="border-none shadow-xl overflow-hidden group hover:ring-2 ring-primary/20 transition-all bg-card/80 backdrop-blur-sm">
             <CardHeader className="bg-secondary/30 p-4">
               <div className="flex justify-between items-center">
-                <Badge variant="outline" className="font-bold">
-                  {order.type.toUpperCase()}
+                <Badge variant="outline" className="font-bold uppercase text-[10px]">
+                  {order.type}
                 </Badge>
-                <span className="text-xl font-black text-primary">{order.totalAmount}€</span>
+                <span className="text-xl font-black text-primary italic">{order.totalAmount}€</span>
               </div>
-              <CardTitle className="mt-2 text-lg">
+              <CardTitle className="mt-2 text-lg font-bold">
                 {order.tableId ? `Table ${order.tableId}` : order.customerName || 'Client'}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 space-y-4">
               <div className="flex flex-col gap-2">
                 <Button 
-                  className="w-full h-12 bg-green-600 hover:bg-green-700 font-bold" 
+                  className="w-full h-12 bg-green-600 hover:bg-green-700 font-bold shadow-lg" 
                   onClick={() => handlePayment(order.id, 'cash')}
                   disabled={processingId === order.id}
                 >
@@ -111,7 +124,7 @@ export default function POSPage() {
                 </Button>
                 <Button 
                   variant="outline" 
-                  className="w-full h-12 border-primary text-primary hover:bg-primary/10 font-bold" 
+                  className="w-full h-12 border-primary/20 text-primary hover:bg-primary/5 font-bold" 
                   onClick={() => handlePayment(order.id, 'mobile_money')}
                   disabled={processingId === order.id}
                 >
@@ -121,10 +134,10 @@ export default function POSPage() {
             </CardContent>
           </Card>
         ))}
-        {orders?.length === 0 && (
-          <div className="col-span-full h-[300px] flex flex-col items-center justify-center bg-muted/20 rounded-2xl border-2 border-dashed">
+        {filteredOrders.length === 0 && (
+          <div className="col-span-full h-[300px] flex flex-col items-center justify-center bg-muted/20 rounded-2xl border-2 border-dashed border-muted">
             <Filter className="h-12 w-12 text-muted-foreground opacity-20 mb-4" />
-            <p className="text-lg font-bold text-muted-foreground">Aucun paiement en attente</p>
+            <p className="text-lg font-bold text-muted-foreground italic">Aucun paiement en attente</p>
           </div>
         )}
       </div>
