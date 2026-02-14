@@ -2,7 +2,7 @@
 
 /**
  * @fileOverview Service gérant les sessions de caisse.
- * Assure la traçabilité des ouvertures et clôtures de caisse par établissement.
+ * Assure la traçabilité des ouvertures, clôtures et validations par le management.
  */
 
 import { 
@@ -18,27 +18,26 @@ import {
   limit,
   orderBy
 } from 'firebase/firestore';
-import { COLLECTION_NAMES } from '@/lib/constants';
+import { COLLECTION_NAMES, SESSION_STATUS } from '@/lib/constants';
 
 export class CashierService {
   constructor(private db: Firestore) {}
 
   /**
-   * Ouvre une nouvelle session de caisse pour un utilisateur donné.
-   * Vérifie d'abord qu'aucune session n'est déjà ouverte pour ce caissier.
+   * Ouvre une nouvelle session de caisse.
+   * État initial: 'opened'
    */
   async openShift(restaurantId: string, cashierId: string) {
-    // SÉCURITÉ : Empêche l'ouverture de plusieurs sessions simultanées pour un même caissier
     const existing = await this.getCurrentSession(restaurantId, cashierId);
     if (existing) {
-      throw new Error("Une session est déjà ouverte pour ce caissier. Veuillez la clôturer d'abord.");
+      throw new Error("Une session est déjà ouverte pour ce caissier.");
     }
 
     const sessionData = {
       restaurantId,
       cashierId,
       openedAt: serverTimestamp(),
-      status: 'open',
+      status: SESSION_STATUS.OPENED,
       totalCash: 0,
       totalMobileMoney: 0,
       totalSales: 0,
@@ -47,7 +46,8 @@ export class CashierService {
   }
 
   /**
-   * Clôture la session de caisse active et enregistre les totaux finaux.
+   * Clôture la session par le caissier.
+   * État: 'closed' (En attente de validation manager)
    */
   async closeShift(sessionId: string, totals: { cash: number, mobileMoney: number }) {
     const sessionRef = doc(this.db, COLLECTION_NAMES.CASHIER_SESSIONS, sessionId);
@@ -56,19 +56,32 @@ export class CashierService {
       totalCash: totals.cash,
       totalMobileMoney: totals.mobileMoney,
       totalSales: totals.cash + totals.mobileMoney,
-      status: 'closed',
+      status: SESSION_STATUS.CLOSED,
     });
   }
 
   /**
-   * Récupère la session ouverte actuelle d'un caissier.
+   * Validation de la session par un manager ou propriétaire.
+   * État final: 'validated'
+   */
+  async validateShift(sessionId: string, validatorId: string) {
+    const sessionRef = doc(this.db, COLLECTION_NAMES.CASHIER_SESSIONS, sessionId);
+    await updateDoc(sessionRef, {
+      validatedAt: serverTimestamp(),
+      validatedBy: validatorId,
+      status: SESSION_STATUS.VALIDATED,
+    });
+  }
+
+  /**
+   * Récupère la session active.
    */
   async getCurrentSession(restaurantId: string, cashierId: string) {
     const q = query(
       collection(this.db, COLLECTION_NAMES.CASHIER_SESSIONS),
       where('restaurantId', '==', restaurantId),
       where('cashierId', '==', cashierId),
-      where('status', '==', 'open'),
+      where('status', '==', SESSION_STATUS.OPENED),
       orderBy('openedAt', 'desc'),
       limit(1)
     );

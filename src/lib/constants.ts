@@ -24,6 +24,12 @@ export const PAYMENT_STATUS = {
   PAID: 'paid',
 } as const;
 
+export const SESSION_STATUS = {
+  OPENED: 'opened',
+  CLOSED: 'closed',
+  VALIDATED: 'validated',
+} as const;
+
 export const ORDER_TYPES = {
   TABLE: 'table',
   ROOM: 'room',

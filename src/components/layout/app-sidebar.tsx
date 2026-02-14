@@ -8,14 +8,14 @@ import {
   Sparkles,
   LogOut,
   ShieldCheck,
-  CreditCard,
   Settings,
   Package,
   ShoppingCart,
   Users2,
   ListOrdered,
   ChefHat,
-  Monitor
+  Monitor,
+  Star
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -48,28 +48,34 @@ export function AppSidebar() {
 
   const userProfileRef = React.useMemo(() => {
     if (!db || !user) return null
-    const r = doc(db, COLLECTION_NAMES.USERS, user.uid)
-    return Object.assign(r, { __memo: true })
+    return doc(db, COLLECTION_NAMES.USERS, user.uid)
   }, [db, user])
   
   const { data: profile } = useDoc(userProfileRef)
 
-  const isSuperAdmin = profile?.role === ROLES.SUPER_ADMIN
+  const role = profile?.role || ROLES.SERVER
+
+  // Visibilité basée sur les rôles
+  const canViewAdmin = [ROLES.OWNER, ROLES.MANAGER, ROLES.SUPER_ADMIN].includes(role)
+  const canViewPOS = [ROLES.OWNER, ROLES.MANAGER, ROLES.CASHIER].includes(role)
+  const canViewKitchen = [ROLES.OWNER, ROLES.MANAGER, ROLES.KITCHEN].includes(role)
+  const canViewInventory = [ROLES.OWNER, ROLES.MANAGER].includes(role)
+  const canViewStaff = [ROLES.OWNER, ROLES.MANAGER].includes(role)
 
   const navigation = [
-    { name: t.common.dashboard, href: "/dashboard", icon: LayoutDashboard },
-    { name: t.common.setup, href: "/setup", icon: ShieldCheck },
+    { name: t.common.dashboard, href: "/dashboard", icon: LayoutDashboard, show: canViewAdmin },
+    { name: t.common.setup, href: "/setup", icon: ShieldCheck, show: role === ROLES.OWNER },
   ]
 
   const businessNav = profile?.restaurantId ? [
-    { name: "POS / Caisse", href: "/pos", icon: Monitor },
-    { name: "Cuisine", href: "/kitchen", icon: ChefHat },
-    { name: "Commandes", href: "/orders", icon: ListOrdered },
-    { name: "Menus", href: "/menus", icon: ShoppingCart },
-    { name: "Inventaire", href: "/inventory", icon: Package },
-    { name: "Fidélité", href: "/customers", icon: Users2 },
-    { name: "Paramètres", href: "/settings", icon: Settings },
-  ] : []
+    { name: "POS / Caisse", href: "/pos", icon: Monitor, show: canViewPOS },
+    { name: "Cuisine", href: "/kitchen", icon: ChefHat, show: canViewKitchen },
+    { name: "Commandes", href: "/orders", icon: ListOrdered, show: true },
+    { name: "Menus & Plats", href: "/menus", icon: ShoppingCart, show: canViewAdmin },
+    { name: "Inventaire", href: "/inventory", icon: Package, show: canViewInventory },
+    { name: "Fidélité", href: "/customers", icon: Users2, show: canViewAdmin },
+    { name: "Paramètres", href: "/settings", icon: Settings, show: canViewAdmin },
+  ].filter(item => item.show) : []
 
   return (
     <Sidebar variant="inset" collapsible="icon">
@@ -87,11 +93,11 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground group-data-[collapsible=icon]:hidden">
-            SaaS
+            Système
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navigation.map((item) => {
+              {navigation.filter(i => i.show).map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <SidebarMenuItem key={item.name}>
@@ -152,20 +158,22 @@ export function AppSidebar() {
 
       <SidebarFooter className="p-4">
         {user ? (
-          <div className="flex items-center gap-3 rounded-xl bg-secondary p-3 shadow-sm group-data-[collapsible=icon]:p-2">
-            <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
-              <Users className="h-4 w-4 text-primary" />
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-3 rounded-xl bg-secondary p-3 shadow-sm group-data-[collapsible=icon]:p-2">
+              <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
+                <Users className="h-4 w-4 text-primary" />
+              </div>
+              <div className="flex flex-col overflow-hidden group-data-[collapsible=icon]:hidden">
+                <span className="truncate text-sm font-semibold">{profile?.name || user.email?.split('@')[0]}</span>
+                <span className="truncate text-[10px] text-muted-foreground font-bold uppercase">
+                  {t.roles[role as keyof typeof t.roles] || "Utilisateur"}
+                </span>
+              </div>
+              <LogOut 
+                className="ml-auto h-4 w-4 cursor-pointer text-muted-foreground hover:text-destructive group-data-[collapsible=icon]:hidden" 
+                onClick={() => signOut(auth)}
+              />
             </div>
-            <div className="flex flex-col overflow-hidden group-data-[collapsible=icon]:hidden">
-              <span className="truncate text-sm font-semibold">{profile?.name || user.email?.split('@')[0]}</span>
-              <span className="truncate text-[10px] text-muted-foreground font-bold uppercase">
-                {t.roles[profile?.role as keyof typeof t.roles] || "Utilisateur"}
-              </span>
-            </div>
-            <LogOut 
-              className="ml-auto h-4 w-4 cursor-pointer text-muted-foreground hover:text-destructive group-data-[collapsible=icon]:hidden" 
-              onClick={() => signOut(auth)}
-            />
           </div>
         ) : (
           <Link href="/login" className="text-center block text-xs font-bold text-primary">{t.common.login}</Link>
