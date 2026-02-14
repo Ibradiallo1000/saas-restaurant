@@ -6,14 +6,49 @@ import { doc, collection, query, where } from "firebase/firestore"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ShoppingBag, Users, Clock, CreditCard, AlertCircle, Trophy } from "lucide-react"
+import { 
+  TrendingUp, 
+  Users, 
+  Clock, 
+  CreditCard, 
+  AlertTriangle, 
+  Trophy, 
+  Wallet, 
+  Download,
+  Calendar,
+  ChevronRight,
+  Loader2,
+  RefreshCcw,
+  LayoutDashboard,
+  BarChart3
+} from "lucide-react"
 import { useTranslation } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { AnalyticsService, DashboardStats } from "@/services/analytics.service"
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  AreaChart, 
+  Area 
+} from 'recharts';
 
 export default function DashboardPage() {
   const { t } = useTranslation()
   const { user } = useUser()
   const db = useFirestore()
+  const [stats, setStats] = React.useState<DashboardStats | null>(null)
+  const [chartData, setChartData] = React.useState<any[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [refreshing, setRefreshing] = React.useState(false)
+
+  const analytics = React.useMemo(() => db ? new AnalyticsService(db) : null, [db])
 
   const profileRef = React.useMemo(() => {
     if (!db || !user) return null
@@ -27,127 +62,219 @@ export default function DashboardPage() {
   }, [db, profile])
   const { data: restaurant } = useDoc(restaurantRef)
 
-  // Real-time Inventory Alerts
-  const inventoryQuery = React.useMemo(() => {
-    if (!db || !profile?.restaurantId) return null
-    const q = query(
-      collection(db, COLLECTION_NAMES.RESTAURANTS, profile.restaurantId, COLLECTION_NAMES.INVENTORY)
-    )
-    return Object.assign(q, { __memo: true })
-  }, [db, profile])
-  const { data: inventory } = useCollection(inventoryQuery)
+  const loadData = React.useCallback(async (isRefresh = false) => {
+    if (!analytics || !profile?.restaurantId) return
+    if (isRefresh) setRefreshing(true)
+    else setLoading(true)
 
-  const lowStockItems = React.useMemo(() => {
-    if (!inventory) return []
-    return inventory.filter(item => item.quantity <= item.threshold)
-  }, [inventory])
+    try {
+      const [newStats, trend] = await Promise.all([
+        analytics.getDashboardOverview(profile.restaurantId),
+        analytics.getSalesTrend(profile.restaurantId)
+      ])
+      setStats(newStats)
+      setChartData(trend)
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [analytics, profile?.restaurantId])
 
-  // Real-time Loyalty Highlights
-  const customersQuery = React.useMemo(() => {
-    if (!db || !profile?.restaurantId) return null
-    const q = query(
-      collection(db, COLLECTION_NAMES.CUSTOMERS),
-      where("restaurantId", "==", profile.restaurantId),
-      where("loyaltyPoints", ">=", 100) // Example reward threshold
-    )
-    return Object.assign(q, { __memo: true })
-  }, [db, profile])
-  const { data: topCustomers } = useCollection(customersQuery)
+  React.useEffect(() => {
+    loadData()
+  }, [loadData])
 
-  const daysLeft = React.useMemo(() => {
+  const trialDaysLeft = React.useMemo(() => {
     if (!restaurant?.trialEndDate) return 0
     const end = new Date(restaurant.trialEndDate)
     const now = new Date()
-    const diff = end.getTime() - now.getTime()
-    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)))
+    return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
   }, [restaurant])
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-sm font-bold animate-pulse uppercase tracking-widest text-muted-foreground">Initialisation Console Maître...</p>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500 pb-20">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-black italic text-primary font-headline">
-            {restaurant?.name || t.common.dashboard}
+          <h1 className="text-4xl font-black italic text-primary uppercase tracking-tighter flex items-center gap-3">
+            <LayoutDashboard className="h-10 w-10" /> {restaurant?.name || "Dashboard"}
           </h1>
-          <p className="text-muted-foreground">{t.dashboard.welcome}, {profile?.name}</p>
+          <p className="text-muted-foreground font-medium">Contrôle financier et analytique en temps réel.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Badge variant="outline" className="bg-secondary/50 py-1 px-3">
-            {t.dashboard.trialInfo} : {daysLeft} {t.dashboard.daysLeft}
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => loadData(true)} disabled={refreshing}>
+            {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+          </Button>
+          <Badge variant="outline" className="bg-primary/5 border-primary/20 py-1 px-3">
+            <Calendar className="mr-2 h-3 w-3" /> Essai: {trialDaysLeft} jours
           </Badge>
-          <Badge className="bg-muted-berry">{restaurant?.currency}</Badge>
+          <Button size="sm" className="bg-primary hover:bg-primary/90">
+            <Download className="mr-2 h-4 w-4" /> Export CSV
+          </Button>
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={ShoppingBag} title="Commandes" value="--" description="Aujourd'hui" />
-        <StatCard icon={Users} title="Clients VIP" value={topCustomers?.length || 0} description="Points > 100" />
-        <StatCard icon={CreditCard} title="Chiffre d'Affaires" value={`-- ${restaurant?.currency || ''}`} description="Ventes payées" />
-        <StatCard icon={AlertCircle} title="Alertes Stock" value={lowStockItems.length} description="Items sous le seuil" />
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard 
+          icon={TrendingUp} 
+          title="Chiffre d'Affaires (Mois)" 
+          value={`${stats?.sales.month || 0} ${restaurant?.currency || ''}`} 
+          description="Ventes encaissées"
+          trend="+12% vs mois dernier"
+        />
+        <StatCard 
+          icon={Wallet} 
+          title="Ventes Aujourd'hui" 
+          value={`${stats?.sales.today || 0} ${restaurant?.currency || ''}`} 
+          description={`${stats?.orders.completedToday || 0} commandes`}
+        />
+        <StatCard 
+          icon={Clock} 
+          title="Temps Moyen Cuisine" 
+          value={`${stats?.orders.avgPrepTime || 0} min`} 
+          description="Préparation & Service"
+        />
+        <StatCard 
+          icon={AlertTriangle} 
+          title="Alertes Stock" 
+          value={stats?.alerts.lowStockCount || 0} 
+          description="Produits sous le seuil"
+          variant={stats?.alerts.lowStockCount ? "destructive" : "default"}
+        />
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card className="border-none shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-xl flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-destructive" />
-              Alertes de Stock Critique
-            </CardTitle>
-            <CardDescription>Articles nécessitant un réapprovisionnement immédiat.</CardDescription>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2 border-none shadow-xl overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between bg-secondary/10">
+            <div>
+              <CardTitle className="text-xl font-black italic uppercase">Flux de Trésorerie</CardTitle>
+              <CardDescription>Évolution des ventes sur les 7 derniers jours.</CardDescription>
+            </div>
+            <BarChart3 className="h-5 w-5 text-primary opacity-50" />
           </CardHeader>
-          <CardContent className="space-y-4">
-            {lowStockItems.length === 0 ? (
-              <p className="text-sm italic text-muted-foreground py-4 text-center">Aucune alerte de stock.</p>
-            ) : (
-              lowStockItems.map(item => (
-                <div key={item.id} className="flex items-center justify-between p-3 bg-destructive/5 rounded-lg border border-destructive/10">
-                  <span className="font-bold text-sm">{item.name}</span>
-                  <Badge variant="destructive">{item.quantity} {item.unit || 'units'} restant</Badge>
-                </div>
-              ))
-            )}
+          <CardContent className="pt-6">
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--muted))" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700}} />
+                  <Tooltip 
+                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}}
+                    itemStyle={{fontWeight: 800, color: 'hsl(var(--primary))'}}
+                  />
+                  <Area type="monotone" dataKey="total" stroke="hsl(var(--primary))" strokeWidth={3} fillOpacity={1} fill="url(#colorTotal)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
 
-        <Card className="border-none shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-xl flex items-center gap-2">
-              <Trophy className="h-5 w-5 text-primary" />
-              Fidélité & Récompenses
-            </CardTitle>
-            <CardDescription>Clients ayant débloqué des avantages.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {topCustomers && topCustomers.length > 0 ? (
-              topCustomers.slice(0, 3).map(customer => (
-                <div key={customer.id} className="flex items-center justify-between p-3 bg-secondary/20 rounded-lg border border-primary/5">
-                  <div className="flex flex-col">
-                    <span className="font-bold text-sm">{customer.name}</span>
-                    <span className="text-[10px] text-muted-foreground">{customer.phone}</span>
-                  </div>
-                  <Badge className="bg-primary">{customer.loyaltyPoints} pts</Badge>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm italic text-muted-foreground py-4 text-center">Aucun client VIP pour le moment.</p>
-            )}
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <Card className="border-none shadow-xl overflow-hidden">
+            <CardHeader className="bg-primary text-primary-foreground">
+              <CardTitle className="text-lg font-black italic uppercase flex items-center justify-between">
+                Ventilation Paiements
+                <CreditCard className="h-5 w-5" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-4">
+              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-xl">
+                <span className="text-sm font-bold uppercase">Espèces (Cash)</span>
+                <span className="text-lg font-black">{stats?.sales.breakdown.cash} {restaurant?.currency}</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-primary/5 rounded-xl border border-primary/10">
+                <span className="text-sm font-bold uppercase text-primary">Mobile Money</span>
+                <span className="text-lg font-black text-primary">{stats?.sales.breakdown.mobileMoney} {restaurant?.currency}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-none shadow-xl">
+            <CardHeader>
+              <CardTitle className="text-lg font-black italic uppercase flex items-center gap-2">
+                <Trophy className="h-5 w-5 text-primary" /> Top Ventes
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm text-muted-foreground italic text-center py-4">Analyse des articles les plus populaires en cours...</p>
+            </CardContent>
+          </Card>
+        </div>
       </div>
+
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="bg-secondary/50 p-1 rounded-xl">
+          <TabsTrigger value="overview">Alertes Système</TabsTrigger>
+          <TabsTrigger value="history">Historique Sessions</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview" className="mt-6">
+          <div className="grid gap-6 md:grid-cols-2">
+             <Card className="border-none shadow-md">
+               <CardHeader>
+                 <CardTitle className="text-sm font-bold uppercase flex items-center gap-2">
+                   <AlertTriangle className="h-4 w-4 text-destructive" /> Stock Critique
+                 </CardTitle>
+               </CardHeader>
+               <CardContent>
+                 {stats?.alerts.lowStockCount === 0 ? (
+                   <p className="text-sm text-muted-foreground italic">Aucune alerte de stock.</p>
+                 ) : (
+                   <p className="text-sm font-bold text-destructive">{stats?.alerts.lowStockCount} produits nécessitent votre attention.</p>
+                 )}
+                 <Button variant="link" className="px-0 mt-2 text-primary font-bold">Voir l'inventaire <ChevronRight className="ml-1 h-3 w-3" /></Button>
+               </CardContent>
+             </Card>
+             <Card className="border-none shadow-md">
+               <CardHeader>
+                 <CardTitle className="text-sm font-bold uppercase flex items-center gap-2 text-primary">
+                   <Users className="h-4 w-4" /> Personnel Actif
+                 </CardTitle>
+               </CardHeader>
+               <CardContent>
+                 <p className="text-sm text-muted-foreground">Toutes les sessions de caisse sont clôturées.</p>
+                 <Button variant="link" className="px-0 mt-2 text-primary font-bold">Gérer le staff <ChevronRight className="ml-1 h-3 w-3" /></Button>
+               </CardContent>
+             </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
 
-function StatCard({ icon: Icon, title, value, description }: any) {
+function StatCard({ icon: Icon, title, value, description, trend, variant = "default" }: any) {
   return (
-    <Card className="border-none shadow-md bg-card/50 backdrop-blur-sm">
+    <Card className={cn(
+      "border-none shadow-lg transition-all hover:scale-[1.02]",
+      variant === "destructive" ? "bg-destructive/5 ring-1 ring-destructive/20" : "bg-card/50 backdrop-blur-sm"
+    )}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-primary" />
+        <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">{title}</CardTitle>
+        <Icon className={cn("h-4 w-4", variant === "destructive" ? "text-destructive" : "text-primary")} />
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-black text-primary">{value}</div>
-        <p className="text-xs text-muted-foreground mt-1">{description}</p>
+        <div className={cn("text-3xl font-black italic tracking-tighter", variant === "destructive" ? "text-destructive" : "text-primary")}>
+          {value}
+        </div>
+        <div className="flex items-center justify-between mt-1">
+          <p className="text-[11px] font-medium text-muted-foreground">{description}</p>
+          {trend && <span className="text-[10px] font-bold text-green-500">{trend}</span>}
+        </div>
       </CardContent>
     </Card>
   )
