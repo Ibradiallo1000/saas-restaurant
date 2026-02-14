@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -13,13 +12,16 @@ import {
   Settings,
   Package,
   ShoppingCart,
-  Users2
+  Users2,
+  ListOrdered
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useAuth, useUser, useFirestore, useDoc } from "@/firebase"
 import { signOut } from "firebase/auth"
 import { doc } from "firebase/firestore"
+import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
+import { useTranslation } from "@/lib/i18n"
 
 import {
   Sidebar,
@@ -36,30 +38,33 @@ import {
 import { cn } from "@/lib/utils"
 
 export function AppSidebar() {
+  const { t } = useTranslation()
   const pathname = usePathname()
   const auth = useAuth()
   const db = useFirestore()
   const { user } = useUser()
 
-  // Fetch current user profile to see restaurant context
   const userProfileRef = React.useMemo(() => {
     if (!db || !user) return null
-    const r = doc(db, "users", user.uid)
+    const r = doc(db, COLLECTION_NAMES.USERS, user.uid)
     return Object.assign(r, { __memo: true })
   }, [db, user])
   
   const { data: profile } = useDoc(userProfileRef)
 
+  const isSuperAdmin = profile?.role === ROLES.SUPER_ADMIN
+
   const navigation = [
-    { name: "Accueil", href: "/", icon: LayoutDashboard },
-    { name: "SaaS Setup", href: "/setup", icon: ShieldCheck },
+    { name: t.common.dashboard, href: "/dashboard", icon: LayoutDashboard },
+    { name: t.common.setup, href: "/setup", icon: ShieldCheck },
   ]
 
   const businessNav = profile?.restaurantId ? [
-    { name: "Mon Établissement", href: "/restaurant", icon: Building2 },
-    { name: "Commandes", href: "/orders", icon: ShoppingCart },
-    { name: "Inventaire", icon: Package, href: "/inventory" },
-    { name: "Clients", icon: Users2, href: "/customers" },
+    { name: "Commandes", href: "/orders", icon: ListOrdered },
+    { name: "Menus", href: "/menus", icon: ShoppingCart },
+    { name: "Inventaire", href: "/inventory", icon: Package },
+    { name: "Fidélité", href: "/customers", icon: Users2 },
+    { name: "Paramètres", href: "/settings", icon: Settings },
   ] : []
 
   return (
@@ -78,7 +83,7 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground group-data-[collapsible=icon]:hidden">
-            Système Core
+            SaaS
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -141,16 +146,16 @@ export function AppSidebar() {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="p-4 group-data-[collapsible=icon]:p-2">
+      <SidebarFooter className="p-4">
         {user ? (
-          <div className="flex items-center gap-3 rounded-xl bg-secondary p-3 shadow-sm group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-2">
+          <div className="flex items-center gap-3 rounded-xl bg-secondary p-3 shadow-sm group-data-[collapsible=icon]:p-2">
             <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
               <Users className="h-4 w-4 text-primary" />
             </div>
             <div className="flex flex-col overflow-hidden group-data-[collapsible=icon]:hidden">
-              <span className="truncate text-sm font-semibold">{user.email?.split('@')[0]}</span>
+              <span className="truncate text-sm font-semibold">{profile?.name || user.email?.split('@')[0]}</span>
               <span className="truncate text-[10px] text-muted-foreground font-bold uppercase">
-                {profile?.role || "Utilisateur"}
+                {t.roles[profile?.role as keyof typeof t.roles] || "Utilisateur"}
               </span>
             </div>
             <LogOut 
@@ -159,11 +164,7 @@ export function AppSidebar() {
             />
           </div>
         ) : (
-          <div className="p-2 text-center">
-            <Link href="/login" className="text-xs text-primary font-bold hover:underline">
-              Se connecter
-            </Link>
-          </div>
+          <Link href="/login" className="text-center block text-xs font-bold text-primary">{t.common.login}</Link>
         )}
       </SidebarFooter>
     </Sidebar>

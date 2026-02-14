@@ -1,10 +1,10 @@
-
 "use client"
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { useAuth, useFirestore, useUser, useDoc } from "@/firebase"
-import { doc, setDoc, serverTimestamp } from "firebase/firestore"
+import { useFirestore, useUser, useDoc } from "@/firebase"
+import { doc } from "firebase/firestore"
+import { RestaurantService } from "@/services/restaurant.service"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,18 +12,20 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { Building2, Save, Loader2, ShieldCheck } from "lucide-react"
+import { useTranslation } from "@/lib/i18n"
+import { COLLECTION_NAMES } from "@/lib/constants"
 
 export default function SetupPage() {
+  const { t } = useTranslation()
   const { user, isUserLoading } = useUser()
   const db = useFirestore()
   const router = useRouter()
   const { toast } = useToast()
   const [loading, setLoading] = React.useState(false)
 
-  // Fetch current user profile
   const userProfileRef = React.useMemo(() => {
     if (!db || !user) return null
-    const r = doc(db, "users", user.uid)
+    const r = doc(db, COLLECTION_NAMES.USERS, user.uid)
     return Object.assign(r, { __memo: true })
   }, [db, user])
   
@@ -47,44 +49,21 @@ export default function SetupPage() {
     if (!user || !db) return
 
     setLoading(true)
-    const restaurantId = crypto.randomUUID()
+    const restaurantService = new RestaurantService(db)
 
     try {
-      // 1. Create the Restaurant document
-      const restaurantRef = doc(db, "restaurants", restaurantId)
-      await setDoc(restaurantRef, {
-        id: restaurantId,
-        name: formData.name,
-        slug: formData.slug.toLowerCase().replace(/\s+/g, '-'),
-        country: formData.country,
-        currency: formData.currency,
-        planId: "free_tier",
-        active: true,
-        createdAt: serverTimestamp()
-      })
-
-      // 2. Create/Update the User profile with restaurantId and role
-      const userRef = doc(db, "users", user.uid)
-      await setDoc(userRef, {
-        id: user.uid,
-        restaurantId: restaurantId,
-        role: "owner",
-        name: user.displayName || "Admin",
-        email: user.email,
-        active: true,
-        createdAt: serverTimestamp()
-      }, { merge: true })
-
+      await restaurantService.createRestaurant(user.uid, user.email || '', formData)
+      
       toast({
-        title: "Configuration réussie",
-        description: "Votre établissement a été initialisé avec succès.",
+        title: t.common.success,
+        description: t.setup.creating,
       })
       
-      router.push("/")
+      router.push("/dashboard")
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Erreur de configuration",
+        title: t.common.error,
         description: error.message,
       })
     } finally {
@@ -103,12 +82,12 @@ export default function SetupPage() {
   if (profile?.restaurantId) {
     return (
       <div className="max-w-md mx-auto mt-20 text-center space-y-6">
-        <div className="p-4 bg-green-50 text-green-700 rounded-xl border border-green-100 flex items-center gap-3">
+        <div className="p-4 bg-primary/10 text-primary rounded-xl border border-primary/20 flex items-center gap-3">
           <ShieldCheck className="h-6 w-6" />
-          <p className="font-medium text-sm">Ce compte est déjà associé à un établissement.</p>
+          <p className="font-medium text-sm">Compte associé à : {profile.restaurantId}</p>
         </div>
-        <Button onClick={() => router.push("/")} variant="outline" className="w-full">
-          Retour à l'accueil
+        <Button onClick={() => router.push("/dashboard")} className="w-full">
+          Aller au Tableau de Bord
         </Button>
       </div>
     )
@@ -120,16 +99,16 @@ export default function SetupPage() {
         <CardHeader className="bg-primary text-primary-foreground p-8">
           <div className="flex items-center gap-3 mb-2">
             <Building2 className="h-8 w-8" />
-            <CardTitle className="text-2xl font-black italic uppercase">Setup Initial</CardTitle>
+            <CardTitle className="text-2xl font-black italic uppercase">{t.setup.title}</CardTitle>
           </div>
           <CardDescription className="text-primary-foreground/80">
-            Configurez votre premier établissement pour activer la fondation SaaS.
+            {t.setup.description}
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleCreateRestaurant}>
           <CardContent className="p-8 space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="name">Nom du Restaurant / Hôtel</Label>
+              <Label htmlFor="name">{t.setup.restaurantName}</Label>
               <Input 
                 id="name" 
                 placeholder="Ex: Le Petit Bistro" 
@@ -139,7 +118,7 @@ export default function SetupPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="slug">Slug (URL personnalisée)</Label>
+              <Label htmlFor="slug">{t.setup.slug}</Label>
               <Input 
                 id="slug" 
                 placeholder="le-petit-bistro" 
@@ -148,57 +127,42 @@ export default function SetupPage() {
                 onChange={e => setFormData({...formData, slug: e.target.value})}
               />
               <p className="text-[10px] text-muted-foreground italic">
-                Ceci sera utilisé pour vos QR codes (ex: app.gastronome.ai/r/votre-slug)
+                {t.setup.slugHint}
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Pays (Afrique de l'Ouest)</Label>
+                <Label>{t.setup.country}</Label>
                 <Select 
                   defaultValue={formData.country} 
                   onValueChange={v => setFormData({...formData, country: v})}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Pays" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="BJ">Bénin</SelectItem>
                     <SelectItem value="BF">Burkina Faso</SelectItem>
-                    <SelectItem value="CV">Cap-Vert</SelectItem>
                     <SelectItem value="CI">Côte d'Ivoire</SelectItem>
-                    <SelectItem value="GM">Gambie</SelectItem>
-                    <SelectItem value="GH">Ghana</SelectItem>
-                    <SelectItem value="GN">Guinée</SelectItem>
-                    <SelectItem value="GW">Guinée-Bissau</SelectItem>
-                    <SelectItem value="LR">Libéria</SelectItem>
-                    <SelectItem value="ML">Mali</SelectItem>
-                    <SelectItem value="NE">Niger</SelectItem>
-                    <SelectItem value="NG">Nigéria</SelectItem>
                     <SelectItem value="SN">Sénégal</SelectItem>
-                    <SelectItem value="SL">Sierra Leone</SelectItem>
+                    <SelectItem value="ML">Mali</SelectItem>
                     <SelectItem value="TG">Togo</SelectItem>
+                    <SelectItem value="GN">Guinée</SelectItem>
                     <SelectItem value="FR">France</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Devise</Label>
+                <Label>{t.setup.currency}</Label>
                 <Select 
                   defaultValue={formData.currency} 
                   onValueChange={v => setFormData({...formData, currency: v})}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Devise" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="XOF">FCFA (XOF)</SelectItem>
-                    <SelectItem value="GHS">Cédi (GHS)</SelectItem>
-                    <SelectItem value="NGN">Naira (NGN)</SelectItem>
-                    <SelectItem value="GNF">Franc Guinéen (GNF)</SelectItem>
-                    <SelectItem value="GMD">Dalasi (GMD)</SelectItem>
-                    <SelectItem value="LRD">Dollar Libérien (LRD)</SelectItem>
-                    <SelectItem value="SLL">Leone (SLL)</SelectItem>
-                    <SelectItem value="CVE">Escudo (CVE)</SelectItem>
                     <SelectItem value="EUR">Euro (€)</SelectItem>
                     <SelectItem value="USD">Dollar ($)</SelectItem>
                   </SelectContent>
@@ -208,16 +172,8 @@ export default function SetupPage() {
           </CardContent>
           <CardFooter className="p-8 bg-secondary/30">
             <Button type="submit" className="w-full h-12 font-bold" disabled={loading}>
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Initialisation...
-                </>
-              ) : (
-                <>
-                  <Save className="mr-2 h-4 w-4" /> Finaliser la Configuration
-                </>
-              )}
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              {t.setup.submit}
             </Button>
           </CardFooter>
         </form>
