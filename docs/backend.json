@@ -1,28 +1,13 @@
 {
   "entities": {
-    "Plan": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Plan",
-      "type": "object",
-      "description": "Represents a subscription plan offered by the SaaS, defining features and limits for restaurants.",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "priceMonthly": { "type": "number" },
-        "maxStaff": { "type": "number" },
-        "maxMenus": { "type": "number" },
-        "features": { "type": "array", "items": { "type": "string" } },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "name", "priceMonthly", "features", "createdAt"]
-    },
     "Restaurant": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Restaurant",
       "type": "object",
-      "description": "Represents a restaurant or hotel establishment using the SaaS platform.",
+      "description": "Représente un établissement (restaurant/hôtel) lié à un propriétaire.",
       "properties": {
         "id": { "type": "string" },
+        "ownerId": { "type": "string", "description": "ID de l'utilisateur Propriétaire (Owner)." },
         "name": { "type": "string" },
         "slug": { "type": "string" },
         "country": { "type": "string" },
@@ -30,75 +15,52 @@
         "planId": { "type": "string" },
         "logoUrl": { "type": "string", "format": "uri" },
         "active": { "type": "boolean" },
-        "trialStartDate": { "type": "string", "format": "date-time" },
-        "trialEndDate": { "type": "string", "format": "date-time" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "subscriptionStatus": { "type": "string", "enum": ["active", "expired", "suspended"] },
+        "subscriptionStartDate": { "type": "string", "format": "date-time" },
+        "subscriptionEndDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "name", "slug", "country", "currency", "planId", "active", "createdAt"]
+      "required": ["id", "ownerId", "name", "slug", "country", "currency", "planId", "subscriptionStatus", "createdAt"]
     },
-    "User": {
+    "UserProfile": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "User",
+      "title": "UserProfile",
       "type": "object",
-      "description": "Represents a user account within the SaaS platform.",
+      "description": "Profil utilisateur avec rôle et lien vers un restaurant spécifique (sauf Owner).",
       "properties": {
         "id": { "type": "string" },
-        "restaurantId": { "type": "string" },
-        "role": { "type": "string" },
+        "restaurantId": { "type": "string", "description": "ID du restaurant assigné. Optionnel pour l'Owner multi-sites." },
+        "role": { "type": "string", "enum": ["super_admin", "owner", "manager", "accountant", "cashier", "kitchen", "server"] },
         "name": { "type": "string" },
         "email": { "type": "string", "format": "email" },
         "active": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "role", "name", "email", "active", "createdAt"]
+      "required": ["id", "role", "email", "active", "createdAt"]
     },
-    "CashierSession": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "CashierSession",
+    "Invoice": {
+      "title": "Invoice",
       "type": "object",
-      "description": "Tracks a cashier's working shift and sales totals.",
-      "properties": {
-        "id": { "type": "string" },
-        "cashierId": { "type": "string" },
-        "restaurantId": { "type": "string" },
-        "openedAt": { "type": "string", "format": "date-time" },
-        "closedAt": { "type": "string", "format": "date-time" },
-        "totalCash": { "type": "number" },
-        "totalMobileMoney": { "type": "number" },
-        "totalSales": { "type": "number" },
-        "status": { "type": "string", "enum": ["open", "closed"] }
-      },
-      "required": ["cashierId", "restaurantId", "openedAt", "status"]
-    },
-    "Order": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Order",
-      "type": "object",
+      "description": "Historique de facturation manuelle pour l'abonnement SaaS.",
       "properties": {
         "id": { "type": "string" },
         "restaurantId": { "type": "string" },
-        "type": { "type": "string" },
-        "status": { "type": "string" },
-        "paymentStatus": { "type": "string" },
-        "totalAmount": { "type": "number" },
-        "customerName": { "type": "string" },
-        "tableId": { "type": "string" },
+        "amount": { "type": "number" },
+        "period": { "type": "string" },
+        "status": { "type": "string", "enum": ["paid", "unpaid"] },
         "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "restaurantId", "type", "status", "paymentStatus", "totalAmount", "createdAt"]
+      }
     }
   },
   "auth": {
-    "providers": ["password", "anonymous"]
+    "providers": ["password", "google"]
   },
   "firestore": {
     "structure": [
-      { "path": "plans/{planId}", "definition": { "entityName": "plan", "schema": { "$ref": "#/backend/entities/Plan" }, "description": "Global subscription plans." } },
-      { "path": "restaurants/{restaurantId}", "definition": { "entityName": "restaurant", "schema": { "$ref": "#/backend/entities/Restaurant" }, "description": "Tenants collection." } },
-      { "path": "users/{userId}", "definition": { "entityName": "user", "schema": { "$ref": "#/backend/entities/User" }, "description": "User profiles." } },
-      { "path": "orders/{orderId}", "definition": { "entityName": "order", "schema": { "$ref": "#/backend/entities/Order" }, "description": "Global orders collection." } },
-      { "path": "cashierSessions/{sessionId}", "definition": { "entityName": "cashierSession", "schema": { "$ref": "#/backend/entities/CashierSession" }, "description": "Cashier shift tracking." } }
-    ],
-    "reasoning": "Standard root-level multi-tenant structure using restaurantId for isolation and efficient querying."
+      { "path": "restaurants/{restaurantId}", "definition": { "schema": { "$ref": "#/backend/entities/Restaurant" }, "description": "Données de l'établissement et état de l'abonnement." } },
+      { "path": "users/{userId}", "definition": { "schema": { "$ref": "#/backend/entities/UserProfile" }, "description": "Utilisateurs avec rôles spécifiques." } },
+      { "path": "restaurants/{restaurantId}/invoices/{invoiceId}", "definition": { "schema": { "$ref": "#/backend/entities/Invoice" }, "description": "Historique des factures de l'établissement." } }
+    ]
   }
 }

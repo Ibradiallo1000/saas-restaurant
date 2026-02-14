@@ -1,9 +1,14 @@
 "use client"
 
+/**
+ * @fileOverview Page d'initialisation de l'établissement.
+ * Supporte désormais la création de plusieurs restaurants pour un même Owner.
+ */
+
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { useFirestore, useUser, useDoc } from "@/firebase"
-import { doc } from "firebase/firestore"
+import { useFirestore, useUser, useDoc, useFirebase } from "@/firebase"
+import { doc, updateDoc } from "firebase/firestore"
 import { RestaurantService } from "@/services/restaurant.service"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,9 +16,9 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { Building2, Save, Loader2, ShieldCheck } from "lucide-react"
+import { Building2, Save, Loader2, PlusCircle, CheckCircle2 } from "lucide-react"
 import { useTranslation } from "@/lib/i18n"
-import { COLLECTION_NAMES } from "@/lib/constants"
+import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
 
 export default function SetupPage() {
   const { t } = useTranslation()
@@ -22,11 +27,11 @@ export default function SetupPage() {
   const router = useRouter()
   const { toast } = useToast()
   const [loading, setLoading] = React.useState(false)
+  const [showForm, setShowForm] = React.useState(false)
 
   const userProfileRef = React.useMemo(() => {
     if (!db || !user) return null
-    const r = doc(db, COLLECTION_NAMES.USERS, user.uid)
-    return Object.assign(r, { __memo: true })
+    return doc(db, COLLECTION_NAMES.USERS, user.uid)
   }, [db, user])
   
   const { data: profile, isLoading: isProfileLoading } = useDoc(userProfileRef)
@@ -52,11 +57,18 @@ export default function SetupPage() {
     const restaurantService = new RestaurantService(db)
 
     try {
-      await restaurantService.createRestaurant(user.uid, user.email || '', formData)
+      const newRestaurantId = await restaurantService.createRestaurant(user.uid, user.email || '', formData)
       
+      // Si c'est le premier restaurant, on l'active tout de suite pour l'utilisateur
+      if (!profile?.restaurantId) {
+        await updateDoc(doc(db, COLLECTION_NAMES.USERS, user.uid), {
+          restaurantId: newRestaurantId
+        })
+      }
+
       toast({
         title: t.common.success,
-        description: t.setup.creating,
+        description: "Établissement créé avec succès.",
       })
       
       router.push("/dashboard")
@@ -79,16 +91,32 @@ export default function SetupPage() {
     )
   }
 
-  if (profile?.restaurantId) {
+  // Si l'utilisateur est déjà Owner et qu'on ne force pas le formulaire
+  if (profile?.role === ROLES.OWNER && !showForm) {
     return (
-      <div className="max-w-md mx-auto mt-20 text-center space-y-6">
-        <div className="p-4 bg-primary/10 text-primary rounded-xl border border-primary/20 flex items-center gap-3">
-          <ShieldCheck className="h-6 w-6" />
-          <p className="font-medium text-sm">Compte associé à : {profile.restaurantId}</p>
+      <div className="max-w-2xl mx-auto py-20 text-center space-y-8 animate-in fade-in duration-500">
+        <div className="space-y-2">
+          <h1 className="text-4xl font-black italic uppercase text-primary">Gestion Multi-Établissement</h1>
+          <p className="text-muted-foreground">Vous êtes déjà propriétaire. Souhaitez-vous ajouter un nouvel établissement ?</p>
         </div>
-        <Button onClick={() => router.push("/dashboard")} className="w-full">
-          Aller au Tableau de Bord
-        </Button>
+        
+        <div className="grid md:grid-cols-2 gap-4">
+          <Card className="p-6 border-none shadow-xl bg-card hover:ring-2 ring-primary transition-all cursor-pointer flex flex-col items-center justify-center gap-4" onClick={() => router.push("/dashboard")}>
+            <CheckCircle2 className="h-10 w-10 text-primary" />
+            <div className="text-center">
+              <p className="font-bold">Accéder au Dashboard</p>
+              <p className="text-xs text-muted-foreground">Gérer mon restaurant actuel</p>
+            </div>
+          </Card>
+          
+          <Card className="p-6 border-2 border-dashed border-muted hover:border-primary transition-all cursor-pointer flex flex-col items-center justify-center gap-4" onClick={() => setShowForm(true)}>
+            <PlusCircle className="h-10 w-10 text-muted-foreground" />
+            <div className="text-center">
+              <p className="font-bold">Créer un autre restaurant</p>
+              <p className="text-xs text-muted-foreground">Ajouter une nouvelle instance SaaS</p>
+            </div>
+          </Card>
+        </div>
       </div>
     )
   }
@@ -99,19 +127,19 @@ export default function SetupPage() {
         <CardHeader className="bg-primary text-primary-foreground p-8">
           <div className="flex items-center gap-3 mb-2">
             <Building2 className="h-8 w-8" />
-            <CardTitle className="text-2xl font-black italic uppercase">{t.setup.title}</CardTitle>
+            <CardTitle className="text-2xl font-black italic uppercase">Nouvel Établissement</CardTitle>
           </div>
           <CardDescription className="text-primary-foreground/80">
-            {t.setup.description}
+            Initialisez une nouvelle unité commerciale GastronomeAI.
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleCreateRestaurant}>
           <CardContent className="p-8 space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="name">{t.setup.restaurantName}</Label>
+              <Label htmlFor="name">Nom du Restaurant / Hôtel</Label>
               <Input 
                 id="name" 
-                placeholder="Ex: Le Petit Bistro" 
+                placeholder="Ex: Le Palmier Royal" 
                 required 
                 value={formData.name}
                 onChange={e => setFormData({...formData, name: e.target.value})}
@@ -121,14 +149,11 @@ export default function SetupPage() {
               <Label htmlFor="slug">{t.setup.slug}</Label>
               <Input 
                 id="slug" 
-                placeholder="le-petit-bistro" 
+                placeholder="le-palmier-royal" 
                 required 
                 value={formData.slug}
                 onChange={e => setFormData({...formData, slug: e.target.value})}
               />
-              <p className="text-[10px] text-muted-foreground italic">
-                {t.setup.slugHint}
-              </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -142,13 +167,10 @@ export default function SetupPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="BJ">Bénin</SelectItem>
-                    <SelectItem value="BF">Burkina Faso</SelectItem>
                     <SelectItem value="CI">Côte d'Ivoire</SelectItem>
                     <SelectItem value="SN">Sénégal</SelectItem>
-                    <SelectItem value="ML">Mali</SelectItem>
+                    <SelectItem value="CM">Cameroun</SelectItem>
                     <SelectItem value="TG">Togo</SelectItem>
-                    <SelectItem value="GN">Guinée</SelectItem>
-                    <SelectItem value="FR">France</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -163,15 +185,20 @@ export default function SetupPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="XOF">FCFA (XOF)</SelectItem>
-                    <SelectItem value="EUR">Euro (€)</SelectItem>
-                    <SelectItem value="USD">Dollar ($)</SelectItem>
+                    <SelectItem value="XAF">FCFA (XAF)</SelectItem>
+                    <SelectItem value="GHS">Cedi (GHS)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
           </CardContent>
-          <CardFooter className="p-8 bg-secondary/30">
-            <Button type="submit" className="w-full h-12 font-bold" disabled={loading}>
+          <CardFooter className="p-8 bg-secondary/30 flex gap-2">
+            {profile?.role === ROLES.OWNER && (
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setShowForm(false)}>
+                Annuler
+              </Button>
+            )}
+            <Button type="submit" className="flex-1 h-12 font-bold" disabled={loading}>
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               {t.setup.submit}
             </Button>

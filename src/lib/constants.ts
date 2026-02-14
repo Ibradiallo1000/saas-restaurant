@@ -1,13 +1,20 @@
 export const ROLES = {
   SUPER_ADMIN: 'super_admin',
-  OWNER: 'owner',
-  MANAGER: 'manager',
+  OWNER: 'owner', // Propriétaire (peut avoir plusieurs restaurants)
+  MANAGER: 'manager', // Manager d'un restaurant spécifique
+  ACCOUNTANT: 'accountant', // Comptable d'un restaurant spécifique
   CASHIER: 'cashier',
   KITCHEN: 'kitchen',
   SERVER: 'server',
 } as const;
 
 export type UserRole = typeof ROLES[keyof typeof ROLES];
+
+export const SUBSCRIPTION_STATUS = {
+  ACTIVE: 'active',
+  EXPIRED: 'expired',
+  SUSPENDED: 'suspended',
+} as const;
 
 export const ORDER_STATUS = {
   PENDING: 'pending',
@@ -30,13 +37,6 @@ export const SESSION_STATUS = {
   VALIDATED: 'validated',
 } as const;
 
-export const ORDER_TYPES = {
-  TABLE: 'table',
-  ROOM: 'room',
-  TAKEAWAY: 'takeaway',
-  DELIVERY: 'delivery',
-} as const;
-
 export const COLLECTION_NAMES = {
   PLANS: 'plans',
   RESTAURANTS: 'restaurants',
@@ -51,4 +51,5 @@ export const COLLECTION_NAMES = {
   ROOMS: 'rooms',
   REVIEWS: 'reviews',
   CASHIER_SESSIONS: 'cashierSessions',
+  INVOICES: 'invoices',
 } as const;

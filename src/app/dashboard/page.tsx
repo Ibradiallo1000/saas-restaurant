@@ -2,13 +2,13 @@
 
 /**
  * @fileOverview Page d'accueil du tableau de bord propriétaire (Console Maître).
- * Affiche les KPI financiers et les alertes opérationnelles en temps réel.
+ * Supporte le changement de restaurant pour les Owners multi-sites.
  */
 
 import * as React from "react"
-import { useFirestore, useUser, useDoc, useMemoFirebase } from "@/firebase"
-import { doc } from "firebase/firestore"
-import { COLLECTION_NAMES } from "@/lib/constants"
+import { useFirestore, useUser, useDoc, useMemoFirebase, useCollection } from "@/firebase"
+import { doc, updateDoc, collection, query, where } from "firebase/firestore"
+import { COLLECTION_NAMES, ROLES, SUBSCRIPTION_STATUS } from "@/lib/constants"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { 
@@ -23,9 +23,10 @@ import {
   Loader2,
   RefreshCcw,
   LayoutDashboard,
-  BarChart3
+  BarChart3,
+  Building,
+  ChevronRight
 } from "lucide-react"
-import { useTranslation } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { AnalyticsService, DashboardStats } from "@/services/analytics.service"
@@ -38,35 +39,40 @@ import {
   XAxis,
   YAxis
 } from 'recharts';
+import { useToast } from "@/hooks/use-toast"
 
 export default function DashboardPage() {
-  const { t } = useTranslation()
   const { user } = useUser()
   const db = useFirestore()
+  const { toast } = useToast()
   const [stats, setStats] = React.useState<DashboardStats | null>(null)
   const [chartData, setChartData] = React.useState<any[]>([])
   const [loading, setLoading] = React.useState(true)
   const [refreshing, setRefreshing] = React.useState(false)
 
-  // Initialisation du service analytique
-  const analytics = React.useMemo(() => db ? new AnalyticsService(db) : null, [db])
-
+  // 1. Profil Utilisateur
   const profileRef = useMemoFirebase(() => {
     if (!db || !user) return null
     return doc(db, COLLECTION_NAMES.USERS, user.uid)
   }, [db, user])
   const { data: profile } = useDoc(profileRef)
 
+  // 2. Établissement Actuel
   const restaurantRef = useMemoFirebase(() => {
     if (!db || !profile?.restaurantId) return null
     return doc(db, COLLECTION_NAMES.RESTAURANTS, profile.restaurantId)
   }, [db, profile])
   const { data: restaurant } = useDoc(restaurantRef)
 
-  /**
-   * Charge les données analytiques via le service AnalyticsService.
-   * Récupère à la fois les KPI et les tendances de vente.
-   */
+  // 3. Liste des Restaurants de l'Owner (pour Switcher)
+  const ownerRestaurantsQuery = useMemoFirebase(() => {
+    if (!db || !user || profile?.role !== ROLES.OWNER) return null
+    return query(collection(db, COLLECTION_NAMES.RESTAURANTS), where('ownerId', '==', user.uid))
+  }, [db, user, profile])
+  const { data: allRestaurants } = useCollection(ownerRestaurantsQuery)
+
+  const analytics = React.useMemo(() => db ? new AnalyticsService(db) : null, [db])
+
   const loadData = React.useCallback(async (isRefresh = false) => {
     if (!analytics || !profile?.restaurantId) return
     if (isRefresh) setRefreshing(true)
@@ -89,10 +95,21 @@ export default function DashboardPage() {
     loadData()
   }, [loadData])
 
-  // Calcul du temps d'essai restant
+  const handleSwitchRestaurant = async (id: string) => {
+    if (!db || !user) return
+    try {
+      await updateDoc(doc(db, COLLECTION_NAMES.USERS, user.uid), {
+        restaurantId: id
+      })
+      toast({ title: "Changement d'établissement", description: "Chargement des nouvelles données..." })
+    } catch (e) {
+      toast({ variant: "destructive", title: "Erreur", description: "Impossible de changer d'établissement." })
+    }
+  }
+
   const trialDaysLeft = React.useMemo(() => {
-    if (!restaurant?.trialEndDate) return 0
-    const end = new Date(restaurant.trialEndDate)
+    if (!restaurant?.subscriptionEndDate) return 0
+    const end = new Date(restaurant.subscriptionEndDate)
     const now = new Date()
     return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
   }, [restaurant])
@@ -115,20 +132,34 @@ export default function DashboardPage() {
           </h1>
           <p className="text-muted-foreground font-medium">Contrôle financier et analytique en temps réel.</p>
         </div>
+        
         <div className="flex items-center gap-2">
+          {profile?.role === ROLES.OWNER && allRestaurants && allRestaurants.length > 1 && (
+            <div className="flex items-center gap-2 p-1 bg-secondary/50 rounded-xl">
+              <Building className="h-4 w-4 ml-2 text-primary" />
+              <select 
+                className="bg-transparent text-xs font-bold uppercase outline-none pr-4 py-1"
+                value={profile.restaurantId}
+                onChange={(e) => handleSwitchRestaurant(e.target.value)}
+              >
+                {allRestaurants.map(r => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <Button variant="outline" size="sm" onClick={() => loadData(true)} disabled={refreshing}>
             {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
           </Button>
-          <Badge variant="outline" className="bg-primary/5 border-primary/20 py-1 px-3">
-            <Calendar className="mr-2 h-3 w-3" /> Essai: {trialDaysLeft} jours
+          <Badge variant="outline" className={cn(
+            "py-1 px-3",
+            trialDaysLeft < 5 ? "bg-destructive/10 text-destructive border-destructive/20" : "bg-primary/5 border-primary/20"
+          )}>
+            <Calendar className="mr-2 h-3 w-3" /> Expiration: {trialDaysLeft} jours
           </Badge>
-          <Button size="sm" className="bg-primary hover:bg-primary/90">
-            <Download className="mr-2 h-4 w-4" /> Export CSV
-          </Button>
         </div>
       </div>
 
-      {/* Cartes de statistiques avec indicateurs de tendance */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard 
           icon={TrendingUp} 
@@ -160,7 +191,6 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Graphique de tendance des ventes (Recharts) */}
         <Card className="lg:col-span-2 border-none shadow-xl overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between bg-secondary/10">
             <div>
@@ -193,7 +223,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Détail de la ventilation des paiements */}
         <div className="space-y-6">
           <Card className="border-none shadow-xl overflow-hidden">
             <CardHeader className="bg-primary text-primary-foreground">
@@ -214,15 +243,24 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-none shadow-xl">
-            <CardHeader>
-              <CardTitle className="text-lg font-black italic uppercase flex items-center gap-2">
-                <Trophy className="h-5 w-5 text-primary" /> Top Ventes
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <p className="text-sm text-muted-foreground italic text-center py-4">Analyse des articles les plus populaires en cours...</p>
-            </CardContent>
+          <Card className="border-none shadow-xl p-4 bg-muted/20">
+            <h4 className="text-xs font-black uppercase mb-4 flex items-center justify-between">
+              État d'abonnement
+              <Badge variant="outline" className="text-[9px] uppercase">{restaurant?.subscriptionStatus || 'Inconnu'}</Badge>
+            </h4>
+            <div className="space-y-2">
+              <div className="flex justify-between text-[10px] font-bold">
+                <span>Expiration</span>
+                <span>{new Date(restaurant?.subscriptionEndDate || 0).toLocaleDateString()}</span>
+              </div>
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div 
+                  className={cn("h-full bg-primary", trialDaysLeft < 5 ? "bg-destructive" : "")} 
+                  style={{ width: `${Math.min(100, (trialDaysLeft / 30) * 100)}%` }}
+                />
+              </div>
+              <p className="text-[9px] text-muted-foreground italic">Contacter le support pour renouveler.</p>
+            </div>
           </Card>
         </div>
       </div>
