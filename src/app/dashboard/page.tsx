@@ -1,13 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { useFirestore, useUser, useDoc } from "@/firebase"
-import { doc } from "firebase/firestore"
+import { useFirestore, useUser, useDoc, useCollection } from "@/firebase"
+import { doc, collection, query, where } from "firebase/firestore"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ShoppingBag, Users, Clock, CreditCard } from "lucide-react"
+import { ShoppingBag, Users, Clock, CreditCard, AlertCircle, Trophy } from "lucide-react"
 import { useTranslation } from "@/lib/i18n"
+import { cn } from "@/lib/utils"
 
 export default function DashboardPage() {
   const { t } = useTranslation()
@@ -16,21 +17,43 @@ export default function DashboardPage() {
 
   const profileRef = React.useMemo(() => {
     if (!db || !user) return null
-    const r = doc(db, COLLECTION_NAMES.USERS, user.uid)
-    return Object.assign(r, { __memo: true })
+    return doc(db, COLLECTION_NAMES.USERS, user.uid)
   }, [db, user])
-
   const { data: profile } = useDoc(profileRef)
 
   const restaurantRef = React.useMemo(() => {
     if (!db || !profile?.restaurantId) return null
-    const r = doc(db, COLLECTION_NAMES.RESTAURANTS, profile.restaurantId)
-    return Object.assign(r, { __memo: true })
+    return doc(db, COLLECTION_NAMES.RESTAURANTS, profile.restaurantId)
   }, [db, profile])
-
   const { data: restaurant } = useDoc(restaurantRef)
 
-  // Calcul des jours restants d'essai
+  // Real-time Inventory Alerts
+  const inventoryQuery = React.useMemo(() => {
+    if (!db || !profile?.restaurantId) return null
+    const q = query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, profile.restaurantId, COLLECTION_NAMES.INVENTORY)
+    )
+    return Object.assign(q, { __memo: true })
+  }, [db, profile])
+  const { data: inventory } = useCollection(inventoryQuery)
+
+  const lowStockItems = React.useMemo(() => {
+    if (!inventory) return []
+    return inventory.filter(item => item.quantity <= item.threshold)
+  }, [inventory])
+
+  // Real-time Loyalty Highlights
+  const customersQuery = React.useMemo(() => {
+    if (!db || !profile?.restaurantId) return null
+    const q = query(
+      collection(db, COLLECTION_NAMES.CUSTOMERS),
+      where("restaurantId", "==", profile.restaurantId),
+      where("loyaltyPoints", ">=", 100) // Example reward threshold
+    )
+    return Object.assign(q, { __memo: true })
+  }, [db, profile])
+  const { data: topCustomers } = useCollection(customersQuery)
+
   const daysLeft = React.useMemo(() => {
     if (!restaurant?.trialEndDate) return 0
     const end = new Date(restaurant.trialEndDate)
@@ -57,31 +80,57 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={ShoppingBag} title="Commandes" value="0" description="Aujourd'hui" />
-        <StatCard icon={Users} title="Clients" value="0" description="Total fidélité" />
-        <StatCard icon={CreditCard} title="Chiffre d'Affaires" value={`0 ${restaurant?.currency}`} description="Ventes payées" />
-        <StatCard icon={Clock} title="Temps Moyen" value="-- min" description="Cuisine ↔ Table" />
+        <StatCard icon={ShoppingBag} title="Commandes" value="--" description="Aujourd'hui" />
+        <StatCard icon={Users} title="Clients VIP" value={topCustomers?.length || 0} description="Points > 100" />
+        <StatCard icon={CreditCard} title="Chiffre d'Affaires" value={`-- ${restaurant?.currency || ''}`} description="Ventes payées" />
+        <StatCard icon={AlertCircle} title="Alertes Stock" value={lowStockItems.length} description="Items sous le seuil" />
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="border-none shadow-lg">
           <CardHeader>
-            <CardTitle className="text-xl">Opérations en cours</CardTitle>
-            <CardDescription>Flux temps réel de votre établissement.</CardDescription>
+            <CardTitle className="text-xl flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              Alertes de Stock Critique
+            </CardTitle>
+            <CardDescription>Articles nécessitant un réapprovisionnement immédiat.</CardDescription>
           </CardHeader>
-          <CardContent className="h-[300px] flex items-center justify-center text-muted-foreground italic border-t">
-            Aucune activité pour le moment.
+          <CardContent className="space-y-4">
+            {lowStockItems.length === 0 ? (
+              <p className="text-sm italic text-muted-foreground py-4 text-center">Aucune alerte de stock.</p>
+            ) : (
+              lowStockItems.map(item => (
+                <div key={item.id} className="flex items-center justify-between p-3 bg-destructive/5 rounded-lg border border-destructive/10">
+                  <span className="font-bold text-sm">{item.name}</span>
+                  <Badge variant="destructive">{item.quantity} {item.unit || 'units'} restant</Badge>
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
+
         <Card className="border-none shadow-lg">
           <CardHeader>
-            <CardTitle className="text-xl">Notifications Système</CardTitle>
-            <CardDescription>Alertes stocks et abonnements.</CardDescription>
+            <CardTitle className="text-xl flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-primary" />
+              Fidélité & Récompenses
+            </CardTitle>
+            <CardDescription>Clients ayant débloqué des avantages.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4 pt-4">
-            <div className="p-3 bg-secondary/30 rounded-lg text-xs border border-primary/5">
-              Bienvenue sur votre nouvelle instance SaaS GastronomeAI.
-            </div>
+          <CardContent className="space-y-4">
+            {topCustomers && topCustomers.length > 0 ? (
+              topCustomers.slice(0, 3).map(customer => (
+                <div key={customer.id} className="flex items-center justify-between p-3 bg-secondary/20 rounded-lg border border-primary/5">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-sm">{customer.name}</span>
+                    <span className="text-[10px] text-muted-foreground">{customer.phone}</span>
+                  </div>
+                  <Badge className="bg-primary">{customer.loyaltyPoints} pts</Badge>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm italic text-muted-foreground py-4 text-center">Aucun client VIP pour le moment.</p>
+            )}
           </CardContent>
         </Card>
       </div>

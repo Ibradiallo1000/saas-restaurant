@@ -3,18 +3,15 @@
 import { 
   Firestore, 
   doc, 
-  setDoc, 
   addDoc, 
   collection, 
   serverTimestamp, 
   updateDoc,
-  query,
-  where,
-  orderBy,
-  limit,
   getDocs
 } from 'firebase/firestore';
 import { COLLECTION_NAMES, ORDER_STATUS, PAYMENT_STATUS } from '@/lib/constants';
+import { InventoryService } from './inventory.service';
+import { LoyaltyService } from './loyalty.service';
 
 export interface OrderItemInput {
   productId: string;
@@ -38,7 +35,13 @@ export interface OrderInput {
 }
 
 export class OrderService {
-  constructor(private db: Firestore) {}
+  private inventoryService: InventoryService;
+  private loyaltyService: LoyaltyService;
+
+  constructor(private db: Firestore) {
+    this.inventoryService = new InventoryService(db);
+    this.loyaltyService = new LoyaltyService(db);
+  }
 
   async createOrder(input: OrderInput) {
     const subtotal = input.items.reduce((acc, item) => acc + (item.priceSnapshot * item.quantity), 0);
@@ -64,7 +67,6 @@ export class OrderService {
 
     const orderRef = await addDoc(collection(this.db, COLLECTION_NAMES.ORDERS), orderData);
 
-    // Add items as subcollection for data integrity and independent access
     for (const item of input.items) {
       const itemData = {
         ...item,
@@ -86,24 +88,38 @@ export class OrderService {
     });
   }
 
-  async addItemsToOrder(orderId: string, items: OrderItemInput[]) {
+  async processPayment(orderId: string, restaurantId: string, method: string) {
     const orderRef = doc(this.db, COLLECTION_NAMES.ORDERS, orderId);
     
-    for (const item of items) {
-      const itemData = {
-        ...item,
-        orderId: orderId,
-        subtotal: item.priceSnapshot * item.quantity,
-        createdAt: serverTimestamp(),
-      };
-      await addDoc(collection(this.db, COLLECTION_NAMES.ORDERS, orderId, COLLECTION_NAMES.ORDER_ITEMS), itemData);
-    }
-
-    // Recalculate total amount logic would ideally go here or in a Cloud Function
-    // For MVP, we update the updatedAt to trigger listeners
+    // 1. Mark as Paid
     await updateDoc(orderRef, {
+      paymentStatus: PAYMENT_STATUS.PAID,
+      paymentMethod: method,
       updatedAt: serverTimestamp(),
     });
+
+    // 2. Fetch items to process inventory and loyalty
+    const itemsSnapshot = await getDocs(collection(this.db, COLLECTION_NAMES.ORDERS, orderId, COLLECTION_NAMES.ORDER_ITEMS));
+    const orderSnap = await (await doc(this.db, COLLECTION_NAMES.ORDERS, orderId)).get(); // Minimal read for total/phone
+    const orderData = orderSnap.data();
+
+    if (!orderData) return;
+
+    // 3. Automated Inventory Decrement
+    for (const itemDoc of itemsSnapshot.docs) {
+      const item = itemDoc.data();
+      await this.inventoryService.decrementStockForProduct(restaurantId, item.productId, item.quantity);
+    }
+
+    // 4. Loyalty Update
+    if (orderData.customerPhone) {
+      await this.loyaltyService.recordVisit(
+        restaurantId, 
+        orderData.customerPhone, 
+        orderData.customerName, 
+        orderData.totalAmount
+      );
+    }
   }
 
   async submitReview(restaurantId: string, orderId: string, rating: number, comment: string) {

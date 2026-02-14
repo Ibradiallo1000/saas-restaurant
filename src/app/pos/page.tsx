@@ -2,15 +2,16 @@
 
 import * as React from 'react';
 import { useFirestore, useUser, useCollection, useDoc } from '@/firebase';
-import { collection, query, where, orderBy, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { COLLECTION_NAMES, PAYMENT_STATUS, ORDER_STATUS } from '@/lib/constants';
-import { Search, CreditCard, Banknote, History, Filter, LogOut } from 'lucide-react';
+import { collection, query, where, orderBy, doc } from 'firebase/firestore';
+import { COLLECTION_NAMES, PAYMENT_STATUS } from '@/lib/constants';
+import { Search, CreditCard, Banknote, History, Filter, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
+import { OrderService } from '@/services/order.service';
 
 export default function POSPage() {
   const { user } = useUser();
@@ -18,12 +19,15 @@ export default function POSPage() {
   const { toast } = useToast();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [processingId, setProcessingId] = React.useState<string | null>(null);
 
   const userProfileRef = React.useMemo(() => {
     if (!db || !user) return null;
     return doc(db, COLLECTION_NAMES.USERS, user.uid);
   }, [db, user]);
   const { data: profile } = useDoc(userProfileRef);
+
+  const orderService = React.useMemo(() => db ? new OrderService(db) : null, [db]);
 
   const posQuery = React.useMemo(() => {
     if (!db || !profile?.restaurantId) return null;
@@ -39,17 +43,24 @@ export default function POSPage() {
   const { data: orders, isLoading } = useCollection(posQuery);
 
   const handlePayment = async (orderId: string, method: 'cash' | 'mobile_money') => {
-    if (!db) return;
-    const orderRef = doc(db, COLLECTION_NAMES.ORDERS, orderId);
-    await updateDoc(orderRef, {
-      paymentStatus: PAYMENT_STATUS.PAID,
-      paymentMethod: method,
-      updatedAt: serverTimestamp(),
-    });
-    toast({
-      title: "Paiement Validé",
-      description: `Commande ${orderId.slice(-6)} marquée comme payée via ${method}.`,
-    });
+    if (!orderService || !profile?.restaurantId) return;
+    
+    setProcessingId(orderId);
+    try {
+      await orderService.processPayment(orderId, profile.restaurantId, method);
+      toast({
+        title: "Paiement Validé",
+        description: `Commande traitée. Inventaire et fidélité mis à jour.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Erreur",
+        description: "Le traitement du paiement a échoué.",
+      });
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   return (
@@ -91,10 +102,19 @@ export default function POSPage() {
             </CardHeader>
             <CardContent className="p-4 space-y-4">
               <div className="flex flex-col gap-2">
-                <Button className="w-full h-12 bg-green-600 hover:bg-green-700 font-bold" onClick={() => handlePayment(order.id, 'cash')}>
-                  <Banknote className="mr-2 h-5 w-5" /> Encaisser Espèces
+                <Button 
+                  className="w-full h-12 bg-green-600 hover:bg-green-700 font-bold" 
+                  onClick={() => handlePayment(order.id, 'cash')}
+                  disabled={processingId === order.id}
+                >
+                  {processingId === order.id ? <Loader2 className="animate-spin" /> : <><Banknote className="mr-2 h-5 w-5" /> Encaisser Espèces</>}
                 </Button>
-                <Button variant="outline" className="w-full h-12 border-primary text-primary hover:bg-primary/10 font-bold" onClick={() => handlePayment(order.id, 'mobile_money')}>
+                <Button 
+                  variant="outline" 
+                  className="w-full h-12 border-primary text-primary hover:bg-primary/10 font-bold" 
+                  onClick={() => handlePayment(order.id, 'mobile_money')}
+                  disabled={processingId === order.id}
+                >
                   <CreditCard className="mr-2 h-5 w-5" /> Mobile Money
                 </Button>
               </div>
