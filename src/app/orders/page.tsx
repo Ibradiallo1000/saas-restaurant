@@ -1,61 +1,134 @@
 "use client"
 
 import * as React from "react"
-import { ClipboardList, CheckCircle2, Clock, MapPin, MoreVertical, Search, Utensils } from "lucide-react"
+import { useFirestore, useUser, useCollection, useDoc } from "@/firebase"
+import { collection, query, where, orderBy, doc } from "firebase/firestore"
+import { COLLECTION_NAMES, ORDER_STATUS } from "@/lib/constants"
+import { 
+  ClipboardList, 
+  CheckCircle2, 
+  Clock, 
+  Search, 
+  Utensils, 
+  Bell, 
+  ArrowRight,
+  Loader2
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
-
-const INITIAL_ORDERS = [
-  { id: "#4032", type: "Table 12", status: "Preparing", items: ["Burger Deluxe x2", "Frites Maison x1", "Coca Zero x2"], total: "$42.50", time: "5m ago", color: "bg-blue-100 text-blue-700" },
-  { id: "#4031", type: "Table 04", status: "Ready", items: ["Salade César x1", "Vin Blanc x1"], total: "$18.00", time: "12m ago", color: "bg-green-100 text-green-700" },
-  { id: "#4033", type: "Takeaway", status: "Pending", items: ["Pizza Regina x1"], total: "$12.50", time: "1m ago", color: "bg-yellow-100 text-yellow-700" },
-  { id: "#4030", type: "Room 102", status: "Served", items: ["Petit Déj Continental x2", "Café x2"], total: "$55.20", time: "25m ago", color: "bg-gray-100 text-gray-700" },
-]
+import { useToast } from "@/hooks/use-toast"
+import { OrderService } from "@/services/order.service"
 
 export default function OrdersPage() {
-  const [activeTab, setActiveTab] = React.useState("all")
+  const { toast } = useToast()
+  const { user } = useUser()
+  const db = useFirestore()
+  const [searchTerm, setSearchTerm] = React.useState("")
+  const audioRef = React.useRef<HTMLAudioElement | null>(null)
+
+  // Get User Profile to get restaurantId
+  const userProfileRef = React.useMemo(() => {
+    if (!db || !user) return null
+    return doc(db, COLLECTION_NAMES.USERS, user.uid)
+  }, [db, user])
+  const { data: profile } = useDoc(userProfileRef)
+
+  // Memoized Query for orders
+  const ordersQuery = React.useMemo(() => {
+    if (!db || !profile?.restaurantId) return null
+    // Add __memo property for hook validation
+    const q = query(
+      collection(db, COLLECTION_NAMES.ORDERS),
+      where("restaurantId", "==", profile.restaurantId),
+      orderBy("createdAt", "desc")
+    )
+    return Object.assign(q, { __memo: true })
+  }, [db, profile])
+
+  const { data: orders, isLoading } = useCollection(ordersQuery)
+
+  // Sound notification effect
+  React.useEffect(() => {
+    if (orders && orders.length > 0) {
+      const latestOrder = orders[0]
+      const isNew = latestOrder.status === ORDER_STATUS.PENDING
+      if (isNew) {
+        // Only play if sound is allowed and it's actually new (within last minute)
+        const createdAt = latestOrder.createdAt?.toDate?.() || new Date()
+        const now = new Date()
+        if (now.getTime() - createdAt.getTime() < 60000) {
+          audioRef.current?.play().catch(() => {})
+          toast({
+            title: "Nouvelle Commande !",
+            description: `${latestOrder.customerName} - ${latestOrder.totalAmount}€`,
+            action: <Bell className="h-4 w-4 text-primary animate-bounce" />
+          })
+        }
+      }
+    }
+  }, [orders, toast])
+
+  const filteredOrders = React.useMemo(() => {
+    if (!orders) return []
+    return orders.filter(o => 
+      o.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      o.id.includes(searchTerm)
+    )
+  }, [orders, searchTerm])
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 pb-10">
+      <audio ref={audioRef} src="/notifications/new-order.mp3" preload="auto" />
+      
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-primary">Commandes en Direct</h1>
-          <p className="text-muted-foreground">Gérez les flux cuisine et salle en temps réel.</p>
+          <h1 className="text-3xl font-black italic text-primary font-headline uppercase tracking-tighter">
+            Live Feed <span className="text-muted-foreground opacity-50 font-normal">Commandes</span>
+          </h1>
+          <p className="text-muted-foreground">Gestion temps réel de votre établissement.</p>
         </div>
         <div className="relative w-full md:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Rechercher une table, un client..." className="pl-10" />
+          <Input 
+            placeholder="Rechercher..." 
+            className="pl-10 bg-card/50 border-none shadow-sm"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
       </div>
 
-      <Tabs defaultValue="all" className="w-full" onValueChange={setActiveTab}>
-        <div className="flex items-center justify-between">
-          <TabsList className="bg-secondary/50 p-1">
-            <TabsTrigger value="all">Toutes (8)</TabsTrigger>
-            <TabsTrigger value="pending">En Attente (2)</TabsTrigger>
-            <TabsTrigger value="preparing">En Cuisine (3)</TabsTrigger>
-            <TabsTrigger value="ready">Prêtes (3)</TabsTrigger>
-          </TabsList>
-          <div className="hidden md:flex items-center gap-2">
-            <Badge variant="outline" className="h-8 bg-primary/5 border-primary/20 text-primary">
-              <Clock className="mr-2 h-3 w-3" /> Délai moy: 12min
-            </Badge>
-          </div>
-        </div>
+      <Tabs defaultValue="all" className="w-full">
+        <TabsList className="bg-secondary/30 p-1 rounded-xl">
+          <TabsTrigger value="all" className="rounded-lg">Toutes</TabsTrigger>
+          <TabsTrigger value="pending" className="rounded-lg">En Attente</TabsTrigger>
+          <TabsTrigger value="preparing" className="rounded-lg">En Cuisine</TabsTrigger>
+          <TabsTrigger value="ready" className="rounded-lg">Prêtes</TabsTrigger>
+        </TabsList>
 
         <TabsContent value="all" className="mt-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {INITIAL_ORDERS.map((order) => (
-              <OrderCard key={order.id} order={order} />
+            {filteredOrders.map((order) => (
+              <OrderCard key={order.id} order={order} db={db!} />
             ))}
-            <button className="h-full min-h-[250px] flex flex-col items-center justify-center border-2 border-dashed border-muted rounded-xl hover:bg-muted/30 transition-colors">
-              <ClipboardList className="h-10 w-10 text-muted-foreground mb-2" />
-              <p className="text-sm font-medium text-muted-foreground">Historique complet</p>
-            </button>
+            {filteredOrders.length === 0 && (
+              <div className="col-span-full h-[200px] flex flex-col items-center justify-center border-2 border-dashed border-muted rounded-xl bg-card/20">
+                <ClipboardList className="h-10 w-10 text-muted-foreground opacity-20 mb-2" />
+                <p className="text-sm font-medium text-muted-foreground">Aucune commande trouvée</p>
+              </div>
+            )}
           </div>
         </TabsContent>
       </Tabs>
@@ -63,41 +136,91 @@ export default function OrdersPage() {
   )
 }
 
-function OrderCard({ order }: { order: any }) {
+function OrderCard({ order, db }: { order: any, db: any }) {
+  const orderService = new OrderService(db)
+  const [updating, setUpdating] = React.useState(false)
+
+  const handleStatusUpdate = async (newStatus: string) => {
+    setUpdating(true)
+    try {
+      await orderService.updateOrderStatus(order.id, newStatus)
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case ORDER_STATUS.PENDING: return "bg-yellow-500/10 text-yellow-600 border-yellow-200"
+      case ORDER_STATUS.PREPARING: return "bg-blue-500/10 text-blue-600 border-blue-200"
+      case ORDER_STATUS.READY: return "bg-green-500/10 text-green-600 border-green-200"
+      default: return "bg-secondary text-muted-foreground"
+    }
+  }
+
   return (
-    <Card className="border-none shadow-md hover:shadow-lg transition-all group overflow-hidden bg-card/70 backdrop-blur-md">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-            <Utensils className="h-4 w-4 text-primary" />
-          </div>
-          <div>
-            <CardTitle className="text-sm font-bold">{order.type}</CardTitle>
-            <span className="text-[10px] text-muted-foreground">{order.id} • {order.time}</span>
-          </div>
+    <Card className="border-none shadow-lg hover:shadow-xl transition-all group overflow-hidden bg-card/80 backdrop-blur-md relative">
+      {order.status === ORDER_STATUS.PENDING && (
+        <div className="absolute top-0 right-0 p-2">
+          <span className="flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+          </span>
         </div>
-        <Badge className={cn("text-[10px] font-bold border-none h-6 px-2", order.color)}>
-          {order.status.toUpperCase()}
-        </Badge>
-      </CardHeader>
-      <CardContent className="p-4 pt-4">
-        <div className="space-y-2 min-h-[100px]">
-          {order.items.map((item: string, i: number) => (
-            <div key={i} className="flex justify-between text-xs font-medium">
-              <span className="text-muted-foreground">{item}</span>
-              <span className="h-4 w-4 bg-secondary rounded flex items-center justify-center text-[10px] text-primary">✓</span>
+      )}
+      
+      <CardHeader className="p-4 pb-2">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Utensils className="h-5 w-5 text-primary" />
             </div>
-          ))}
+            <div>
+              <CardTitle className="text-sm font-bold truncate max-w-[120px]">
+                {order.type === 'table' ? `Table ${order.tableId}` : order.type.toUpperCase()}
+              </CardTitle>
+              <span className="text-[10px] text-muted-foreground font-medium uppercase">#{order.id.slice(-4)}</span>
+            </div>
+          </div>
+          <Badge variant="outline" className={cn("text-[9px] font-black tracking-widest", getStatusColor(order.status))}>
+            {order.status.toUpperCase()}
+          </Badge>
         </div>
-        <div className="mt-4 pt-4 border-t flex items-center justify-between">
-          <span className="text-lg font-black text-primary">{order.total}</span>
+      </CardHeader>
+      
+      <CardContent className="p-4 pt-2">
+        <div className="space-y-2 min-h-[80px]">
+          <p className="text-xs font-bold text-muted-foreground mb-1 italic">Client: {order.customerName}</p>
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-3">
+            <Clock className="h-3 w-3" />
+            {new Date(order.createdAt?.toDate?.() || Date.now()).toLocaleTimeString()}
+          </div>
+        </div>
+        
+        <div className="mt-4 pt-4 border-t border-primary/5 flex items-center justify-between">
+          <span className="text-xl font-black text-primary italic">{order.totalAmount}€</span>
           <div className="flex gap-2">
-            <Button size="icon" variant="outline" className="h-8 w-8 rounded-full">
-              <MoreVertical className="h-4 w-4" />
-            </Button>
-            <Button size="sm" className="bg-primary hover:bg-primary/90 rounded-lg h-8 px-4">
-              <CheckCircle2 className="mr-2 h-4 w-4" /> Servir
-            </Button>
+            {order.status === ORDER_STATUS.PENDING && (
+              <Button 
+                size="sm" 
+                className="bg-primary hover:bg-primary/90 h-8 font-bold"
+                onClick={() => handleStatusUpdate(ORDER_STATUS.PREPARING)}
+                disabled={updating}
+              >
+                Cuisine <ArrowRight className="ml-2 h-3 w-3" />
+              </Button>
+            )}
+            {order.status === ORDER_STATUS.PREPARING && (
+              <Button 
+                size="sm" 
+                variant="secondary"
+                className="h-8 font-bold"
+                onClick={() => handleStatusUpdate(ORDER_STATUS.READY)}
+                disabled={updating}
+              >
+                Prêt <CheckCircle2 className="ml-2 h-3 w-3" />
+              </Button>
+            )}
           </div>
         </div>
       </CardContent>
