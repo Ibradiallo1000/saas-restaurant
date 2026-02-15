@@ -1,7 +1,33 @@
+
 {
   "entities": {
+    "PlatformConfig": {
+      "title": "PlatformConfig",
+      "type": "object",
+      "description": "Configuration globale de la plateforme SaaS.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "logoUrl": { "type": "string", "format": "uri" },
+        "primaryColor": { "type": "string" },
+        "secondaryColor": { "type": "string" },
+        "subscriptionModel": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "PlatformUser": {
+      "title": "PlatformUser",
+      "type": "object",
+      "description": "Administrateur de la plateforme SaaS (Super Admin).",
+      "properties": {
+        "id": { "type": "string" },
+        "role": { "type": "string", "enum": ["super_admin"] },
+        "email": { "type": "string", "format": "email" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
     "Restaurant": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Restaurant",
       "type": "object",
       "description": "Représente un établissement (restaurant/hôtel) lié à un propriétaire.",
@@ -20,35 +46,19 @@
         "subscriptionEndDate": { "type": "string", "format": "date-time" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "ownerId", "name", "slug", "country", "currency", "planId", "subscriptionStatus", "createdAt"]
+      }
     },
     "UserProfile": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "UserProfile",
       "type": "object",
-      "description": "Profil utilisateur avec rôle et lien vers un restaurant spécifique (sauf Owner).",
-      "properties": {
-        "id": { "type": "string" },
-        "restaurantId": { "type": "string", "description": "ID du restaurant assigné. Optionnel pour l'Owner multi-sites." },
-        "role": { "type": "string", "enum": ["super_admin", "owner", "manager", "accountant", "cashier", "kitchen", "server"] },
-        "name": { "type": "string" },
-        "email": { "type": "string", "format": "email" },
-        "active": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "role", "email", "active", "createdAt"]
-    },
-    "Invoice": {
-      "title": "Invoice",
-      "type": "object",
-      "description": "Historique de facturation manuelle pour l'abonnement SaaS.",
+      "description": "Profil utilisateur local à un restaurant.",
       "properties": {
         "id": { "type": "string" },
         "restaurantId": { "type": "string" },
-        "amount": { "type": "number" },
-        "period": { "type": "string" },
-        "status": { "type": "string", "enum": ["paid", "unpaid"] },
+        "role": { "type": "string", "enum": ["owner", "manager", "accountant", "cashier", "kitchen", "server"] },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "active": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       }
     }
@@ -58,9 +68,10 @@
   },
   "firestore": {
     "structure": [
-      { "path": "restaurants/{restaurantId}", "definition": { "schema": { "$ref": "#/backend/entities/Restaurant" }, "description": "Données de l'établissement et état de l'abonnement." } },
-      { "path": "users/{userId}", "definition": { "schema": { "$ref": "#/backend/entities/UserProfile" }, "description": "Utilisateurs avec rôles spécifiques." } },
-      { "path": "restaurants/{restaurantId}/invoices/{invoiceId}", "definition": { "schema": { "$ref": "#/backend/entities/Invoice" }, "description": "Historique des factures de l'établissement." } }
+      { "path": "platform/{platformId}", "definition": { "schema": { "$ref": "#/backend/entities/PlatformConfig" }, "description": "Configuration de la plateforme." } },
+      { "path": "platformUsers/{userId}", "definition": { "schema": { "$ref": "#/backend/entities/PlatformUser" }, "description": "Admins de la plateforme." } },
+      { "path": "restaurants/{restaurantId}", "definition": { "schema": { "$ref": "#/backend/entities/Restaurant" }, "description": "Données de l'établissement." } },
+      { "path": "users/{userId}", "definition": { "schema": { "$ref": "#/backend/entities/UserProfile" }, "description": "Utilisateurs locaux." } }
     ]
   }
 }

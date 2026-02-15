@@ -1,8 +1,9 @@
+
 export const ROLES = {
   SUPER_ADMIN: 'super_admin',
-  OWNER: 'owner', // Propriétaire (peut avoir plusieurs restaurants)
-  MANAGER: 'manager', // Manager d'un restaurant spécifique
-  ACCOUNTANT: 'accountant', // Comptable d'un restaurant spécifique
+  OWNER: 'owner',
+  MANAGER: 'manager',
+  ACCOUNTANT: 'accountant',
   CASHIER: 'cashier',
   KITCHEN: 'kitchen',
   SERVER: 'server',
@@ -38,6 +39,8 @@ export const SESSION_STATUS = {
 } as const;
 
 export const COLLECTION_NAMES = {
+  PLATFORM: 'platform',
+  PLATFORM_USERS: 'platformUsers',
   PLANS: 'plans',
   RESTAURANTS: 'restaurants',
   USERS: 'users',

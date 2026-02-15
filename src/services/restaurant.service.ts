@@ -1,8 +1,8 @@
+
 'use client';
 
 /**
- * @fileOverview Service gérant la création d'établissements et la gestion des abonnements.
- * Supporte désormais le multi-établissement par propriétaire.
+ * @fileOverview Service gérant la création d'établissements par la Plateforme.
  */
 
 import { 
@@ -30,21 +30,21 @@ export class RestaurantService {
   constructor(private db: Firestore) {}
 
   /**
-   * Crée un nouvel établissement lié à un propriétaire.
-   * Initialise l'abonnement en mode "essai" (30 jours).
+   * Crée un nouvel établissement et le rattache à un email de propriétaire.
+   * Seul un SuperAdmin appelle cette fonction via la UI.
    */
-  async createRestaurant(userId: string, userEmail: string, data: RestaurantData) {
+  async createRestaurantForOwner(ownerEmail: string, data: RestaurantData) {
     const restaurantId = crypto.randomUUID();
     const now = new Date();
     const trialEndDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     const restaurantRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId);
-    const userRef = doc(this.db, COLLECTION_NAMES.USERS, userId);
 
-    // 1. Création de l'établissement avec ownerId pour le multi-site
+    // 1. Création de l'établissement
+    // L'ownerId sera complété lors de la première connexion de l'Owner via son email
     await setDoc(restaurantRef, {
       id: restaurantId,
-      ownerId: userId,
+      ownerEmail: ownerEmail.toLowerCase(), // Utilisé pour le matching au login
       ...data,
       slug: data.slug.toLowerCase().trim().replace(/\s+/g, '-'),
       planId: 'trial_basic',
@@ -56,68 +56,44 @@ export class RestaurantService {
       updatedAt: serverTimestamp(),
     });
 
-    // 2. Mise à jour ou création du profil utilisateur Owner
-    // L'Owner garde son rôle mais on peut lui assigner ce restaurantId par défaut s'il n'en a pas
-    const userSnap = await getDoc(userRef);
-    const userData = userSnap.data();
-
-    await setDoc(userRef, {
-      id: userId,
-      restaurantId: userData?.restaurantId || restaurantId, // Défaut au premier créé
-      role: ROLES.OWNER,
-      email: userEmail,
-      active: true,
-      updatedAt: serverTimestamp(),
-      createdAt: userData?.createdAt || serverTimestamp(),
-    }, { merge: true });
-
     return restaurantId;
   }
 
   /**
-   * Récupère tous les établissements appartenant à un propriétaire spécifique.
+   * Lors du login, si un utilisateur n'a pas de profil mais que son email 
+   * matche un restaurant créé par la plateforme.
    */
-  async getRestaurantsByOwner(ownerId: string) {
+  async linkUserToRestaurant(userId: string, email: string) {
     const q = query(
       collection(this.db, COLLECTION_NAMES.RESTAURANTS),
-      where('ownerId', '==', ownerId)
+      where('ownerEmail', '==', email.toLowerCase()),
+      where('ownerId', '==', null) // Pas encore lié
     );
+    
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  }
+    if (!snapshot.empty) {
+      const restaurantDoc = snapshot.docs[0];
+      const restaurantId = restaurantDoc.id;
 
-  /**
-   * Vérifie et met à jour le statut de l'abonnement en fonction de la date actuelle.
-   * Logique "Soft-Lock" pour l'expiration.
-   */
-  async refreshSubscriptionStatus(restaurantId: string) {
-    const resRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId);
-    const snap = await getDoc(resRef);
-    if (!snap.exists()) return;
-
-    const data = snap.data();
-    const endDate = new Date(data.subscriptionEndDate);
-    const now = new Date();
-
-    if (now > endDate && data.subscriptionStatus === SUBSCRIPTION_STATUS.ACTIVE) {
-      await updateDoc(resRef, {
-        subscriptionStatus: SUBSCRIPTION_STATUS.EXPIRED,
+      // 1. Lier le restaurant à l'ID de l'utilisateur
+      await updateDoc(restaurantDoc.ref, {
+        ownerId: userId,
         updatedAt: serverTimestamp()
       });
-    }
-  }
 
-  /**
-   * Récupère un établissement via son slug unique.
-   */
-  async getRestaurantBySlug(slug: string) {
-    const q = query(
-      collection(this.db, COLLECTION_NAMES.RESTAURANTS), 
-      where('slug', '==', slug),
-      where('active', '==', true)
-    );
-    const snapshot = await getDocs(q);
-    if (snapshot.empty) return null;
-    return snapshot.docs[0].data();
+      // 2. Créer le profil User local
+      await setDoc(doc(this.db, COLLECTION_NAMES.USERS, userId), {
+        id: userId,
+        restaurantId: restaurantId,
+        role: ROLES.OWNER,
+        email: email,
+        active: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      
+      return restaurantId;
+    }
+    return null;
   }
 }
