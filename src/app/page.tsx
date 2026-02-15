@@ -5,17 +5,17 @@ import * as React from "react"
 import { 
   Sparkles, 
   ChefHat, 
-  Smartphone, 
   BarChart3, 
   Globe2, 
   ShieldCheck, 
   ArrowRight,
   Zap,
   Hotel,
-  Truck
+  Truck,
+  MessageSquare
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
 import { useUser } from "@/firebase"
 
@@ -49,23 +49,25 @@ export default function LandingPage() {
               ) : user ? (
                 <Link href="/dashboard">
                   <Button size="lg" className="rounded-full px-10 h-14 text-lg font-black uppercase italic shadow-2xl shadow-primary/20 hover:scale-105 transition-all">
-                    Ma Console de Gestion
+                    Accéder à ma Console
                   </Button>
                 </Link>
               ) : (
-                <Link href="/login">
+                <Link href="/contact">
                   <Button size="lg" className="rounded-full px-10 h-14 text-lg font-black uppercase italic shadow-2xl shadow-primary/20 hover:scale-105 transition-all">
-                    Essayer Gratuitement 30 Jours
+                    Demander une Démo
                   </Button>
                 </Link>
               )}
-              <Button variant="outline" size="lg" className="rounded-full px-10 h-14 font-bold border-2 hover:bg-secondary">
-                Voir la Démo
-              </Button>
+              <Link href="/login">
+                <Button variant="outline" size="lg" className="rounded-full px-10 h-14 font-bold border-2 hover:bg-secondary">
+                  Se Connecter
+                </Button>
+              </Link>
             </div>
             
             <p className="text-xs text-muted-foreground italic">
-              Zéro frais d'installation. Compatible avec toutes les devises locales (XOF, GHS, NGN).
+              Zéro frais d'installation. Accès exclusif sur invitation.
             </p>
           </div>
         </div>
@@ -176,9 +178,9 @@ export default function LandingPage() {
               <p className="font-bold">Support Multi-Langues</p>
             </div>
           </div>
-          <Link href="/login">
+          <Link href="/contact">
             <Button size="lg" variant="secondary" className="rounded-full px-12 h-16 text-xl font-black uppercase italic hover:scale-105 transition-transform bg-white text-primary">
-              Commencer maintenant <ArrowRight className="ml-2" />
+              Demander mon accès <ArrowRight className="ml-2" />
             </Button>
           </Link>
         </div>

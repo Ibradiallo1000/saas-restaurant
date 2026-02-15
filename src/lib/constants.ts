@@ -56,4 +56,5 @@ export const COLLECTION_NAMES = {
   REVIEWS: 'reviews',
   CASHIER_SESSIONS: 'cashierSessions',
   INVOICES: 'invoices',
+  CONTACT_REQUESTS: 'contactRequests',
 } as const;
