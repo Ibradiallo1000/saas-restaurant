@@ -4,6 +4,7 @@
 /**
  * @fileOverview Layout de protection du tableau de bord.
  * Gère l'isolation multi-tenant, les SuperAdmins et le Soft-Lock.
+ * Applique également le branding dynamique du restaurant.
  */
 
 import * as React from "react"
@@ -37,7 +38,7 @@ export default function DashboardLayout({
   }, [db, user])
   const { data: profile, isLoading: isProfileLoading } = useDoc(userProfileRef)
 
-  // 3. Récupération des données du restaurant
+  // 3. Récupération des données du restaurant (Branding inclus)
   const restaurantRef = React.useMemo(() => {
     if (!db || !profile?.restaurantId) return null
     return doc(db, COLLECTION_NAMES.RESTAURANTS, profile.restaurantId)
@@ -55,6 +56,13 @@ export default function DashboardLayout({
       router.push("/login")
     }
   }, [user, isUserLoading, router])
+
+  // Application du branding dynamique (CSS Variables)
+  React.useEffect(() => {
+    if (restaurant?.primaryColor) {
+      document.documentElement.style.setProperty('--primary', restaurant.primaryColor);
+    }
+  }, [restaurant])
 
   if (isUserLoading || isPlatformLoading || isProfileLoading || isRestaurantLoading) {
     return (
