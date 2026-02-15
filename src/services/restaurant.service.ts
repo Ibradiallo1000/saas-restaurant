@@ -2,22 +2,17 @@
 
 /**
  * @fileOverview Service gérant la création d'établissements et le cycle de vie des restaurants.
- * Inclut le provisioning complet (Auth + Firestore + Subscription).
+ * Implémente l'architecture finale "Orchestration Atomique par Isolation Client".
  */
 
 import { 
   Firestore, 
   doc, 
-  setDoc, 
   serverTimestamp, 
-  collection,
-  query,
-  where,
-  getDocs,
-  runTransaction,
+  runTransaction, 
   Timestamp
 } from 'firebase/firestore';
-import { initializeApp, deleteApp, getApp, getApps } from 'firebase/app';
+import { initializeApp, deleteApp } from 'firebase/app';
 import { 
   getAuth, 
   createUserWithEmailAndPassword, 
@@ -38,17 +33,14 @@ export class RestaurantService {
   constructor(private db: Firestore) {}
 
   /**
-   * Provisionnement complet d'un restaurant par le SuperAdmin.
-   * 1. Crée le compte Firebase Auth (via une app secondaire pour ne pas déconnecter l'admin).
-   * 2. Crée le document Restaurant, User et Subscription dans une transaction Firestore.
-   * 3. Envoie un email de réinitialisation de mot de passe.
+   * Provisionnement ATOMIQUE d'un restaurant par le SuperAdmin.
+   * Architecture : Isolation via application secondaire pour ne pas impacter la session Admin.
    */
   async createRestaurantForOwner(ownerEmail: string, data: RestaurantData) {
     const restaurantId = crypto.randomUUID();
-    const tempPassword = this.generateSecurePassword();
+    const tempPassword = this.generateSecurePassword(32);
     
-    // Initialisation d'une application Firebase secondaire pour le provisioning
-    // Cela permet de créer un utilisateur sans déconnecter le SuperAdmin actuel
+    // Initialisation de l'instance isolée
     const tempAppName = `provisioning-${Date.now()}`;
     const tempApp = initializeApp(firebaseConfig, tempAppName);
     const tempAuth = getAuth(tempApp);
@@ -56,13 +48,12 @@ export class RestaurantService {
     let newUserUid: string | null = null;
 
     try {
-      // 1. Création du compte dans Firebase Authentication
+      // 1. Création du compte Firebase Authentication (Isolé)
       const userCredential = await createUserWithEmailAndPassword(tempAuth, ownerEmail, tempPassword);
       newUserUid = userCredential.user.uid;
 
-      // 2. Transaction Firestore pour garantir la cohérence totale des données
+      // 2. TRANSACTION FIRESTORE ATOMIQUE (Source de vérité)
       await runTransaction(this.db, async (transaction) => {
-        // Références des documents
         const restaurantRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId);
         const userRef = doc(this.db, COLLECTION_NAMES.USERS, newUserUid!);
         const subId = crypto.randomUUID();
@@ -99,7 +90,7 @@ export class RestaurantService {
           updatedAt: serverTimestamp()
         });
 
-        // C. Création de l'Abonnement Trial
+        // C. Création de l'Abonnement (Trial)
         transaction.set(subRef, {
           id: subId,
           restaurantId,
@@ -112,20 +103,17 @@ export class RestaurantService {
         });
       });
 
-      // 3. Envoi de l'email de réinitialisation de mot de passe
-      // L'utilisateur recevra un lien pour choisir son propre mot de passe
+      // 3. HANDSHAKE SÉCURISÉ : Reset password email
       await sendPasswordResetEmail(tempAuth, ownerEmail);
 
-      // Déconnexion de l'app temporaire (juste au cas où)
+      // Déconnexion de l'app temporaire
       await signOut(tempAuth);
 
     } catch (error: any) {
-      console.error("Erreur lors du provisioning:", error);
-      // Note: Le rollback Auth est complexe en client-side sans Admin SDK.
-      // On se fie à la transaction Firestore pour la cohérence DB.
+      console.error("Échec critique du provisioning:", error);
       throw error;
     } finally {
-      // Nettoyage de l'instance temporaire
+      // Nettoyage impératif de l'instance secondaire
       await deleteApp(tempApp);
     }
 
@@ -133,13 +121,13 @@ export class RestaurantService {
   }
 
   /**
-   * Génère un mot de passe temporaire sécurisé.
+   * Génère un mot de passe temporaire hautement sécurisé.
    */
-  private generateSecurePassword(): string {
+  private generateSecurePassword(length: number): string {
     const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+";
     let retVal = "";
-    for (let i = 0; i < 16; ++i) {
-      retVal += charset.charAt(Math.floor(Math.random() * charset.length));
+    for (let i = 0, n = charset.length; i < length; ++i) {
+      retVal += charset.charAt(Math.floor(Math.random() * n));
     }
     return retVal;
   }

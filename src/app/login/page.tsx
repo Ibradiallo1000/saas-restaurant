@@ -1,9 +1,9 @@
-
 "use client"
 
 /**
- * @fileOverview Page de connexion centralisée.
- * Gère la redirection intelligente vers /platform ou /dashboard selon l'appartenance de l'utilisateur.
+ * @fileOverview Page de connexion déterministe.
+ * Architecture : Redirection par Realm (Platform vs Restaurant).
+ * Plus de fallback de provisionnement automatique pour garantir la sécurité.
  */
 
 import * as React from "react"
@@ -18,7 +18,6 @@ import { Zap, LogIn, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { doc } from "firebase/firestore"
 import { COLLECTION_NAMES } from "@/lib/constants"
-import { RestaurantService } from "@/services/restaurant.service"
 
 export default function LoginPage() {
   const auth = useAuth()
@@ -30,52 +29,45 @@ export default function LoginPage() {
   const [password, setPassword] = React.useState("")
   const [loading, setLoading] = React.useState(false)
 
-  // 1. Check if Platform User
+  // 1. Détection Realm Plateforme
   const platformUserRef = useMemoFirebase(() => {
     if (!db || !user) return null
     return doc(db, COLLECTION_NAMES.PLATFORM_USERS, user.uid)
   }, [db, user])
   const { data: platformProfile, isLoading: isPlatformChecking } = useDoc(platformUserRef)
 
-  // 2. Check if Restaurant User
+  // 2. Détection Realm Restaurant
   const userProfileRef = useMemoFirebase(() => {
     if (!db || !user) return null
     return doc(db, COLLECTION_NAMES.USERS, user.uid)
   }, [db, user])
   const { data: userProfile, isLoading: isUserChecking } = useDoc(userProfileRef)
 
-  // 3. Logic de redirection intelligente
+  // 3. Logique de redirection déterministe
   React.useEffect(() => {
-    if (!user || isPlatformChecking || isUserChecking || !db) return
+    if (!user || isPlatformChecking || isUserChecking) return
 
-    const checkAndRedirect = async () => {
-      // Priorité 1 : Admin Plateforme
-      if (platformProfile) {
-        router.push("/platform")
-        return
-      }
-
-      // Priorité 2 : Membre de restaurant
-      if (userProfile) {
-        router.push("/dashboard")
-        return
-      }
-
-      // Priorité 3 : Provisionnement automatique (Premier login d'un owner pré-enregistré)
-      const restaurantService = new RestaurantService(db)
-      const linkedId = await restaurantService.linkUserToRestaurant(user.uid, user.email || '')
-      
-      if (linkedId) {
-        toast({ title: "Configuration terminée", description: "Votre espace restaurant est prêt." })
-        router.push("/dashboard")
-      } else {
-        // Utilisateur égaré
-        toast({ variant: "destructive", title: "Accès refusé", description: "Votre compte n'est pas autorisé sur cette plateforme." })
-      }
+    // Priorité 1 : Admin Plateforme (SuperAdmin / Admin)
+    if (platformProfile) {
+      router.push("/platform")
+      return
     }
 
-    checkAndRedirect()
-  }, [user, platformProfile, userProfile, isPlatformChecking, isUserChecking, router, db, toast])
+    // Priorité 2 : Utilisateur Restaurant (Owner / Staff)
+    if (userProfile) {
+      router.push("/dashboard")
+      return
+    }
+
+    // Cas : Utilisateur non reconnu par le système SaaS
+    if (!isPlatformChecking && !isUserChecking && !platformProfile && !userProfile) {
+      toast({ 
+        variant: "destructive", 
+        title: "Accès non autorisé", 
+        description: "Ce compte n'est lié à aucun établissement provisionné." 
+      })
+    }
+  }, [user, platformProfile, userProfile, isPlatformChecking, isUserChecking, router, toast])
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
@@ -83,7 +75,7 @@ export default function LoginPage() {
     setLoading(true)
     initiateEmailSignIn(auth, email, password)
     toast({
-      title: "Vérification des accès",
+      title: "Identification",
       description: "Connexion sécurisée en cours...",
     })
     setLoading(false)
@@ -106,9 +98,9 @@ export default function LoginPage() {
               <Zap className="h-8 w-8 text-white" />
             </div>
           </div>
-          <CardTitle className="text-3xl font-black font-headline italic uppercase tracking-tighter">Accès SaaS</CardTitle>
+          <CardTitle className="text-3xl font-black italic uppercase tracking-tighter">Connexion SaaS</CardTitle>
           <CardDescription className="text-white/80">
-            Connectez-vous pour gérer votre établissement ou la plateforme.
+            Accédez à votre espace sécurisé.
           </CardDescription>
         </CardHeader>
         
@@ -141,13 +133,10 @@ export default function LoginPage() {
             </CardContent>
             <CardFooter className="px-0 pt-4">
               <Button type="submit" className="w-full h-14 text-lg font-black uppercase italic shadow-xl" disabled={loading}>
-                <LogIn className="mr-2 h-5 w-5" /> {loading ? "Vérification..." : "Ouvrir ma Session"}
+                <LogIn className="mr-2 h-5 w-5" /> {loading ? "Vérification..." : "Entrer dans le Système"}
               </Button>
             </CardFooter>
           </form>
-          <p className="text-center text-[10px] text-muted-foreground mt-4 italic">
-            Seuls les comptes provisionnés par la plateforme peuvent accéder au système.
-          </p>
         </div>
       </Card>
     </div>
