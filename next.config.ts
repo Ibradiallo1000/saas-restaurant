@@ -31,8 +31,11 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
+    // Autoriser les origines de développement pour les Server Actions
     allowedDevOrigins: [
-      '9000-firebase-studio-1771095679851.cluster-ikslh4rdsnbqsvu5nw3v4dqjj2.cloudworkstations.dev',
+      '*.cloudworkstations.dev',
+      'localhost:9002',
+      'localhost:3000'
     ],
   },
 };
