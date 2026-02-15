@@ -1,4 +1,8 @@
 
+/**
+ * @fileOverview Définition des constantes globales du système.
+ */
+
 export const ROLES = {
   SUPER_ADMIN: 'super_admin',
   ADMIN: 'admin',
@@ -44,6 +48,7 @@ export const COLLECTION_NAMES = {
   PLATFORM_USERS: 'platformUsers',
   PLANS: 'plans',
   RESTAURANTS: 'restaurants',
+  SUBSCRIPTIONS: 'subscriptions',
   USERS: 'users',
   MENUS: 'menus',
   PRODUCTS: 'products',

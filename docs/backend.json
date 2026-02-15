@@ -9,19 +9,20 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "logoUrl": { "type": "string", "format": "uri" },
+        "supportEmail": { "type": "string", "format": "email" },
         "primaryColor": { "type": "string" },
         "secondaryColor": { "type": "string" },
-        "subscriptionModel": { "type": "string" },
+        "maintenanceMode": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       }
     },
     "PlatformUser": {
       "title": "PlatformUser",
       "type": "object",
-      "description": "Administrateur de la plateforme SaaS (Super Admin).",
+      "description": "Administrateur de la plateforme SaaS.",
       "properties": {
         "id": { "type": "string" },
-        "role": { "type": "string", "enum": ["super_admin"] },
+        "role": { "type": "string", "enum": ["super_admin", "admin"] },
         "email": { "type": "string", "format": "email" },
         "active": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
@@ -30,36 +31,51 @@
     "Restaurant": {
       "title": "Restaurant",
       "type": "object",
-      "description": "Représente un établissement (restaurant/hôtel) lié à un propriétaire.",
+      "description": "Données d'un établissement client.",
       "properties": {
         "id": { "type": "string" },
-        "ownerId": { "type": "string", "description": "ID de l'utilisateur Propriétaire (Owner)." },
+        "ownerId": { "type": "string" },
+        "ownerEmail": { "type": "string", "format": "email" },
         "name": { "type": "string" },
         "slug": { "type": "string" },
         "country": { "type": "string" },
         "currency": { "type": "string" },
-        "planId": { "type": "string" },
-        "logoUrl": { "type": "string", "format": "uri" },
         "active": { "type": "boolean" },
-        "subscriptionStatus": { "type": "string", "enum": ["active", "expired", "suspended"] },
-        "subscriptionStartDate": { "type": "string", "format": "date-time" },
-        "subscriptionEndDate": { "type": "string", "format": "date-time" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" }
       }
     },
-    "UserProfile": {
-      "title": "UserProfile",
+    "Plan": {
+      "title": "Plan",
       "type": "object",
-      "description": "Profil utilisateur local à un restaurant.",
+      "description": "Définition des offres d'abonnement.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "currency": { "type": "string" },
+        "features": {
+          "type": "object",
+          "properties": {
+            "maxUsers": { "type": "number" },
+            "aiEnabled": { "type": "boolean" },
+            "advancedReports": { "type": "boolean" },
+            "multiBranch": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "type": "object",
+      "description": "Suivi de l'abonnement d'un restaurant.",
       "properties": {
         "id": { "type": "string" },
         "restaurantId": { "type": "string" },
-        "role": { "type": "string", "enum": ["owner", "manager", "accountant", "cashier", "kitchen", "server"] },
-        "name": { "type": "string" },
-        "email": { "type": "string", "format": "email" },
-        "active": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "planId": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "expired", "suspended"] },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "isTrial": { "type": "boolean" }
       }
     }
   },
@@ -68,10 +84,11 @@
   },
   "firestore": {
     "structure": [
-      { "path": "platform/{platformId}", "definition": { "schema": { "$ref": "#/backend/entities/PlatformConfig" }, "description": "Configuration de la plateforme." } },
-      { "path": "platformUsers/{userId}", "definition": { "schema": { "$ref": "#/backend/entities/PlatformUser" }, "description": "Admins de la plateforme." } },
-      { "path": "restaurants/{restaurantId}", "definition": { "schema": { "$ref": "#/backend/entities/Restaurant" }, "description": "Données de l'établissement." } },
-      { "path": "users/{userId}", "definition": { "schema": { "$ref": "#/backend/entities/UserProfile" }, "description": "Utilisateurs locaux." } }
+      { "path": "platform/{platformId}", "definition": { "schema": { "$ref": "#/backend/entities/PlatformConfig" }, "description": "Config globale." } },
+      { "path": "platformUsers/{userId}", "definition": { "schema": { "$ref": "#/backend/entities/PlatformUser" }, "description": "Admins SaaS." } },
+      { "path": "restaurants/{restaurantId}", "definition": { "schema": { "$ref": "#/backend/entities/Restaurant" }, "description": "Données établissements." } },
+      { "path": "plans/{planId}", "definition": { "schema": { "$ref": "#/backend/entities/Plan" }, "description": "Offres SaaS." } },
+      { "path": "subscriptions/{subId}", "definition": { "schema": { "$ref": "#/backend/entities/Subscription" }, "description": "Abonnements actifs." } }
     ]
   }
 }

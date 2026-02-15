@@ -2,22 +2,23 @@
 'use client';
 
 /**
- * @fileOverview Service gérant la création d'établissements par la Plateforme.
+ * @fileOverview Service gérant la création d'établissements et le cycle de vie des restaurants.
  */
 
 import { 
   Firestore, 
   doc, 
   setDoc, 
-  getDoc, 
   serverTimestamp, 
   collection,
   query,
   where,
   getDocs,
-  updateDoc
+  updateDoc,
+  runTransaction
 } from 'firebase/firestore';
-import { COLLECTION_NAMES, ROLES, SUBSCRIPTION_STATUS } from '@/lib/constants';
+import { COLLECTION_NAMES, ROLES } from '@/lib/constants';
+import { SubscriptionService } from './subscription.service';
 
 export interface RestaurantData {
   name: string;
@@ -27,47 +28,59 @@ export interface RestaurantData {
 }
 
 export class RestaurantService {
-  constructor(private db: Firestore) {}
+  private subscriptionService: SubscriptionService;
+
+  constructor(private db: Firestore) {
+    this.subscriptionService = new SubscriptionService(db);
+  }
 
   /**
-   * Crée un nouvel établissement et le rattache à un email de propriétaire.
-   * Seul un SuperAdmin appelle cette fonction via la UI.
+   * Provisionnement complet d'un restaurant (Étape SuperAdmin).
+   * Crée l'entité établissement et initialise l'abonnement d'essai.
    */
   async createRestaurantForOwner(ownerEmail: string, data: RestaurantData) {
     const restaurantId = crypto.randomUUID();
-    const now = new Date();
-    const trialEndDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    const restaurantRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId);
+    await runTransaction(this.db, async (transaction) => {
+      // 1. Création du restaurant
+      const restaurantRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId);
+      transaction.set(restaurantRef, {
+        id: restaurantId,
+        ownerEmail: ownerEmail.toLowerCase(),
+        ...data,
+        active: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
 
-    // 1. Création de l'établissement
-    // L'ownerId sera complété lors de la première connexion de l'Owner via son email
-    await setDoc(restaurantRef, {
-      id: restaurantId,
-      ownerEmail: ownerEmail.toLowerCase(), // Utilisé pour le matching au login
-      ...data,
-      slug: data.slug.toLowerCase().trim().replace(/\s+/g, '-'),
-      planId: 'trial_basic',
-      active: true,
-      subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
-      subscriptionStartDate: serverTimestamp(),
-      subscriptionEndDate: trialEndDate.toISOString(),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+      // 2. Initialisation de l'abonnement Trial (via service externe mais transactionnel)
+      // Note: Les écritures dans une transaction Firestore doivent être faites via l'objet transaction
+      const subId = crypto.randomUUID();
+      const endDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const subRef = doc(this.db, COLLECTION_NAMES.SUBSCRIPTIONS, subId);
+      transaction.set(subRef, {
+        restaurantId,
+        planId: 'trial',
+        status: 'active',
+        startDate: serverTimestamp(),
+        endDate: endDate,
+        isTrial: true,
+        createdAt: serverTimestamp()
+      });
     });
 
     return restaurantId;
   }
 
   /**
-   * Lors du login, si un utilisateur n'a pas de profil mais que son email 
-   * matche un restaurant créé par la plateforme.
+   * Handshake (Invitation) : Lie un utilisateur authentifié à son restaurant provisionné.
+   * Se déclenche au premier login de l'adresse email invitée.
    */
   async linkUserToRestaurant(userId: string, email: string) {
     const q = query(
       collection(this.db, COLLECTION_NAMES.RESTAURANTS),
       where('ownerEmail', '==', email.toLowerCase()),
-      where('ownerId', '==', null) // Pas encore lié
+      where('ownerId', '==', null)
     );
     
     const snapshot = await getDocs(q);
@@ -75,21 +88,26 @@ export class RestaurantService {
       const restaurantDoc = snapshot.docs[0];
       const restaurantId = restaurantDoc.id;
 
-      // 1. Lier le restaurant à l'ID de l'utilisateur
-      await updateDoc(restaurantDoc.ref, {
-        ownerId: userId,
-        updatedAt: serverTimestamp()
-      });
+      // Utilisation d'une transaction pour lier l'UID et créer le profil utilisateur
+      await runTransaction(this.db, async (transaction) => {
+        // Lier l'ownerId au restaurant
+        transaction.update(restaurantDoc.ref, {
+          ownerId: userId,
+          updatedAt: serverTimestamp()
+        });
 
-      // 2. Créer le profil User local
-      await setDoc(doc(this.db, COLLECTION_NAMES.USERS, userId), {
-        id: userId,
-        restaurantId: restaurantId,
-        role: ROLES.OWNER,
-        email: email,
-        active: true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        // Créer le document utilisateur (users collection)
+        const userRef = doc(this.db, COLLECTION_NAMES.USERS, userId);
+        transaction.set(userRef, {
+          id: userId,
+          restaurantId: restaurantId,
+          role: ROLES.OWNER,
+          email: email.toLowerCase(),
+          active: true,
+          mustChangePassword: true, // Flag pour forcer le changement au premier login
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
       });
       
       return restaurantId;
