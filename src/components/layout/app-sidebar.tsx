@@ -1,6 +1,11 @@
 
 "use client"
 
+/**
+ * @fileOverview Barre latérale dynamique.
+ * Adapte son contenu selon le contexte (Plateforme ou Restaurant) et le rôle.
+ */
+
 import * as React from "react"
 import {
   LayoutDashboard,
@@ -15,11 +20,14 @@ import {
   LogOut,
   Sparkles,
   Users,
-  ShieldAlert
+  ShieldAlert,
+  Building2,
+  Activity,
+  CreditCard
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useAuth, useUser, useFirestore, useDoc } from "@/firebase"
+import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from "@/firebase"
 import { signOut } from "firebase/auth"
 import { doc } from "firebase/firestore"
 import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
@@ -36,7 +44,6 @@ import {
   SidebarGroupLabel,
   SidebarGroupContent
 } from "@/components/ui/sidebar"
-import { cn } from "@/lib/utils"
 
 export function AppSidebar() {
   const pathname = usePathname()
@@ -44,22 +51,37 @@ export function AppSidebar() {
   const db = useFirestore()
   const { user } = useUser()
 
-  // 1. Profil Plateforme (SuperAdmin)
-  const platformUserRef = React.useMemo(() => {
+  // 1. Détection du contexte Plateforme
+  const platformUserRef = useMemoFirebase(() => {
     if (!db || !user) return null
     return doc(db, COLLECTION_NAMES.PLATFORM_USERS, user.uid)
   }, [db, user])
   const { data: platformProfile } = useDoc(platformUserRef)
 
-  // 2. Profil Restaurant (Local)
-  const userProfileRef = React.useMemo(() => {
+  // 2. Détection du contexte Restaurant
+  const userProfileRef = useMemoFirebase(() => {
     if (!db || !user) return null
     return doc(db, COLLECTION_NAMES.USERS, user.uid)
   }, [db, user])
   const { data: profile } = useDoc(userProfileRef)
 
-  const isSuperAdmin = platformProfile?.role === ROLES.SUPER_ADMIN
+  // 3. Récupération Branding Plateforme
+  const platformConfigRef = useMemoFirebase(() => {
+    if (!db) return null
+    return doc(db, COLLECTION_NAMES.PLATFORM, 'main')
+  }, [db])
+  const { data: platformConfig } = useDoc(platformConfigRef)
+
+  const isSuperAdmin = !!platformProfile && [ROLES.SUPER_ADMIN, ROLES.ADMIN].includes(platformProfile.role)
+  const isPlatformContext = pathname.startsWith('/platform')
   const role = profile?.role || (isSuperAdmin ? ROLES.SUPER_ADMIN : ROLES.SERVER)
+
+  const platformNav = [
+    { name: "SaaS Overview", href: "/platform", icon: LayoutDashboard },
+    { name: "Restaurants", href: "/platform/restaurants", icon: Building2 },
+    { name: "Abonnements", href: "/platform/billing", icon: CreditCard },
+    { name: "Paramètres SaaS", href: "/platform/settings", icon: Settings },
+  ]
 
   const businessNav = profile?.restaurantId ? [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, show: true },
@@ -70,10 +92,6 @@ export function AppSidebar() {
     { name: "Fidélité", href: "/customers", icon: Users2, show: [ROLES.OWNER, ROLES.MANAGER].includes(role) },
   ].filter(item => item.show) : []
 
-  const adminNav = [
-    { name: "Configuration SaaS", href: "/setup", icon: ShieldAlert, show: isSuperAdmin },
-  ].filter(item => item.show)
-
   return (
     <Sidebar variant="inset" collapsible="icon">
       <SidebarHeader className="p-4">
@@ -82,20 +100,20 @@ export function AppSidebar() {
             <Sparkles className="h-6 w-6 text-primary-foreground" />
           </div>
           <span className="font-headline text-xl font-bold tracking-tight text-primary group-data-[collapsible=icon]:hidden italic">
-            GastronomeAI
+            {platformConfig?.name || "GastronomeAI"}
           </span>
         </div>
       </SidebarHeader>
 
       <SidebarContent>
-        {adminNav.length > 0 && (
+        {isPlatformContext && isSuperAdmin ? (
           <SidebarGroup>
             <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground group-data-[collapsible=icon]:hidden">
-              Plateforme
+              Administration SaaS
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {adminNav.map((item) => (
+                {platformNav.map((item) => (
                   <SidebarMenuItem key={item.name}>
                     <SidebarMenuButton asChild isActive={pathname === item.href} tooltip={item.name}>
                       <Link href={item.href}>
@@ -108,9 +126,7 @@ export function AppSidebar() {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-        )}
-
-        {businessNav.length > 0 && (
+        ) : (
           <SidebarGroup>
             <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground group-data-[collapsible=icon]:hidden">
               Établissement
@@ -135,20 +151,27 @@ export function AppSidebar() {
 
       <SidebarFooter className="p-4">
         {user ? (
-          <div className="flex items-center gap-3 rounded-xl bg-secondary p-3 shadow-sm group-data-[collapsible=icon]:p-2">
-            <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-              {isSuperAdmin ? <ShieldCheck className="h-4 w-4 text-primary" /> : <Users className="h-4 w-4 text-primary" />}
+          <div className="flex flex-col gap-2">
+            {isSuperAdmin && !isPlatformContext && (
+              <Link href="/platform" className="text-[10px] font-bold text-primary text-center uppercase hover:underline mb-2">
+                Retour Mode Admin
+              </Link>
+            )}
+            <div className="flex items-center gap-3 rounded-xl bg-secondary p-3 shadow-sm group-data-[collapsible=icon]:p-2">
+              <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                {isPlatformContext ? <ShieldAlert className="h-4 w-4 text-primary" /> : <Users className="h-4 w-4 text-primary" />}
+              </div>
+              <div className="flex flex-col overflow-hidden group-data-[collapsible=icon]:hidden">
+                <span className="truncate text-xs font-semibold">{user.email?.split('@')[0]}</span>
+                <span className="truncate text-[9px] text-muted-foreground font-bold uppercase">
+                  {isPlatformContext ? platformProfile?.role : role}
+                </span>
+              </div>
+              <LogOut 
+                className="ml-auto h-4 w-4 cursor-pointer text-muted-foreground hover:text-destructive shrink-0 group-data-[collapsible=icon]:hidden" 
+                onClick={() => signOut(auth)}
+              />
             </div>
-            <div className="flex flex-col overflow-hidden group-data-[collapsible=icon]:hidden">
-              <span className="truncate text-xs font-semibold">{user.email?.split('@')[0]}</span>
-              <span className="truncate text-[9px] text-muted-foreground font-bold uppercase">
-                {isSuperAdmin ? "SUPER ADMIN" : role}
-              </span>
-            </div>
-            <LogOut 
-              className="ml-auto h-4 w-4 cursor-pointer text-muted-foreground hover:text-destructive shrink-0 group-data-[collapsible=icon]:hidden" 
-              onClick={() => signOut(auth)}
-            />
           </div>
         ) : (
           <Link href="/login" className="text-center block text-xs font-bold text-primary italic uppercase">Connexion</Link>

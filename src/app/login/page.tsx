@@ -1,32 +1,81 @@
 
 "use client"
 
+/**
+ * @fileOverview Page de connexion centralisée.
+ * Gère la redirection intelligente vers /platform ou /dashboard selon l'appartenance de l'utilisateur.
+ */
+
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { useAuth, useUser } from "@/firebase"
-import { initiateEmailSignIn, initiateEmailSignUp } from "@/firebase/non-blocking-login"
+import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from "@/firebase"
+import { initiateEmailSignIn } from "@/firebase/non-blocking-login"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Zap, LogIn, UserPlus } from "lucide-react"
+import { Zap, LogIn, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { doc } from "firebase/firestore"
+import { COLLECTION_NAMES } from "@/lib/constants"
+import { RestaurantService } from "@/services/restaurant.service"
 
 export default function LoginPage() {
   const auth = useAuth()
+  const db = useFirestore()
   const router = useRouter()
   const { toast } = useToast()
-  const { user } = useUser()
+  const { user, isUserLoading } = useUser()
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [loading, setLoading] = React.useState(false)
 
+  // 1. Check if Platform User
+  const platformUserRef = useMemoFirebase(() => {
+    if (!db || !user) return null
+    return doc(db, COLLECTION_NAMES.PLATFORM_USERS, user.uid)
+  }, [db, user])
+  const { data: platformProfile, isLoading: isPlatformChecking } = useDoc(platformUserRef)
+
+  // 2. Check if Restaurant User
+  const userProfileRef = useMemoFirebase(() => {
+    if (!db || !user) return null
+    return doc(db, COLLECTION_NAMES.USERS, user.uid)
+  }, [db, user])
+  const { data: userProfile, isLoading: isUserChecking } = useDoc(userProfileRef)
+
+  // 3. Logic de redirection intelligente
   React.useEffect(() => {
-    if (user) {
-      router.push("/dashboard")
+    if (!user || isPlatformChecking || isUserChecking || !db) return
+
+    const checkAndRedirect = async () => {
+      // Priorité 1 : Admin Plateforme
+      if (platformProfile) {
+        router.push("/platform")
+        return
+      }
+
+      // Priorité 2 : Membre de restaurant
+      if (userProfile) {
+        router.push("/dashboard")
+        return
+      }
+
+      // Priorité 3 : Provisionnement automatique (Premier login d'un owner pré-enregistré)
+      const restaurantService = new RestaurantService(db)
+      const linkedId = await restaurantService.linkUserToRestaurant(user.uid, user.email || '')
+      
+      if (linkedId) {
+        toast({ title: "Configuration terminée", description: "Votre espace restaurant est prêt." })
+        router.push("/dashboard")
+      } else {
+        // Utilisateur égaré
+        toast({ variant: "destructive", title: "Accès refusé", description: "Votre compte n'est pas autorisé sur cette plateforme." })
+      }
     }
-  }, [user, router])
+
+    checkAndRedirect()
+  }, [user, platformProfile, userProfile, isPlatformChecking, isUserChecking, router, db, toast])
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,22 +83,18 @@ export default function LoginPage() {
     setLoading(true)
     initiateEmailSignIn(auth, email, password)
     toast({
-      title: "Connexion en cours",
-      description: "Accès à votre espace GastronomeAI...",
+      title: "Vérification des accès",
+      description: "Connexion sécurisée en cours...",
     })
     setLoading(false)
   }
 
-  const handleSignUp = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!email || !password) return
-    setLoading(true)
-    initiateEmailSignUp(auth, email, password)
-    toast({
-      title: "Création du compte",
-      description: "Initialisation de votre profil de gestion...",
-    })
-    setLoading(false)
+  if (isUserLoading || (user && (isPlatformChecking || isUserChecking))) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
@@ -61,90 +106,48 @@ export default function LoginPage() {
               <Zap className="h-8 w-8 text-white" />
             </div>
           </div>
-          <CardTitle className="text-3xl font-black font-headline italic uppercase tracking-tighter">GastronomeAI</CardTitle>
+          <CardTitle className="text-3xl font-black font-headline italic uppercase tracking-tighter">Accès SaaS</CardTitle>
           <CardDescription className="text-white/80">
-            Prenez le contrôle de votre rentabilité culinaire.
+            Connectez-vous pour gérer votre établissement ou la plateforme.
           </CardDescription>
         </CardHeader>
         
         <div className="p-6">
-          <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6 bg-secondary/50 rounded-xl p-1">
-              <TabsTrigger value="login" className="rounded-lg font-bold">Connexion</TabsTrigger>
-              <TabsTrigger value="signup" className="rounded-lg font-bold">Inscription</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="login" className="animate-in slide-in-from-left-2 duration-300">
-              <form onSubmit={handleLogin}>
-                <CardContent className="space-y-4 px-0">
-                  <div className="space-y-2">
-                    <Label htmlFor="login-email">Email Professionnel</Label>
-                    <Input 
-                      id="login-email" 
-                      type="email" 
-                      placeholder="votre@restaurant.com" 
-                      required 
-                      className="h-12 bg-secondary/30 border-none rounded-xl"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="login-password">Mot de passe</Label>
-                    <Input 
-                      id="login-password" 
-                      type="password" 
-                      required 
-                      className="h-12 bg-secondary/30 border-none rounded-xl"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                  </div>
-                </CardContent>
-                <CardFooter className="px-0 pt-4">
-                  <Button type="submit" className="w-full h-12 text-lg font-black uppercase italic shadow-xl" disabled={loading}>
-                    <LogIn className="mr-2 h-5 w-5" /> {loading ? "Connexion..." : "Ouvrir ma Session"}
-                  </Button>
-                </CardFooter>
-              </form>
-            </TabsContent>
-
-            <TabsContent value="signup" className="animate-in slide-in-from-right-2 duration-300">
-              <form onSubmit={handleSignUp}>
-                <CardContent className="space-y-4 px-0">
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-email">Email Professionnel</Label>
-                    <Input 
-                      id="signup-email" 
-                      type="email" 
-                      placeholder="votre@restaurant.com" 
-                      required 
-                      className="h-12 bg-secondary/30 border-none rounded-xl"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Mot de passe</Label>
-                    <Input 
-                      id="signup-password" 
-                      type="password" 
-                      required 
-                      placeholder="6 caractères min."
-                      className="h-12 bg-secondary/30 border-none rounded-xl"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                  </div>
-                </CardContent>
-                <CardFooter className="px-0 pt-4">
-                  <Button type="submit" className="w-full h-12 text-lg font-black uppercase italic shadow-xl bg-primary hover:bg-primary/90" disabled={loading}>
-                    <UserPlus className="mr-2 h-5 w-5" /> {loading ? "Création..." : "Commencer l'essai"}
-                  </Button>
-                </CardFooter>
-              </form>
-            </TabsContent>
-          </Tabs>
+          <form onSubmit={handleLogin}>
+            <CardContent className="space-y-4 px-0">
+              <div className="space-y-2">
+                <Label htmlFor="login-email">Email Professionnel</Label>
+                <Input 
+                  id="login-email" 
+                  type="email" 
+                  placeholder="votre@email.com" 
+                  required 
+                  className="h-12 bg-secondary/30 border-none rounded-xl"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="login-password">Mot de passe</Label>
+                <Input 
+                  id="login-password" 
+                  type="password" 
+                  required 
+                  className="h-12 bg-secondary/30 border-none rounded-xl"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+            </CardContent>
+            <CardFooter className="px-0 pt-4">
+              <Button type="submit" className="w-full h-14 text-lg font-black uppercase italic shadow-xl" disabled={loading}>
+                <LogIn className="mr-2 h-5 w-5" /> {loading ? "Vérification..." : "Ouvrir ma Session"}
+              </Button>
+            </CardFooter>
+          </form>
+          <p className="text-center text-[10px] text-muted-foreground mt-4 italic">
+            Seuls les comptes provisionnés par la plateforme peuvent accéder au système.
+          </p>
         </div>
       </Card>
     </div>
