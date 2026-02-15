@@ -1,14 +1,16 @@
+
 "use client"
 
 /**
  * @fileOverview Page d'accueil du tableau de bord propriétaire (Console Maître).
  * Supporte le changement de restaurant pour les Owners multi-sites.
+ * Correction apportée : Utilisation d'un état 'mounted' pour éviter les erreurs d'hydratation (dates et graphiques).
  */
 
 import * as React from "react"
 import { useFirestore, useUser, useDoc, useMemoFirebase, useCollection } from "@/firebase"
 import { doc, updateDoc, collection, query, where } from "firebase/firestore"
-import { COLLECTION_NAMES, ROLES, SUBSCRIPTION_STATUS } from "@/lib/constants"
+import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { 
@@ -16,16 +18,13 @@ import {
   Clock, 
   CreditCard, 
   AlertTriangle, 
-  Trophy, 
   Wallet, 
-  Download,
-  Calendar,
-  Loader2,
   RefreshCcw,
   LayoutDashboard,
   BarChart3,
   Building,
-  ChevronRight
+  Calendar,
+  Loader2
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -45,10 +44,18 @@ export default function DashboardPage() {
   const { user } = useUser()
   const db = useFirestore()
   const { toast } = useToast()
+  
+  // État pour gérer l'hydratation (Next.js SSR vs Client)
+  const [mounted, setMounted] = React.useState(false)
+  
   const [stats, setStats] = React.useState<DashboardStats | null>(null)
   const [chartData, setChartData] = React.useState<any[]>([])
   const [loading, setLoading] = React.useState(true)
   const [refreshing, setRefreshing] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // 1. Profil Utilisateur
   const profileRef = useMemoFirebase(() => {
@@ -92,8 +99,8 @@ export default function DashboardPage() {
   }, [analytics, profile?.restaurantId])
 
   React.useEffect(() => {
-    loadData()
-  }, [loadData])
+    if (mounted) loadData()
+  }, [loadData, mounted])
 
   const handleSwitchRestaurant = async (id: string) => {
     if (!db || !user) return
@@ -107,14 +114,15 @@ export default function DashboardPage() {
     }
   }
 
+  // Calcul des jours restants (Client-side only via mounted check)
   const trialDaysLeft = React.useMemo(() => {
-    if (!restaurant?.subscriptionEndDate) return 0
+    if (!mounted || !restaurant?.subscriptionEndDate) return 0
     const end = new Date(restaurant.subscriptionEndDate)
     const now = new Date()
     return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
-  }, [restaurant])
+  }, [restaurant, mounted])
 
-  if (loading) {
+  if (loading || !mounted) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -251,7 +259,7 @@ export default function DashboardPage() {
             <div className="space-y-2">
               <div className="flex justify-between text-[10px] font-bold">
                 <span>Expiration</span>
-                <span>{new Date(restaurant?.subscriptionEndDate || 0).toLocaleDateString()}</span>
+                <span>{restaurant?.subscriptionEndDate ? new Date(restaurant.subscriptionEndDate).toLocaleDateString() : 'N/A'}</span>
               </div>
               <div className="h-2 bg-muted rounded-full overflow-hidden">
                 <div 

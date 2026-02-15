@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -16,6 +17,11 @@ export default function CashierSessionPage() {
   const { toast } = useToast();
   const [session, setSession] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const userProfileRef = React.useMemo(() => {
     if (!db || !user) return null;
@@ -33,8 +39,8 @@ export default function CashierSessionPage() {
   }, [cashierService, profile, user]);
 
   React.useEffect(() => {
-    loadSession();
-  }, [loadSession]);
+    if (mounted) loadSession();
+  }, [loadSession, mounted]);
 
   const handleOpenShift = async () => {
     if (!cashierService || !profile?.restaurantId || !user) return;
@@ -50,7 +56,12 @@ export default function CashierSessionPage() {
     loadSession();
   };
 
-  if (loading) return <div className="flex justify-center p-20"><Loader2 className="animate-spin" /></div>;
+  const formatSessionDate = (timestamp: any) => {
+    if (!timestamp || !mounted) return "...";
+    return new Date(timestamp.toDate()).toLocaleString();
+  };
+
+  if (loading || !mounted) return <div className="flex justify-center p-20"><Loader2 className="animate-spin" /></div>;
 
   return (
     <div className="max-w-2xl mx-auto py-10">
@@ -73,7 +84,7 @@ export default function CashierSessionPage() {
         <Card className="border-none shadow-2xl overflow-hidden">
           <CardHeader className="bg-primary text-primary-foreground p-8">
             <CardTitle className="text-3xl font-black italic uppercase">Session en cours</CardTitle>
-            <CardDescription className="text-primary-foreground/80">Ouverte le {new Date(session.openedAt?.toDate()).toLocaleString()}</CardDescription>
+            <CardDescription className="text-primary-foreground/80">Ouverte le {formatSessionDate(session.openedAt)}</CardDescription>
           </CardHeader>
           <CardContent className="p-8 space-y-8">
             <div className="grid grid-cols-2 gap-4">

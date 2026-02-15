@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -28,7 +29,12 @@ export default function OrdersPage() {
   const { user } = useUser()
   const db = useFirestore()
   const [searchTerm, setSearchTerm] = React.useState("")
+  const [mounted, setMounted] = React.useState(false)
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Get User Profile to get restaurantId
   const userProfileRef = React.useMemo(() => {
@@ -40,7 +46,6 @@ export default function OrdersPage() {
   // Memoized Query for orders
   const ordersQuery = React.useMemo(() => {
     if (!db || !profile?.restaurantId) return null
-    // Add __memo property for hook validation
     const q = query(
       collection(db, COLLECTION_NAMES.ORDERS),
       where("restaurantId", "==", profile.restaurantId),
@@ -53,11 +58,10 @@ export default function OrdersPage() {
 
   // Sound notification effect
   React.useEffect(() => {
-    if (orders && orders.length > 0) {
+    if (orders && orders.length > 0 && mounted) {
       const latestOrder = orders[0]
       const isNew = latestOrder.status === ORDER_STATUS.PENDING
       if (isNew) {
-        // Only play if sound is allowed and it's actually new (within last minute)
         const createdAt = latestOrder.createdAt?.toDate?.() || new Date()
         const now = new Date()
         if (now.getTime() - createdAt.getTime() < 60000) {
@@ -70,7 +74,7 @@ export default function OrdersPage() {
         }
       }
     }
-  }, [orders, toast])
+  }, [orders, toast, mounted])
 
   const filteredOrders = React.useMemo(() => {
     if (!orders) return []
@@ -80,7 +84,7 @@ export default function OrdersPage() {
     )
   }, [orders, searchTerm])
 
-  if (isLoading) {
+  if (isLoading || !mounted) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -139,6 +143,13 @@ export default function OrdersPage() {
 function OrderCard({ order, db }: { order: any, db: any }) {
   const orderService = new OrderService(db)
   const [updating, setUpdating] = React.useState(false)
+  const [formattedTime, setFormattedTime] = React.useState("")
+
+  React.useEffect(() => {
+    if (order.createdAt) {
+      setFormattedTime(new Date(order.createdAt.toDate()).toLocaleTimeString())
+    }
+  }, [order.createdAt])
 
   const handleStatusUpdate = async (newStatus: string) => {
     setUpdating(true)
@@ -193,7 +204,7 @@ function OrderCard({ order, db }: { order: any, db: any }) {
           <p className="text-xs font-bold text-muted-foreground mb-1 italic">Client: {order.customerName}</p>
           <div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-3">
             <Clock className="h-3 w-3" />
-            {new Date(order.createdAt?.toDate?.() || Date.now()).toLocaleTimeString()}
+            {formattedTime}
           </div>
         </div>
         

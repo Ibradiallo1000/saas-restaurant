@@ -4,11 +4,12 @@
 /**
  * @fileOverview Page de gestion financière SaaS.
  * Lit les données réelles des plans et des abonnements.
+ * Correction : Hydratation safe pour les dates.
  */
 
 import * as React from 'react';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy } from 'firebase/firestore';
 import { COLLECTION_NAMES } from '@/lib/constants';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CreditCard, TrendingUp, Calendar, AlertTriangle, Download, Package } from 'lucide-react';
@@ -18,6 +19,11 @@ import { cn } from '@/lib/utils';
 
 export default function BillingAdminPage() {
   const db = useFirestore();
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // 1. Récupération des Plans
   const plansQuery = useMemoFirebase(() => {
@@ -41,7 +47,7 @@ export default function BillingAdminPage() {
   const { data: restaurants } = useCollection(restQuery);
 
   const stats = React.useMemo(() => {
-    if (!subscriptions || !plans) return { mrr: 0, churn: 0, alerts: 0 };
+    if (!subscriptions || !plans || !mounted) return { mrr: 0, churn: 0, alerts: 0, count: 0 };
     
     const now = new Date();
     const active = subscriptions.filter(s => s.status === 'active');
@@ -57,7 +63,12 @@ export default function BillingAdminPage() {
     }).length;
 
     return { mrr, alerts, count: active.length };
-  }, [subscriptions, plans]);
+  }, [subscriptions, plans, mounted]);
+
+  const formatDate = (timestamp: any) => {
+    if (!timestamp || !mounted) return "N/A";
+    return timestamp.toDate().toLocaleDateString();
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -101,7 +112,7 @@ export default function BillingAdminPage() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y">
-              {subscriptions?.map((sub) => {
+              {mounted && subscriptions?.map((sub) => {
                 const restaurant = restaurants?.find(r => r.id === sub.restaurantId);
                 const plan = plans?.find(p => p.id === sub.planId);
                 const isExpiring = (sub.endDate?.toDate?.() || new Date()) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -121,7 +132,7 @@ export default function BillingAdminPage() {
                       <div className="text-right">
                         <p className="text-xs font-black text-primary">{plan?.price.toLocaleString() || 0} {plan?.currency || 'XOF'}</p>
                         <p className={cn("text-[9px] font-bold uppercase", isExpiring ? "text-destructive" : "text-muted-foreground")}>
-                          Fin: {sub.endDate?.toDate?.().toLocaleDateString() || 'N/A'}
+                          Fin: {formatDate(sub.endDate)}
                         </p>
                       </div>
                       <Badge variant={sub.status === 'active' ? 'default' : 'secondary'} className="text-[9px] uppercase font-black">
