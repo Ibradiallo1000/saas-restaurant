@@ -3,7 +3,7 @@
 
 /**
  * @fileOverview Page de connexion déterministe.
- * Redirection basée sur le Realm (Platform vs Restaurant).
+ * Gère la redirection vers /platform pour les admins SaaS ou /dashboard pour les restaurateurs.
  */
 
 import * as React from "react"
@@ -25,40 +25,47 @@ export default function LoginPage() {
   const router = useRouter()
   const { toast } = useToast()
   const { user, isUserLoading } = useUser()
+  
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [loading, setLoading] = React.useState(false)
 
+  // 1. On vérifie si l'utilisateur est un Admin Plateforme
   const platformUserRef = useMemoFirebase(() => {
     if (!db || !user) return null
     return doc(db, COLLECTION_NAMES.PLATFORM_USERS, user.uid)
   }, [db, user])
   const { data: platformProfile, isLoading: isPlatformChecking } = useDoc(platformUserRef)
 
+  // 2. On vérifie si l'utilisateur est un membre d'un restaurant
   const userProfileRef = useMemoFirebase(() => {
     if (!db || !user) return null
     return doc(db, COLLECTION_NAMES.USERS, user.uid)
   }, [db, user])
   const { data: userProfile, isLoading: isUserChecking } = useDoc(userProfileRef)
 
+  // Logique de redirection automatique dès que les profils sont chargés
   React.useEffect(() => {
     if (!user || isPlatformChecking || isUserChecking) return
 
     if (platformProfile) {
+      toast({ title: "Accès Plateforme", description: "Bienvenue dans votre console Super Admin." })
       router.push("/platform")
       return
     }
 
     if (userProfile) {
+      toast({ title: "Accès Établissement", description: "Bienvenue dans votre dashboard restaurant." })
       router.push("/dashboard")
       return
     }
 
-    if (!isPlatformChecking && !isUserChecking && !platformProfile && !userProfile) {
+    // Cas d'un utilisateur sans profil Firestore
+    if (!platformProfile && !userProfile && !isPlatformChecking && !isUserChecking) {
       toast({ 
         variant: "destructive", 
-        title: "Accès restreint", 
-        description: "Compte non reconnu par le système SaaS. Veuillez contacter l'administrateur." 
+        title: "Compte non configuré", 
+        description: "Votre email est authentifié mais aucun profil n'a été trouvé dans le système." 
       })
     }
   }, [user, platformProfile, userProfile, isPlatformChecking, isUserChecking, router, toast])
@@ -68,71 +75,64 @@ export default function LoginPage() {
     if (!email || !password) return
     setLoading(true)
     
-    // On initie la connexion. Si elle échoue, on affiche un toast.
-    // L'état de succès est géré par l'observateur onAuthStateChanged dans le Provider.
     signInWithEmailAndPassword(auth, email, password)
       .catch((error) => {
         setLoading(false)
         console.error("Login Error:", error.code)
         toast({ 
           variant: "destructive", 
-          title: "Erreur d'authentification", 
-          description: "Email ou mot de passe incorrect, ou compte inexistant." 
+          title: "Erreur de connexion", 
+          description: "Identifiants incorrects. Veuillez vérifier votre email et mot de passe." 
         })
       })
-
-    toast({ title: "Identification", description: "Vérification des accès en cours..." })
   }
 
   if (isUserLoading || (user && (isPlatformChecking || isUserChecking))) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <p className="text-xs font-black uppercase tracking-widest animate-pulse">Chargement de votre session...</p>
+        <p className="text-xs font-black uppercase tracking-widest animate-pulse">Validation de votre domaine d'accès...</p>
       </div>
     )
   }
 
   return (
-    <div className="flex items-center justify-center min-h-[80vh] px-4">
+    <div className="flex items-center justify-center min-h-[80vh] px-4 animate-in fade-in duration-500">
       <Card className="w-full max-w-md border-none shadow-2xl rounded-3xl overflow-hidden">
         <CardHeader className="bg-primary text-primary-foreground py-10 text-center">
           <div className="flex justify-center mb-4"><Zap className="h-10 w-10" /></div>
-          <CardTitle className="text-3xl font-black italic uppercase tracking-tighter">Connexion SaaS</CardTitle>
-          <CardDescription className="text-white/80">Espace sécurisé GastronomeAI</CardDescription>
+          <CardTitle className="text-3xl font-black italic uppercase tracking-tighter">Portail GastronomeAI</CardTitle>
+          <CardDescription className="text-white/80">Entrez vos accès sécurisés</CardDescription>
         </CardHeader>
-        <div className="p-6">
-          <form onSubmit={handleLogin}>
-            <CardContent className="space-y-4 px-0">
-              <div className="space-y-2">
-                <Label htmlFor="login-email">Email Professionnel</Label>
-                <Input 
-                  id="login-email" 
-                  type="email" 
-                  required 
-                  className="h-12 bg-secondary/30 border-none rounded-xl" 
-                  value={email} 
-                  onChange={(e) => setEmail(e.target.value)} 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="login-password">Mot de passe</Label>
-                <Input 
-                  id="login-password" 
-                  type="password" 
-                  required 
-                  className="h-12 bg-secondary/30 border-none rounded-xl" 
-                  value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
-                />
-              </div>
-            </CardContent>
-            <CardFooter className="px-0 pt-4">
-              <Button type="submit" className="w-full h-14 text-lg font-black uppercase italic" disabled={loading}>
-                {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
-                {loading ? "Vérification..." : "Entrer dans le Système"}
-              </Button>
-            </CardFooter>
+        <div className="p-8">
+          <form onSubmit={handleLogin} className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="login-email">Email Professionnel</Label>
+              <Input 
+                id="login-email" 
+                type="email" 
+                required 
+                placeholder="nom@exemple.com"
+                className="h-12 bg-secondary/50 border-none rounded-xl" 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)} 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="login-password">Mot de passe</Label>
+              <Input 
+                id="login-password" 
+                type="password" 
+                required 
+                className="h-12 bg-secondary/50 border-none rounded-xl" 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+              />
+            </div>
+            <Button type="submit" className="w-full h-14 text-lg font-black uppercase italic shadow-lg" disabled={loading}>
+              {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
+              {loading ? "Vérification..." : "Se connecter"}
+            </Button>
           </form>
         </div>
       </Card>
