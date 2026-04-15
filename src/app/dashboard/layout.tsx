@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -8,7 +9,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { useFirestore, useUser, useDoc, useMemoFirebase } from "@/firebase"
 import { doc } from "firebase/firestore"
-import { Loader2, AlertCircle, ShieldCheck, Lock } from "lucide-react"
+import { Loader2, AlertCircle, ShieldCheck, Lock, LayoutGrid } from "lucide-react"
 import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
 import { Button } from "@/components/ui/button"
 import { SubscriptionService } from "@/services/subscription.service"
@@ -39,10 +40,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const activeSub = await subService.getActiveSubscription(profile.restaurantId);
       if (!activeSub || subService.isExpired(activeSub)) {
         setIsSubscriptionLocked(true);
+      } else {
+        setIsSubscriptionLocked(false);
       }
     };
     checkSub();
-  }, [db, profile]);
+  }, [db, profile?.restaurantId]); // On re-vérifie dès que le restaurantId change
 
   React.useEffect(() => {
     if (!isUserLoading && !user) router.push("/login")
@@ -57,10 +60,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
+  // Cas spécial : L'owner n'a pas encore de restaurant rattaché
+  if (profile?.role === ROLES.OWNER && !profile?.restaurantId) {
+    return (
+      <div className="max-w-md mx-auto mt-20 text-center space-y-6">
+        <div className="p-10 bg-secondary/30 rounded-3xl border border-primary/10 flex flex-col items-center gap-6">
+           <LayoutGrid className="h-12 w-12 text-primary" />
+           <div className="space-y-2">
+             <h1 className="text-2xl font-black uppercase italic">Aucun établissement</h1>
+             <p className="text-sm text-muted-foreground">Vous n'avez pas encore d'établissement rattaché à votre compte ou aucun n'est sélectionné.</p>
+           </div>
+           <Button variant="outline" className="w-full" onClick={() => router.push("/")}>Retour à l'accueil</Button>
+        </div>
+      </div>
+    )
+  }
+
   if (platformProfile?.role === ROLES.SUPER_ADMIN) {
     return (
       <div className="space-y-4">
-        <div className="bg-primary/10 border-b border-primary/20 px-8 py-2 flex items-center justify-between">
+        <div className="bg-primary/10 border-b border-primary/20 px-4 md:px-8 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2 text-primary font-black uppercase italic text-[10px]">
             <ShieldCheck className="h-4 w-4" /> Mode Admin • Vue Établissement
           </div>
@@ -79,7 +98,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Lock className="h-12 w-12 text-destructive mx-auto" />
             <div className="space-y-2">
               <h2 className="text-3xl font-black uppercase italic tracking-tighter">Accès Restreint</h2>
-              <p className="text-muted-foreground text-sm font-medium">Votre abonnement a expiré. L'accès aux outils de vente est suspendu.</p>
+              <p className="text-muted-foreground text-sm font-medium">L'abonnement de cet établissement a expiré ou est suspendu.</p>
             </div>
             <Button className="h-14 w-full text-lg font-black uppercase italic shadow-lg" onClick={() => window.open(`mailto:support@gastronomeai.com`)}>Renouveler l'abonnement</Button>
             <Button onClick={() => setIsSubscriptionLocked(false)} variant="ghost" className="text-xs uppercase font-bold underline">Consulter les rapports (Lecture Seule)</Button>
