@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -51,21 +50,18 @@ export function AppSidebar() {
   const { user } = useUser()
   const { setOpenMobile } = useSidebar()
 
-  // Profil utilisateur courant
   const userProfileRef = useMemoFirebase(() => {
     if (!db || !user) return null
     return doc(db, COLLECTION_NAMES.USERS, user.uid)
   }, [db, user])
   const { data: profile } = useDoc(userProfileRef)
 
-  // Profil plateforme (Admin SaaS)
   const platformUserRef = useMemoFirebase(() => {
     if (!db || !user) return null
     return doc(db, COLLECTION_NAMES.PLATFORM_USERS, user.uid)
   }, [db, user])
   const { data: platformProfile } = useDoc(platformUserRef)
 
-  // Liste des restaurants possédés (si Owner)
   const ownedRestaurantsQuery = useMemoFirebase(() => {
     if (!db || !user || profile?.role !== ROLES.OWNER) return null
     return query(
@@ -117,6 +113,7 @@ export function AppSidebar() {
 
     if ([ROLES.OWNER, ROLES.MANAGER].includes(role as any)) {
       nav.push({ name: "Fidélité", href: "/customers", icon: Users2 })
+      nav.push({ name: "Configuration", href: "/settings", icon: Settings })
     }
 
     return nav
@@ -160,7 +157,6 @@ export function AppSidebar() {
           </SidebarGroup>
         ) : (
           <>
-            {/* Sélecteur de Restaurant pour les Owners */}
             {profile?.role === ROLES.OWNER && ownedRestaurants && ownedRestaurants.length > 1 && (
               <SidebarGroup>
                 <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground group-data-[collapsible=icon]:hidden">
@@ -175,7 +171,7 @@ export function AppSidebar() {
                           onClick={() => switchRestaurant(res.id)}
                           className={cn(
                             "group-data-[collapsible=icon]:justify-center",
-                            profile.restaurantId === res.id ? "bg-primary/10 text-primary" : ""
+                            profile.restaurantId === res.id ? "bg-primary/10 text-primary font-bold" : ""
                           )}
                         >
                           <Building2 className="h-4 w-4 shrink-0" />
@@ -192,7 +188,7 @@ export function AppSidebar() {
 
             <SidebarGroup>
               <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground group-data-[collapsible=icon]:hidden">
-                Menu {role.toUpperCase()}
+                Espace {role.toUpperCase()}
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
