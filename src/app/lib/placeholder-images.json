@@ -26,10 +26,22 @@
       "imageHint": "artisan cocktail"
     },
     {
-      "id": "dashboard-stat",
-      "description": "Abstract business growth representation",
-      "imageUrl": "https://picsum.photos/seed/growth/800/400",
-      "imageHint": "business growth"
+      "id": "burger-premium",
+      "description": "Premium Beef Burger with cheese",
+      "imageUrl": "https://picsum.photos/seed/burger/400/400",
+      "imageHint": "beef burger"
+    },
+    {
+      "id": "pizza-margherita",
+      "description": "Authentic Pizza Margherita",
+      "imageUrl": "https://picsum.photos/seed/pizza/400/400",
+      "imageHint": "margherita pizza"
+    },
+    {
+      "id": "local-dish",
+      "description": "Traditional local West African dish",
+      "imageUrl": "https://picsum.photos/seed/african-food/400/400",
+      "imageHint": "african food"
     }
   ]
 }
