@@ -2,7 +2,7 @@
 
 /**
  * @fileOverview Service gérant la création d'établissements et le cycle de vie des restaurants.
- * Implémente l'architecture finale "Orchestration Atomique par Isolation Client".
+ * Implémente l'architecture "Orchestration Atomique par Isolation Client".
  */
 
 import { 
@@ -34,13 +34,12 @@ export class RestaurantService {
 
   /**
    * Provisionnement ATOMIQUE d'un restaurant par le SuperAdmin.
-   * Architecture : Isolation via application secondaire pour ne pas impacter la session Admin.
+   * Utilise une instance Firebase secondaire pour créer le compte Auth sans déconnecter l'Admin.
    */
   async createRestaurantForOwner(ownerEmail: string, data: RestaurantData) {
     const restaurantId = crypto.randomUUID();
     const tempPassword = this.generateSecurePassword(32);
     
-    // Initialisation de l'instance isolée
     const tempAppName = `provisioning-${Date.now()}`;
     const tempApp = initializeApp(firebaseConfig, tempAppName);
     const tempAuth = getAuth(tempApp);
@@ -52,18 +51,16 @@ export class RestaurantService {
       const userCredential = await createUserWithEmailAndPassword(tempAuth, ownerEmail, tempPassword);
       newUserUid = userCredential.user.uid;
 
-      // 2. TRANSACTION FIRESTORE ATOMIQUE (Source de vérité)
+      // 2. TRANSACTION FIRESTORE ATOMIQUE
       await runTransaction(this.db, async (transaction) => {
         const restaurantRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId);
         const userRef = doc(this.db, COLLECTION_NAMES.USERS, newUserUid!);
         const subId = crypto.randomUUID();
         const subRef = doc(this.db, COLLECTION_NAMES.SUBSCRIPTIONS, subId);
 
-        // Date de fin d'essai (+30 jours)
         const endDate = new Date();
-        endDate.setDate(endDate.getDate() + 30);
+        endDate.setDate(endDate.getDate() + 30); // Trial 30 jours
 
-        // A. Création du Restaurant
         transaction.set(restaurantRef, {
           id: restaurantId,
           ownerId: newUserUid,
@@ -77,7 +74,6 @@ export class RestaurantService {
           createdByPlatform: true
         });
 
-        // B. Création du Profil Utilisateur (Owner)
         transaction.set(userRef, {
           id: newUserUid,
           email: ownerEmail.toLowerCase(),
@@ -90,7 +86,6 @@ export class RestaurantService {
           updatedAt: serverTimestamp()
         });
 
-        // C. Création de l'Abonnement (Trial)
         transaction.set(subRef, {
           id: subId,
           restaurantId,
@@ -103,26 +98,20 @@ export class RestaurantService {
         });
       });
 
-      // 3. HANDSHAKE SÉCURISÉ : Reset password email
+      // 3. Email de réinitialisation de mot de passe
       await sendPasswordResetEmail(tempAuth, ownerEmail);
-
-      // Déconnexion de l'app temporaire
       await signOut(tempAuth);
 
     } catch (error: any) {
       console.error("Échec critique du provisioning:", error);
       throw error;
     } finally {
-      // Nettoyage impératif de l'instance secondaire
       await deleteApp(tempApp);
     }
 
     return restaurantId;
   }
 
-  /**
-   * Génère un mot de passe temporaire hautement sécurisé.
-   */
   private generateSecurePassword(length: number): string {
     const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+";
     let retVal = "";
