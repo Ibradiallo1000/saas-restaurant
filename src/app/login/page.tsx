@@ -1,3 +1,4 @@
+
 "use client"
 
 /**
@@ -8,7 +9,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from "@/firebase"
-import { initiateEmailSignIn } from "@/firebase/non-blocking-login"
+import { signInWithEmailAndPassword } from "firebase/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -57,7 +58,7 @@ export default function LoginPage() {
       toast({ 
         variant: "destructive", 
         title: "Accès restreint", 
-        description: "Compte non reconnu par le système SaaS." 
+        description: "Compte non reconnu par le système SaaS. Veuillez contacter l'administrateur." 
       })
     }
   }, [user, platformProfile, userProfile, isPlatformChecking, isUserChecking, router, toast])
@@ -66,13 +67,30 @@ export default function LoginPage() {
     e.preventDefault()
     if (!email || !password) return
     setLoading(true)
-    initiateEmailSignIn(auth, email, password)
-    toast({ title: "Identification", description: "Vérification en cours..." })
-    setLoading(false)
+    
+    // On initie la connexion. Si elle échoue, on affiche un toast.
+    // L'état de succès est géré par l'observateur onAuthStateChanged dans le Provider.
+    signInWithEmailAndPassword(auth, email, password)
+      .catch((error) => {
+        setLoading(false)
+        console.error("Login Error:", error.code)
+        toast({ 
+          variant: "destructive", 
+          title: "Erreur d'authentification", 
+          description: "Email ou mot de passe incorrect, ou compte inexistant." 
+        })
+      })
+
+    toast({ title: "Identification", description: "Vérification des accès en cours..." })
   }
 
   if (isUserLoading || (user && (isPlatformChecking || isUserChecking))) {
-    return <div className="flex items-center justify-center min-h-screen"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-xs font-black uppercase tracking-widest animate-pulse">Chargement de votre session...</p>
+      </div>
+    )
   }
 
   return (
@@ -88,16 +106,31 @@ export default function LoginPage() {
             <CardContent className="space-y-4 px-0">
               <div className="space-y-2">
                 <Label htmlFor="login-email">Email Professionnel</Label>
-                <Input id="login-email" type="email" required className="h-12 bg-secondary/30 border-none rounded-xl" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <Input 
+                  id="login-email" 
+                  type="email" 
+                  required 
+                  className="h-12 bg-secondary/30 border-none rounded-xl" 
+                  value={email} 
+                  onChange={(e) => setEmail(e.target.value)} 
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="login-password">Mot de passe</Label>
-                <Input id="login-password" type="password" required className="h-12 bg-secondary/30 border-none rounded-xl" value={password} onChange={(e) => setPassword(e.target.value)} />
+                <Input 
+                  id="login-password" 
+                  type="password" 
+                  required 
+                  className="h-12 bg-secondary/30 border-none rounded-xl" 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)} 
+                />
               </div>
             </CardContent>
             <CardFooter className="px-0 pt-4">
               <Button type="submit" className="w-full h-14 text-lg font-black uppercase italic" disabled={loading}>
-                <LogIn className="mr-2 h-5 w-5" /> {loading ? "Vérification..." : "Entrer dans le Système"}
+                {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
+                {loading ? "Vérification..." : "Entrer dans le Système"}
               </Button>
             </CardFooter>
           </form>
