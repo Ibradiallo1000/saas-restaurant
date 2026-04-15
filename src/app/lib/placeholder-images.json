@@ -1,4 +1,3 @@
-
 {
   "placeholderImages": [
     {
@@ -38,10 +37,16 @@
       "imageHint": "margherita pizza"
     },
     {
-      "id": "local-dish",
-      "description": "Traditional local West African dish",
-      "imageUrl": "https://picsum.photos/seed/african-food/400/400",
-      "imageHint": "african food"
+      "id": "african-food-1",
+      "description": "Delicious Jollof Rice with chicken",
+      "imageUrl": "https://picsum.photos/seed/jollof/400/400",
+      "imageHint": "jollof rice"
+    },
+    {
+      "id": "african-food-2",
+      "description": "Traditional Fufu and Soup",
+      "imageUrl": "https://picsum.photos/seed/fufu/400/400",
+      "imageHint": "fufu soup"
     }
   ]
 }
