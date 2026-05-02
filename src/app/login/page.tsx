@@ -1,22 +1,16 @@
-
 "use client"
-
-/**
- * @fileOverview Page de connexion déterministe.
- * Gère la redirection vers /platform pour les admins SaaS ou /dashboard pour les restaurateurs.
- */
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from "@/firebase"
+import { useAuth, useFirestore } from "@/firebase"
 import { signInWithEmailAndPassword } from "firebase/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Zap, LogIn, Loader2 } from "lucide-react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Zap, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { doc } from "firebase/firestore"
+import { doc, getDoc, collection, query, where, getDocs, updateDoc } from "firebase/firestore"
 import { COLLECTION_NAMES } from "@/lib/constants"
 
 export default function LoginPage() {
@@ -24,117 +18,133 @@ export default function LoginPage() {
   const db = useFirestore()
   const router = useRouter()
   const { toast } = useToast()
-  const { user, isUserLoading } = useUser()
-  
+
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [loading, setLoading] = React.useState(false)
 
-  // 1. On vérifie si l'utilisateur est un Admin Plateforme
-  const platformUserRef = useMemoFirebase(() => {
-    if (!db || !user) return null
-    return doc(db, COLLECTION_NAMES.PLATFORM_USERS, user.uid)
-  }, [db, user])
-  const { data: platformProfile, isLoading: isPlatformChecking } = useDoc(platformUserRef)
-
-  // 2. On vérifie si l'utilisateur est un membre d'un restaurant
-  const userProfileRef = useMemoFirebase(() => {
-    if (!db || !user) return null
-    return doc(db, COLLECTION_NAMES.USERS, user.uid)
-  }, [db, user])
-  const { data: userProfile, isLoading: isUserChecking } = useDoc(userProfileRef)
-
-  // Logique de redirection automatique dès que les profils sont chargés
-  React.useEffect(() => {
-    if (!user || isPlatformChecking || isUserChecking) return
-
-    if (platformProfile) {
-      toast({ title: "Accès Plateforme", description: "Bienvenue dans votre console Super Admin." })
-      router.push("/platform")
-      return
-    }
-
-    if (userProfile) {
-      toast({ title: "Accès Établissement", description: "Bienvenue dans votre dashboard restaurant." })
-      router.push("/dashboard")
-      return
-    }
-
-    // Cas d'un utilisateur sans profil Firestore
-    if (!platformProfile && !userProfile && !isPlatformChecking && !isUserChecking) {
-      toast({ 
-        variant: "destructive", 
-        title: "Compte non configuré", 
-        description: "Votre email est authentifié mais aucun profil n'a été trouvé dans le système." 
-      })
-    }
-  }, [user, platformProfile, userProfile, isPlatformChecking, isUserChecking, router, toast])
-
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email || !password) return
-    setLoading(true)
-    
-    signInWithEmailAndPassword(auth, email, password)
-      .catch((error) => {
-        setLoading(false)
-        console.error("Login Error:", error.code)
-        toast({ 
-          variant: "destructive", 
-          title: "Erreur de connexion", 
-          description: "Identifiants incorrects. Veuillez vérifier votre email et mot de passe." 
-        })
-      })
-  }
 
-  if (isUserLoading || (user && (isPlatformChecking || isUserChecking))) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <p className="text-xs font-black uppercase tracking-widest animate-pulse">Validation de votre domaine d'accès...</p>
-      </div>
-    )
+    setLoading(true)
+
+    try {
+      // 🔐 AUTH
+      const cred = await signInWithEmailAndPassword(auth, email, password)
+      const uid = cred.user.uid
+
+      let userProfile: any = null
+      let userDocId: string | null = null
+
+      // 🔥 1. PRIORITÉ → doc direct
+      const userRef = doc(db, COLLECTION_NAMES.USERS, uid)
+      const userSnap = await getDoc(userRef)
+
+      if (userSnap.exists()) {
+        userProfile = userSnap.data()
+        userDocId = uid
+      } else {
+        // 🔥 fallback ancien système
+        const q = query(
+          collection(db, COLLECTION_NAMES.USERS),
+          where("authUid", "==", uid)
+        )
+
+        const snap = await getDocs(q)
+
+        if (!snap.empty) {
+          const docSnap = snap.docs[0]
+          userProfile = docSnap.data()
+          userDocId = docSnap.id
+        }
+      }
+
+      if (!userProfile || !userDocId) {
+        throw new Error("Aucun profil utilisateur lié.")
+      }
+
+      // 🔥 AUTO FIX
+      if (!userProfile.authUid) {
+        await updateDoc(doc(db, COLLECTION_NAMES.USERS, userDocId), {
+          authUid: uid
+        })
+      }
+
+      // 🔀 ROUTING CORRIGÉ
+      if (userProfile.role === "super_admin") {
+        router.push("/platform")
+        return
+      }
+
+      if (userProfile.restaurantId) {
+        // ✅ FIX ICI
+        router.push("/dashboard")
+        return
+      }
+
+      throw new Error("Profil incomplet.")
+
+    } catch (error: any) {
+      console.error(error)
+
+      toast({
+        variant: "destructive",
+        title: "Erreur de connexion",
+        description: error.message || "Identifiants incorrects"
+      })
+
+      setLoading(false)
+    }
   }
 
   return (
-    <div className="flex items-center justify-center min-h-[80vh] px-4 animate-in fade-in duration-500">
-      <Card className="w-full max-w-md border-none shadow-2xl rounded-3xl overflow-hidden">
-        <CardHeader className="bg-primary text-primary-foreground py-10 text-center">
-          <div className="flex justify-center mb-4"><Zap className="h-10 w-10" /></div>
-          <CardTitle className="text-3xl font-black italic uppercase tracking-tighter">Portail GastronomeAI</CardTitle>
-          <CardDescription className="text-white/80">Entrez vos accès sécurisés</CardDescription>
+    <div className="flex items-center justify-center min-h-[80vh] px-4">
+      <Card className="w-full max-w-md shadow-2xl rounded-3xl overflow-hidden">
+
+        <CardHeader className="bg-primary text-white py-10 text-center">
+          <div className="flex justify-center mb-4">
+            <Zap className="h-10 w-10" />
+          </div>
+          <CardTitle className="text-3xl font-black italic uppercase">
+            Connexion
+          </CardTitle>
+          <CardDescription className="text-white/80">
+            Accès sécurisé
+          </CardDescription>
         </CardHeader>
-        <div className="p-8">
+
+        <CardContent className="p-8">
           <form onSubmit={handleLogin} className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="login-email">Email Professionnel</Label>
-              <Input 
-                id="login-email" 
-                type="email" 
-                required 
-                placeholder="nom@exemple.com"
-                className="h-12 bg-secondary/50 border-none rounded-xl" 
-                value={email} 
-                onChange={(e) => setEmail(e.target.value)} 
+
+            <div>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="login-password">Mot de passe</Label>
-              <Input 
-                id="login-password" 
-                type="password" 
-                required 
-                className="h-12 bg-secondary/50 border-none rounded-xl" 
-                value={password} 
-                onChange={(e) => setPassword(e.target.value)} 
+
+            <div>
+              <Label>Mot de passe</Label>
+              <Input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
               />
             </div>
-            <Button type="submit" className="w-full h-14 text-lg font-black uppercase italic shadow-lg" disabled={loading}>
-              {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
-              {loading ? "Vérification..." : "Se connecter"}
+
+            <Button className="w-full" disabled={loading}>
+              {loading
+                ? <Loader2 className="animate-spin" />
+                : "Se connecter"}
             </Button>
+
           </form>
-        </div>
+        </CardContent>
       </Card>
     </div>
   )

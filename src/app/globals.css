@@ -5,6 +5,8 @@
 
 @layer base {
   :root {
+    --color-primary: #f97316;
+    --color-secondary: #1f2937;
     --background: 0 0% 98%;
     --foreground: 24 10% 10%;
     --card: 0 0% 100%;

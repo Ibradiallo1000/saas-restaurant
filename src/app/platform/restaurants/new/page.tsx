@@ -1,56 +1,144 @@
 'use client';
 
-/**
- * @fileOverview Formulaire de provisionnement d'un nouveau restaurant par la plateforme.
- * Gère la création complète du compte propriétaire et de l'établissement.
- */
-
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { useFirestore } from '@/firebase';
-import { RestaurantService } from '@/services/restaurant.service';
+import { collection, orderBy, query } from 'firebase/firestore';
+
+import { useAuth, useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Building2, Save, Loader2, ArrowLeft, Mail } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { COLLECTION_NAMES } from '@/lib/constants';
+
+type PlatformCountry = {
+  code: string;
+  name: string;
+  currency: string;
+  dialCode: string;
+  isActive: boolean;
+};
 
 export default function NewRestaurantPage() {
   const db = useFirestore();
-  const router = useRouter();
+  const auth = useAuth();
   const { toast } = useToast();
+
   const [loading, setLoading] = React.useState(false);
+  const [inviteLink, setInviteLink] = React.useState<string | null>(null);
+  const [countrySearch, setCountrySearch] = React.useState('');
 
   const [formData, setFormData] = React.useState({
     name: '',
     slug: '',
-    country: 'CI',
-    currency: 'XOF',
     ownerEmail: '',
+    context: 'standalone' as 'standalone' | 'hotel' | 'lodge',
+    countryCode: '',
+    city: '',
+    phone: '',
+    address: '',
+    googleMapsUrl: '',
   });
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!db) return;
+  const countriesQuery = useMemoFirebase(() => {
+    if (!db) return null;
+    return query(
+      collection(db, COLLECTION_NAMES.PLATFORM_COUNTRIES),
+      orderBy('name', 'asc')
+    );
+  }, [db]);
+  const { data: countries } = useCollection<PlatformCountry>(countriesQuery);
+
+  const activeCountries = React.useMemo(() => {
+    return (countries ?? []).filter((country) => country.isActive);
+  }, [countries]);
+
+  const filteredCountries = React.useMemo(() => {
+    const search = countrySearch.trim().toLowerCase();
+    if (!search) return activeCountries;
+
+    return activeCountries.filter((country) =>
+      `${country.code} ${country.name} ${country.currency} ${country.dialCode}`
+        .toLowerCase()
+        .includes(search)
+    );
+  }, [activeCountries, countrySearch]);
+
+  const selectedCountry = React.useMemo(() => {
+    return activeCountries.find((country) => country.code === formData.countryCode);
+  }, [activeCountries, formData.countryCode]);
+
+  const generateSlug = (text: string) => {
+    return text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\w\s-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-');
+  };
+
+  const isValid =
+    formData.name.length > 2 &&
+    formData.ownerEmail.includes('@') &&
+    formData.countryCode.length > 0 &&
+    formData.city.length > 1 &&
+    formData.phone.length > 5;
+
+  const handleCreate = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!auth) {
+      toast({
+        variant: 'destructive',
+        title: 'Erreur',
+        description: 'Auth non initialisée',
+      });
+      return;
+    }
+
     setLoading(true);
 
-    const restaurantService = new RestaurantService(db);
-
     try {
-      await restaurantService.createRestaurantForOwner(formData.ownerEmail, formData);
-      toast({
-        title: "Provisionnement réussi",
-        description: `L'établissement ${formData.name} est prêt et un email a été envoyé à ${formData.ownerEmail}.`,
+      const user = auth.currentUser;
+
+      if (!user) {
+        throw new Error('Non authentifié');
+      }
+
+      const token = await user.getIdToken();
+
+      const res = await fetch('/api/create-restaurant', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          email: formData.ownerEmail,
+          name: formData.name,
+          slug: formData.slug,
+          countryCode: formData.countryCode,
+          city: formData.city,
+          phone: formData.phone,
+        }),
       });
-      router.push('/platform');
-    } catch (error: any) {
+
+      const data = await res.json();
+
+      if (data.error) throw new Error(data.error);
+
+      setInviteLink(data.inviteLink);
+
       toast({
-        variant: "destructive",
-        title: "Erreur de provisioning",
-        description: error.message || "Une erreur est survenue lors de la création.",
+        title: 'Succès',
+        description: 'Restaurant créé + lien généré',
+      });
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erreur',
+        description: err.message,
       });
     } finally {
       setLoading(false);
@@ -58,104 +146,190 @@ export default function NewRestaurantPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
-      <Button variant="ghost" className="mb-6 font-bold" onClick={() => router.back()}>
-        <ArrowLeft className="mr-2 h-4 w-4" /> Retour
-      </Button>
-
-      <Card className="border-none shadow-2xl overflow-hidden rounded-3xl">
-        <CardHeader className="bg-primary text-primary-foreground p-8">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-md">
-              <Building2 className="h-8 w-8" />
-            </div>
-            <div>
-              <CardTitle className="text-2xl font-black italic uppercase tracking-tighter">Provisionnement</CardTitle>
-              <CardDescription className="text-primary-foreground/80">
-                Créez une instance et un compte propriétaire en une étape.
-              </CardDescription>
-            </div>
-          </div>
+    <div className="max-w-xl mx-auto py-10">
+      <Card>
+        <CardHeader>
+          <CardTitle>Créer un restaurant</CardTitle>
         </CardHeader>
 
         <form onSubmit={handleCreate}>
-          <CardContent className="p-8 space-y-6">
-            <Alert className="bg-primary/5 border-primary/20">
-              <Mail className="h-4 w-4 text-primary" />
-              <AlertTitle className="text-primary font-bold">Information Sécurité</AlertTitle>
-              <AlertDescription className="text-xs italic">
-                Un compte Firebase Authentication sera créé. Le propriétaire recevra un email automatique pour définir son mot de passe.
-              </AlertDescription>
-            </Alert>
-
-            <div className="space-y-2">
-              <Label htmlFor="ownerEmail" className="font-bold uppercase text-[10px] tracking-widest text-muted-foreground">Email du Propriétaire</Label>
-              <Input 
-                id="ownerEmail" 
+          <CardContent className="space-y-4">
+            <div>
+              <Label>Email propriétaire</Label>
+              <Input
                 type="email"
-                placeholder="Ex: proprietaire@restaurant.com" 
-                required 
-                className="h-12 bg-secondary/30 border-none rounded-xl"
+                required
                 value={formData.ownerEmail}
-                onChange={e => setFormData({...formData, ownerEmail: e.target.value})}
+                onChange={(event) =>
+                  setFormData({ ...formData, ownerEmail: event.target.value })
+                }
               />
             </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="name" className="font-bold uppercase text-[10px] tracking-widest text-muted-foreground">Nom de l'Établissement</Label>
-              <Input 
-                id="name" 
-                placeholder="Ex: Le Palais de la Gastronomie" 
-                required 
-                className="h-12 bg-secondary/30 border-none rounded-xl"
+
+            <div>
+              <Label>Nom établissement</Label>
+              <Input
+                required
                 value={formData.name}
-                onChange={e => {
-                  const slug = e.target.value.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-                  setFormData({...formData, name: e.target.value, slug});
+                onChange={(event) => {
+                  const name = event.target.value;
+                  setFormData({
+                    ...formData,
+                    name,
+                    slug: generateSlug(name),
+                  });
                 }}
               />
+
+              {formData.slug && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  URL publique : <b>/{formData.slug}</b>
+                </p>
+              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="font-bold uppercase text-[10px] tracking-widest text-muted-foreground">Pays</Label>
-                <Select value={formData.country} onValueChange={v => setFormData({...formData, country: v})}>
-                  <SelectTrigger className="h-12 bg-secondary/30 border-none rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CI">Côte d'Ivoire</SelectItem>
-                    <SelectItem value="SN">Sénégal</SelectItem>
-                    <SelectItem value="BJ">Bénin</SelectItem>
-                    <SelectItem value="GH">Ghana</SelectItem>
-                    <SelectItem value="NG">Nigéria</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div>
+              <Label>Pays</Label>
+              <div className="space-y-2 rounded-xl border p-3">
+                <Input
+                  placeholder="Rechercher un pays..."
+                  value={countrySearch}
+                  onChange={(event) => setCountrySearch(event.target.value)}
+                />
+                <div className="max-h-56 space-y-2 overflow-y-auto">
+                  {filteredCountries.map((country) => (
+                    <button
+                      key={country.id}
+                      type="button"
+                      onClick={() => {
+                        setFormData({ ...formData, countryCode: country.code });
+                        setCountrySearch(country.name);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
+                        formData.countryCode === country.code
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border hover:bg-muted'
+                      }`}
+                    >
+                      <span className="font-bold">
+                        {countryFlag(country.code)} {country.name}
+                      </span>
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {country.code} · {country.currency} · {country.dialCode}
+                      </span>
+                    </button>
+                  ))}
+                  {filteredCountries.length === 0 && (
+                    <p className="p-3 text-sm text-muted-foreground">
+                      Aucun pays disponible.
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label className="font-bold uppercase text-[10px] tracking-widest text-muted-foreground">Devise</Label>
-                <Select value={formData.currency} onValueChange={v => setFormData({...formData, currency: v})}>
-                  <SelectTrigger className="h-12 bg-secondary/30 border-none rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="XOF">XOF (FCFA)</SelectItem>
-                    <SelectItem value="GHS">GHS (Cedi)</SelectItem>
-                    <SelectItem value="NGN">NGN (Naira)</SelectItem>
-                    <SelectItem value="EUR">EUR (€)</SelectItem>
-                  </SelectContent>
-                </Select>
+              {selectedCountry && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Pays sélectionné : {countryFlag(selectedCountry.code)} {selectedCountry.name}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label>Ville</Label>
+              <Input
+                required
+                value={formData.city}
+                onChange={(event) =>
+                  setFormData({ ...formData, city: event.target.value })
+                }
+              />
+            </div>
+
+            <div>
+              <Label>Téléphone</Label>
+              <Input
+                required
+                value={formData.phone}
+                onChange={(event) =>
+                  setFormData({ ...formData, phone: event.target.value })
+                }
+              />
+            </div>
+
+            <div className="pt-4 border-t">
+              <p className="text-sm font-bold">Localisation (optionnel)</p>
+
+              <div className="mt-2 space-y-3">
+                <Input
+                  placeholder="Adresse"
+                  value={formData.address}
+                  onChange={(event) =>
+                    setFormData({ ...formData, address: event.target.value })
+                  }
+                />
+
+                <Input
+                  placeholder="Lien Google Maps"
+                  value={formData.googleMapsUrl}
+                  onChange={(event) =>
+                    setFormData({ ...formData, googleMapsUrl: event.target.value })
+                  }
+                />
               </div>
             </div>
+
+            {inviteLink && (
+              <div className="mt-6 p-4 border rounded-xl space-y-3 bg-gray-50">
+                <p className="font-semibold">Lien d’invitation</p>
+                <Input value={inviteLink} readOnly />
+
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(inviteLink)}
+                  >
+                    Copier
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={() =>
+                      window.open(`https://wa.me/?text=${encodeURIComponent(inviteLink)}`)
+                    }
+                  >
+                    WhatsApp
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={() =>
+                      window.open(
+                        `mailto:${formData.ownerEmail}?subject=Invitation&body=${encodeURIComponent(inviteLink)}`
+                      )
+                    }
+                  >
+                    Email
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
 
-          <CardFooter className="p-8 pt-0">
-            <Button type="submit" className="w-full h-14 text-lg font-black uppercase italic shadow-2xl" disabled={loading}>
-              {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <><Save className="mr-2 h-5 w-5" /> Provisionner l'Espace</>}
+          <CardFooter>
+            <Button className="w-full" disabled={!isValid || loading}>
+              {loading ? 'Création...' : 'Créer le restaurant'}
             </Button>
           </CardFooter>
         </form>
       </Card>
-      
-      <p className="text-center text-[10px] text-muted-foreground mt-8 italic">
-        Une fois créé, l'établissement sera immédiatement actif avec un plan d'essai de 30 jours.
-      </p>
     </div>
   );
+}
+
+function countryFlag(code: string) {
+  if (!/^[A-Z]{2}$/.test(code)) return '🏳';
+
+  return code
+    .split('')
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join('');
 }

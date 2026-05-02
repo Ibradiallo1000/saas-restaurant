@@ -1,7 +1,10 @@
-
 /**
  * @fileOverview Définition des constantes globales du système.
  */
+
+// ===============================
+// 🔹 ROLES
+// ===============================
 
 export const ROLES = {
   SUPER_ADMIN: 'super_admin',
@@ -16,26 +19,58 @@ export const ROLES = {
 
 export type UserRole = typeof ROLES[keyof typeof ROLES];
 
+export const RESTAURANT_ROLES = {
+  OWNER: ROLES.OWNER,
+  MANAGER: ROLES.MANAGER,
+  CASHIER: ROLES.CASHIER,
+  KITCHEN: ROLES.KITCHEN,
+  SERVER: ROLES.SERVER,
+} as const;
+
+
+// ===============================
+// 🔥 SUBSCRIPTIONS
+// ===============================
+
 export const SUBSCRIPTION_STATUS = {
+  TRIAL: 'trial',          // 🔥 AJOUT CRITIQUE
   ACTIVE: 'active',
   EXPIRED: 'expired',
   SUSPENDED: 'suspended',
 } as const;
 
+export type SubscriptionStatus =
+  typeof SUBSCRIPTION_STATUS[keyof typeof SUBSCRIPTION_STATUS];
+
+
+// ===============================
+// 🔹 ORDERS
+// ===============================
+
 export const ORDER_STATUS = {
-  PENDING: 'pending',
-  PREPARING: 'preparing',
-  READY: 'ready',
-  SERVED: 'served',
-  DELIVERED: 'delivered',
-  CANCELLED: 'cancelled',
+  NOUVELLE: 'nouvelle',
+  PREPARATION: 'preparation',
+  PRETE: 'prete',
+  SERVIE: 'servie',
+  PAYEE: 'payee',
 } as const;
 
+export const DEFAULT_GRACE_DAYS = 7;
+
+
+// ===============================
+// 🔹 PAYMENTS
+// ===============================
+
 export const PAYMENT_STATUS = {
-  UNPAID: 'unpaid',
-  PARTIAL: 'partial',
-  PAID: 'paid',
+  PENDING: 'pending',
+  VALIDATED: 'validated',
 } as const;
+
+
+// ===============================
+// 🔹 SESSIONS
+// ===============================
 
 export const SESSION_STATUS = {
   OPENED: 'opened',
@@ -43,13 +78,25 @@ export const SESSION_STATUS = {
   VALIDATED: 'validated',
 } as const;
 
+
+// ===============================
+// 🔥 COLLECTIONS (CORRIGÉ)
+// ===============================
+
 export const COLLECTION_NAMES = {
   PLATFORM: 'platform',
-  PLATFORM_USERS: 'platformUsers',
+  PLATFORM_COUNTRIES: 'platformCountries',
+  PLATFORM_PAYMENT_METHODS: 'platformPaymentMethods',
+  PLATFORM_PAYMENT_VARIANTS: 'platformPaymentVariants',
+  RESTAURANT_PAYMENT_CONFIGS: 'restaurantPaymentConfigs',
+
+  // 🔥 séparation claire
+  USERS: 'users',                 // ← restaurant users
+
   PLANS: 'plans',
-  RESTAURANTS: 'restaurants',
   SUBSCRIPTIONS: 'subscriptions',
-  USERS: 'users',
+
+  RESTAURANTS: 'restaurants',
   MENUS: 'menus',
   PRODUCTS: 'products',
   ORDERS: 'orders',
@@ -62,4 +109,5 @@ export const COLLECTION_NAMES = {
   CASHIER_SESSIONS: 'cashierSessions',
   INVOICES: 'invoices',
   CONTACT_REQUESTS: 'contactRequests',
+  COMPANIES: 'companies',
 } as const;

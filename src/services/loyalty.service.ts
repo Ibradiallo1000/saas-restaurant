@@ -17,8 +17,14 @@ export class LoyaltyService {
    * Updates or creates a customer profile and adds loyalty points.
    */
   async recordVisit(restaurantId: string, phone: string, name: string, amount: number) {
-    const customerId = `${restaurantId}_${phone}`;
-    const customerRef = doc(this.db, COLLECTION_NAMES.CUSTOMERS, customerId);
+    const customerId = phone.replace(/[^\d+]/g, "") || `${Date.now()}`;
+    const customerRef = doc(
+      this.db,
+      COLLECTION_NAMES.RESTAURANTS,
+      restaurantId,
+      COLLECTION_NAMES.CUSTOMERS,
+      customerId
+    );
     
     // Simple rule: 1 point per 10 currency units spent
     const pointsToAdd = Math.floor(amount / 10);

@@ -2,23 +2,309 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Autoriser la lecture publique de la configuration plateforme (Branding)
-    match /platform/{document=**} {
-      allow read: if true;
-      allow write: if request.auth != null;
+    // ===============================
+    // 🔐 HELPERS
+    // ===============================
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Autoriser tout le monde à envoyer une demande de contact
-    match /contactRequests/{document=**} {
+    function userDoc() {
+      return isSignedIn()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid))
+        : null;
+    }
+
+    function userExists() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isSuperAdmin() {
+      return userExists()
+        && userDoc().data.role in ["super_admin", "admin"];
+    }
+
+    function userRestaurantId() {
+      return userExists()
+        ? userDoc().data.restaurantId
+        : null;
+    }
+
+    function isRestaurantMember(restaurantId) {
+      return userRestaurantId() == restaurantId;
+    }
+
+    function isRestaurantStaff(restaurantId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid));
+    }
+
+    function isRestaurantOwnerEmail(restaurantId) {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.ownerEmail == request.auth.token.email;
+    }
+
+    function isRestaurantOwner(restaurantId) {
+      return isRestaurantOwnerEmail(restaurantId)
+        || (
+          isRestaurantStaff(restaurantId)
+          && get(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid)).data.role == "owner"
+        );
+    }
+
+    function canUseRestaurant(restaurantId) {
+      return isSuperAdmin()
+        || isRestaurantMember(restaurantId)
+        || isRestaurantStaff(restaurantId)
+        || isRestaurantOwnerEmail(restaurantId);
+    }
+
+    // ===============================
+    // 🍽️ RESTAURANTS
+    // ===============================
+    match /restaurants/{restaurantId} {
+
+      // Lecture publique minimale (menu public)
+      allow get: if true;
+      allow list: if isSuperAdmin();
+
+      allow create: if isSignedIn()
+        && request.resource.data.countryCode is string
+        && request.resource.data.countryCode.size() > 0;
+      allow update: if isSuperAdmin() || isRestaurantOwner(restaurantId);
+      allow delete: if isSuperAdmin();
+
+      // ===============================
+      // 👥 STAFF
+      // ===============================
+      match /staff/{staffId} {
+        allow read: if canUseRestaurant(restaurantId);
+        allow write: if isSuperAdmin() || isRestaurantOwner(restaurantId);
+      }
+
+      // ===============================
+      // 📂 CATEGORIES
+      // ===============================
+      match /categories/{categoryId} {
+        allow get, list: if true; // public menu
+        allow write: if canUseRestaurant(restaurantId);
+      }
+
+      // ===============================
+      // 🍔 PRODUCTS
+      // ===============================
+      match /products/{productId} {
+        allow get, list: if true; // public menu
+        allow write: if canUseRestaurant(restaurantId);
+      }
+
+      // ===============================
+      // 📦 INVENTORY
+      // ===============================
+      match /inventory/{inventoryId} {
+        allow get, list: if canUseRestaurant(restaurantId);
+        allow write: if canUseRestaurant(restaurantId);
+      }
+
+      // ===============================
+      // 👤 CUSTOMERS
+      // ===============================
+      match /customers/{customerId} {
+        allow get, list: if canUseRestaurant(restaurantId);
+        allow write: if canUseRestaurant(restaurantId);
+      }
+
+      match /images/{imageId} {
+        allow get, list: if canUseRestaurant(restaurantId);
+
+        allow create: if canUseRestaurant(restaurantId)
+          && request.resource.data.url is string
+          && request.resource.data.publicId is string;
+
+        allow update, delete: if canUseRestaurant(restaurantId);
+      }
+
+      // ===============================
+      // 🧾 ORDERS (🔥 CRITIQUE)
+      // ===============================
+      match /orders/{orderId} {
+
+        // ✅ Création client (QR / public)
+        allow create: if
+          request.resource.data.restaurantId == restaurantId
+          && request.resource.data.source == "client"
+          && request.resource.data.status in ["pending", "nouvelle"]
+          && request.resource.data.items is list
+          && request.resource.data.total is number;
+
+        // Staff sees the full lifecycle. Client tracking reads session orders.
+        allow get, list: if canUseRestaurant(restaurantId)
+          || (
+            resource.data.restaurantId == restaurantId
+            && resource.data.source == "client"
+            && resource.data.sessionId is string
+          );
+
+        // ✅ Update staff (kitchen / dashboard / POS)
+        allow update: if canUseRestaurant(restaurantId);
+
+        // ❌ Suppression
+        allow delete: if isSuperAdmin();
+      }
+    }
+
+    // ===============================
+    // 👤 USERS
+    // ===============================
+    match /users/{userId} {
+      allow get: if request.auth.uid == userId || isSuperAdmin();
+      allow list: if isSuperAdmin();
+
+      allow create: if request.auth.uid == userId
+        || isSuperAdmin()
+        || (
+          request.resource.data.restaurantId is string
+          && canUseRestaurant(request.resource.data.restaurantId)
+        );
+
+      allow update: if request.auth.uid == userId
+        || isSuperAdmin()
+        || (
+          resource.data.restaurantId is string
+          && canUseRestaurant(resource.data.restaurantId)
+        );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    // ===============================
+    // 💳 SUBSCRIPTIONS
+    // ===============================
+    match /restaurantSlugs/{slug} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /subscriptions/{id} {
+      allow read: if isSuperAdmin()
+        || canUseRestaurant(resource.data.restaurantId);
+
+      allow create: if isSignedIn();
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // ===============================
+    // 📩 INVITATIONS
+    // ===============================
+    match /invitations/{id} {
+      allow create: if isSuperAdmin();
+      allow get: if true;
+      allow list: if false;
+      allow update: if true;
+    }
+
+    // ===============================
+    // 📬 CONTACT
+    // ===============================
+    match /contactRequests/{id} {
       allow create: if true;
-      allow read, write: if request.auth != null;
+      allow get, list: if isSuperAdmin();
+      allow update, delete: if isSuperAdmin();
     }
 
-    // Par défaut, lecture/écriture autorisée pour tout utilisateur authentifié
-    // Utile pour la phase de développement SaaS
+    // ===============================
+    // 📦 PLANS
+    // ===============================
+    match /plans/{planId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    match /platformCountries/{countryId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSuperAdmin()
+        && request.resource.data.code is string
+        && request.resource.data.name is string
+        && request.resource.data.currency is string
+        && request.resource.data.dialCode is string
+        && request.resource.data.isActive is bool
+        && request.resource.data.createdAt is timestamp;
+      allow update: if isSuperAdmin()
+        && request.resource.data.code is string
+        && request.resource.data.name is string
+        && request.resource.data.currency is string
+        && request.resource.data.dialCode is string
+        && request.resource.data.isActive is bool;
+      allow delete: if isSuperAdmin();
+    }
+
+    match /platformPaymentMethods/{methodId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSuperAdmin()
+        && request.resource.data.name is string
+        && request.resource.data.code is string
+        && request.resource.data.logoUrl is string
+        && request.resource.data.type in ["ussd", "link"]
+        && request.resource.data.isActive is bool;
+      allow update: if isSuperAdmin()
+        && request.resource.data.name is string
+        && request.resource.data.code is string
+        && request.resource.data.logoUrl is string
+        && request.resource.data.type in ["ussd", "link"]
+        && request.resource.data.isActive is bool;
+      allow delete: if isSuperAdmin();
+    }
+
+    match /platformPaymentVariants/{variantId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSuperAdmin()
+        && request.resource.data.methodCode is string
+        && request.resource.data.countryCode is string
+        && request.resource.data.type in ["ussd", "link"]
+        && request.resource.data.ussdTemplate is string
+        && request.resource.data.requiresMerchant is bool
+        && request.resource.data.requiresPhone is bool
+        && request.resource.data.isActive is bool;
+      allow update: if isSuperAdmin()
+        && request.resource.data.methodCode is string
+        && request.resource.data.countryCode is string
+        && request.resource.data.type in ["ussd", "link"]
+        && request.resource.data.ussdTemplate is string
+        && request.resource.data.requiresMerchant is bool
+        && request.resource.data.requiresPhone is bool
+        && request.resource.data.isActive is bool;
+      allow delete: if isSuperAdmin();
+    }
+
+    match /restaurantPaymentConfigs/{configId} {
+      allow get, list: if isSuperAdmin()
+        || canUseRestaurant(resource.data.restaurantId);
+      allow create: if canUseRestaurant(request.resource.data.restaurantId)
+        && request.resource.data.restaurantId is string
+        && request.resource.data.methodCode is string
+        && request.resource.data.merchantNumber is string
+        && request.resource.data.isActive is bool;
+      allow update: if canUseRestaurant(resource.data.restaurantId)
+        && request.resource.data.restaurantId == resource.data.restaurantId
+        && request.resource.data.methodCode is string
+        && request.resource.data.merchantNumber is string
+        && request.resource.data.isActive is bool;
+      allow delete: if isSuperAdmin()
+        || canUseRestaurant(resource.data.restaurantId);
+    }
+
+    // ===============================
+    // 🔒 BLOCK ALL
+    // ===============================
+    match /platform/{docId} {
+      allow get: if isSignedIn();
+      allow list: if isSuperAdmin();
+      allow create, update, delete: if isSuperAdmin();
+    }
+
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
-
   }
 }

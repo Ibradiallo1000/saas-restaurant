@@ -16,6 +16,8 @@ import {
   limit
 } from 'firebase/firestore';
 import { COLLECTION_NAMES, PAYMENT_STATUS, ORDER_STATUS } from '@/lib/constants';
+import { normalizePaymentMethod } from '@/lib/order-payment';
+import { normalizeOrderStatus } from '@/lib/order-status';
 import { startOfDay, endOfDay, startOfWeek, startOfMonth, subDays, format, subWeeks, subMonths } from 'date-fns';
 
 export interface ComparisonMetric {
@@ -65,13 +67,17 @@ export class AnalyticsService {
     const lastWeekStart = startOfWeek(subWeeks(now, 1));
     const lastMonthStart = startOfMonth(subMonths(now, 1));
 
-    const ordersRef = collection(this.db, COLLECTION_NAMES.ORDERS);
+    const ordersRef = collection(
+      this.db,
+      COLLECTION_NAMES.RESTAURANTS,
+      restaurantId,
+      COLLECTION_NAMES.ORDERS
+    );
     
     // Requête principale filtrée par restaurant et statut payé
     const mainQuery = query(
       ordersRef,
-      where('restaurantId', '==', restaurantId),
-      where('paymentStatus', '==', PAYMENT_STATUS.PAID),
+      where('paymentStatus', '==', PAYMENT_STATUS.VALIDATED),
       where('createdAt', '>=', Timestamp.fromDate(lastMonthStart)),
       orderBy('createdAt', 'desc')
     );
@@ -92,7 +98,7 @@ export class AnalyticsService {
       const data = doc.data();
       const amount = data.totalAmount || 0;
       const date = data.createdAt?.toDate();
-      const method = data.paymentMethod;
+      const method = normalizePaymentMethod(data.paymentMethod);
 
       if (date >= todayStart) {
         stats.today += amount;
@@ -110,13 +116,13 @@ export class AnalyticsService {
       if (date >= monthStart) {
         stats.thisMonth += amount;
         if (method === 'cash') stats.cash += amount;
-        if (method === 'mobile_money') stats.mm += amount;
+        if (method === 'mobile') stats.mm += amount;
       } else if (date >= lastMonthStart && date < monthStart) {
         stats.lastMonth += amount;
       }
 
       // Calcul du temps de préparation moyen
-      if (data.status === ORDER_STATUS.SERVED || data.status === ORDER_STATUS.DELIVERED) {
+      if (normalizeOrderStatus(data.status) === ORDER_STATUS.SERVIE || normalizeOrderStatus(data.status) === ORDER_STATUS.PAYEE) {
         const start = data.createdAt?.toDate();
         const updated = data.updatedAt?.toDate();
         if (start && updated) {
@@ -134,8 +140,7 @@ export class AnalyticsService {
     // Récupération des commandes actives
     const activeQuery = query(
       ordersRef,
-      where('restaurantId', '==', restaurantId),
-      where('status', 'in', [ORDER_STATUS.PENDING, ORDER_STATUS.PREPARING, ORDER_STATUS.READY])
+      where('status', 'in', [ORDER_STATUS.NOUVELLE, ORDER_STATUS.PREPARATION, ORDER_STATUS.PRETE])
     );
     const activeSnapshot = await getDocs(activeQuery);
 
@@ -168,11 +173,15 @@ export class AnalyticsService {
    */
   async getSalesTrend(restaurantId: string, days: number = 7) {
     const startDate = subDays(new Date(), days);
-    const ordersRef = collection(this.db, COLLECTION_NAMES.ORDERS);
+    const ordersRef = collection(
+      this.db,
+      COLLECTION_NAMES.RESTAURANTS,
+      restaurantId,
+      COLLECTION_NAMES.ORDERS
+    );
     const q = query(
       ordersRef,
-      where('restaurantId', '==', restaurantId),
-      where('paymentStatus', '==', PAYMENT_STATUS.PAID),
+      where('paymentStatus', '==', PAYMENT_STATUS.VALIDATED),
       where('createdAt', '>=', Timestamp.fromDate(startDate)),
       orderBy('createdAt', 'asc')
     );

@@ -13,9 +13,11 @@ import {
   serverTimestamp, 
   updateDoc,
   getDocs,
+  getDoc,
   runTransaction
 } from 'firebase/firestore';
 import { COLLECTION_NAMES, ORDER_STATUS, PAYMENT_STATUS } from '@/lib/constants';
+import { normalizePaymentMethod, paymentStatusForMethod, type PaymentMethod } from '@/lib/order-payment';
 import { InventoryService } from './inventory.service';
 import { LoyaltyService } from './loyalty.service';
 
@@ -64,8 +66,10 @@ export class OrderService {
       roomId: input.roomId || null,
       customerName: input.customerName || 'Client Anonyme',
       customerPhone: input.customerPhone || null,
-      status: ORDER_STATUS.PENDING,
-      paymentStatus: PAYMENT_STATUS.UNPAID,
+      status: ORDER_STATUS.NOUVELLE,
+      paymentMethod: null,
+      paymentStatus: null,
+      paidAt: null,
       subtotal,
       deliveryFee: input.deliveryFee || 0,
       tipAmount: input.tipAmount || 0,
@@ -92,7 +96,7 @@ export class OrderService {
   }
 
   /**
-   * Met à jour le statut opérationnel de la commande (ex: de 'pending' à 'preparing').
+   * Met à jour le statut opérationnel de la commande.
    */
   async updateOrderStatus(orderId: string, status: string) {
     const orderRef = doc(this.db, COLLECTION_NAMES.ORDERS, orderId);
@@ -106,7 +110,7 @@ export class OrderService {
    * Gère le processus de paiement de manière atomique via une transaction Firestore.
    * Assure la cohérence entre le statut de paiement, les stocks et la fidélité.
    */
-  async processPayment(orderId: string, restaurantId: string, method: string) {
+  async processPayment(orderId: string, restaurantId: string, method: PaymentMethod) {
     const orderRef = doc(this.db, COLLECTION_NAMES.ORDERS, orderId);
     
     // TRANSACTION ATOMIQUE : Garantit qu'un paiement n'est traité qu'une seule fois
@@ -116,20 +120,26 @@ export class OrderService {
       if (!orderDoc.exists()) throw new Error("Commande introuvable");
       
       const orderData = orderDoc.data();
-      if (orderData.paymentStatus === PAYMENT_STATUS.PAID) {
+      if (orderData.paymentStatus === PAYMENT_STATUS.VALIDATED) {
         throw new Error("Cette commande a déjà été payée");
       }
+      const paymentMethod = normalizePaymentMethod(method);
+      if (!paymentMethod) throw new Error("Mode de paiement invalide");
+
+      const paymentStatus = paymentStatusForMethod(paymentMethod);
 
       transaction.update(orderRef, {
-        paymentStatus: PAYMENT_STATUS.PAID,
-        paymentMethod: method,
+        paymentMethod,
+        paymentStatus,
+        status: paymentStatus === PAYMENT_STATUS.VALIDATED ? ORDER_STATUS.PAYEE : orderData.status,
+        paidAt: paymentStatus === PAYMENT_STATUS.VALIDATED ? serverTimestamp() : null,
         updatedAt: serverTimestamp(),
       });
     });
 
     // Effets secondaires après transaction réussie
     const itemsSnapshot = await getDocs(collection(this.db, COLLECTION_NAMES.ORDERS, orderId, COLLECTION_NAMES.ORDER_ITEMS));
-    const orderSnap = await (await doc(this.db, COLLECTION_NAMES.ORDERS, orderId)).get();
+    const orderSnap = await getDoc(doc(this.db, COLLECTION_NAMES.ORDERS, orderId));
     const orderData = orderSnap.data();
 
     if (!orderData) return;

@@ -1,0 +1,239 @@
+import type { Timestamp } from "firebase/firestore"
+import { ORDER_SOURCE, ORDER_STATUS, ORDER_TYPE, POS_SESSION_STATUS, RESTAURANT_ROLES, SUBSCRIPTION_STATUS } from "@/lib/constants"
+
+export type RestaurantStatus = "pending" | "active" | "suspended"
+export type RestaurantSource = "request" | "admin"
+export type RequestStatus = "pending" | "approved" | "rejected"
+export type RestaurantPlan = "trial" | "basic" | "pro" | "custom" | "business"
+export type SubscriptionStatus = typeof SUBSCRIPTION_STATUS[keyof typeof SUBSCRIPTION_STATUS]
+export type AppUserRole = "super_admin" | "owner" | "staff"
+export type AuditAction = "CREATE_RESTAURANT" | "APPROVE_REQUEST" | "SET_SUPER_ADMIN"
+export type RestaurantUserRole = typeof RESTAURANT_ROLES[keyof typeof RESTAURANT_ROLES]
+export type AppRouteRole = "super_admin" | RestaurantUserRole
+export type FeatureModule = "kitchen" | "inventory" | "analytics" | "multiBranch"
+export type PosSessionStatus = typeof POS_SESSION_STATUS[keyof typeof POS_SESSION_STATUS]
+export type OrderStatus = typeof ORDER_STATUS[keyof typeof ORDER_STATUS]
+export type OrderSource = typeof ORDER_SOURCE[keyof typeof ORDER_SOURCE]
+export type OrderType = typeof ORDER_TYPE[keyof typeof ORDER_TYPE]
+
+export interface Restaurant {
+  id: string
+  name: string
+  slug: string
+  email: string
+  phone?: string
+  country: string
+  countryCode: string
+  city?: string
+  currency: string
+  status: RestaurantStatus
+  source: RestaurantSource
+  createdAt: Timestamp
+}
+
+export interface RestaurantRequest {
+  id: string
+  restaurantName: string
+  email: string
+  country: string
+  status: RequestStatus
+  processed?: boolean
+  restaurantId?: string
+  processedAt?: Timestamp
+  createdAt: Timestamp
+}
+
+export interface Subscription {
+  id: string
+  restaurantId: string
+  plan: RestaurantPlan
+  status: SubscriptionStatus
+  billingStatus?: "paid" | "unpaid" | "manual"
+  trialEndsAt?: Timestamp
+  currentPeriodStart?: Timestamp
+  currentPeriodEnd?: Timestamp
+  graceEndsAt?: Timestamp
+  isManual: boolean
+  createdAt: Timestamp
+}
+
+export interface AppUser {
+  id: string
+  restaurantId?: string
+  email: string
+  role: AppUserRole
+  invited?: boolean
+  invitedAt?: Timestamp
+  createdAt: Timestamp
+}
+
+export interface Country {
+  id?: string
+  code: string
+  name: string
+  currency: string
+  phoneCode: string
+  isActive: boolean
+}
+
+export interface AuditLog {
+  action: AuditAction
+  actorId: string
+  targetId: string
+  metadata?: Record<string, unknown>
+  createdAt: Timestamp
+}
+
+export interface ErrorLog {
+  message: string
+  stack?: string
+  context?: Record<string, unknown>
+  createdAt: Timestamp
+}
+
+export interface PlatformSettings {
+  name: string
+  logoUrl: string
+  primaryColor: string
+  secondaryColor: string
+  supportEmail: string
+  supportPhone: string
+  supportWhatsapp: string
+  maintenanceMode: boolean
+  defaultGraceDays: number
+  updatedAt?: Timestamp
+}
+
+export interface Company {
+  id: string
+  name: string
+  createdAt: Timestamp
+}
+
+export interface SubscriptionModules {
+  kitchen: boolean
+  inventory: boolean
+  analytics: boolean
+  multiBranch: boolean
+}
+
+export interface CompanySubscription {
+  plan: "basic" | "pro" | "business"
+  status: "trial" | "active" | "grace" | "suspended" | "lifetime"
+  currentPeriodEnd: Timestamp
+  graceEndsAt?: Timestamp
+  modules: SubscriptionModules
+}
+
+export interface RestaurantUser {
+  id: string
+  name: string
+  phone: string
+  email?: string
+  roles: RestaurantUserRole[]
+  activeRole: RestaurantUserRole
+  pinCode?: string
+  isActive: boolean
+  createdAt: Timestamp
+}
+
+export interface CurrentUserContextValue {
+  user: import("firebase/auth").User | null
+  firebaseUser: import("firebase/auth").User | null
+  isLoading: boolean
+  isAuthenticated: boolean
+  isSuperAdmin: boolean
+  companyId: string | null
+  restaurantId: string | null
+  staffUser: RestaurantUser | null
+  roles: RestaurantUserRole[]
+  activeRole: RestaurantUserRole | null
+  subscription: CompanySubscription | null
+  modules: SubscriptionModules
+  setActiveRole: (role: RestaurantUserRole) => Promise<void>
+}
+
+export interface Product {
+  id: string
+  name: string
+  price: number
+  imageUrl?: string
+  categoryId?: string
+  available?: boolean
+}
+
+export interface OrderItemSnapshot {
+  productId: string
+  name: string
+  price: number
+  nameSnapshot: string
+  priceSnapshot: number
+  quantity: number
+  variants?: {
+    name: string
+    value: string
+  }[]
+}
+
+export interface OrderLocation {
+  tableNumber?: string
+  roomNumber?: string
+  address?: string
+  note?: string
+}
+
+export interface RestaurantOrder {
+  id: string
+  companyId: string
+  restaurantId?: string
+  sessionId?: string
+  type: OrderType
+  source: OrderSource
+  location?: OrderLocation
+  tableNumber?: string
+  roomNumber?: string
+  customerName?: string
+  customerPhone?: string
+  tableId?: string | null
+  roomId?: string | null
+  deliveryAddress?: string | null
+  items: OrderItemSnapshot[]
+  total: number
+  totalAmount?: number
+  status: "nouvelle" | "preparation" | "prete" | "servie" | "payee"
+  paymentStatus?: "pending" | "validated" | null
+  paymentMethod?: "cash" | "mobile" | null
+  createdAt: Timestamp
+  updatedAt?: Timestamp
+  pendingAt?: Timestamp
+  preparingAt?: Timestamp
+  readyAt?: Timestamp
+  servedAt?: Timestamp
+  paidAt?: Timestamp | null
+}
+
+export interface PosSession {
+  id: string
+  cashierId: string
+  openedAt: Timestamp
+  closedAt?: Timestamp
+  totalAmount: number
+  status: PosSessionStatus
+}
+
+export interface RestaurantTable {
+  id: string
+  name?: string
+  number?: number
+  status?: "available" | "occupied" | "reserved"
+}
+
+export interface TableSession {
+  id: string
+  tableNumber: string
+  status: "open" | "closed"
+  currentOrderIds: string[]
+  createdAt?: Timestamp
+  updatedAt?: Timestamp
+  closedAt?: Timestamp
+}

@@ -1,0 +1,9 @@
+{
+  "projects": {
+    "dev": "studio-7907252579-dd6af",
+    "staging": "replace-with-staging-project-id",
+    "production": "replace-with-production-project-id"
+  },
+  "targets": {},
+  "etags": {}
+}
