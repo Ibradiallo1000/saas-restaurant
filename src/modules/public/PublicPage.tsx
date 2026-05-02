@@ -13,7 +13,6 @@ import CategoriesGrid from "./components/CategoriesGrid"
 import CategoryModal from "./components/CategoryModal"
 import Header from "./components/Header"
 import HeroSection from "./components/HeroSection"
-import ProductModal from "./components/ProductModal"
 import SearchBar from "./components/SearchBar"
 import StickyCartBar from "./components/StickyCartBar"
 import { useCart } from "./cart/CartContext"
@@ -28,7 +27,6 @@ function PublicPageContent({ slug }: { slug: string }) {
   const [homeSearch, setHomeSearch] = React.useState("")
   const [modalSearch, setModalSearch] = React.useState("")
   const [selectedCategory, setSelectedCategory] = React.useState<any | null>(null)
-  const [selectedProduct, setSelectedProduct] = React.useState<any | null>(null)
   const [cartOpen, setCartOpen] = React.useState(false)
   const [activeNav, setActiveNav] = React.useState<"home" | "order" | "tracking">("home")
 
@@ -191,7 +189,6 @@ function PublicPageContent({ slug }: { slug: string }) {
   const handleHomeClick = () => {
     setActiveNav("home")
     setSelectedCategory(null)
-    setSelectedProduct(null)
     setHomeSearch("")
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
@@ -241,63 +238,75 @@ function PublicPageContent({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-32 text-foreground">
-      <Header
-        restaurant={restaurant}
-        cartCount={count}
-        onCartClick={() => setCartOpen(true)}
-      />
-      <HeroSection restaurant={restaurant} />
+    <div id="app-root" className="min-h-screen bg-background pb-32 text-foreground">
+      <div id="main-content">
+        <Header
+          restaurant={restaurant}
+          cartCount={count}
+          onCartClick={() => setCartOpen(true)}
+        />
+        <HeroSection restaurant={restaurant} />
 
-      <main className="relative z-10 -mt-4 rounded-t-3xl bg-background pt-4 shadow-md">
-        <div className="mx-auto w-full max-w-5xl px-4 pb-5">
-          <div className="mb-5">
-            <SearchBar value={homeSearch} onChange={setHomeSearch} />
-          </div>
-
-          <section>
-            <div className="mb-4 flex items-end justify-between gap-4">
-              <div>
-                <p className="text-[20px] font-black uppercase tracking-[0.18em] text-[var(--color-primary)]">
-                  Menu
-                </p>
-              </div>
-              <span className="text-xs font-bold text-muted-foreground">
-                {visibleCategories.length}
-              </span>
+        <main className="-mt-4 rounded-t-3xl bg-background pt-4 shadow-md">
+          <div className="mx-auto w-full max-w-5xl px-4 pb-5">
+            <div className="mb-5">
+              <SearchBar value={homeSearch} onChange={setHomeSearch} />
             </div>
 
-            {productsError || categoriesError ? (
-              <div className="rounded-2xl bg-card px-6 py-14 text-center text-card-foreground shadow-sm">
-                <ChefHat className="mx-auto mb-3 h-12 w-12 text-muted-foreground/60" />
-                <h2 className="text-base font-black">
-                  Menu indisponible
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Impossible de charger les categories et les plats.
-                </p>
+            <section>
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-[20px] font-black uppercase tracking-[0.18em] text-[var(--color-primary)]">
+                    Menu
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-muted-foreground">
+                  {visibleCategories.length}
+                </span>
               </div>
-            ) : isMenuLoading ? (
-              <CategoriesSkeleton />
-            ) : visibleCategories.length > 0 ? (
-              <CategoriesGrid
-                categories={visibleCategories}
-                onSelect={handleCategorySelect}
-              />
-            ) : (
-              <div className="rounded-2xl bg-card px-6 py-14 text-center text-card-foreground shadow-sm">
-                <ChefHat className="mx-auto mb-3 h-12 w-12 text-muted-foreground/60" />
-                <h2 className="text-base font-black">
-                  Aucune categorie trouvee
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Essayez une autre recherche.
-                </p>
-              </div>
-            )}
-          </section>
-        </div>
-      </main>
+
+              {productsError || categoriesError ? (
+                <div className="rounded-2xl bg-card px-6 py-14 text-center text-card-foreground shadow-sm">
+                  <ChefHat className="mx-auto mb-3 h-12 w-12 text-muted-foreground/60" />
+                  <h2 className="text-base font-black">
+                    Menu indisponible
+                  </h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Impossible de charger les categories et les plats.
+                  </p>
+                </div>
+              ) : isMenuLoading ? (
+                <CategoriesSkeleton />
+              ) : visibleCategories.length > 0 ? (
+                <CategoriesGrid
+                  categories={visibleCategories}
+                  onSelect={handleCategorySelect}
+                />
+              ) : (
+                <div className="rounded-2xl bg-card px-6 py-14 text-center text-card-foreground shadow-sm">
+                  <ChefHat className="mx-auto mb-3 h-12 w-12 text-muted-foreground/60" />
+                  <h2 className="text-base font-black">
+                    Aucune categorie trouvee
+                  </h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Essayez une autre recherche.
+                  </p>
+                </div>
+              )}
+            </section>
+          </div>
+        </main>
+
+        <StickyCartBar onClick={() => setCartOpen(true)} />
+
+        <PublicBottomNavigation
+          active={activeNav}
+          count={count}
+          onHome={handleHomeClick}
+          onOrder={handleOrderClick}
+          onTracking={handleTrackingClick}
+        />
+      </div>
 
       {selectedCategory && (
         <CategoryModal
@@ -306,26 +315,9 @@ function PublicPageContent({ slug }: { slug: string }) {
           search={modalSearch}
           onSearchChange={setModalSearch}
           onClose={() => setSelectedCategory(null)}
-          onOpenProduct={setSelectedProduct}
+          onOpenProduct={() => undefined}
         />
       )}
-
-      {selectedProduct && (
-        <ProductModal
-          product={selectedProduct}
-          onClose={() => setSelectedProduct(null)}
-        />
-      )}
-
-      <StickyCartBar onClick={() => setCartOpen(true)} />
-
-      <PublicBottomNavigation
-        active={activeNav}
-        count={count}
-        onHome={handleHomeClick}
-        onOrder={handleOrderClick}
-        onTracking={handleTrackingClick}
-      />
 
       <CartDrawer
         open={cartOpen}
@@ -360,7 +352,7 @@ export function PublicBottomNavigation({
   ]
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 h-[70px] border-t bg-background/95 px-4 pb-2 pt-2 shadow-[0_-16px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl">
+    <nav className="fixed bottom-0 left-0 right-0 h-[70px] border-t bg-background/95 px-4 pb-2 pt-2 shadow-[0_-16px_35px_rgba(15,23,42,0.1)]">
       <div className="mx-auto grid h-full max-w-md grid-cols-3 gap-2">
         {items.map((item) => {
           const Icon = item.icon

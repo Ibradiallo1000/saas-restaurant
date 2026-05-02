@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { COLLECTION_NAMES, ORDER_STATUS, PAYMENT_STATUS } from '@/lib/constants';
 import { normalizePaymentMethod, paymentStatusForMethod, type PaymentMethod } from '@/lib/order-payment';
+import type { SelectedCartOption } from '@/modules/restaurant/types';
 import { InventoryService } from './inventory.service';
 import { LoyaltyService } from './loyalty.service';
 
@@ -26,6 +27,7 @@ export interface OrderItemInput {
   nameSnapshot: string;
   priceSnapshot: number;
   quantity: number;
+  selectedOptions?: SelectedCartOption[];
   instructions?: string;
 }
 

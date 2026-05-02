@@ -2,7 +2,7 @@
 
 import * as React from "react"
 
-import type { CartItem, CartSelection } from "@/modules/restaurant/types"
+import type { CartItem, CartSelection, SelectedCartOption } from "@/modules/restaurant/types"
 
 const CART_STORAGE_KEY = "restaurant_public_cart_v1"
 
@@ -14,6 +14,7 @@ type AddCartItemInput = {
   quantity?: number
   total?: number
   selections?: CartSelection
+  selectedOptions?: SelectedCartOption[]
   imageUrl?: string
 }
 
@@ -78,6 +79,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 ...i,
                 quantity: i.quantity + item.quantity,
                 total: i.unitPrice * (i.quantity + item.quantity),
+                selectedOptions: i.selectedOptions ?? item.selectedOptions,
               }
             : i
         )
@@ -152,6 +154,7 @@ function normalizeInputItem(input: AddCartItemInput): CartItem | null {
     quantity,
     total,
     selections: input.selections,
+    selectedOptions: input.selectedOptions,
     imageUrl: input.imageUrl,
   }
 }

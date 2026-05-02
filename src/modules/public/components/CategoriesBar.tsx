@@ -10,7 +10,7 @@ export default function CategoriesBar({
   onSelect: (id: string) => void
 }) {
   return (
-    <div className="sticky top-[96px] z-30 bg-background/95 backdrop-blur border-b">
+    <div className="sticky top-[96px] bg-background/95 border-b">
 
       <div className="flex gap-2 overflow-x-auto px-4 py-3 no-scrollbar">
 

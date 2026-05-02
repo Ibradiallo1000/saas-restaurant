@@ -28,6 +28,7 @@ export type OrderItem = {
   unitPrice: number
   quantity: number
   total: number
+  selectedOptions?: SelectedCartOption[]
 }
 
 export type RestaurantOrder = {
@@ -52,6 +53,12 @@ export type RestaurantOrder = {
 
 export type CartSelection = Record<string, number[]>
 
+export type SelectedCartOption = {
+  optionName: string
+  choiceName: string
+  price: number
+}
+
 export type CartItem = {
   id: string
   productId: string
@@ -60,6 +67,7 @@ export type CartItem = {
   quantity: number
   total: number
   selections?: CartSelection
+  selectedOptions?: SelectedCartOption[]
   imageUrl?: string
 }
 

@@ -1,10 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { addDoc, serverTimestamp } from "firebase/firestore"
+import { addDoc, doc, getDoc, serverTimestamp } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 
 import { useFirestore } from "@/firebase"
+import { recalculateConfiguredUnitPrice } from "@/lib/order-pricing"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
 import { useCart } from "../cart/CartContext"
 
@@ -37,6 +38,33 @@ export default function CheckoutModal({ open, onClose, restaurantId }: any) {
 
     try {
       const sessionId = getOrCreateOrderSessionId(restaurantId)
+      const orderItems = await Promise.all(
+        items.map(async (item) => {
+          const productSnap = await getDoc(
+            doc(db, "restaurants", restaurantId, "products", item.productId)
+          )
+
+          if (!productSnap.exists()) {
+            throw new Error(`Produit introuvable: ${item.productId}`)
+          }
+
+          const product = { id: productSnap.id, ...productSnap.data() }
+          const unitPrice = recalculateConfiguredUnitPrice(
+            product,
+            item.selectedOptions ?? []
+          )
+
+          return {
+            productId: item.productId,
+            name: item.name,
+            unitPrice,
+            quantity: item.quantity,
+            total: unitPrice * item.quantity,
+            selectedOptions: item.selectedOptions ?? [],
+          }
+        })
+      )
+      const recalculatedTotal = orderItems.reduce((sum, item) => sum + item.total, 0)
 
       const order = {
         restaurantId,
@@ -45,14 +73,8 @@ export default function CheckoutModal({ open, onClose, restaurantId }: any) {
         sessionId,
         customer: { name, phone },
         table: table || undefined,
-        items: items.map((item) => ({
-          productId: item.productId,
-          name: item.name,
-          unitPrice: item.unitPrice,
-          quantity: item.quantity,
-          total: item.total,
-        })),
-        total,
+        items: orderItems,
+        total: recalculatedTotal,
         paymentMethod: null,
         paymentStatus: null,
         paidAt: null,

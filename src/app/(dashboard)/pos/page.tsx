@@ -26,8 +26,15 @@ import { OrderService } from "@/services/order.service"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { getOptimizedImage } from "@/lib/image"
+import {
+  getConfiguredCartItemId,
+  recalculateConfiguredUnitPrice,
+} from "@/lib/order-pricing"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { CatalogProvider, useCatalog } from "@/modules/catalog/CatalogProvider"
+import ProductSelectorModal, {
+  type ProductSelectorCartItem,
+} from "@/modules/products/components/ProductSelectorModal"
 
 export default function POSPage() {
   const { restaurantId } = useRestaurant()
@@ -52,6 +59,9 @@ function POSPageContent() {
   const [viewMode, setViewMode] = React.useState<"categories" | "products">("categories")
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null)
   const [turboMode, setTurboMode] = React.useState(false)
+  const [selectorCategory, setSelectorCategory] = React.useState<any | null>(null)
+  const [selectorProducts, setSelectorProducts] = React.useState<any[]>([])
+  const [selectorInitialProduct, setSelectorInitialProduct] = React.useState<any | null>(null)
   // OPTIMISATION PRO : produits par catégorie pré-indexés
   const productsByCategory = React.useMemo(() => {
     if (!products) return {}
@@ -97,6 +107,45 @@ function POSPageContent() {
     clearTimeout(pressTimer)
   }
 
+  const closeProductSelector = () => {
+    setSelectorCategory(null)
+    setSelectorProducts([])
+    setSelectorInitialProduct(null)
+  }
+
+  const openProductSelector = (
+    category: any,
+    categoryProducts: any[],
+    initialProduct?: any
+  ) => {
+    if (categoryProducts.length === 0) return
+
+    setSelectorCategory(category)
+    setSelectorProducts(categoryProducts)
+    setSelectorInitialProduct(initialProduct ?? categoryProducts[0])
+  }
+
+  const handleCategorySelect = (category: any) => {
+    const categoryProducts = productsByCategory[category.id] || []
+
+    setSelectedCategory(category.id)
+    setSearchTerm("")
+    openProductSelector(category, categoryProducts, categoryProducts[0])
+  }
+
+  const handleProductSelect = (product: any) => {
+    const hasOptions = Array.isArray(product.options) && product.options.length > 0
+
+    if (!hasOptions) {
+      addToCart(product)
+      return
+    }
+
+    const category = categories?.find((cat: any) => cat.id === product.categoryId)
+    const categoryProducts = productsByCategory[product.categoryId] || [product]
+    openProductSelector(category, categoryProducts, product)
+  }
+
   const addToCart = (product: any) => {
     const existing = cart.find(item => item.id === product.id)
     if (existing) {
@@ -107,6 +156,42 @@ function POSPageContent() {
     
     if (!turboMode) {
       toast({ title: "Ajouté", description: product.name, duration: 800 })
+    }
+  }
+
+  const addConfiguredToCart = (item: ProductSelectorCartItem) => {
+    const cartItemId = getConfiguredCartItemId(item.productId, item.selectedOptions)
+
+    setCart((current) => {
+      const existing = current.find((cartItem) => cartItem.id === cartItemId)
+
+      if (existing) {
+        return current.map((cartItem) =>
+          cartItem.id === cartItemId
+            ? { ...cartItem, quantity: cartItem.quantity + item.quantity }
+            : cartItem
+        )
+      }
+
+      return [
+        ...current,
+        {
+          ...item.product,
+          id: cartItemId,
+          productId: item.productId,
+          name: item.name,
+          imageUrl: item.imageUrl,
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+          selectedOptions: item.selectedOptions,
+        },
+      ]
+    })
+
+    closeProductSelector()
+
+    if (!turboMode) {
+      toast({ title: "Ajouté", description: item.name, duration: 800 })
     }
   }
 
@@ -127,16 +212,31 @@ function POSPageContent() {
     
     const orderService = new OrderService(db)
     try {
+      const recalculatedItems = cart.map((item) => {
+        const productId = item.productId ?? item.id
+        const product = products.find((currentProduct: any) => currentProduct.id === productId)
+
+        if (!product) {
+          throw new Error(`Produit introuvable: ${productId}`)
+        }
+
+        return {
+          productId,
+          nameSnapshot: item.name,
+          priceSnapshot: recalculateConfiguredUnitPrice(
+            product,
+            item.selectedOptions ?? []
+          ),
+          quantity: item.quantity,
+          selectedOptions: item.selectedOptions ?? [],
+        }
+      })
+
       const orderId = await orderService.createOrder({
         restaurantId: restaurantId,
         type: tableId ? 'table' : 'takeaway',
         tableId: tableId || undefined,
-        items: cart.map(item => ({
-          productId: item.id,
-          nameSnapshot: item.name,
-          priceSnapshot: getProductPrice(item),
-          quantity: item.quantity
-        }))
+        items: recalculatedItems
       })
 
       if (method === 'cash' || method === 'mobile') {
@@ -262,11 +362,7 @@ function POSPageContent() {
                 return (
                   <button
                     key={cat.id}
-                    onClick={() => {
-                      setSelectedCategory(cat.id)
-                      setViewMode("products")
-                      setSearchTerm("")
-                    }}
+                    onClick={() => handleCategorySelect(cat)}
                     className="group flex flex-col bg-card hover:ring-2 ring-primary/50 rounded-xl md:rounded-2xl shadow-lg overflow-hidden active:scale-95 transition-all duration-200 cursor-pointer touch-manipulation"
                   >
                     <div className="aspect-[4/3] min-h-[80px] sm:min-h-[100px] relative bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
@@ -302,16 +398,19 @@ function POSPageContent() {
             {/* MODE PRODUITS */}
             {viewMode === "products" && filteredProducts.map((product: any) => {
               const displayImage = getProductImage(product)
+              const hasOptions = Array.isArray(product.options) && product.options.length > 0
               
               return (
                 <button
                   key={product.id}
-                  onClick={() => addToCart(product)}
+                  onClick={() => handleProductSelect(product)}
                   onTouchStart={() => {
-                    handleLongPressStart(product)
+                    if (!hasOptions) handleLongPressStart(product)
                   }}
                   onTouchEnd={handleLongPressEnd}
-                  onMouseDown={() => handleLongPressStart(product)}
+                  onMouseDown={() => {
+                    if (!hasOptions) handleLongPressStart(product)
+                  }}
                   onMouseUp={handleLongPressEnd}
                   onMouseLeave={handleLongPressEnd}
                   className="group flex flex-col text-left bg-card hover:ring-2 ring-primary/50 transition-all duration-200 rounded-xl md:rounded-2xl shadow-lg overflow-hidden active:scale-95 cursor-pointer touch-manipulation"
@@ -397,6 +496,11 @@ function POSPageContent() {
                 <div key={item.id} className="flex items-center justify-between group animate-in slide-in-from-right-2 gap-2">
                   <div className="space-y-0.5 flex-1 min-w-0">
                     <p className="text-xs md:text-sm font-bold truncate">{item.name}</p>
+                    {Array.isArray(item.selectedOptions) && item.selectedOptions.length > 0 ? (
+                      <p className="truncate text-[9px] font-bold text-primary">
+                        {item.selectedOptions.map((option: any) => option.choiceName).join(", ")}
+                      </p>
+                    ) : null}
                     <p className="text-[9px] md:text-[10px] text-muted-foreground font-black italic">
                       {getProductPrice(item)} FCFA × {item.quantity}
                     </p>
@@ -482,12 +586,23 @@ function POSPageContent() {
         </CardFooter>
       </Card>
       </div>
+
+      {selectorCategory ? (
+        <ProductSelectorModal
+          mode="pos"
+          category={selectorCategory}
+          products={selectorProducts}
+          initialProduct={selectorInitialProduct}
+          onClose={closeProductSelector}
+          onAddToCart={addConfiguredToCart}
+        />
+      ) : null}
     </div>
   )
 }
 
 function getProductPrice(product: any) {
-  const basePrice = Number(product.basePrice ?? product.price ?? 0)
+  const basePrice = Number(product.unitPrice ?? product.basePrice ?? product.price ?? 0)
   return Math.round(basePrice)
 }
 

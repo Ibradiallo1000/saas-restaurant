@@ -18,7 +18,7 @@ export default function Header({
   const initial = name.charAt(0).toUpperCase()
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-background/95 px-4 backdrop-blur">
+    <header className="sticky top-0 flex h-16 items-center justify-between border-b bg-background/95 px-4">
 
       {/* LEFT */}
       <div className="flex min-w-0 items-center gap-3">

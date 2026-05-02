@@ -61,6 +61,16 @@ export default function CartDrawer({ open, onClose, restaurantId }: any) {
                           {values.join(", ")}
                         </p>
                       ))}
+
+                    {item.selectedOptions?.map((option, index) => (
+                      <p
+                        key={`${item.id}-selected-option-${index}`}
+                        className="truncate text-[10px] font-semibold text-muted-foreground"
+                      >
+                        {option.optionName}: {option.choiceName}
+                        {option.price > 0 ? ` +${option.price.toLocaleString()} FCFA` : ""}
+                      </p>
+                    ))}
                   </div>
 
                   <button

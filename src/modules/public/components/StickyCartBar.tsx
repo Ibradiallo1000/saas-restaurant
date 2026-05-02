@@ -8,7 +8,7 @@ export default function StickyCartBar({ onClick }: { onClick?: () => void }) {
   if (count === 0) return null
 
   return (
-    <div className="fixed bottom-20 left-4 right-4 z-40">
+    <div className="fixed bottom-20 left-4 right-4">
       <button
         onClick={onClick}
         className="mx-auto flex w-full max-w-md items-center justify-between rounded-xl bg-[var(--color-primary)] px-4 py-3 text-white shadow-sm transition active:scale-[0.98]"

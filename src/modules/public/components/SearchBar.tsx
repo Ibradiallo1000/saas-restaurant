@@ -24,7 +24,7 @@ export default function SearchBar({
         {/* ICON ACTION */}
         <button
           type="button"
-          className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 rounded-xl bg-[var(--color-primary)] text-white flex items-center justify-center shadow-md active:scale-95 transition"
+          className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary)] text-white shadow-md transition active:scale-95"
         >
           <Search className="h-5 w-5" />
         </button>
