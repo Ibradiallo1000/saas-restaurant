@@ -23,7 +23,6 @@ import {
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { signOut } from "firebase/auth"
-import { limit, orderBy, query, where } from "firebase/firestore"
 
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import {
@@ -40,11 +39,11 @@ import {
 } from "@/components/ui/sidebar"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
-import { useAuth, useCollection, useFirestore, useMemoFirebase } from "@/firebase"
+import { useAuth } from "@/firebase"
 import { getOptimizedImage } from "@/lib/image"
-import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
 import { ROLES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
+import { OrdersBadge } from "@/components/orders-badge"
 
 type NavItem = {
   name: string
@@ -52,28 +51,14 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>
 }
 
-export function AppSidebar() {
+const AppSidebarComponent = () => {
   const pathname = usePathname()
   const currentPathname = pathname ?? ""
   const auth = useAuth()
-  const db = useFirestore()
   const { setOpenMobile } = useSidebar()
   const { restaurant } = useRestaurant()
   const { user, profile, role, isSuperAdmin, restaurantId } = useTenant()
   const isPlatformContext = currentPathname.startsWith("/platform")
-
-  const newOrdersQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId || isPlatformContext) return null
-    return query(
-      restaurantOrdersRef(db, restaurantId),
-      where("status", "in", ["pending", "nouvelle"]),
-      orderBy("createdAt", "desc"),
-      limit(10)
-    )
-  }, [db, restaurantId, isPlatformContext])
-
-  const { data: newOrders } = useCollection(newOrdersQuery)
-  const newOrdersCount = newOrders?.length ?? 0
 
   const navItems = React.useMemo<NavItem[]>(() => {
     if (isPlatformContext && isSuperAdmin) {
@@ -179,16 +164,7 @@ export function AppSidebar() {
                     >
                       <item.icon className="h-5 w-5" />
                       <span>{item.name}</span>
-                      {item.href === "/orders" && newOrdersCount > 0 && (
-                        <span
-                          className={cn(
-                            "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold",
-                            isActive ? "bg-white text-primary" : "bg-red-600 text-white"
-                          )}
-                        >
-                          {newOrdersCount}
-                        </span>
-                      )}
+                      {item.href === "/orders" && <OrdersBadge />}
                     </Link>
                   </SidebarMenuItem>
                 )
@@ -238,6 +214,8 @@ export function AppSidebar() {
     </Sidebar>
   )
 }
+
+export const AppSidebar = React.memo(AppSidebarComponent)
 
 function getActiveSidebarHref(pathname: string, items: NavItem[]) {
   const normalizedPathname = normalizePath(pathname)

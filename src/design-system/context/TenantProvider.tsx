@@ -2,9 +2,9 @@
 
 import * as React from "react"
 import type { User } from "firebase/auth"
-import { doc } from "firebase/firestore"
+import { doc, onSnapshot } from "firebase/firestore"
 
-import { useDoc, useFirestore, useMemoFirebase, useUser } from "@/firebase"
+import { useFirestore, useUser } from "@/firebase"
 import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
 
 type TenantProfile = {
@@ -22,56 +22,93 @@ type TenantContextType = {
   loading: boolean
 }
 
-const tenantProfileCache: Record<string, TenantProfile> = {}
+// Cache global
+const globalCache = new Map<string, TenantProfile>()
 
-const TenantContext = React.createContext<TenantContextType>({
-  user: null,
-  profile: null,
-  restaurantId: null,
-  role: ROLES.SERVER,
-  isSuperAdmin: false,
-  loading: true,
-})
+const TenantContext = React.createContext<TenantContextType | undefined>(undefined)
 
 export function TenantProvider({ children }: { children: React.ReactNode }) {
   const db = useFirestore()
   const { user, isUserLoading } = useUser()
   const uid = user?.uid ?? null
+  
+  const [profile, setProfile] = React.useState<TenantProfile | null>(() => {
+    // Initialiser depuis le cache si disponible
+    return uid ? globalCache.get(uid) ?? null : null
+  })
+  
+  const [isLoading, setIsLoading] = React.useState(!profile && !isUserLoading && !!uid)
 
-  const userRef = useMemoFirebase(() => {
-    if (!db || !uid) return null
-    return doc(db, COLLECTION_NAMES.USERS, uid)
-  }, [db, uid])
-
-  const { data, isLoading } = useDoc<TenantProfile>(userRef)
-
+  // Utiliser onSnapshot au lieu de useDoc pour éviter les re-renders inutiles
   React.useEffect(() => {
-    if (uid && data) {
-      tenantProfileCache[uid] = data
-    }
-  }, [uid, data])
+    if (!db || !uid || isUserLoading) return
 
-  const cachedProfile = uid ? tenantProfileCache[uid] ?? null : null
-  const profile = data ?? cachedProfile
+    setIsLoading(true)
+    
+    const userDocRef = doc(db, COLLECTION_NAMES.USERS, uid)
+    
+    // Écouter les changements en temps réel
+    const unsubscribe = onSnapshot(
+      userDocRef,
+      (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const userData = docSnapshot.data() as TenantProfile
+          
+          // Mettre à jour le cache
+          globalCache.set(uid, userData)
+          
+          // Mettre à jour l'état uniquement si les données ont changé
+          setProfile(prev => {
+            // Comparaison simple pour éviter les updates inutiles
+            if (JSON.stringify(prev) === JSON.stringify(userData)) return prev
+            return userData
+          })
+        } else {
+          setProfile(null)
+        }
+        setIsLoading(false)
+      },
+      (error) => {
+        console.error("Error fetching tenant profile:", error)
+        setIsLoading(false)
+      }
+    )
+    
+    return () => unsubscribe()
+  }, [db, uid, isUserLoading])
+
+  // Mémoriser les valeurs dérivées
   const restaurantId = profile?.restaurantId ?? null
   const role = profile?.role || ROLES.SERVER
   const isSuperAdmin = [ROLES.SUPER_ADMIN, ROLES.ADMIN].includes(role as any)
+  
+  // État de chargement combiné
+  const loading = isUserLoading || isLoading
 
+  // Mémoriser la valeur du contexte
   const value = React.useMemo<TenantContextType>(
     () => ({
-      user,
+      user: user ?? null,
       profile,
       restaurantId,
       role,
       isSuperAdmin,
-      loading: isUserLoading || (Boolean(uid) && isLoading && !profile),
+      loading,
     }),
-    [user, profile, restaurantId, role, isSuperAdmin, isUserLoading, uid, isLoading]
+    [user, profile, restaurantId, role, isSuperAdmin, loading]
   )
 
-  return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>
+  return (
+    <TenantContext.Provider value={value}>
+      {children}
+    </TenantContext.Provider>
+  )
 }
 
 export function useTenant() {
-  return React.useContext(TenantContext)
+  const context = React.useContext(TenantContext)
+  if (context === undefined) {
+    throw new Error('useTenant must be used within a TenantProvider')
+  }
+  return context
 }

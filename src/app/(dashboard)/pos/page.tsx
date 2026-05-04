@@ -15,7 +15,8 @@ import {
   Loader2,
   ArrowLeft,
   Store,
-  GripVertical
+  GripVertical,
+  TrendingUp
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -54,7 +55,11 @@ function POSPageContent() {
   
   const [searchTerm, setSearchTerm] = React.useState("")
   const [cart, setCart] = React.useState<any[]>([])
-  const [tableId, setTableId] = React.useState("")
+  
+  // ✅ GESTION DES TABLES
+  const [orderType, setOrderType] = React.useState<"dine-in" | "takeaway">("takeaway")
+  const [tableNumber, setTableNumber] = React.useState<number | null>(null)
+  
   const [processing, setProcessing] = React.useState(false)
   const [viewMode, setViewMode] = React.useState<"categories" | "products">("categories")
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null)
@@ -62,6 +67,54 @@ function POSPageContent() {
   const [selectorCategory, setSelectorCategory] = React.useState<any | null>(null)
   const [selectorProducts, setSelectorProducts] = React.useState<any[]>([])
   const [selectorInitialProduct, setSelectorInitialProduct] = React.useState<any | null>(null)
+  
+  // ✅ DOUBLE TAP: ref et feedback visuel
+  const lastTapRef = React.useRef<number>(0)
+  const [lastTappedProductId, setLastTappedProductId] = React.useState<string | null>(null)
+  
+  // ✅ CATEGORY USAGE: tracker l'utilisation des catégories
+  const [categoryUsage, setCategoryUsage] = React.useState<Record<string, number>>({})
+
+  // ✅ TABLES: préparation pour future synchro Firestore
+  const tables = React.useMemo(() => {
+    return Array.from({ length: 20 }).map((_, i) => ({
+      id: i + 1,
+      isOccupied: false // futur: Firestore temps réel
+    }))
+  }, [])
+
+  // ✅ BONUS: sauvegarder categoryUsage dans localStorage
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem("categoryUsage")
+      if (saved) {
+        setCategoryUsage(JSON.parse(saved))
+      }
+    } catch (e) {
+      console.error("Erreur chargement categoryUsage", e)
+    }
+  }, [])
+  
+  React.useEffect(() => {
+    try {
+      localStorage.setItem("categoryUsage", JSON.stringify(categoryUsage))
+    } catch (e) {
+      console.error("Erreur sauvegarde categoryUsage", e)
+    }
+  }, [categoryUsage])
+  
+  // ✅ BONUS: mémoriser la dernière table utilisée
+  React.useEffect(() => {
+    try {
+      const savedTable = localStorage.getItem("lastTableNumber")
+      if (savedTable) {
+        setTableNumber(parseInt(savedTable))
+      }
+    } catch (e) {
+      console.error("Erreur chargement dernière table", e)
+    }
+  }, [])
+
   // OPTIMISATION PRO : produits par catégorie pré-indexés
   const productsByCategory = React.useMemo(() => {
     if (!products) return {}
@@ -92,15 +145,35 @@ function POSPageContent() {
     )
   }, [productsByCategory, selectedCategory, searchTerm])
 
-  const visibleCategories = React.useMemo(() => {
-    const search = searchTerm.toLowerCase()
-
-    return [...(categories || [])]
-      .filter((cat: any) => cat.name?.toLowerCase().includes(search))
-      .sort((a: any, b: any) =>
-        a.name.localeCompare(b.name, "fr", { sensitivity: "base" })
+  // ✅ CATEGORIES TRIÉES PAR UTILISATION (plus utilisées en premier)
+  const sortedCategories = React.useMemo(() => {
+    if (!categories) return []
+    
+    return [...categories]
+      .filter((cat: any) => 
+        cat.name?.toLowerCase().includes(searchTerm.toLowerCase())
       )
-  }, [categories, searchTerm])
+      .sort((a: any, b: any) => {
+        const usageA = categoryUsage[a.id] || 0
+        const usageB = categoryUsage[b.id] || 0
+        
+        // Priorité à l'utilisation, puis alphabétique
+        if (usageA !== usageB) return usageB - usageA
+        return a.name.localeCompare(b.name, "fr", { sensitivity: "base" })
+      })
+  }, [categories, categoryUsage, searchTerm])
+  
+  // ✅ Top 5 catégories les plus utilisées
+  const topCategories = React.useMemo(() => {
+    return sortedCategories.slice(0, 5)
+  }, [sortedCategories])
+  
+  // ✅ Reste des catégories (après le top 5)
+  const remainingCategories = React.useMemo(() => {
+    return sortedCategories.slice(5)
+  }, [sortedCategories])
+
+  const visibleCategories = sortedCategories
 
   // Long press timer pour ajout rapide x2
   let pressTimer: NodeJS.Timeout
@@ -137,6 +210,12 @@ function POSPageContent() {
 
   const handleCategorySelect = (category: any) => {
     const categoryProducts = productsByCategory[category.id] || []
+    
+    // ✅ INCRÉMENTER L'UTILISATION DE LA CATÉGORIE
+    setCategoryUsage(prev => ({
+      ...prev,
+      [category.id]: (prev[category.id] || 0) + 1
+    }))
 
     setSelectedCategory(category.id)
     setSearchTerm("")
@@ -166,6 +245,50 @@ function POSPageContent() {
     
     if (!turboMode) {
       toast({ title: "Ajouté", description: product.name, duration: 800 })
+    }
+  }
+
+  // ✅ DOUBLE TAP: ajout direct avec dernier choix + feedback visuel
+  const addToCartWithLastSelection = (product: any) => {
+    try {
+      const saved = localStorage.getItem("lastProductSelection")
+      if (!saved) {
+        addToCart(product)
+        return
+      }
+
+      const parsed = JSON.parse(saved)
+
+      if (parsed.productId === product.id) {
+        setCart((prev) => {
+          const existing = prev.find((item) => item.id === product.id)
+
+          if (existing) {
+            return prev.map((item) =>
+              item.id === product.id
+                ? { ...item, quantity: item.quantity + (parsed.quantity || 1) }
+                : item
+            )
+          }
+
+          return [
+            ...prev,
+            {
+              ...product,
+              quantity: parsed.quantity || 1,
+            },
+          ]
+        })
+        
+        if (!turboMode) {
+          toast({ title: "Ajouté (× rapide)", description: product.name, duration: 800 })
+        }
+      } else {
+        addToCart(product)
+      }
+    } catch (e) {
+      console.error("double tap error", e)
+      addToCart(product)
     }
   }
 
@@ -216,8 +339,20 @@ function POSPageContent() {
 
   const total = cart.reduce((acc, item) => acc + (getProductPrice(item) * item.quantity), 0)
 
+  // ✅ CHECKOUT MODIFIÉ: validation + TypeScript fix
   const handleCheckout = async (method: string) => {
     if (!db || !restaurantId || cart.length === 0) return
+    
+    // ✅ VALIDATION: si sur place mais pas de table sélectionnée
+    if (orderType === "dine-in" && !tableNumber) {
+      toast({
+        title: "Table requise",
+        description: "Veuillez sélectionner une table pour une commande sur place.",
+        variant: "destructive",
+      })
+      return
+    }
+    
     setProcessing(true)
     
     const orderService = new OrderService(db)
@@ -242,19 +377,27 @@ function POSPageContent() {
         }
       })
 
-      const orderId = await orderService.createOrder({
+      // ✅ TYPE SCRIPT FIX: mapping correct des types
+      const orderData: any = {
         restaurantId: restaurantId,
-        type: tableId ? 'table' : 'takeaway',
-        tableId: tableId || undefined,
+        type: orderType === "dine-in" ? "table" : "takeaway",
         items: recalculatedItems
-      })
+      }
+
+      // ✅ Ajout du tableId uniquement si sur place
+      if (orderType === "dine-in" && tableNumber) {
+        orderData.tableId = String(tableNumber)
+      }
+
+      const orderId = await orderService.createOrder(orderData)
 
       if (method === 'cash' || method === 'mobile') {
         await orderService.processPayment(orderId, restaurantId, method)
       }
 
       setCart([])
-      setTableId("")
+      setTableNumber(null)
+      setOrderType("takeaway")
       toast({ title: "Vente validée", description: `Encaissement ${method.toUpperCase()} terminé.` })
       
       // Vibration si supporté (optionnel)
@@ -266,6 +409,16 @@ function POSPageContent() {
       toast({ variant: "destructive", title: "Erreur", description: "Impossible de finaliser la vente." })
     } finally {
       setProcessing(false)
+    }
+  }
+
+  // ✅ BONUS: sauvegarder la dernière table utilisée
+  const handleTableSelect = (tableNum: number) => {
+    setTableNumber(tableNum)
+    try {
+      localStorage.setItem("lastTableNumber", tableNum.toString())
+    } catch (e) {
+      console.error("Erreur sauvegarde table", e)
     }
   }
 
@@ -362,86 +515,147 @@ function POSPageContent() {
 
         {/* GRID PRODUITS / CATÉGORIES */}
         <ScrollArea className="flex-1">
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 items-start gap-4 pb-4">
-
-            {/* MODE CATÉGORIES */}
-            {viewMode === "categories" && visibleCategories.map((cat: any) => (
-              <button
-                key={cat.id}
-                onClick={() => handleCategorySelect(cat)}
-                className="group flex w-full flex-col rounded-2xl bg-card text-center shadow-md transition-all duration-200 hover:shadow-xl md:hover:scale-[1.02] active:scale-95 cursor-pointer touch-manipulation"
-              >
-                <div className="aspect-square w-full overflow-hidden rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200">
-                  {cat.imageUrl ? (
-                    <img
-                      src={getOptimizedImage(cat.imageUrl, 300)}
-                      className="h-full w-full rounded-2xl object-cover"
-                      alt={cat.name}
-                      loading="lazy"
-                      width={300}
-                      height={300}
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center rounded-2xl">
-                      <Store className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" />
-                    </div>
-                  )}
+          <div className="space-y-6">
+            
+            {/* ✅ TOP 5 CATÉGORIES - BARRE STICKY ULTRA RAPIDE */}
+            {viewMode === "categories" && topCategories.length > 0 && (
+              <div className="sticky top-0 z-20 bg-background pb-3 border-b border-border/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <TrendingUp className="h-3 w-3 text-primary" />
+                  <p className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">
+                    Accès rapide
+                  </p>
                 </div>
+                <div className="flex gap-2 overflow-x-auto px-1">
+                  {topCategories.map((cat: any) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => handleCategorySelect(cat)}
+                      className="shrink-0 px-4 py-2 rounded-full bg-primary text-white text-xs font-black shadow-md active:scale-95 transition-all"
+                    >
+                      {cat.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-                <p className="mt-2 w-full truncate px-1 text-center text-sm font-semibold sm:text-base">
-                  {cat.name}
-                </p>
-              </button>
-            ))}
+            {/* ✅ TOUTES LES CATÉGORIES */}
+            {viewMode === "categories" && (
+              <div className="space-y-3">
+                {topCategories.length > 0 && (
+                  <div className="flex items-center gap-2 pt-2">
+                    <div className="h-px flex-1 bg-border" />
+                    <p className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">
+                      Toutes les catégories
+                    </p>
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 items-start gap-4">
+                  {remainingCategories.map((cat: any) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => handleCategorySelect(cat)}
+                      className="group flex w-full flex-col rounded-2xl bg-card text-center shadow-md transition-all duration-200 hover:shadow-xl md:hover:scale-[1.02] active:scale-95 cursor-pointer touch-manipulation"
+                    >
+                      <div className="aspect-square w-full overflow-hidden rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200">
+                        {cat.imageUrl ? (
+                          <img
+                            src={getOptimizedImage(cat.imageUrl, 300)}
+                            className="h-full w-full rounded-2xl object-cover"
+                            alt={cat.name}
+                            loading="lazy"
+                            width={300}
+                            height={300}
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center rounded-2xl">
+                            <Store className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" />
+                          </div>
+                        )}
+                      </div>
+
+                      <p className="mt-2 w-full truncate px-1 text-center text-sm font-semibold sm:text-base">
+                        {cat.name}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* MODE PRODUITS */}
-            {viewMode === "products" && filteredProducts.map((product: any) => {
-              const displayImage = getProductImage(product)
-              const hasOptions = Array.isArray(product.options) && product.options.length > 0
-              
-              return (
-                <button
-                  key={product.id}
-                  onClick={() => handleProductSelect(product)}
-                  onTouchStart={() => {
-                    if (!hasOptions) handleLongPressStart(product)
-                  }}
-                  onTouchEnd={handleLongPressEnd}
-                  onMouseDown={() => {
-                    if (!hasOptions) handleLongPressStart(product)
-                  }}
-                  onMouseUp={handleLongPressEnd}
-                  onMouseLeave={handleLongPressEnd}
-                  className="group flex flex-col text-left bg-card hover:ring-2 ring-primary/50 transition-all duration-200 rounded-xl md:rounded-2xl shadow-lg overflow-hidden active:scale-95 cursor-pointer touch-manipulation"
-                >
-                  <div className="aspect-[4/3] min-h-[80px] sm:min-h-[100px] relative bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
-                    {displayImage ? (
-                      <img 
-                        src={getOptimizedImage(displayImage, 300)} 
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
-                        alt={product.name}
-                        loading="lazy"
-                        width={300}
-                        height={225}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <ShoppingCart className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" />
-                      </div>
-                    )}
-                    <div className="absolute bottom-2 right-2 h-7 w-7 sm:h-8 sm:w-8 bg-primary rounded-full flex items-center justify-center text-white shadow-lg scale-0 group-hover:scale-100 transition-transform">
-                      <Plus className="h-3 w-3 sm:h-4 sm:w-4" />
-                    </div>
-                  </div>
+            {viewMode === "products" && (
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 items-start gap-4">
+                {filteredProducts.map((product: any) => {
+                  const displayImage = getProductImage(product)
+                  const hasOptions = Array.isArray(product.options) && product.options.length > 0
                   
-                  <div className="p-2 sm:p-3 space-y-0.5">
-                    <p className="text-[11px] sm:text-xs font-bold truncate">{product.name}</p>
-                    <p className="text-xs sm:text-sm font-black italic text-primary">{getProductPrice(product)} FCFA</p>
-                    {!turboMode && <ProductOptionsPreview product={product} />}
-                  </div>
-                </button>
-              )
-            })}
+                  return (
+                    <button
+                      key={product.id}
+                      onClick={() => {
+                        // ✅ DOUBLE TAP: détection de double clic rapide + feedback
+                        const now = Date.now()
+                        if (now - lastTapRef.current < 300) {
+                          setLastTappedProductId(product.id)
+                          addToCartWithLastSelection(product)
+                          setTimeout(() => setLastTappedProductId(null), 300)
+                        } else {
+                          handleProductSelect(product)
+                        }
+                        lastTapRef.current = now
+                      }}
+                      onTouchStart={() => {
+                        if (!hasOptions) handleLongPressStart(product)
+                      }}
+                      onTouchEnd={handleLongPressEnd}
+                      onMouseDown={() => {
+                        if (!hasOptions) handleLongPressStart(product)
+                      }}
+                      onMouseUp={handleLongPressEnd}
+                      onMouseLeave={handleLongPressEnd}
+                      className="group relative flex flex-col text-left bg-card hover:ring-2 ring-primary/50 transition-all duration-200 rounded-xl md:rounded-2xl shadow-lg overflow-hidden active:scale-95 cursor-pointer touch-manipulation"
+                    >
+                      <div className="aspect-[4/3] min-h-[80px] sm:min-h-[100px] relative bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
+                        {displayImage ? (
+                          <img 
+                            src={getOptimizedImage(displayImage, 300)} 
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
+                            alt={product.name}
+                            loading="lazy"
+                            width={300}
+                            height={225}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ShoppingCart className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" />
+                          </div>
+                        )}
+                        <div className="absolute bottom-2 right-2 h-7 w-7 sm:h-8 sm:w-8 bg-primary rounded-full flex items-center justify-center text-white shadow-lg scale-0 group-hover:scale-100 transition-transform">
+                          <Plus className="h-3 w-3 sm:h-4 sm:w-4" />
+                        </div>
+                        
+                        {/* ✅ FEEDBACK VISUEL DOUBLE TAP */}
+                        {lastTappedProductId === product.id && (
+                          <div className="absolute inset-0 bg-primary/90 flex items-center justify-center text-white text-xs font-black animate-in fade-in duration-150">
+                            + ajouté
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="p-2 sm:p-3 space-y-0.5">
+                        <p className="text-[11px] sm:text-xs font-bold truncate">{product.name}</p>
+                        <p className="text-xs sm:text-sm font-black italic text-primary">{getProductPrice(product)} FCFA</p>
+                        {!turboMode && <ProductOptionsPreview product={product} />}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
 
             {/* MESSAGES VIDES */}
             {viewMode === "categories" && categories?.length === 0 && (
@@ -477,16 +691,72 @@ function POSPageContent() {
         </CardHeader>
         
         <CardContent className="flex-1 p-0 overflow-hidden flex flex-col">
+          {/* ✅ SWITCH MODE SUR PLACE / À EMPORTER */}
           <div className="p-3 md:p-4 border-b border-primary/5">
-             <div className="relative">
-               <TableIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 md:h-4 md:w-4 text-muted-foreground" />
-               <Input 
-                 placeholder="Table (optionnel)" 
-                 className="pl-8 md:pl-10 h-9 md:h-10 bg-secondary/30 border-none rounded-xl text-xs md:text-sm"
-                 value={tableId}
-                 onChange={(e) => setTableId(e.target.value)}
-               />
-             </div>
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => {
+                  setOrderType("takeaway")
+                  setTableNumber(null)
+                }}
+                className={cn(
+                  "flex-1 px-3 py-2 rounded-xl text-xs font-bold transition-all",
+                  orderType === "takeaway"
+                    ? "bg-primary text-white shadow-md"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                )}
+              >
+                🍔 À emporter
+              </button>
+
+              <button
+                onClick={() => setOrderType("dine-in")}
+                className={cn(
+                  "flex-1 px-3 py-2 rounded-xl text-xs font-bold transition-all",
+                  orderType === "dine-in"
+                    ? "bg-primary text-white shadow-md"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                )}
+              >
+                🍽️ Sur place
+              </button>
+            </div>
+
+            {/* ✅ SÉLECTION TABLE AVEC PRÉPARATION FIRESTORE */}
+            {orderType === "dine-in" && (
+              <div className="space-y-2 animate-in slide-in-from-top-2 duration-200">
+                <p className="text-[10px] font-black uppercase text-muted-foreground">
+                  Choisir une table
+                </p>
+
+                <div className="grid grid-cols-5 gap-2">
+                  {tables.map((table) => {
+                    const active = tableNumber === table.id
+                    
+                    return (
+                      <button
+                        key={table.id}
+                        onClick={() => handleTableSelect(table.id)}
+                        className={cn(
+                          "h-10 rounded-xl text-sm font-black transition-all active:scale-95",
+                          active
+                            ? "bg-primary text-white shadow-md"
+                            : "bg-secondary hover:bg-secondary/80 text-foreground"
+                        )}
+                      >
+                        {table.id}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {!tableNumber && (
+                  <p className="text-[9px] font-bold text-amber-600 text-center">
+                    ⚠️ Sélectionnez une table
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <ScrollArea className="flex-1 px-3 md:px-4">
@@ -554,7 +824,7 @@ function POSPageContent() {
           <div className="grid grid-cols-2 gap-2 md:gap-3 w-full">
             <Button 
               className="h-11 md:h-14 rounded-xl font-black uppercase italic bg-primary hover:bg-primary/90 shadow-lg text-xs md:text-sm"
-              disabled={cart.length === 0 || processing}
+              disabled={cart.length === 0 || processing || (orderType === "dine-in" && !tableNumber)}
               onClick={() => handleCheckout('cash')}
             >
               {processing ? <Loader2 className="animate-spin h-4 w-4 md:h-5 md:w-5" /> : <><Banknote className="mr-1 md:mr-2 h-4 w-4 md:h-5 md:w-5" /> Espèces</>}
@@ -562,7 +832,7 @@ function POSPageContent() {
             <Button 
               variant="outline" 
               className="h-11 md:h-14 rounded-xl font-black uppercase italic border-2 border-primary/20 text-primary hover:bg-primary/5 text-xs md:text-sm"
-              disabled={cart.length === 0 || processing}
+              disabled={cart.length === 0 || processing || (orderType === "dine-in" && !tableNumber)}
               onClick={() => handleCheckout('mobile')}
             >
               {processing ? <Loader2 className="animate-spin h-4 w-4 md:h-5 md:w-5" /> : <><CreditCard className="mr-1 md:mr-2 h-4 w-4 md:h-5 md:w-5" /> Mobile</>}

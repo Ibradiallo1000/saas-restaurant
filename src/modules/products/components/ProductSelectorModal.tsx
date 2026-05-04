@@ -94,6 +94,25 @@ export default function ProductSelectorModal({
     setQuantity(1)
   }, [selectedProductId])
 
+  // ✅ CHARGEMENT DU DERNIER CHOIX
+  React.useEffect(() => {
+    if (!selectedProduct) return
+
+    try {
+      const saved = localStorage.getItem("lastProductSelection")
+      if (!saved) return
+
+      const parsed = JSON.parse(saved)
+
+      if (parsed.productId === selectedProduct.id) {
+        setSelections(parsed.selections || {})
+        setQuantity(parsed.quantity || 1)
+      }
+    } catch (e) {
+      console.error("Erreur lastProductSelection", e)
+    }
+  }, [selectedProductId])
+
   React.useEffect(() => {
     setMounted(true)
   }, [])
@@ -163,8 +182,23 @@ export default function ProductSelectorModal({
     })
   }
 
+  // ✅ SAUVEGARDE AU MOMENT DU ADD
   const handleAdd = () => {
     if (!selectedProduct || !isValid) return
+
+    // ✅ SAUVEGARDE
+    try {
+      localStorage.setItem(
+        "lastProductSelection",
+        JSON.stringify({
+          productId: selectedProduct.id,
+          selections,
+          quantity,
+        })
+      )
+    } catch (e) {
+      console.error("Erreur sauvegarde lastProductSelection", e)
+    }
 
     onAddToCart({
       productId: selectedProduct.id,
