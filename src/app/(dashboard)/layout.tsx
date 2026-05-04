@@ -18,7 +18,7 @@ export default function DashboardLayout({
       <TenantProvider>
         <RestaurantProvider>
           <RestaurantThemeProvider>
-            <div className="flex min-h-screen w-full bg-background">
+            <div className="app-background flex min-h-screen w-full">
               <AppSidebar />
 
               <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8">

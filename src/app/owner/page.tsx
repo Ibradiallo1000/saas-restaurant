@@ -41,7 +41,7 @@ function OwnerPageContent() {
 
           <button
             onClick={() => (window.location.href = "/create-restaurant")}
-            className="mt-4 bg-black text-white px-4 py-2 rounded"
+            className="mt-4 bg-primary text-white px-4 py-2 rounded hover:bg-[#ea580c]"
           >
             Créer un restaurant
           </button>

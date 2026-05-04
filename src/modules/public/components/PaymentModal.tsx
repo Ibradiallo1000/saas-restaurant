@@ -32,7 +32,7 @@ export default function PaymentModal({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end bg-black/50 px-3 pb-3 sm:items-center sm:justify-center sm:p-4">
+    <div className="fixed inset-0 z-[60] flex items-end bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)] px-3 pb-3 sm:items-center sm:justify-center sm:p-4">
       <div className="w-full max-w-md overflow-hidden rounded-3xl bg-background text-foreground shadow-2xl">
         <div className="flex items-center justify-between border-b px-4 py-4">
           <div>

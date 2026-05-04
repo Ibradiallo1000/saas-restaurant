@@ -324,7 +324,7 @@ export default function ProductSelectorModal({
   if (!selectedProduct) {
     return createPortal(
       <div
-        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)] p-4 backdrop-blur-sm"
         onMouseDown={handleOverlayMouseDown}
       >
         <div className="w-full max-w-md rounded-3xl bg-background p-6 text-center text-foreground shadow-2xl">
@@ -346,7 +346,7 @@ export default function ProductSelectorModal({
   if (mode === "pos") {
     return createPortal(
       <div
-        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)] p-4 backdrop-blur-sm"
         onMouseDown={handleOverlayMouseDown}
       >
         <div
@@ -429,7 +429,7 @@ export default function ProductSelectorModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-5 py-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)] px-5 py-6 backdrop-blur-sm"
       onMouseDown={handleOverlayMouseDown}
     >
       <div

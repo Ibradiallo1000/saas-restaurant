@@ -29,11 +29,11 @@ export function FilterTabs<T extends string>({
             onClick={() => onChange(tab.value)}
             className="flex h-11 shrink-0 items-center gap-3 rounded-xl px-4 text-sm font-black uppercase shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
             style={{
-              backgroundColor: isActive ? "var(--color-primary)" : "#ffffff",
-              color: isActive ? "#ffffff" : "var(--color-secondary)",
+              backgroundColor: isActive ? "var(--primary)" : "var(--bg-card)",
+              color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
               boxShadow: isActive
-                ? "0 10px 20px rgba(0,0,0,0.12)"
-                : "0 1px 3px rgba(0,0,0,0.08)",
+                ? "0 10px 20px rgb(3 24 15 / 0.24)"
+                : "0 1px 3px rgb(3 24 15 / 0.18)",
             }}
           >
             <span>{tab.label}</span>
@@ -41,8 +41,8 @@ export function FilterTabs<T extends string>({
               <span
                 className="rounded-full px-2.5 py-1 text-xs font-black"
                 style={{
-                  backgroundColor: isActive ? "#ffffff" : "rgba(0,0,0,0.05)",
-                  color: isActive ? "var(--color-secondary)" : "inherit",
+                  backgroundColor: isActive ? "var(--text-primary)" : "var(--bg-secondary)",
+                  color: isActive ? "var(--bg-secondary)" : "inherit",
                 }}
               >
                 {tab.count}

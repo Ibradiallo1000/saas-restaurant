@@ -15,7 +15,7 @@ export function Header() {
   const logo = settings?.logoUrl
 
   return (
-    <header className="sticky top-0 z-20 h-12 flex items-center justify-between border-b bg-background/90 px-3 backdrop-blur">
+    <header className="app-header sticky top-0 z-20 h-12 flex items-center justify-between px-3">
       
       {/* LEFT */}
       <div className="flex items-center gap-2 min-w-0">

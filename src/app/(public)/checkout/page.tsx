@@ -141,7 +141,7 @@ function CheckoutPage() {
   }
 }
   return (
-    <div className="min-h-screen space-y-6 bg-background p-4 md:p-8">
+    <div className="app-background min-h-screen space-y-6 p-4 md:p-8">
 
       {/* HEADER */}
       <div className="flex items-center gap-4">

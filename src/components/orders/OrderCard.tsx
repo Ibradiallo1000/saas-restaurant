@@ -114,7 +114,7 @@ export function OrderCard({
 function statusClass(status: RestaurantOrder["status"]) {
   switch (status) {
     case ORDER_STATUS.NOUVELLE:
-      return "bg-zinc-500"
+      return "bg-secondary"
     case ORDER_STATUS.PREPARATION:
       return "bg-orange-500"
     case ORDER_STATUS.PRETE:

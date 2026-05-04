@@ -92,6 +92,16 @@ function POSPageContent() {
     )
   }, [productsByCategory, selectedCategory, searchTerm])
 
+  const visibleCategories = React.useMemo(() => {
+    const search = searchTerm.toLowerCase()
+
+    return [...(categories || [])]
+      .filter((cat: any) => cat.name?.toLowerCase().includes(search))
+      .sort((a: any, b: any) =>
+        a.name.localeCompare(b.name, "fr", { sensitivity: "base" })
+      )
+  }, [categories, searchTerm])
+
   // Long press timer pour ajout rapide x2
   let pressTimer: NodeJS.Timeout
   const handleLongPressStart = (product: any) => {
@@ -252,6 +262,7 @@ function POSPageContent() {
         window.navigator.vibrate(200)
       }
     } catch (error) {
+      console.error("POS checkout error:", error)
       toast({ variant: "destructive", title: "Erreur", description: "Impossible de finaliser la vente." })
     } finally {
       setProcessing(false)
@@ -351,49 +362,37 @@ function POSPageContent() {
 
         {/* GRID PRODUITS / CATÉGORIES */}
         <ScrollArea className="flex-1">
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2 md:gap-3 pb-4">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 items-start gap-4 pb-4">
 
             {/* MODE CATÉGORIES */}
-            {viewMode === "categories" && categories
-              ?.filter((cat: any) => cat.name?.toLowerCase().includes(searchTerm.toLowerCase()))
-              ?.map((cat: any) => {
-                const productCount = products?.filter((p: any) => p.categoryId === cat.id && p.isActive !== false).length || 0
-                
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => handleCategorySelect(cat)}
-                    className="group flex flex-col bg-card hover:ring-2 ring-primary/50 rounded-xl md:rounded-2xl shadow-lg overflow-hidden active:scale-95 transition-all duration-200 cursor-pointer touch-manipulation"
-                  >
-                    <div className="aspect-[4/3] min-h-[80px] sm:min-h-[100px] relative bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
-                      {cat.imageUrl ? (
-                        <img 
-                          src={getOptimizedImage(cat.imageUrl, 300)} 
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
-                          alt={cat.name}
-                          loading="lazy"
-                          width={300}
-                          height={225}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Store className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" />
-                        </div>
-                      )}
-                      <div className="absolute bottom-2 right-2 h-7 w-7 sm:h-8 sm:w-8 bg-primary rounded-full flex items-center justify-center text-white shadow-lg scale-0 group-hover:scale-100 transition-transform">
-                        <Plus className="h-3 w-3 sm:h-4 sm:w-4" />
-                      </div>
+            {viewMode === "categories" && visibleCategories.map((cat: any) => (
+              <button
+                key={cat.id}
+                onClick={() => handleCategorySelect(cat)}
+                className="group flex w-full flex-col rounded-2xl bg-card text-center shadow-md transition-all duration-200 hover:shadow-xl md:hover:scale-[1.02] active:scale-95 cursor-pointer touch-manipulation"
+              >
+                <div className="aspect-square w-full overflow-hidden rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200">
+                  {cat.imageUrl ? (
+                    <img
+                      src={getOptimizedImage(cat.imageUrl, 300)}
+                      className="h-full w-full rounded-2xl object-cover"
+                      alt={cat.name}
+                      loading="lazy"
+                      width={300}
+                      height={300}
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center rounded-2xl">
+                      <Store className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" />
                     </div>
+                  )}
+                </div>
 
-                    <div className="p-2 sm:p-3 text-left space-y-0.5">
-                      <p className="text-[11px] sm:text-xs font-black truncate">{cat.name}</p>
-                      <p className="text-[9px] sm:text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">
-                        {productCount}
-                      </p>
-                    </div>
-                  </button>
-                )
-              })}
+                <p className="mt-2 w-full truncate px-1 text-center text-sm font-semibold sm:text-base">
+                  {cat.name}
+                </p>
+              </button>
+            ))}
 
             {/* MODE PRODUITS */}
             {viewMode === "products" && filteredProducts.map((product: any) => {

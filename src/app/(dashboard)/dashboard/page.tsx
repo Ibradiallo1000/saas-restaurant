@@ -143,15 +143,15 @@ export default function DashboardPage() {
         <CardContent className="pt-6 h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--muted))" />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--bg-secondary)" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
               <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
               <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} />
               <Area
                 type="monotone"
                 dataKey="total"
-                stroke="hsl(var(--primary))"
-                fill="hsl(var(--primary))"
+                stroke="var(--primary)"
+                fill="var(--primary)"
                 fillOpacity={0.1}
                 strokeWidth={3}
               />

@@ -5,7 +5,7 @@ import * as React from "react"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 
 const DEFAULT_PRIMARY = "#f97316"
-const DEFAULT_SECONDARY = "#1f2937"
+const DEFAULT_SECONDARY = "#122f24"
 
 export function RestaurantThemeProvider({
   children,
@@ -22,9 +22,9 @@ export function RestaurantThemeProvider({
 
     root.style.setProperty("--color-primary", primary)
     root.style.setProperty("--color-secondary", secondary)
-    root.style.setProperty("--primary", hexToHsl(primary))
-    root.style.setProperty("--secondary-foreground", hexToHsl(primary))
-    root.style.setProperty("--ring", hexToHsl(primary))
+    root.style.setProperty("--primary", primary)
+    root.style.setProperty("--primary-rgb", hexToRgbString(primary))
+    root.style.setProperty("--ring", primary)
     root.style.setProperty("--chart-1", hexToHsl(primary))
     root.style.setProperty("--chart-2", hexToHsl(secondary))
   }, [restaurant?.theme?.primary, restaurant?.theme?.secondary])
@@ -66,4 +66,12 @@ function hexToHsl(hex: string) {
   return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(
     l * 100
   )}%`
+}
+
+function hexToRgbString(hex: string) {
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ].join(" ")
 }

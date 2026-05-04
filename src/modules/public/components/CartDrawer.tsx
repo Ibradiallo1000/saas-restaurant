@@ -17,7 +17,7 @@ export default function CartDrawer({ open, onClose, restaurantId }: any) {
     <div className="fixed inset-0 z-50">
 
       {/* BACKDROP */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)]" onClick={onClose} />
 
       {/* DRAWER */}
       <div className="absolute bottom-0 left-0 right-0 bg-background text-foreground rounded-t-3xl max-h-[85vh] flex flex-col overflow-hidden">

@@ -377,7 +377,7 @@ function PublicTrackingLayout({
   onHome: () => void
 }) {
   return (
-    <div className="min-h-screen bg-background pb-32 text-foreground">
+    <div className="app-background min-h-screen pb-32 text-foreground">
       <Header
         restaurant={restaurant}
         cartCount={count}

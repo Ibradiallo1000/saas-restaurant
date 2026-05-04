@@ -15,7 +15,12 @@ interface ThemeContextValue {
 const ThemeContext = React.createContext<ThemeContextValue | null>(null)
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = React.useState<ThemeMode>("light")
+  const [theme, setThemeState] = React.useState<ThemeMode>(() => {
+    if (typeof window === "undefined") return "light"
+
+    const storedTheme = localStorage.getItem(THEME_STORAGE_KEY)
+    return storedTheme === "dark" ? "dark" : "light"
+  })
 
   const setTheme = React.useCallback((nextTheme: ThemeMode) => {
     document.documentElement.classList.toggle("dark", nextTheme === "dark")
@@ -23,7 +28,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setThemeState(nextTheme)
   }, [])
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     const storedTheme = localStorage.getItem(THEME_STORAGE_KEY)
     setTheme(storedTheme === "dark" ? "dark" : "light")
   }, [setTheme])

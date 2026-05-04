@@ -41,21 +41,21 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
 
   const applyBranding = React.useCallback((nextSettings: PlatformSettings) => {
     const root = document.documentElement
-    const primary = hexToHsl(nextSettings.primaryColor) ?? hexToHsl(DEFAULT_PLATFORM_SETTINGS.primaryColor)
-    const secondary = hexToHsl(nextSettings.secondaryColor) ?? hexToHsl(DEFAULT_PLATFORM_SETTINGS.secondaryColor)
+    const primary = sanitizeHexColor(nextSettings.primaryColor) ?? DEFAULT_PLATFORM_SETTINGS.primaryColor
+    const primaryRgb = hexToRgbString(primary)
+    const secondary = sanitizeHexColor(nextSettings.secondaryColor) ?? DEFAULT_PLATFORM_SETTINGS.secondaryColor
 
-    if (primary) {
-      root.style.setProperty("--primary", primary)
+    root.style.setProperty("--color-primary", primary)
+    root.style.setProperty("--primary", primary)
+
+    if (primaryRgb) {
+      root.style.setProperty("--primary-rgb", primaryRgb)
       root.style.setProperty("--ring", primary)
       root.style.setProperty("--sidebar-primary", primary)
       root.style.setProperty("--sidebar-ring", primary)
     }
 
-    if (secondary) {
-      root.style.setProperty("--secondary", secondary)
-      root.style.setProperty("--accent", secondary)
-      root.style.setProperty("--sidebar-accent", secondary)
-    }
+    root.style.setProperty("--color-secondary", secondary)
   }, [])
 
   const refreshSettings = React.useCallback(async () => {
@@ -150,7 +150,7 @@ export function usePlatform() {
   return context
 }
 
-function hexToHsl(hex: string): string | null {
+function sanitizeHexColor(hex: string): string | null {
   const normalized = hex.trim().replace("#", "")
   const fullHex =
     normalized.length === 3
@@ -160,34 +160,19 @@ function hexToHsl(hex: string): string | null {
           .join("")
       : normalized
 
-  if (!/^[0-9a-fA-F]{6}$/.test(fullHex)) return null
+  return /^[0-9a-fA-F]{6}$/.test(fullHex) ? `#${fullHex}` : null
+}
 
-  const red = Number.parseInt(fullHex.slice(0, 2), 16) / 255
-  const green = Number.parseInt(fullHex.slice(2, 4), 16) / 255
-  const blue = Number.parseInt(fullHex.slice(4, 6), 16) / 255
+function hexToRgbString(hex: string): string | null {
+  const normalized = sanitizeHexColor(hex)
 
-  const max = Math.max(red, green, blue)
-  const min = Math.min(red, green, blue)
-  let hue = 0
-  let saturation = 0
-  const lightness = (max + min) / 2
+  if (!normalized) return null
 
-  if (max !== min) {
-    const delta = max - min
-    saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min)
-
-    if (max === red) {
-      hue = (green - blue) / delta + (green < blue ? 6 : 0)
-    } else if (max === green) {
-      hue = (blue - red) / delta + 2
-    } else {
-      hue = (red - green) / delta + 4
-    }
-
-    hue /= 6
-  }
-
-  return `${Math.round(hue * 360)} ${Math.round(saturation * 100)}% ${Math.round(lightness * 100)}%`
+  return [
+    Number.parseInt(normalized.slice(1, 3), 16),
+    Number.parseInt(normalized.slice(3, 5), 16),
+    Number.parseInt(normalized.slice(5, 7), 16),
+  ].join(" ")
 }
 
 function normalizeGraceDays(value: number) {

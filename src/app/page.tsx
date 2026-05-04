@@ -140,7 +140,7 @@ export default function LandingPage() {
             
             <div className="relative">
               <div className="bg-primary aspect-square rounded-3xl rotate-3 flex items-center justify-center p-8 shadow-2xl">
-                <div className="bg-white aspect-[9/16] w-full rounded-2xl shadow-inner overflow-hidden border-8 border-black">
+                <div className="bg-white aspect-[9/16] w-full rounded-2xl shadow-inner overflow-hidden border-8 border-border">
                   <div className="bg-primary/10 p-4 h-full flex flex-col gap-4">
                     <div className="h-8 w-1/2 bg-primary/20 rounded-full" />
                     <div className="grid grid-cols-2 gap-2">

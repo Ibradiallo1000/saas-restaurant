@@ -126,8 +126,8 @@ export function AppSidebar() {
   )
 
   return (
-    <Sidebar className="border-r bg-white/70 backdrop-blur-md">
-      <SidebarHeader className="p-4 border-b">
+    <Sidebar className="border-r border-border bg-sidebar">
+      <SidebarHeader className="p-4 border-b border-border">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             {restaurant?.logoUrl ? (
@@ -144,7 +144,7 @@ export function AppSidebar() {
               </div>
             )}
 
-            <span className="truncate text-sm font-semibold">
+            <span className="truncate text-sm font-semibold text-foreground">
               {isPlatformContext ? "GastronomeAI" : restaurantName}
             </span>
           </div>
@@ -155,7 +155,7 @@ export function AppSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-secondary-foreground">
             {isPlatformContext ? "Administration SaaS" : `Espace ${role}`}
           </SidebarGroupLabel>
 
@@ -171,10 +171,10 @@ export function AppSidebar() {
                       prefetch
                       onClick={() => setOpenMobile(false)}
                       className={cn(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition",
+                        "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",
                         isActive
-                          ? "bg-[var(--color-primary)] text-white"
-                          : "text-muted-foreground hover:bg-muted"
+                          ? "bg-primary text-white [&>svg]:text-white"
+                          : "text-secondary-foreground hover:bg-secondary hover:text-white [&>svg]:text-secondary-foreground hover:[&>svg]:text-white"
                       )}
                     >
                       <item.icon className="h-5 w-5" />
@@ -198,10 +198,10 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-4 border-t">
+      <SidebarFooter className="p-4 border-t border-border">
         {user ? (
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-3 rounded-xl bg-muted p-3">
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-secondary p-3">
               <div className="h-8 w-8 flex items-center justify-center rounded-full bg-primary/20">
                 {isPlatformContext ? (
                   <ShieldAlert className="h-4 w-4 text-primary" />
@@ -211,7 +211,7 @@ export function AppSidebar() {
               </div>
 
               <div className="flex flex-col overflow-hidden">
-                <span className="truncate text-xs font-semibold">
+                <span className="truncate text-xs font-semibold text-foreground">
                   {user.email?.split("@")[0]}
                 </span>
                 <span className="text-[9px] text-muted-foreground uppercase">
@@ -220,7 +220,7 @@ export function AppSidebar() {
               </div>
 
               <LogOut
-                className="ml-auto h-4 w-4 cursor-pointer"
+                className="ml-auto h-4 w-4 cursor-pointer text-secondary-foreground transition-colors hover:text-white"
                 onClick={() => signOut(auth)}
               />
             </div>
@@ -269,7 +269,7 @@ function ButtonLink({ href, children }: { href: string; children: React.ReactNod
   return (
     <Link
       href={href}
-      className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground"
+      className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-medium text-secondary-foreground shadow-sm hover:bg-accent hover:text-accent-foreground"
     >
       {children}
     </Link>

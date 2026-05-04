@@ -102,15 +102,15 @@ export function Sidebar() {
       variant="sidebar"
       collapsible="icon"
       className={cn(
-        "border-r border-zinc-800",
-        "[&_[data-sidebar=sidebar]]:bg-zinc-900",
-        "[&_[data-sidebar=sidebar]]:text-white/80",
+        "border-r border-border",
+        "[&_[data-sidebar=sidebar]]:bg-sidebar",
+        "[&_[data-sidebar=sidebar]]:text-secondary-foreground",
         "[&_[data-sidebar=sidebar]]:shadow-xl"
       )}
     >
       <SidebarHeader className="p-3">
         <div className="flex min-h-10 items-center gap-3 rounded-md px-2">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[hsl(var(--primary))] text-white shadow-sm">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary text-white shadow-sm">
             {restaurant?.logoUrl ? (
               <img src={restaurant.logoUrl} alt={restaurantName} className="h-full w-full object-cover" />
             ) : (
@@ -125,7 +125,7 @@ export function Sidebar() {
 
       <SidebarContent className="px-1">
         <SidebarGroup>
-          <SidebarGroupLabel className="px-3 text-[10px] font-semibold uppercase tracking-widest text-white/40">
+          <SidebarGroupLabel className="px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
             {sectionLabel}
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -140,9 +140,9 @@ export function Sidebar() {
                       isActive={active}
                       tooltip={item.name}
                       className={cn(
-                        "min-h-10 rounded-md text-white/75 transition-all duration-200 hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-[hsl(var(--primary))]",
+                        "min-h-10 rounded-md text-secondary-foreground transition-all duration-200 hover:bg-secondary hover:text-white focus-visible:ring-2 focus-visible:ring-primary",
                         active &&
-                          "!bg-[hsl(var(--primary))] !font-medium !text-white hover:!bg-[hsl(var(--primary))] hover:!text-white [&>svg]:!text-white"
+                          "!bg-primary !font-medium !text-white hover:!bg-primary hover:!text-white [&>svg]:!text-white"
                       )}
                     >
                       <Link href={item.href} onClick={() => setOpenMobile(false)}>
@@ -160,13 +160,13 @@ export function Sidebar() {
 
       <SidebarFooter className="p-3">
         {user ? (
-          <div className="flex min-h-10 items-center gap-3 rounded-md bg-white/5 p-2 text-white/80 group-data-[collapsible=icon]:justify-center">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white">
+          <div className="flex min-h-10 items-center gap-3 rounded-md border border-border bg-secondary p-2 text-secondary-foreground group-data-[collapsible=icon]:justify-center">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-white">
               <Users className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
               <div className="truncate text-xs font-medium text-white">{user.email?.split("@")[0]}</div>
-              <div className="truncate text-[10px] font-semibold uppercase text-white/40">
+              <div className="truncate text-[10px] font-semibold uppercase text-muted-foreground">
                 {isSuperAdmin ? ROLES.SUPER_ADMIN : restaurantRole}
               </div>
             </div>
@@ -174,7 +174,7 @@ export function Sidebar() {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-9 w-9 text-white/60 hover:bg-white/10 hover:text-white group-data-[collapsible=icon]:hidden"
+              className="h-9 w-9 text-secondary-foreground hover:bg-accent hover:text-white group-data-[collapsible=icon]:hidden"
               onClick={() => signOut(auth)}
             >
               <LogOut className="h-4 w-4" />

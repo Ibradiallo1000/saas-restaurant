@@ -79,7 +79,7 @@ export default function ProductEditor({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)] flex items-center justify-center z-50"
       onClick={onClose}
     >
       <div

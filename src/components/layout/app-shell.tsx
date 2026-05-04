@@ -13,7 +13,7 @@ import { useCurrentUser } from "@/hooks/use-current-user"
 
 function FullScreenLoader() {
   return (
-    <div className="flex min-h-screen items-center justify-center">
+    <div className="app-background flex min-h-screen items-center justify-center">
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
     </div>
   )
@@ -68,7 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="flex min-h-screen w-full bg-background">
+      <div className="app-background flex min-h-screen w-full">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <Header />

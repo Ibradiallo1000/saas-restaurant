@@ -106,7 +106,7 @@ export default function CheckoutModal({ open, onClose, restaurantId }: any) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/50">
+    <div className="fixed inset-0 z-50 flex items-end bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)]">
       <div className="w-full bg-white rounded-t-3xl max-h-[90vh] flex flex-col">
 
         {/* HEADER */}

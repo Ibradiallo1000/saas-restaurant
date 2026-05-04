@@ -266,7 +266,7 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
           </div>
 
           {isInactive && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-sm">
+            <div className="absolute inset-0 bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)] flex items-center justify-center backdrop-blur-sm">
               <Badge variant="destructive" className="text-[10px] px-2 py-0.5">
                 Indisponible
               </Badge>
@@ -925,7 +925,7 @@ function ManagerDashboardContent() {
 
       {/* MODAL CATEGORY */}
       {isCategoryOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)] flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-2xl w-[400px] space-y-4 shadow-2xl">
             <div className="flex justify-between items-center">
               <h2 className="font-bold text-lg">
@@ -1024,7 +1024,7 @@ function ManagerDashboardContent() {
 
       {/* MODAL PRODUCT */}
       {isProductOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)] flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-2xl w-[550px] space-y-4 overflow-y-auto max-h-[90vh] shadow-2xl">
             <div className="flex justify-between items-center">
               <h2 className="font-bold text-xl">

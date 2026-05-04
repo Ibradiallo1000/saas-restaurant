@@ -487,7 +487,7 @@ function statusLabel(status: string) {
 
 function statusBadgeClass(status: string) {
   const normalized = normalizeOrderStatus(status);
-  if (normalized === ORDER_STATUS.NOUVELLE) return "bg-zinc-500 text-white";
+  if (normalized === ORDER_STATUS.NOUVELLE) return "bg-secondary text-white";
   if (normalized === ORDER_STATUS.PREPARATION) return "bg-orange-500 text-white";
   if (normalized === ORDER_STATUS.PRETE) return "bg-blue-600 text-white";
   if (normalized === ORDER_STATUS.SERVIE) return "bg-green-600 text-white";
@@ -496,7 +496,7 @@ function statusBadgeClass(status: string) {
 }
 
 function statusDotClass(status: string) {
-  if (status === ORDER_STATUS.NOUVELLE) return "bg-zinc-500";
+  if (status === ORDER_STATUS.NOUVELLE) return "bg-secondary";
   if (status === ORDER_STATUS.PREPARATION) return "bg-orange-500";
   if (status === ORDER_STATUS.PRETE) return "bg-blue-600";
   if (status === ORDER_STATUS.SERVIE) return "bg-green-600";

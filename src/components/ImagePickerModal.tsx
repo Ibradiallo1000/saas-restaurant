@@ -64,7 +64,7 @@ export default function ImagePickerModal({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-[color:color-mix(in_srgb,var(--bg-main)_72%,transparent)] p-0 sm:items-center sm:p-4">
       <div className="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
         <header className="flex items-center justify-between border-b p-4">
           <div>

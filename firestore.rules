@@ -133,10 +133,19 @@ service cloud.firestore {
         // ✅ Création client (QR / public)
         allow create: if
           request.resource.data.restaurantId == restaurantId
-          && request.resource.data.source == "client"
-          && request.resource.data.status in ["pending", "nouvelle"]
           && request.resource.data.items is list
-          && request.resource.data.total is number;
+          && request.resource.data.total is number
+          && (
+            (
+              request.resource.data.source == "client"
+              && request.resource.data.status in ["pending", "nouvelle"]
+            )
+            || (
+              canUseRestaurant(restaurantId)
+              && request.resource.data.source == "pos"
+              && request.resource.data.status == "nouvelle"
+            )
+          );
 
         // Staff sees the full lifecycle. Client tracking reads session orders.
         allow get, list: if canUseRestaurant(restaurantId)
@@ -151,6 +160,12 @@ service cloud.firestore {
 
         // ❌ Suppression
         allow delete: if isSuperAdmin();
+
+        match /orderItems/{itemId} {
+          allow get, list: if canUseRestaurant(restaurantId);
+          allow create, update: if canUseRestaurant(restaurantId);
+          allow delete: if isSuperAdmin();
+        }
       }
     }
 

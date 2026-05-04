@@ -20,7 +20,7 @@ export default function HeroSection({ restaurant }: { restaurant: any }) {
         className="h-full w-full object-cover object-top"
       />
 
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-black/40" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[color:color-mix(in_srgb,var(--bg-main)_82%,transparent)] via-[color:color-mix(in_srgb,var(--bg-main)_36%,transparent)] to-[color:color-mix(in_srgb,var(--bg-main)_52%,transparent)]" />
 
       <div className="absolute bottom-3 left-4 right-4">
         <h1 className="text-xl font-black leading-tight text-white drop-shadow-md">

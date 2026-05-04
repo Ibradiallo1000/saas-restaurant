@@ -18,14 +18,14 @@ export default function OrderTrackingPage({ orderId }: { orderId: string }) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+      <div className="app-background min-h-screen flex items-center justify-center text-foreground">
         Chargement...
       </div>
     )
   }
 
   if (!order) {
-    return <div className="min-h-screen bg-background p-10 text-center text-foreground">Commande introuvable</div>
+    return <div className="app-background min-h-screen p-10 text-center text-foreground">Commande introuvable</div>
   }
 
   const steps = [
@@ -39,7 +39,7 @@ export default function OrderTrackingPage({ orderId }: { orderId: string }) {
   const currentIndex = steps.findIndex(s => s.key === normalizeOrderStatus(order.status))
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-background p-4 space-y-6 text-foreground">
+    <div className="app-background max-w-md mx-auto min-h-screen p-4 space-y-6 text-foreground">
 
       {/* 🔥 HEADER SUCCESS */}
       <div className="bg-green-500 text-white rounded-2xl p-5 shadow-lg">

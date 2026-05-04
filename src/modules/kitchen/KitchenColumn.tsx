@@ -30,7 +30,7 @@ export function KitchenColumn({
 }: KitchenColumnProps) {
   return (
     <section className={`flex h-full flex-col rounded-lg border ${STATUS_STYLES[status]}`}>
-      <header className="flex items-center justify-between border-b border-black/10 px-3 py-2">
+      <header className="flex items-center justify-between border-b border-border px-3 py-2">
         <h2 className="text-sm font-black uppercase text-gray-950">{title}</h2>
 
         <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-gray-800 shadow-sm">

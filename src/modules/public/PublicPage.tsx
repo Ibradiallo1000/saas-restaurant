@@ -238,7 +238,7 @@ function PublicPageContent({ slug }: { slug: string }) {
   }
 
   return (
-    <div id="app-root" className="min-h-screen bg-background pb-32 text-foreground">
+    <div id="app-root" className="app-background min-h-screen pb-32 text-foreground">
       <div id="main-content">
         <Header
           restaurant={restaurant}
@@ -408,7 +408,7 @@ function CategoriesSkeleton() {
 
 function PublicLoadingSkeleton() {
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="app-background min-h-screen text-foreground">
       <div className="relative flex h-[140px] items-end bg-muted p-4">
         <div className="absolute inset-0 animate-pulse bg-muted" />
         <div className="relative flex items-center gap-3">
@@ -431,7 +431,7 @@ function PublicLoadingSkeleton() {
 
 function PublicFallbackMessage({ message }: { message: string }) {
   return (
-    <div className="mx-auto flex min-h-screen w-full items-center justify-center bg-background px-4 text-foreground">
+    <div className="app-background mx-auto flex min-h-screen w-full items-center justify-center px-4 text-foreground">
       <div className="space-y-4 text-center">
         <Coffee className="mx-auto h-16 w-16 text-muted-foreground/60" />
         <h2 className="text-xl font-semibold">{message}</h2>

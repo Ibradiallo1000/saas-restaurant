@@ -63,8 +63,10 @@ export class OrderService {
 
     const orderData = {
       restaurantId: input.restaurantId,
+      source: 'pos',
       type: input.type,
       tableId: input.tableId || null,
+      table: input.tableId || null,
       roomId: input.roomId || null,
       customerName: input.customerName || 'Client Anonyme',
       customerPhone: input.customerPhone || null,
@@ -77,11 +79,28 @@ export class OrderService {
       tipAmount: input.tipAmount || 0,
       totalAmount,
       deliveryAddress: input.deliveryAddress || null,
+      total: totalAmount,
+      items: input.items.map((item) => ({
+        productId: item.productId,
+        name: item.nameSnapshot,
+        unitPrice: item.priceSnapshot,
+        quantity: item.quantity,
+        total: item.priceSnapshot * item.quantity,
+        selectedOptions: item.selectedOptions || [],
+      })),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
 
-    const orderRef = await addDoc(collection(this.db, COLLECTION_NAMES.ORDERS), orderData);
+    const orderRef = await addDoc(
+      collection(
+        this.db,
+        COLLECTION_NAMES.RESTAURANTS,
+        input.restaurantId,
+        COLLECTION_NAMES.ORDERS
+      ),
+      orderData
+    );
 
     // Enregistrement des articles de la commande (Snapshot des prix pour l'historique)
     for (const item of input.items) {
@@ -91,7 +110,17 @@ export class OrderService {
         subtotal: item.priceSnapshot * item.quantity,
         createdAt: serverTimestamp(),
       };
-      await addDoc(collection(this.db, COLLECTION_NAMES.ORDERS, orderRef.id, COLLECTION_NAMES.ORDER_ITEMS), itemData);
+      await addDoc(
+        collection(
+          this.db,
+          COLLECTION_NAMES.RESTAURANTS,
+          input.restaurantId,
+          COLLECTION_NAMES.ORDERS,
+          orderRef.id,
+          COLLECTION_NAMES.ORDER_ITEMS
+        ),
+        itemData
+      );
     }
 
     return orderRef.id;
@@ -113,7 +142,13 @@ export class OrderService {
    * Assure la cohérence entre le statut de paiement, les stocks et la fidélité.
    */
   async processPayment(orderId: string, restaurantId: string, method: PaymentMethod) {
-    const orderRef = doc(this.db, COLLECTION_NAMES.ORDERS, orderId);
+    const orderRef = doc(
+      this.db,
+      COLLECTION_NAMES.RESTAURANTS,
+      restaurantId,
+      COLLECTION_NAMES.ORDERS,
+      orderId
+    );
     
     // TRANSACTION ATOMIQUE : Garantit qu'un paiement n'est traité qu'une seule fois
     // et que les données restent cohérentes même en cas de concurrence.
@@ -140,8 +175,17 @@ export class OrderService {
     });
 
     // Effets secondaires après transaction réussie
-    const itemsSnapshot = await getDocs(collection(this.db, COLLECTION_NAMES.ORDERS, orderId, COLLECTION_NAMES.ORDER_ITEMS));
-    const orderSnap = await getDoc(doc(this.db, COLLECTION_NAMES.ORDERS, orderId));
+    const itemsSnapshot = await getDocs(
+      collection(
+        this.db,
+        COLLECTION_NAMES.RESTAURANTS,
+        restaurantId,
+        COLLECTION_NAMES.ORDERS,
+        orderId,
+        COLLECTION_NAMES.ORDER_ITEMS
+      )
+    );
+    const orderSnap = await getDoc(orderRef);
     const orderData = orderSnap.data();
 
     if (!orderData) return;
