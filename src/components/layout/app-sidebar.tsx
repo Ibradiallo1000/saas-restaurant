@@ -2,102 +2,85 @@
 
 import * as React from "react"
 import {
-  LayoutDashboard,
-  Monitor,
-  ChefHat,
-  Package,
-  Users2,
-  ListOrdered,
-  Settings,
-  LogOut,
-  Sparkles,
-  Users,
-  ShieldAlert,
   Building2,
+  ChefHat,
   CreditCard,
-  ClipboardCheck,
+  GitBranch,
+  Globe2,
+  ImageIcon,
+  LayoutDashboard,
+  ListOrdered,
+  LogOut,
+  Monitor,
+  Package,
+  Settings,
+  ShieldAlert,
   Store,
-  ChevronRight,
-  Check
+  Users,
+  Users2,
+  WalletCards,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase, useCollection } from "@/firebase"
 import { signOut } from "firebase/auth"
-import { doc, updateDoc, collection, query, where, orderBy } from "firebase/firestore"
-import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
-import { cn } from "@/lib/utils"
 
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
-  SidebarGroup,
-  SidebarGroupLabel,
-  SidebarGroupContent,
-  useSidebar
+  useSidebar,
 } from "@/components/ui/sidebar"
-import { Separator } from "@/components/ui/separator"
+import { useRestaurant } from "@/design-system/context/RestaurantContext"
+import { useTenant } from "@/design-system/context/TenantProvider"
+import { useAuth } from "@/firebase"
+import { getOptimizedImage } from "@/lib/image"
+import { ROLES } from "@/lib/constants"
+import { cn } from "@/lib/utils"
+import { OrdersBadge } from "@/components/orders-badge"
 
-export function AppSidebar() {
+type NavItem = {
+  name: string
+  href: string
+  icon: React.ComponentType<{ className?: string }>
+}
+
+const AppSidebarComponent = () => {
   const pathname = usePathname()
+  const currentPathname = pathname ?? ""
   const auth = useAuth()
-  const db = useFirestore()
-  const { user } = useUser()
   const { setOpenMobile } = useSidebar()
+  const { restaurant } = useRestaurant()
+  const { user, profile, role, isSuperAdmin, restaurantId } = useTenant()
+  const isPlatformContext = currentPathname.startsWith("/platform")
 
-  const userProfileRef = useMemoFirebase(() => {
-    if (!db || !user) return null
-    return doc(db, COLLECTION_NAMES.USERS, user.uid)
-  }, [db, user])
-  const { data: profile } = useDoc(userProfileRef)
-
-  const platformUserRef = useMemoFirebase(() => {
-    if (!db || !user) return null
-    return doc(db, COLLECTION_NAMES.PLATFORM_USERS, user.uid)
-  }, [db, user])
-  const { data: platformProfile } = useDoc(platformUserRef)
-
-  const ownedRestaurantsQuery = useMemoFirebase(() => {
-    if (!db || !user || profile?.role !== ROLES.OWNER) return null
-    return query(
-      collection(db, COLLECTION_NAMES.RESTAURANTS),
-      where("ownerId", "==", user.uid),
-      orderBy("name", "asc")
-    )
-  }, [db, user, profile?.role])
-  const { data: ownedRestaurants } = useCollection(ownedRestaurantsQuery)
-
-  const isSuperAdmin = !!platformProfile && [ROLES.SUPER_ADMIN, ROLES.ADMIN].includes(platformProfile.role as any)
-  const isPlatformContext = pathname.startsWith('/platform')
-  const role = profile?.role || ROLES.SERVER
-
-  const switchRestaurant = async (restaurantId: string) => {
-    if (!db || !user || !userProfileRef) return
-    await updateDoc(userProfileRef, { restaurantId })
-  }
-
-  const platformNav = [
-    { name: "SaaS Overview", href: "/platform", icon: LayoutDashboard },
-    { name: "Restaurants", href: "/platform/restaurants", icon: Building2 },
-    { name: "Abonnements", href: "/platform/billing", icon: CreditCard },
-    { name: "Paramètres SaaS", href: "/platform/settings", icon: Settings },
-  ]
-
-  const getBusinessNav = () => {
-    if (!profile?.restaurantId) return []
-    const nav = []
-
-    if ([ROLES.OWNER, ROLES.MANAGER].includes(role as any)) {
-      nav.push({ name: "Analytiques", href: "/dashboard", icon: LayoutDashboard })
+  const navItems = React.useMemo<NavItem[]>(() => {
+    if (isPlatformContext && isSuperAdmin) {
+      return [
+        { name: "SaaS Overview", href: "/platform", icon: LayoutDashboard },
+        { name: "Restaurants", href: "/platform/restaurants", icon: Building2 },
+        { name: "Abonnements", href: "/platform/billing", icon: CreditCard },
+        { name: "Pays", href: "/platform/settings/countries", icon: Globe2 },
+        { name: "Moyens paiement", href: "/platform/settings/payment-methods", icon: WalletCards },
+        { name: "Variantes paiement", href: "/platform/settings/payment-variants", icon: GitBranch },
+        { name: "Parametres SaaS", href: "/platform/settings", icon: Settings },
+      ]
     }
 
+    if (!restaurantId) return []
+
+    const nav: NavItem[] = []
+
     if ([ROLES.OWNER, ROLES.MANAGER].includes(role as any)) {
+      nav.push({ name: "Dashboard", href: "/dashboard", icon: LayoutDashboard })
       nav.push({ name: "Gestion Menu", href: "/manager", icon: Store })
+      nav.push({ name: "Images", href: "/dashboard/images", icon: ImageIcon })
       nav.push({ name: "Inventaire", href: "/inventory", icon: Package })
     }
 
@@ -112,131 +95,161 @@ export function AppSidebar() {
     nav.push({ name: "Commandes", href: "/orders", icon: ListOrdered })
 
     if ([ROLES.OWNER, ROLES.MANAGER].includes(role as any)) {
-      nav.push({ name: "Fidélité", href: "/customers", icon: Users2 })
+      nav.push({ name: "Fidelite", href: "/customers", icon: Users2 })
+      nav.push({ name: "Paiements", href: "/settings/payments", icon: WalletCards })
       nav.push({ name: "Configuration", href: "/settings", icon: Settings })
     }
 
     return nav
-  }
+  }, [isPlatformContext, isSuperAdmin, restaurantId, role])
 
-  const businessNav = getBusinessNav()
+  const restaurantName = restaurant?.name?.trim() || "Restaurant"
+  const restaurantInitial = restaurantName.charAt(0).toUpperCase() || "R"
+  const activeHref = React.useMemo(
+    () => getActiveSidebarHref(currentPathname, navItems),
+    [currentPathname, navItems]
+  )
 
   return (
-    <Sidebar variant="inset" collapsible="icon">
-      <SidebarHeader className="p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-lg">
-            <Sparkles className="h-6 w-6 text-primary-foreground" />
+    <Sidebar className="border-r border-border bg-sidebar">
+      <SidebarHeader className="p-4 border-b border-border">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {restaurant?.logoUrl ? (
+              <img
+                src={getOptimizedImage(restaurant.logoUrl, 120)}
+                alt={restaurantName}
+                width={120}
+                height={120}
+                className="h-10 w-10 rounded-xl object-cover shadow"
+              />
+            ) : (
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary)] text-white font-bold">
+                {restaurantInitial}
+              </div>
+            )}
+
+            <span className="truncate text-sm font-semibold text-foreground">
+              {isPlatformContext ? "GastronomeAI" : restaurantName}
+            </span>
           </div>
-          <span className="font-headline text-xl font-bold tracking-tight text-primary group-data-[collapsible=icon]:hidden italic">
-            GastronomeAI
-          </span>
+
+          <ThemeToggle />
         </div>
       </SidebarHeader>
 
       <SidebarContent>
-        {isPlatformContext && isSuperAdmin ? (
-          <SidebarGroup>
-            <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground group-data-[collapsible=icon]:hidden">
-              Administration SaaS
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {platformNav.map((item) => (
-                  <SidebarMenuItem key={item.name}>
-                    <SidebarMenuButton asChild isActive={pathname === item.href} tooltip={item.name}>
-                      <Link href={item.href} onClick={() => setOpenMobile(false)}>
-                        <item.icon className="h-5 w-5" />
-                        <span>{item.name}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ) : (
-          <>
-            {profile?.role === ROLES.OWNER && ownedRestaurants && ownedRestaurants.length > 1 && (
-              <SidebarGroup>
-                <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground group-data-[collapsible=icon]:hidden">
-                  Mes Établissements
-                </SidebarGroupLabel>
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {ownedRestaurants.map((res) => (
-                      <SidebarMenuItem key={res.id}>
-                        <SidebarMenuButton 
-                          isActive={profile.restaurantId === res.id}
-                          onClick={() => switchRestaurant(res.id)}
-                          className={cn(
-                            "group-data-[collapsible=icon]:justify-center",
-                            profile.restaurantId === res.id ? "bg-primary/10 text-primary font-bold" : ""
-                          )}
-                        >
-                          <Building2 className="h-4 w-4 shrink-0" />
-                          <span className="truncate">{res.name}</span>
-                          {profile.restaurantId === res.id && <Check className="ml-auto h-3 w-3" />}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-                <Separator className="my-2 mx-4 opacity-50" />
-              </SidebarGroup>
-            )}
+        <SidebarGroup>
+          <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-secondary-foreground">
+            {isPlatformContext ? "Administration SaaS" : `Espace ${role}`}
+          </SidebarGroupLabel>
 
-            <SidebarGroup>
-              <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground group-data-[collapsible=icon]:hidden">
-                Espace {role.toUpperCase()}
-              </SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {businessNav.map((item) => (
-                    <SidebarMenuItem key={item.name}>
-                      <SidebarMenuButton asChild isActive={pathname === item.href} tooltip={item.name}>
-                        <Link href={item.href} onClick={() => setOpenMobile(false)}>
-                          <item.icon className="h-5 w-5" />
-                          <span>{item.name}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </>
-        )}
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navItems.map((item) => {
+                const isActive = item.href === activeHref
+
+                return (
+                  <SidebarMenuItem key={item.name}>
+                    <Link
+                      href={item.href}
+                      prefetch
+                      onClick={() => setOpenMobile(false)}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-primary text-white [&>svg]:text-white"
+                          : "text-secondary-foreground hover:bg-secondary hover:text-white [&>svg]:text-secondary-foreground hover:[&>svg]:text-white"
+                      )}
+                    >
+                      <item.icon className="h-5 w-5" />
+                      <span>{item.name}</span>
+                      {item.href === "/orders" && <OrdersBadge />}
+                    </Link>
+                  </SidebarMenuItem>
+                )
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-4">
+      <SidebarFooter className="p-4 border-t border-border">
         {user ? (
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-3 rounded-xl bg-secondary p-3 shadow-sm group-data-[collapsible=icon]:p-2">
-              <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                {isPlatformContext ? <ShieldAlert className="h-4 w-4 text-primary" /> : <Users className="h-4 w-4 text-primary" />}
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-secondary p-3">
+              <div className="h-8 w-8 flex items-center justify-center rounded-full bg-primary/20">
+                {isPlatformContext ? (
+                  <ShieldAlert className="h-4 w-4 text-primary" />
+                ) : (
+                  <Users className="h-4 w-4 text-primary" />
+                )}
               </div>
-              <div className="flex flex-col overflow-hidden group-data-[collapsible=icon]:hidden">
-                <span className="truncate text-xs font-semibold">{user.email?.split('@')[0]}</span>
-                <span className="truncate text-[9px] text-muted-foreground font-bold uppercase">
-                  {role}
+
+              <div className="flex flex-col overflow-hidden">
+                <span className="truncate text-xs font-semibold text-foreground">
+                  {user.email?.split("@")[0]}
+                </span>
+                <span className="text-[9px] text-muted-foreground uppercase">
+                  {profile?.role || role}
                 </span>
               </div>
-              <LogOut 
-                className="ml-auto h-4 w-4 cursor-pointer text-muted-foreground hover:text-destructive shrink-0 group-data-[collapsible=icon]:hidden" 
+
+              <LogOut
+                className="ml-auto h-4 w-4 cursor-pointer text-secondary-foreground transition-colors hover:text-white"
                 onClick={() => signOut(auth)}
               />
             </div>
+
             {isSuperAdmin && !isPlatformContext && (
-              <Button asChild variant="outline" size="sm" className="w-full text-[10px] font-bold uppercase italic group-data-[collapsible=icon]:hidden">
-                <Link href="/platform">Aller à la Platform</Link>
-              </Button>
+              <ButtonLink href="/platform">Aller a la Platform</ButtonLink>
             )}
           </div>
         ) : (
-          <Link href="/login" className="text-center block text-xs font-bold text-primary italic uppercase">Connexion</Link>
+          <Link href="/login" className="text-center text-xs font-bold text-primary">
+            Connexion
+          </Link>
         )}
       </SidebarFooter>
     </Sidebar>
+  )
+}
+
+export const AppSidebar = React.memo(AppSidebarComponent)
+
+function getActiveSidebarHref(pathname: string, items: NavItem[]) {
+  const normalizedPathname = normalizePath(pathname)
+
+  return items
+    .filter((item) => isRouteMatch(normalizedPathname, item.href))
+    .sort((a, b) => normalizePath(b.href).length - normalizePath(a.href).length)[0]
+    ?.href ?? null
+}
+
+function isRouteMatch(pathname: string, href: string) {
+  const normalizedHref = normalizePath(href)
+
+  return (
+    pathname === normalizedHref ||
+    pathname.startsWith(`${normalizedHref}/`)
+  )
+}
+
+function normalizePath(path: string) {
+  if (path.length > 1 && path.endsWith("/")) {
+    return path.slice(0, -1)
+  }
+
+  return path || "/"
+}
+
+function ButtonLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-medium text-secondary-foreground shadow-sm hover:bg-accent hover:text-accent-foreground"
+    >
+      {children}
+    </Link>
   )
 }

@@ -1,0 +1,405 @@
+
+> nextn@0.1.0 dev
+> next dev -p 9002
+
+   ▲ Next.js 15.5.9
+   - Local:        http://localhost:9002
+   - Network:      http://10.2.0.2:9002
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 8.6s
+ ○ Compiling /dashboard ...
+ ✓ Compiled /platform in 23.5s (2317 modules)
+ GET /dashboard 200 in 26139ms
+ GET /platform 200 in 13287ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 1023ms (1337 modules)
+ GET /favicon.ico 200 in 1403ms
+ ✓ Compiled in 1533ms (1735 modules)
+ GET /platform 200 in 609ms
+ GET /platform 200 in 672ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 612ms (755 modules)
+ GET /favicon.ico 200 in 973ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 1142ms (1337 modules)
+ GET /dashboard 200 in 2237ms
+ GET /platform 200 in 1249ms
+ GET /favicon.ico 200 in 100ms
+ GET /platform 200 in 113ms
+ GET /favicon.ico 200 in 56ms
+ ○ Compiling / ...
+ ✓ Compiled / in 2s (2341 modules)
+ GET / 200 in 2901ms
+ ○ Compiling /platform/restaurants/new ...
+ ✓ Compiled /platform/restaurants/new in 3.4s (2375 modules)
+ GET /platform/restaurants/new 200 in 5976ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 672ms (1376 modules)
+ GET /favicon.ico 200 in 1020ms
+ ○ Compiling /login ...
+ ✓ Compiled /login in 1527ms (2386 modules)
+ GET /login 200 in 2063ms
+ GET /platform 200 in 102ms
+ GET /dashboard 200 in 988ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 1028ms (1383 modules)
+ GET /favicon.ico 200 in 1317ms
+ GET /login 200 in 167ms
+ ✓ Compiled in 2.3s (1034 modules)
+ GET /login 200 in 820ms
+ GET / 200 in 784ms
+ GET /platform 200 in 837ms
+ ✓ Compiled in 1091ms (1034 modules)
+ GET / 200 in 242ms
+ GET /login 200 in 222ms
+ GET /platform 200 in 239ms
+ ✓ Compiled in 5.1s (2386 modules)
+ ✓ Compiled in 1013ms (1021 modules)
+ ✓ Compiled in 1635ms (2388 modules)
+ ✓ Compiled in 974ms (1035 modules)
+ GET / 200 in 653ms
+ GET /platform 200 in 662ms
+ ✓ Compiled in 6.1s (2377 modules)
+ GET / 200 in 6065ms
+ GET /platform 200 in 6068ms
+ GET / 200 in 58ms
+ GET /platform 200 in 74ms
+ ✓ Compiled in 1658ms (2391 modules)
+ GET / 200 in 491ms
+ GET /platform 200 in 498ms
+ ✓ Compiled in 602ms (1029 modules)
+ GET / 200 in 182ms
+ GET /platform 200 in 188ms
+ ✓ Compiled in 1078ms (2391 modules)
+ GET / 200 in 530ms
+ GET /platform 200 in 548ms
+ ✓ Compiled in 1413ms (2391 modules)
+ GET / 200 in 321ms
+ GET /platform 200 in 316ms
+ ✓ Compiled in 2.6s (2377 modules)
+ ○ Compiling /platform/requests ...
+ ✓ Compiled /platform/requests in 2.4s (2403 modules)
+ GET /platform/restaurants 200 in 3759ms
+ GET /platform 200 in 3730ms
+ GET /platform/requests 200 in 3775ms
+ GET /platform/restaurants/new 200 in 137ms
+ ✓ Compiled in 3.8s (2400 modules)
+ GET / 200 in 593ms
+ GET /platform 200 in 611ms
+ GET /login 200 in 693ms
+ GET /platform 200 in 134ms
+ ○ Compiling /platform/requests ...
+ ✓ Compiled /platform/requests in 607ms (1370 modules)
+ GET /platform/requests 200 in 1101ms
+ ✓ Compiled in 3.4s (2386 modules)
+ ✓ Compiled in 1996ms (2388 modules)
+ ✓ Compiled in 778ms (2388 modules)
+ ✓ Compiled in 1296ms (2402 modules)
+ GET / 200 in 334ms
+ GET /platform 200 in 339ms
+ ✓ Compiled in 3.6s (2406 modules)
+ GET /platform 200 in 746ms
+ GET / 200 in 875ms
+ ✓ Compiled in 2.2s (2395 modules)
+ GET / 200 in 2325ms
+ GET /platform 200 in 2324ms
+ GET / 200 in 94ms
+ GET /platform 200 in 92ms
+ ✓ Compiled in 279ms (1023 modules)
+ ✓ Compiled in 505ms (1037 modules)
+ GET / 200 in 182ms
+ GET /platform 200 in 190ms
+ GET / 200 in 246ms
+ GET /platform 200 in 309ms
+ ✓ Compiled in 1352ms (2381 modules)
+ ○ Compiling /platform/restaurants ...
+ ✓ Compiled /platform/restaurants in 1934ms (1366 modules)
+ ✓ Compiled (1375 modules)
+ GET /platform 200 in 3810ms
+ GET /platform/requests 200 in 4142ms
+ GET /platform/restaurants 200 in 4153ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 1518ms (2403 modules)
+ GET /platform/restaurants/new 404 in 2547ms
+ ✓ Compiled in 8.5s (2397 modules)
+ ✓ Compiled in 1768ms (2397 modules)
+ ✓ Compiled in 2.1s (2397 modules)
+ GET /platform 200 in 789ms
+ ○ Compiling /platform/requests ...
+ ✓ Compiled /platform/requests in 702ms (2405 modules)
+ GET /platform/restaurants/new 404 in 2787ms
+ GET /platform/restaurants 200 in 3028ms
+ GET /platform/requests 200 in 3077ms
+ ✓ Compiled in 19.2s (2397 modules)
+ ✓ Compiled in 625ms (1038 modules)
+ ✓ Compiled in 2.5s (2383 modules)
+ ✓ Compiled in 2.8s (2397 modules)
+ ✓ Compiled in 550ms (1038 modules)
+ ✓ Compiled in 2.1s (2383 modules)
+ ✓ Compiled in 443ms (1038 modules)
+ ○ Compiling /api/admin/users/[uid]/super-admin ...
+ ✓ Compiled /api/admin/users/[uid]/super-admin in 1530ms (1369 modules)
+ GET /platform 200 in 10012ms
+ ✓ Compiled in 7.7s (1039 modules)
+ ✓ Compiled in 3.5s (1039 modules)
+ GET /platform 200 in 106ms
+ ○ Compiling /api/admin/invitations ...
+ ✓ Compiled /api/admin/invitations in 2s (2443 modules)
+ POST /api/admin/invitations 401 in 2247ms
+ POST /api/admin/users/test/super-admin 401 in 2272ms
+ ✓ Compiled in 4s (2443 modules)
+ POST /api/admin/users/test/super-admin 401 in 92ms
+ POST /api/admin/invitations 401 in 67ms
+ GET /platform/restaurants 200 in 790ms
+ ✓ Compiled in 2.7s (2398 modules)
+ ✓ Compiled in 529ms (1039 modules)
+ ✓ Compiled in 538ms (1039 modules)
+ ✓ Compiled in 6.1s (2402 modules)
+ ✓ Compiled in 6.7s (2395 modules)
+ ○ Compiling /api/subscriptions/access ...
+ ✓ Compiled /api/subscriptions/access in 7s (2428 modules)
+ GET /api/subscriptions/access?restaurantId=test 401 in 7424ms
+ GET /subscription-required 200 in 9080ms
+ GET /platform/billing 200 in 9263ms
+ POST /api/cron/check-subscriptions 500 in 23069ms
+ ✓ Compiled in 3.1s (2442 modules)
+ GET /platform/billing 200 in 1970ms
+ GET /api/subscriptions/access?restaurantId=test 401 in 235ms
+ GET /subscription-required 200 in 531ms
+ GET /platform 200 in 814ms
+ POST /api/cron/check-subscriptions 500 in 185ms
+ ✓ Compiled in 11.7s (2428 modules)
+ GET /subscription-required 200 in 4649ms
+ GET /platform 200 in 6051ms
+ GET /platform/billing 200 in 5251ms
+ ○ Compiling /api/admin/invitations ...
+ ✓ Compiled /api/admin/invitations in 5.3s (1398 modules)
+ ✓ Compiled (1402 modules)
+ GET /api/subscriptions/access?restaurantId=test 401 in 6343ms
+ POST /api/admin/invitations 401 in 6062ms
+ POST /api/admin/users/test/super-admin 401 in 6458ms
+ ✓ Compiled in 4.9s (2401 modules)
+ ✓ Compiled in 628ms (1043 modules)
+ GET /login 200 in 1206ms
+ GET /login 200 in 206ms
+ GET /login 200 in 164ms
+ GET /login 200 in 162ms
+ GET /login 200 in 163ms
+ GET /login 200 in 204ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 8.4s (2406 modules)
+ GET /no-access 404 in 9138ms
+ GET /no-access 404 in 357ms
+ GET /no-access 404 in 265ms
+ GET /no-access 404 in 290ms
+ GET /no-access 404 in 271ms
+ GET /no-access 404 in 236ms
+ GET /no-access 404 in 254ms
+ GET /no-access 404 in 224ms
+ GET /no-access 404 in 233ms
+ GET /no-access 404 in 301ms
+ GET /no-access 404 in 339ms
+ GET /no-access 404 in 265ms
+ GET /no-access 404 in 286ms
+ GET /no-access 404 in 379ms
+ GET /no-access 404 in 334ms
+ GET /no-access 404 in 235ms
+ GET /no-access 404 in 206ms
+ GET /no-access 404 in 223ms
+ GET /no-access 404 in 216ms
+ GET /no-access 404 in 112ms
+ GET /no-access 404 in 241ms
+ GET /no-access 404 in 324ms
+ GET /no-access 404 in 309ms
+ GET /no-access 404 in 237ms
+ GET /no-access 404 in 109ms
+ GET /no-access 404 in 1748ms
+ ✓ Compiled in 7.9s (2408 modules)
+ GET /login 200 in 4396ms
+ GET /no-access 404 in 1862ms
+ GET /platform/restaurants/new 404 in 283ms
+ ✓ Compiled in 5.1s (2394 modules)
+ GET /platform/restaurants/new 404 in 4570ms
+ GET /platform/restaurants/new 404 in 1303ms
+ GET /platform/restaurants/new 404 in 1153ms
+   Reload env: .env.development
+ ✓ Compiled in 15.1s (2389 modules)
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 1572ms (2394 modules)
+ GET /platform/restaurants/new 404 in 3976ms
+ GET /platform/restaurants/new 404 in 1751ms
+ ○ Compiling /api/subscriptions/access ...
+ ✓ Compiled /api/subscriptions/access in 7.4s (1386 modules)
+ ✓ Compiled in 9.2s (2438 modules)
+ GET /api/health 200 in 20403ms
+ GET /api/subscriptions/access?restaurantId=test 401 in 20462ms
+ POST /api/admin/users/test/super-admin 401 in 20618ms
+ GET /platform/restaurants/new 404 in 13223ms
+ GET /platform/restaurants/new 404 in 2443ms
+ GET /platform/restaurants/new 404 in 1897ms
+ ○ Compiling /platform/billing ...
+ ✓ Compiled /platform/billing in 3.3s (1392 modules)
+ ✓ Compiled in 17.8s (2449 modules)
+ POST /api/admin/invitations 401 in 22343ms
+ GET /platform 200 in 24343ms
+ GET /platform/billing 200 in 24402ms
+ GET /platform/restaurants/new 404 in 21024ms
+ GET /platform/restaurants/new 404 in 2459ms
+ GET /platform/restaurants/new 404 in 294ms
+ GET /platform/restaurants/new 404 in 288ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 3.4s (1377 modules)
+ GET /favicon.ico 200 in 3805ms
+ GET /platform 200 in 300ms
+ GET /login 200 in 207ms
+ GET /no-access 404 in 141ms
+ GET /no-access 404 in 122ms
+ GET /no-access 404 in 1480ms
+ GET /login 200 in 276ms
+ GET /login 200 in 279ms
+ GET /login 200 in 185ms
+ GET /login 200 in 177ms
+ GET /login 200 in 251ms
+ GET /login 200 in 201ms
+ GET /login 200 in 208ms
+ GET /login 200 in 277ms
+ GET /login 200 in 185ms
+ GET /login 200 in 186ms
+ GET /login 200 in 169ms
+ GET /login 200 in 191ms
+ GET /login 200 in 193ms
+ GET /login 200 in 199ms
+ GET /login 200 in 222ms
+ GET /login 200 in 188ms
+ GET /login 200 in 202ms
+ GET /login 200 in 158ms
+ GET /login 200 in 233ms
+ GET /login 200 in 174ms
+ GET /login 200 in 191ms
+ GET /login 200 in 219ms
+ GET /login 200 in 175ms
+ GET /login 200 in 240ms
+ GET /login 200 in 137ms
+ GET /login 200 in 210ms
+ GET /login 200 in 230ms
+ GET /login 200 in 175ms
+ GET /login 200 in 198ms
+ GET /login 200 in 205ms
+ GET /login 200 in 188ms
+ GET /login 200 in 203ms
+ GET /login 200 in 171ms
+ GET /login 200 in 186ms
+ GET /login 200 in 201ms
+ GET /login 200 in 125ms
+ GET /login 200 in 170ms
+ GET /login 200 in 142ms
+ GET /login 200 in 302ms
+ GET /login 200 in 235ms
+ GET /login 200 in 148ms
+ GET /login 200 in 155ms
+ GET /login 200 in 160ms
+ GET /login 200 in 150ms
+ GET /login 200 in 147ms
+ GET /login 200 in 160ms
+ GET /login 200 in 164ms
+ GET /login 200 in 148ms
+ GET /login 200 in 166ms
+ GET /login 200 in 128ms
+ GET /login 200 in 133ms
+ GET /login 200 in 353ms
+ GET /no-access 404 in 106ms
+ GET /no-access 404 in 225ms
+ GET / 200 in 482ms
+ GET /login 200 in 153ms
+ GET /no-access 404 in 111ms
+ GET /no-access 404 in 341ms
+ ✓ Compiled in 1602ms (1048 modules)
+ GET /no-access 404 in 413ms
+ GET /login 200 in 427ms
+ GET /no-access 404 in 266ms
+ GET /login 200 in 340ms
+ ○ Compiling /no-access ...
+ ✓ Compiled /no-access in 8.4s (2403 modules)
+ GET /no-access 200 in 8527ms
+ GET /no-access 200 in 66ms
+ GET /no-access 200 in 944ms
+ GET /no-access 200 in 6963ms
+ ✓ Compiled in 24.3s (2374 modules)
+ ✓ Compiled in 751ms (1047 modules)
+ ✓ Compiled in 2.9s (1033 modules)
+ ✓ Compiled in 2.3s (1047 modules)
+ ✓ Compiled in 594ms (1047 modules)
+   Reload env: .env.development
+ ✓ Compiled in 4.2s (2374 modules)
+ ○ Compiling /api/subscriptions/access ...
+ ✓ Compiled /subscription-required in 9.2s (2442 modules)
+ GET /api/cron/check-subscriptions 404 in 10089ms
+ GET /api/subscriptions/access?restaurantId=test 401 in 11116ms
+ GET /subscription-required 200 in 10750ms
+ GET /platform/billing 200 in 11553ms
+ GET / 200 in 313ms
+ GET /login 200 in 578ms
+ GET /no-access 200 in 108ms
+ GET /login 200 in 82ms
+ GET /no-access 200 in 65ms
+ GET /login 200 in 113ms
+ GET /no-access 200 in 106ms
+ GET /login 200 in 102ms
+ GET /no-access 200 in 89ms
+ GET / 200 in 104ms
+ GET /login 200 in 92ms
+ GET /no-access 200 in 140ms
+ GET /login 200 in 71ms
+ GET /no-access 200 in 66ms
+ ✓ Compiled in 15.5s (2374 modules)
+ GET /no-access 200 in 1901ms
+ ✓ Compiled in 4.2s (2374 modules)
+ GET /no-access 200 in 324ms
+ GET /login 200 in 269ms
+ GET /no-access 200 in 374ms
+ GET /no-access 200 in 176ms
+ GET /no-access 200 in 2216ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 4.9s (1344 modules)
+ GET /favicon.ico 200 in 6656ms
+ GET /no-access 200 in 5132ms
+ GET / 200 in 202ms
+ GET /login 200 in 207ms
+ GET /no-access 200 in 158ms
+ GET /login 200 in 121ms
+ GET /no-access 200 in 367ms
+ GET /no-access 200 in 182ms
+ ✓ Compiled in 4.7s (2374 modules)
+ GET /no-access 200 in 636ms
+ ✓ Compiled in 2.8s (2374 modules)
+ GET /no-access 200 in 312ms
+ ✓ Compiled in 1901ms (1047 modules)
+ GET /no-access 200 in 180ms
+ ✓ Compiled in 855ms (1047 modules)
+ GET /no-access 200 in 121ms
+ ✓ Compiled in 762ms (1047 modules)
+ GET /no-access 200 in 105ms
+ ✓ Compiled in 609ms (1047 modules)
+ GET /no-access 200 in 544ms
+ ✓ Compiled in 779ms (1047 modules)
+ GET /no-access 200 in 92ms
+ GET /no-access 200 in 2522ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 3.2s (1344 modules)
+ GET /favicon.ico 200 in 4898ms
+ GET / 200 in 2190ms
+ GET /login 200 in 202ms
+ GET /no-access 200 in 205ms
+ GET / 200 in 269ms
+ GET /dashboard 200 in 316ms
+ GET /favicon.ico 200 in 106ms
+ GET /no-access 200 in 240ms
+ GET /no-access 200 in 190ms
+ GET / 200 in 155ms
+ GET /login 200 in 156ms
+ GET /no-access 200 in 160ms
+ GET /login 200 in 146ms
+ GET /no-access 200 in 119ms
+[?25h

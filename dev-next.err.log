@@ -1,0 +1,631 @@
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+Error: Route "/[slug]" used `params.slug`. `params` should be awaited before using its properties. Learn more: https://nextjs.org/docs/messages/sync-dynamic-apis
+    at Page (src\app\(public)\[slug]\page.tsx:4:35)
+  2 |
+  3 | export default function Page({ params }: { params: { slug: string } }) {
+> 4 |   return <PublicPage slug={params.slug} />
+    |                                   ^
+  5 | }
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ./src/app/(dashboard)/pos/page.tsx
+Error:   [31mx[0m Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+     ,-[[36;1;4mC:\Users\DELL\Documents\Projects\saas-restaurant\src\app\(dashboard)\pos\page.tsx[0m:252:1]
+ [2m249[0m |       </Card>
+ [2m250[0m |     </div>
+ [2m251[0m |   )
+ [2m252[0m | }
+     : [35;1m^[0m
+     `----
+  [31mx[0m Unexpected eof
+     ,-[[36;1;4mC:\Users\DELL\Documents\Projects\saas-restaurant\src\app\(dashboard)\pos\page.tsx[0m:252:4]
+ [2m250[0m |     </div>
+ [2m251[0m |   )
+ [2m252[0m | }
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/(dashboard)/pos/page.tsx
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in 'C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\@opentelemetry\sdk-node\build\src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/customer-marketing-assistant.ts
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ./src/modules/public/PublicPage.tsx
+Error: 
+
+Caused by:
+    0: Failed to read source code from C:\Users\DELL\Documents\Projects\saas-restaurant\src\modules\public\PublicPage.tsx
+    1: Le fichier spécifié est introuvable. (os error 2)
+
+Import trace for requested module:
+./src/modules/public/PublicPage.tsx
+./src/app/(public)/[slug]/page.tsx
+ ⨯ ./src/modules/public/PublicPage.tsx
+Error: 
+
+Caused by:
+    0: Failed to read source code from C:\Users\DELL\Documents\Projects\saas-restaurant\src\modules\public\PublicPage.tsx
+    1: Le fichier spécifié est introuvable. (os error 2)
+
+Import trace for requested module:
+./src/modules/public/PublicPage.tsx
+./src/app/(public)/[slug]/page.tsx
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\Users\DELL\Documents\Projects\saas-restaurant\.next\cache\webpack\client-development-fallback\0.pack.gz_' -> 'C:\Users\DELL\Documents\Projects\saas-restaurant\.next\cache\webpack\client-development-fallback\0.pack.gz'
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ./src/modules/public/PublicPage.tsx
+Error: 
+
+Caused by:
+    0: Failed to read source code from C:\Users\DELL\Documents\Projects\saas-restaurant\src\modules\public\PublicPage.tsx
+    1: Le fichier spécifié est introuvable. (os error 2)
+
+Import trace for requested module:
+./src/modules/public/PublicPage.tsx
+ ⨯ ./src/modules/public/PublicPage.tsx
+Error: 
+
+Caused by:
+    0: Failed to read source code from C:\Users\DELL\Documents\Projects\saas-restaurant\src\modules\public\PublicPage.tsx
+    1: Le fichier spécifié est introuvable. (os error 2)
+
+Import trace for requested module:
+./src/modules/public/PublicPage.tsx
+./src/app/(public)/[slug]/page.tsx
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ./src/modules/public/components/StickyCartBar.tsx
+Error: 
+
+Caused by:
+    0: Failed to read source code from C:\Users\DELL\Documents\Projects\saas-restaurant\src\modules\public\components\StickyCartBar.tsx
+    1: Le fichier spécifié est introuvable. (os error 2)
+
+Import trace for requested module:
+./src/modules/public/components/StickyCartBar.tsx
+./src/modules/public/PublicPage.tsx
+ ⨯ ./src/modules/public/components/StickyCartBar.tsx
+Error: 
+
+Caused by:
+    0: Failed to read source code from C:\Users\DELL\Documents\Projects\saas-restaurant\src\modules\public\components\StickyCartBar.tsx
+    1: Le fichier spécifié est introuvable. (os error 2)
+
+Import trace for requested module:
+./src/modules/public/components/StickyCartBar.tsx
+./src/modules/public/PublicPage.tsx
+ ⨯ ./src/modules/public/PublicPage.tsx
+Error: 
+
+Caused by:
+    0: Failed to read source code from C:\Users\DELL\Documents\Projects\saas-restaurant\src\modules\public\PublicPage.tsx
+    1: Le fichier spécifié est introuvable. (os error 2)
+
+Import trace for requested module:
+./src/modules/public/PublicPage.tsx
+./src/app/(public)/[slug]/page.tsx
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⨯ ./src/modules/public/PublicPage.tsx
+Error: 
+
+Caused by:
+    0: Failed to read source code from C:\Users\DELL\Documents\Projects\saas-restaurant\src\modules\public\PublicPage.tsx
+    1: Le fichier spécifié est introuvable. (os error 2)
+
+Import trace for requested module:
+./src/modules/public/PublicPage.tsx
+ ⨯ ./src/modules/public/PublicPage.tsx
+Error: 
+
+Caused by:
+    0: Failed to read source code from C:\Users\DELL\Documents\Projects\saas-restaurant\src\modules\public\PublicPage.tsx
+    1: Le fichier spécifié est introuvable. (os error 2)
+
+Import trace for requested module:
+./src/modules/public/PublicPage.tsx
+./src/app/(public)/[slug]/page.tsx
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ./src/modules/public/components/StickyCartBar.tsx
+Error: 
+
+Caused by:
+    0: Failed to read source code from C:\Users\DELL\Documents\Projects\saas-restaurant\src\modules\public\components\StickyCartBar.tsx
+    1: Le fichier spécifié est introuvable. (os error 2)
+
+Import trace for requested module:
+./src/modules/public/components/StickyCartBar.tsx
+./src/modules/public/PublicPage.tsx
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ./src/modules/public/components/StickyCartBar.tsx
+Error: 
+
+Caused by:
+    0: Failed to read source code from C:\Users\DELL\Documents\Projects\saas-restaurant\src\modules\public\components\StickyCartBar.tsx
+    1: Le fichier spécifié est introuvable. (os error 2)
+
+Import trace for requested module:
+./src/modules/public/components/StickyCartBar.tsx
+./src/modules/public/PublicPage.tsx
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⨯ ./src/modules/public/PublicPage.tsx
+Error: 
+
+Caused by:
+    0: Failed to read source code from C:\Users\DELL\Documents\Projects\saas-restaurant\src\modules\public\PublicPage.tsx
+    1: Le fichier spécifié est introuvable. (os error 2)
+
+Import trace for requested module:
+./src/modules/public/PublicPage.tsx
+./src/app/(public)/[slug]/page.tsx
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⨯ Failed to generate static paths for /[slug]:
+[Error: Cannot find module './vendor-chunks/@swc.js'
+Require stack:
+- C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\webpack-runtime.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\app\(public)\[slug]\page.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\require.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\load-components.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\utils.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\dev\static-paths-worker.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\compiled\jest-worker\processChild.js] {
+  type: 'Error',
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ ⨯ [Error: Cannot find module './vendor-chunks/@swc.js'
+Require stack:
+- C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\webpack-runtime.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\app\(public)\[slug]\page.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\require.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\load-components.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\utils.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\dev\static-paths-worker.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\compiled\jest-worker\processChild.js] {
+  type: 'Error',
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array],
+  page: '/relax'
+}
+ ⨯ [Error: Cannot find module 'C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\pages\_document.js'
+Require stack:
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\require.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\load-components.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\utils.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\swc\options.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\swc\index.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\next-config-ts\transpile-config.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\config.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\next.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\lib\start-server.js] {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+[TypeError: Cannot read properties of undefined (reading '/_app')]
+ ⨯ [TypeError: Cannot read properties of undefined (reading '/_app')]
+[Error: Cannot find module './vendor-chunks/@swc.js'
+Require stack:
+- C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\webpack-runtime.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\app\(public)\[slug]\page.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\require.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\load-components.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\utils.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\dev\static-paths-worker.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\compiled\jest-worker\processChild.js] {
+  type: 'Error',
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array],
+  page: '/relax'
+}
+ ⨯ [Error: Cannot find module 'C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\pages\_document.js'
+Require stack:
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\require.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\load-components.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\utils.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\swc\options.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\swc\index.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\next-config-ts\transpile-config.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\config.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\next.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\lib\start-server.js] {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+[TypeError: Cannot read properties of undefined (reading '/_app')]
+ ⨯ [TypeError: Cannot read properties of undefined (reading '/_app')]
+[TypeError: Cannot read properties of undefined (reading '/_app')]
+ ⨯ [Error: Cannot find module './vendor-chunks/@swc.js'
+Require stack:
+- C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\webpack-runtime.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\app\(public)\[slug]\page.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\require.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\load-components.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\utils.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\dev\static-paths-worker.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\compiled\jest-worker\processChild.js] {
+  type: 'Error',
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array],
+  page: '/relax'
+}
+ ⨯ [Error: Cannot find module 'C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\pages\_document.js'
+Require stack:
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\require.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\load-components.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\utils.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\swc\options.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\swc\index.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\next-config-ts\transpile-config.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\config.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\next.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\lib\start-server.js] {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+[TypeError: Cannot read properties of undefined (reading '/_app')]
+ ⨯ [TypeError: Cannot read properties of undefined (reading '/_app')]
+[Error: Cannot find module './vendor-chunks/@swc.js'
+Require stack:
+- C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\webpack-runtime.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\app\(public)\[slug]\page.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\require.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\load-components.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\utils.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\dev\static-paths-worker.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\compiled\jest-worker\processChild.js] {
+  type: 'Error',
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array],
+  page: '/relax'
+}
+ ⨯ [Error: Cannot find module 'C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\pages\_document.js'
+Require stack:
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\require.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\load-components.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\utils.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\swc\options.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\swc\index.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\build\next-config-ts\transpile-config.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\config.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\next.js
+- C:\Users\DELL\Documents\Projects\saas-restaurant\node_modules\next\dist\server\lib\start-server.js] {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+[TypeError: Cannot read properties of undefined (reading '/_app')]
+ ⨯ [TypeError: Cannot read properties of undefined (reading '/_app')]
+[TypeError: Cannot read properties of undefined (reading '/_app')]
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\app-paths-manifest.json'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\Users\\DELL\\Documents\\Projects\\saas-restaurant\\.next\\server\\app-paths-manifest.json',
+  page: '/relax'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\pages-manifest.json'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\Users\\DELL\\Documents\\Projects\\saas-restaurant\\.next\\server\\pages-manifest.json'
+}
+[Error: ENOENT: no such file or directory, open 'C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\app-paths-manifest.json'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\Users\\DELL\\Documents\\Projects\\saas-restaurant\\.next\\server\\app-paths-manifest.json',
+  page: '/relax'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\Users\DELL\Documents\Projects\saas-restaurant\.next\server\pages-manifest.json'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\Users\\DELL\\Documents\\Projects\\saas-restaurant\\.next\\server\\pages-manifest.json'
+}
+[Error: ENOENT: no such file or directory, open 'C:\Users\DELL\Documents\Projects\saas-restaurant\.next\routes-manifest.json'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\Users\\DELL\\Documents\\Projects\\saas-restaurant\\.next\\routes-manifest.json'
+}

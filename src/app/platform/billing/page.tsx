@@ -1,191 +1,225 @@
+"use client"
 
-'use client';
-
-/**
- * @fileOverview Page de gestion financière SaaS.
- * Lit les données réelles des plans et des abonnements.
- * Correction : Hydratation safe pour les dates.
- */
-
-import * as React from 'react';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy } from 'firebase/firestore';
-import { COLLECTION_NAMES } from '@/lib/constants';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { CreditCard, TrendingUp, Calendar, AlertTriangle, Download, Package } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import * as React from "react"
+import { useRouter } from "next/navigation"
+import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
+import { collection, query, orderBy } from "firebase/firestore"
+import { COLLECTION_NAMES } from "@/lib/constants"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { CreditCard, TrendingUp, Calendar, AlertTriangle, Download, Package } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
 export default function BillingAdminPage() {
-  const db = useFirestore();
+  const db = useFirestore()
+  const router = useRouter()
+
   const [mounted, setMounted] = React.useState(false)
 
   React.useEffect(() => {
     setMounted(true)
   }, [])
 
-  // 1. Récupération des Plans
+  // 🔥 PLANS
   const plansQuery = useMemoFirebase(() => {
-    if (!db) return null;
-    return query(collection(db, COLLECTION_NAMES.PLANS));
-  }, [db]);
-  const { data: plans } = useCollection(plansQuery);
+    if (!db) return null
+    return query(collection(db, COLLECTION_NAMES.PLANS))
+  }, [db])
 
-  // 2. Récupération des Abonnements
+  const { data: plans } = useCollection(plansQuery)
+
+  // 🔥 SUBSCRIPTIONS
   const subsQuery = useMemoFirebase(() => {
-    if (!db) return null;
-    return query(collection(db, COLLECTION_NAMES.SUBSCRIPTIONS), orderBy('endDate', 'desc'));
-  }, [db]);
-  const { data: subscriptions } = useCollection(subsQuery);
+    if (!db) return null
+    return query(
+      collection(db, COLLECTION_NAMES.SUBSCRIPTIONS),
+      orderBy("endDate", "desc")
+    )
+  }, [db])
 
-  // 3. Récupération des Restaurants (pour le matching)
+  const { data: subscriptions } = useCollection(subsQuery)
+
+  // 🔥 RESTAURANTS
   const restQuery = useMemoFirebase(() => {
-    if (!db) return null;
-    return query(collection(db, COLLECTION_NAMES.RESTAURANTS));
-  }, [db]);
-  const { data: restaurants } = useCollection(restQuery);
+    return null
+  }, [db])
 
+  const { data: restaurants } = useCollection(restQuery)
+
+  // 🔥 STATS
   const stats = React.useMemo(() => {
-    if (!subscriptions || !plans || !mounted) return { mrr: 0, churn: 0, alerts: 0, count: 0 };
-    
-    const now = new Date();
-    const active = subscriptions.filter(s => s.status === 'active');
-    
+    if (!subscriptions || !plans || !mounted) {
+      return { mrr: 0, alerts: 0, count: 0 }
+    }
+
+    const now = new Date()
+
+    const active = subscriptions.filter(s => s.status === "active")
+
     const mrr = active.reduce((acc, sub) => {
-      const plan = plans.find(p => p.id === sub.planId);
-      return acc + (plan?.price || 0);
-    }, 0);
+      const plan = plans.find(p => p.id === sub.planId)
+      return acc + (plan?.price || 0)
+    }, 0)
 
     const alerts = active.filter(s => {
-      const end = s.endDate?.toDate?.() || new Date();
-      return end < new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    }).length;
+      const end = s.endDate?.toDate?.()
+      if (!end) return false
 
-    return { mrr, alerts, count: active.length };
-  }, [subscriptions, plans, mounted]);
+      return end < new Date(now.getTime() + 7 * 86400000)
+    }).length
+
+    return { mrr, alerts, count: active.length }
+  }, [subscriptions, plans, mounted])
 
   const formatDate = (timestamp: any) => {
-    if (!timestamp || !mounted) return "N/A";
-    return timestamp.toDate().toLocaleDateString();
-  };
+    if (!timestamp || !mounted) return "N/A"
+    return timestamp.toDate().toLocaleDateString()
+  }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+    <div className="space-y-8 pb-20">
+
+      {/* HEADER */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-4xl font-black italic uppercase tracking-tighter text-primary">Contrôle Financier</h1>
-          <p className="text-muted-foreground font-medium">Gestion des revenus récurrents et des offres.</p>
+          <h1 className="text-4xl font-black italic uppercase text-primary">
+            Contrôle Financier
+          </h1>
+          <p className="text-muted-foreground">
+            Gestion des revenus récurrents
+          </p>
         </div>
+
         <div className="flex gap-2">
-          <Button variant="outline"><Package className="mr-2 h-4 w-4" /> Gérer les Plans</Button>
-          <Button><Download className="mr-2 h-4 w-4" /> Rapport PDF</Button>
+          <Button onClick={() => router.push("/platform/plans")}>
+            <Package className="mr-2 h-4 w-4" />
+            Gérer les Plans
+          </Button>
+
+          <Button variant="outline">
+            <Download className="mr-2 h-4 w-4" />
+            Rapport PDF
+          </Button>
         </div>
       </div>
 
+      {/* STATS */}
       <div className="grid gap-6 md:grid-cols-3">
-        <PlatformStatCard 
-          icon={TrendingUp} 
-          title="MRR (Revenu Mensuel)" 
-          value={`${stats.mrr.toLocaleString()} XOF`} 
-          description="Basé sur les abonnements actifs" 
+        <PlatformStatCard
+          icon={TrendingUp}
+          title="MRR"
+          value={`${stats.mrr.toLocaleString()} XOF`}
+          description="Revenu mensuel"
         />
-        <PlatformStatCard 
-          icon={AlertTriangle} 
-          title="Alertes Expiration" 
-          value={stats.alerts} 
-          description="Fin de cycle sous 7 jours" 
+
+        <PlatformStatCard
+          icon={AlertTriangle}
+          title="Expirations"
+          value={stats.alerts}
+          description="Sous 7 jours"
           variant={stats.alerts > 0 ? "warning" : "default"}
         />
-        <PlatformStatCard 
-          icon={CreditCard} 
-          title="Parc Actif" 
-          value={stats.count} 
-          description="Établissements sous contrat" 
+
+        <PlatformStatCard
+          icon={CreditCard}
+          title="Restaurants actifs"
+          value={stats.count}
+          description="Sous abonnement"
         />
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-8">
-        <Card className="lg:col-span-2 border-none shadow-2xl overflow-hidden">
-          <CardHeader className="bg-secondary/10 p-6">
-            <CardTitle className="text-xl font-black italic uppercase">Journal des Abonnements</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y">
-              {mounted && subscriptions?.map((sub) => {
-                const restaurant = restaurants?.find(r => r.id === sub.restaurantId);
-                const plan = plans?.find(p => p.id === sub.planId);
-                const isExpiring = (sub.endDate?.toDate?.() || new Date()) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      {/* TABLE */}
+      <Card className="shadow-xl">
+        <CardHeader>
+          <CardTitle>Journal abonnements</CardTitle>
+        </CardHeader>
 
-                return (
-                  <div key={sub.id} className="p-4 flex items-center justify-between hover:bg-muted/30 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className="h-10 w-10 rounded-xl bg-primary/5 flex items-center justify-center">
-                        <Calendar className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-sm uppercase italic">{restaurant?.name || 'Inconnu'}</p>
-                        <p className="text-[10px] text-muted-foreground font-black uppercase">Plan: {plan?.name || sub.planId}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-6">
-                      <div className="text-right">
-                        <p className="text-xs font-black text-primary">{plan?.price.toLocaleString() || 0} {plan?.currency || 'XOF'}</p>
-                        <p className={cn("text-[9px] font-bold uppercase", isExpiring ? "text-destructive" : "text-muted-foreground")}>
-                          Fin: {formatDate(sub.endDate)}
-                        </p>
-                      </div>
-                      <Badge variant={sub.status === 'active' ? 'default' : 'secondary'} className="text-[9px] uppercase font-black">
-                        {sub.status}
-                      </Badge>
-                    </div>
+        <CardContent className="p-0">
+          <div className="divide-y">
+            {mounted && subscriptions?.map(sub => {
+              const restaurant = restaurants?.find(r => r.id === sub.restaurantId)
+              const plan = plans?.find(p => p.id === sub.planId)
+
+              const price = plan?.price || 0
+
+              return (
+                <div key={sub.id} className="p-4 flex justify-between">
+
+                  <div>
+                    <p className="font-bold">{restaurant?.name || "Inconnu"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {plan?.name || sub.planId}
+                    </p>
                   </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
 
-        <Card className="border-none shadow-2xl bg-primary text-primary-foreground">
-          <CardHeader>
-            <CardTitle className="text-lg font-black italic uppercase">Offres de Services</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {plans?.map((plan) => (
-              <div key={plan.id} className="p-4 bg-white/10 rounded-2xl border border-white/5 space-y-2">
-                <div className="flex justify-between items-center">
-                  <p className="font-bold uppercase italic">{plan.name}</p>
-                  <p className="text-lg font-black">{plan.price.toLocaleString()} {plan.currency}</p>
+                  <div className="text-right">
+                    <p className="font-bold">
+                      {price.toLocaleString()} {plan?.currency || "XOF"}
+                    </p>
+
+                    <p className="text-xs">
+                      {formatDate(sub.endDate)}
+                    </p>
+                  </div>
+
+                  <Badge>
+                    {sub.status}
+                  </Badge>
+
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-[9px] font-bold uppercase opacity-80">
-                  <span className="flex items-center gap-1">● {plan.features.maxUsers} Users</span>
-                  <span className="flex items-center gap-1">● {plan.features.aiEnabled ? 'AI Incluse' : 'No AI'}</span>
-                </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* PLANS */}
+      <Card className="bg-primary text-white">
+        <CardHeader>
+          <CardTitle>Plans disponibles</CardTitle>
+        </CardHeader>
+
+        <CardContent className="space-y-3">
+          {plans?.map(plan => (
+            <div key={plan.id} className="p-4 bg-white/10 rounded-xl">
+
+              <div className="flex justify-between">
+                <span>{plan.name}</span>
+                <span>{plan.price} {plan.currency}</span>
               </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
+
+              {/* 🔥 FIX FEATURES */}
+              <div className="text-xs opacity-80 mt-2">
+                {Array.isArray(plan.features)
+                  ? plan.features.join(" • ")
+                  : "Aucune info"}
+              </div>
+
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
     </div>
-  );
+  )
 }
 
 function PlatformStatCard({ icon: Icon, title, value, description, variant = "default" }: any) {
   return (
     <Card className={cn(
-      "border-none shadow-lg",
-      variant === "warning" ? "bg-orange-500/5 ring-1 ring-orange-500/20" : "bg-card/50 backdrop-blur-sm"
+      "shadow-lg",
+      variant === "warning" && "bg-orange-50"
     )}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{title}</CardTitle>
-        <Icon className={cn("h-4 w-4", variant === "warning" ? "text-orange-500" : "text-primary")} />
+      <CardHeader className="flex justify-between">
+        <span className="text-xs">{title}</span>
+        <Icon className="h-4 w-4" />
       </CardHeader>
+
       <CardContent>
-        <div className={cn("text-2xl font-black italic tracking-tighter", variant === "warning" ? "text-orange-500" : "text-primary")}>
-          {value}
-        </div>
-        <p className="text-[10px] font-medium text-muted-foreground mt-1">{description}</p>
+        <div className="text-xl font-bold">{value}</div>
+        <p className="text-xs text-muted-foreground">{description}</p>
       </CardContent>
     </Card>
-  );
+  )
 }

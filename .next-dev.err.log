@@ -1,0 +1,72 @@
+ ⚠ ./src/app/dashboard/layout.tsx
+Attempted import error: 'SubscriptionService' is not exported from '@/services/subscription.service' (imported as 'SubscriptionService').
+
+Import trace for requested module:
+./src/app/dashboard/layout.tsx
+
+./src/app/dashboard/layout.tsx
+Attempted import error: 'SubscriptionService' is not exported from '@/services/subscription.service' (imported as 'SubscriptionService').
+
+Import trace for requested module:
+./src/app/dashboard/layout.tsx
+ ⚠ ./src/app/dashboard/layout.tsx
+Attempted import error: 'SubscriptionService' is not exported from '@/services/subscription.service' (imported as 'SubscriptionService').
+
+Import trace for requested module:
+./src/app/dashboard/layout.tsx
+
+./src/app/dashboard/layout.tsx
+Attempted import error: 'SubscriptionService' is not exported from '@/services/subscription.service' (imported as 'SubscriptionService').
+
+Import trace for requested module:
+./src/app/dashboard/layout.tsx
+ ⚠ ./src/app/dashboard/layout.tsx
+Attempted import error: 'SubscriptionService' is not exported from '@/services/subscription.service' (imported as 'SubscriptionService').
+
+Import trace for requested module:
+./src/app/dashboard/layout.tsx
+
+./src/app/dashboard/layout.tsx
+Attempted import error: 'SubscriptionService' is not exported from '@/services/subscription.service' (imported as 'SubscriptionService').
+
+Import trace for requested module:
+./src/app/dashboard/layout.tsx
+ ⚠ ./src/app/dashboard/layout.tsx
+Attempted import error: 'SubscriptionService' is not exported from '@/services/subscription.service' (imported as 'SubscriptionService').
+
+Import trace for requested module:
+./src/app/dashboard/layout.tsx
+
+./src/app/dashboard/layout.tsx
+Attempted import error: 'SubscriptionService' is not exported from '@/services/subscription.service' (imported as 'SubscriptionService').
+
+Import trace for requested module:
+./src/app/dashboard/layout.tsx
+Error: Unable to detect a Project Id in the current environment. 
+To learn more about authentication and Google APIs, visit: 
+https://cloud.google.com/docs/authentication/getting-started
+    at <unknown> (https://cloud.google.com/docs/authentication/getting-started)
+    at checkSubscriptions (src\server\subscriptions\check-subscriptions.ts:12:6)
+    at POST (src\app\api\cron\check-subscriptions\route.ts:15:42)
+  10 |     .where("status", "==", "trial")
+  11 |     .where("trialEndsAt", "<", now)
+> 12 |     .get()
+     |      ^
+  13 |
+  14 |   if (expiredTrials.empty) {
+  15 |     return { expired: 0 }
+CHECK_SUBSCRIPTIONS failed Error: Unable to detect a Project Id in the current environment. 
+To learn more about authentication and Google APIs, visit: 
+https://cloud.google.com/docs/authentication/getting-started
+    at <unknown> (https://cloud.google.com/docs/authentication/getting-started)
+    at checkSubscriptions (src\server\subscriptions\check-subscriptions.ts:12:6)
+    at POST (src\app\api\cron\check-subscriptions\route.ts:15:7)
+    at checkSubscriptions (src\server\subscriptions\check-subscriptions.ts:12:6)
+    at POST (src\app\api\cron\check-subscriptions\route.ts:16:44)
+  10 |     .where("status", "==", "trial")
+  11 |     .where("trialEndsAt", "<", now)
+> 12 |     .get()
+     |      ^
+  13 |
+  14 |   if (expiredTrials.empty) {
+  15 |     return { expired: 0 }

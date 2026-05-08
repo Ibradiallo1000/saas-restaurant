@@ -22,15 +22,18 @@ export default function RestaurantsAdminPage() {
 
   const restaurantsQuery = useMemoFirebase(() => {
     if (!db) return null;
-    return query(collection(db, COLLECTION_NAMES.RESTAURANTS), orderBy('createdAt', 'desc'));
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS),
+      orderBy('createdAt', 'desc')
+    );
   }, [db]);
 
   const { data: restaurants, isLoading } = useCollection(restaurantsQuery);
 
   const filteredRestaurants = React.useMemo(() => {
     if (!restaurants) return [];
-    return restaurants.filter(r => 
-      r.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    return restaurants.filter(r =>
+      r.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       r.ownerEmail?.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [restaurants, searchTerm]);
@@ -69,8 +72,8 @@ export default function RestaurantsAdminPage() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <p className="text-lg font-black uppercase italic text-primary leading-none">{r.name}</p>
-                      <Badge variant={r.active ? "default" : "secondary"} className="text-[9px] font-black uppercase">
-                        {r.subscriptionStatus}
+                      <Badge variant={r.status === "active" ? "default" : "secondary"} className="text-[9px] font-black uppercase">
+                        {r.subscriptionStatus || r.status || "inconnu"}
                       </Badge>
                     </div>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground font-medium">
@@ -85,7 +88,7 @@ export default function RestaurantsAdminPage() {
                   <div className="text-right hidden md:block">
                     <p className="text-xs font-bold">Expire le</p>
                     <p className="text-sm font-black text-primary">
-                      {r.subscriptionEndDate ? new Date(r.subscriptionEndDate).toLocaleDateString() : 'Non définie'}
+                      {formatRestaurantDate(r.subscriptionEndDate)}
                     </p>
                   </div>
                   <Button variant="outline" size="sm" className="font-bold border-primary/20 text-primary" onClick={() => router.push(`/platform/restaurants/${r.id}`)}>
@@ -105,4 +108,15 @@ export default function RestaurantsAdminPage() {
       </Card>
     </div>
   );
+}
+
+function formatRestaurantDate(value: any) {
+  if (!value) return 'Non définie';
+
+  const date =
+    typeof value.toDate === 'function'
+      ? value.toDate()
+      : new Date(value);
+
+  return Number.isNaN(date.getTime()) ? 'Non définie' : date.toLocaleDateString();
 }

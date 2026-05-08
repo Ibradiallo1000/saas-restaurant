@@ -55,6 +55,24 @@ export class StaffService {
         updatedAt: serverTimestamp()
       });
 
+      const staffRef = doc(
+        this.db,
+        COLLECTION_NAMES.RESTAURANTS,
+        restaurantId,
+        'staff',
+        uid
+      );
+      await setDoc(staffRef, {
+        id: uid,
+        email: email.toLowerCase(),
+        role,
+        restaurantId,
+        active: true,
+        status: 'active',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
       // 3. Email de bienvenue / reset
       await sendPasswordResetEmail(tempAuth, email);
       await signOut(tempAuth);
@@ -70,8 +88,7 @@ export class StaffService {
    */
   async getStaff(restaurantId: string) {
     const q = query(
-      collection(this.db, COLLECTION_NAMES.USERS),
-      where('restaurantId', '==', restaurantId)
+      collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, 'staff')
     );
     const snap = await getDocs(q);
     return snap.docs.map(d => d.data());

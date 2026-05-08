@@ -1,123 +1,144 @@
 'use client';
 
-/**
- * @fileOverview Service gérant la création d'établissements et le cycle de vie des restaurants.
- * Implémente l'architecture "Orchestration Atomique par Isolation Client".
- */
-
-import { 
-  Firestore, 
-  doc, 
-  serverTimestamp, 
-  runTransaction, 
+import {
+  Firestore,
+  doc,
+  serverTimestamp,
+  runTransaction,
   Timestamp
 } from 'firebase/firestore';
-import { initializeApp, deleteApp } from 'firebase/app';
-import { 
-  getAuth, 
-  createUserWithEmailAndPassword, 
-  sendPasswordResetEmail,
-  signOut
-} from 'firebase/auth';
-import { firebaseConfig } from '@/firebase/config';
-import { COLLECTION_NAMES, ROLES, SUBSCRIPTION_STATUS } from '@/lib/constants';
+
+import { COLLECTION_NAMES, SUBSCRIPTION_STATUS } from '@/lib/constants';
+import { InvitationService } from './invitation.service';
+
+export type RestaurantContext = "standalone" | "hotel" | "lodge";
 
 export interface RestaurantData {
   name: string;
   slug: string;
-  country: string;
+
+  context: RestaurantContext;
+
+  countryCode: string;
+  countryName: string;
   currency: string;
+  timezone: string;
+
+  city: string;
+  phone: string;
+
+  location?: {
+    address?: string;
+    googleMapsUrl?: string;
+    lat?: number;
+    lng?: number;
+  };
 }
 
 export class RestaurantService {
   constructor(private db: Firestore) {}
 
-  /**
-   * Provisionnement ATOMIQUE d'un restaurant par le SuperAdmin.
-   * Utilise une instance Firebase secondaire pour créer le compte Auth sans déconnecter l'Admin.
-   */
-  async createRestaurantForOwner(ownerEmail: string, data: RestaurantData) {
-    const restaurantId = crypto.randomUUID();
-    const tempPassword = this.generateSecurePassword(32);
-    
-    const tempAppName = `provisioning-${Date.now()}`;
-    const tempApp = initializeApp(firebaseConfig, tempAppName);
-    const tempAuth = getAuth(tempApp);
+  // 🔥 SLUG UNIQUE
+  private async generateUniqueSlug(baseSlug: string): Promise<string> {
+    return baseSlug;
+  }
 
-    let newUserUid: string | null = null;
+  // 🔥 CLEAN LOCATION
+  private cleanLocation(location?: RestaurantData["location"]) {
+    if (!location) return null;
+
+    const cleaned: any = {};
+
+    if (location.address) cleaned.address = location.address;
+    if (location.googleMapsUrl) cleaned.googleMapsUrl = location.googleMapsUrl;
+    if (location.lat !== undefined) cleaned.lat = location.lat;
+    if (location.lng !== undefined) cleaned.lng = location.lng;
+
+    return Object.keys(cleaned).length > 0 ? cleaned : null;
+  }
+
+  /**
+   * 🔥 VERSION INVITATION (PROPRE SaaS)
+   */
+  async createRestaurantForOwner(
+    ownerEmail: string,
+    data: RestaurantData
+  ) {
+    const restaurantId = crypto.randomUUID();
 
     try {
-      // 1. Création du compte Firebase Authentication (Isolé)
-      const userCredential = await createUserWithEmailAndPassword(tempAuth, ownerEmail, tempPassword);
-      newUserUid = userCredential.user.uid;
+      const finalSlug = await this.generateUniqueSlug(data.slug);
 
-      // 2. TRANSACTION FIRESTORE ATOMIQUE
-      await runTransaction(this.db, async (transaction) => {
-        const restaurantRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId);
-        const userRef = doc(this.db, COLLECTION_NAMES.USERS, newUserUid!);
-        const subId = crypto.randomUUID();
-        const subRef = doc(this.db, COLLECTION_NAMES.SUBSCRIPTIONS, subId);
+      await runTransaction(this.db, async (tx) => {
+        const restaurantRef = doc(
+          this.db,
+          COLLECTION_NAMES.RESTAURANTS,
+          restaurantId
+        );
+
+        const subRef = doc(
+          this.db,
+          COLLECTION_NAMES.SUBSCRIPTIONS,
+          restaurantId
+        );
 
         const endDate = new Date();
-        endDate.setDate(endDate.getDate() + 30); // Trial 30 jours
+        endDate.setDate(endDate.getDate() + 30);
 
-        transaction.set(restaurantRef, {
+        // 🏢 RESTAURANT
+        tx.set(restaurantRef, {
           id: restaurantId,
-          ownerId: newUserUid,
-          ownerEmail: ownerEmail.toLowerCase(),
-          ...data,
-          active: true,
-          subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
-          subscriptionEndDate: Timestamp.fromDate(endDate),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          createdByPlatform: true
-        });
+          name: data.name,
+          slug: finalSlug,
 
-        transaction.set(userRef, {
-          id: newUserUid,
-          email: ownerEmail.toLowerCase(),
-          role: ROLES.OWNER,
-          restaurantId: restaurantId,
-          active: true,
-          mustChangePassword: true,
+          ownerEmail: ownerEmail.toLowerCase(),
+
+          context: data.context,
+
+          countryCode: data.countryCode,
+          countryName: data.countryName,
+          city: data.city,
+          phone: data.phone,
+
+          location: this.cleanLocation(data.location),
+
+          settings: {
+            currency: data.currency,
+            timezone: data.timezone
+          },
+
           status: "active",
+
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
 
-        transaction.set(subRef, {
-          id: subId,
+        // 💳 SUBSCRIPTION
+        tx.set(subRef, {
           restaurantId,
-          planId: 'trial',
+          planId: "trial",
           status: SUBSCRIPTION_STATUS.ACTIVE,
           startDate: serverTimestamp(),
           endDate: Timestamp.fromDate(endDate),
-          isTrial: true,
-          createdAt: serverTimestamp()
+          isTrial: true
         });
       });
 
-      // 3. Email de réinitialisation de mot de passe
-      await sendPasswordResetEmail(tempAuth, ownerEmail);
-      await signOut(tempAuth);
+      // 🔥 INVITATION (clé du système)
+      const invitationService = new InvitationService(this.db);
+      const token = await invitationService.createInvitation(
+        ownerEmail,
+        restaurantId
+      );
+
+      return {
+        restaurantId,
+        token
+      };
 
     } catch (error: any) {
-      console.error("Échec critique du provisioning:", error);
-      throw error;
-    } finally {
-      await deleteApp(tempApp);
+      console.error("🔥 FIRESTORE ERROR:", error);
+      throw new Error(error.message || "Erreur création restaurant");
     }
-
-    return restaurantId;
-  }
-
-  private generateSecurePassword(length: number): string {
-    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+";
-    let retVal = "";
-    for (let i = 0, n = charset.length; i < length; ++i) {
-      retVal += charset.charAt(Math.floor(Math.random() * n));
-    }
-    return retVal;
   }
 }

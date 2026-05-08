@@ -28,7 +28,7 @@ export default function PlatformInitPage() {
     async function checkExistingAdmins() {
       if (!db) return
       try {
-        const q = query(collection(db, COLLECTION_NAMES.PLATFORM_USERS), limit(1))
+        const q = query(collection(db, COLLECTION_NAMES.USERS), limit(1))
         const snapshot = await getDocs(q)
         setCanInit(snapshot.empty)
       } catch (error) {
@@ -45,7 +45,7 @@ export default function PlatformInitPage() {
     setLoading(true)
 
     try {
-      const adminRef = doc(db, COLLECTION_NAMES.PLATFORM_USERS, user.uid)
+      const adminRef = doc(db, COLLECTION_NAMES.USERS, user.uid)
       await setDoc(adminRef, {
         id: user.uid,
         email: user.email,

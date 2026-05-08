@@ -1,0 +1,156 @@
+
+> nextn@0.1.0 dev
+> next dev -p 9002
+
+   ▲ Next.js 15.5.9
+   - Local:        http://localhost:9002
+   - Network:      http://10.2.0.2:9002
+   - Environments: .env.local, .env.development
+
+ ✓ Starting...
+ ✓ Ready in 5.2s
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 18.1s (2303 modules)
+ HEAD /dashboard 200 in 20386ms
+ ✓ Compiled in 2.4s (993 modules)
+ ✓ Compiled in 1541ms (993 modules)
+ ○ Compiling /checkout ...
+ ✓ Compiled /checkout in 5.3s (2340 modules)
+ HEAD /checkout 200 in 8003ms
+ HEAD /dashboard 200 in 9647ms
+ GET /dashboard 200 in 4305ms
+ ○ Compiling /[slug] ...
+ ✓ Compiled /[slug] in 8.2s (2383 modules)
+ GET /dashboard 200 in 1897ms
+ ✓ Compiled in 2.2s (1036 modules)
+ GET /dashboard 200 in 233ms
+ GET /relax 200 in 13544ms
+ ✓ Compiled in 6.3s (2383 modules)
+ GET /dashboard 200 in 1287ms
+ GET /relax 200 in 1275ms
+ ✓ Compiled in 2.7s (1036 modules)
+ GET /relax 200 in 481ms
+ GET /dashboard 200 in 456ms
+ HEAD /dashboard 200 in 1413ms
+ ✓ Compiled in 2.3s (2383 modules)
+ GET /dashboard 200 in 388ms
+ GET /relax 200 in 375ms
+ GET /dashboard 200 in 5189ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 5.8s (1364 modules)
+ GET /favicon.ico 200 in 6669ms
+ ○ Compiling /manager ...
+ ✓ Compiled /manager in 7.9s (2454 modules)
+ GET /manager 200 in 8743ms
+ GET /manager 200 in 177ms
+ ○ Compiling /dashboard/images ...
+ ✓ Compiled /dashboard/images in 2.5s (2487 modules)
+ GET /dashboard/images 200 in 3161ms
+ GET /dashboard 200 in 212ms
+ GET /relax 200 in 1420ms
+ GET /favicon.ico 200 in 159ms
+ GET /relax 200 in 323ms
+ GET /favicon.ico 200 in 97ms
+ ○ Compiling /order/[restaurantId]/[orderId] ...
+ ✓ Compiled /order/[restaurantId]/[orderId] in 4.9s (2479 modules)
+ GET /order/9f2f99bb-ddbe-40df-8a54-fe8f4b9f81b9/XWDbzTQVVSSGA1PMvBku 200 in 7075ms
+ GET /relax 200 in 228ms
+ ○ Compiling /kitchen ...
+ ✓ Compiled /kitchen in 8.3s (2506 modules)
+ GET /kitchen 200 in 9000ms
+ ○ Compiling /orders ...
+ ✓ Compiled /orders in 4.4s (2521 modules)
+ GET /orders 200 in 5084ms
+ ○ Compiling /pos ...
+ ✓ Compiled /pos in 10.2s (1949 modules)
+ GET /pos 200 in 10925ms
+ ✓ Compiled in 2.9s (1949 modules)
+ GET /pos 200 in 452ms
+ GET /relax 200 in 442ms
+ ✓ Compiled in 2.1s (1947 modules)
+ GET /pos 200 in 423ms
+ GET /relax 200 in 419ms
+ ✓ Compiled in 1574ms (1947 modules)
+ GET /pos 200 in 219ms
+ GET /relax 200 in 208ms
+ ✓ Compiled in 3.9s (1948 modules)
+ GET /pos 200 in 406ms
+ GET /relax 200 in 413ms
+ GET /pos 200 in 1521ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 2.9s (851 modules)
+ GET /favicon.ico 200 in 3391ms
+ GET /favicon.ico 200 in 27ms
+ GET /favicon.ico 200 in 35ms
+ GET /kitchen 200 in 252ms
+ ○ Compiling /inventory ...
+ ✓ Compiled /inventory in 4.2s (1971 modules)
+ GET /inventory 200 in 4918ms
+ GET /relax 200 in 829ms
+ GET /inventory 200 in 249ms
+ GET /pos 200 in 111ms
+ ✓ Compiled in 3.2s (1965 modules)
+ GET /pos 200 in 410ms
+ GET /relax 200 in 401ms
+ ✓ Compiled in 3.3s (1963 modules)
+ GET /pos 200 in 1312ms
+ GET /relax 200 in 1303ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 2.1s (858 modules)
+ GET /favicon.ico 200 in 2417ms
+ ✓ Compiled in 3.6s (1949 modules)
+ GET /pos 200 in 1105ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 733ms (858 modules)
+ GET /favicon.ico 200 in 995ms
+ ✓ Compiled in 1296ms (1982 modules)
+ ✓ Compiled in 0ms (859 modules)
+ ✓ Compiled in 0ms (859 modules)
+ ✓ Compiled in 1ms (859 modules)
+ GET /pos 200 in 3217ms
+ GET /relax 200 in 3557ms
+ GET /favicon.ico 200 in 51ms
+ GET /favicon.ico 200 in 88ms
+ GET /favicon.ico 200 in 148ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 4.5s (1429 modules)
+ GET /dashboard 200 in 6621ms
+ GET /pos 200 in 2413ms
+ GET /favicon.ico 200 in 80ms
+ GET /favicon.ico 200 in 157ms
+ GET /favicon.ico 200 in 86ms
+ GET /dashboard 200 in 138ms
+ ○ Compiling /manager ...
+ ✓ Compiled /manager in 3.6s (1441 modules)
+ GET /manager 200 in 4181ms
+ ○ Compiling /dashboard/images ...
+ ✓ Compiled /dashboard/images in 2.4s (1460 modules)
+ GET /dashboard/images 200 in 2921ms
+ GET /inventory 200 in 2992ms
+ GET /pos 200 in 179ms
+ ○ Compiling /kitchen ...
+ ✓ Compiled /kitchen in 4.1s (1464 modules)
+ GET /kitchen 200 in 8332ms
+ ○ Compiling /orders ...
+ ✓ Compiled /orders in 1593ms (1473 modules)
+ GET /orders 200 in 2232ms
+ ○ Compiling /customers ...
+ GET /customers 200 in 36506ms
+ GET /relax 200 in 9898ms
+ GET /customers 200 in 1899ms
+ GET /customers 200 in 7766ms
+ GET /customers 200 in 2636ms
+ GET /favicon.ico 200 in 3668ms
+ GET /favicon.ico 200 in 63ms
+ GET /favicon.ico 200 in 64ms
+ GET /dashboard 200 in 2392ms
+ GET /manager 200 in 3741ms
+ GET /manager 200 in 1755ms
+ GET /favicon.ico 200 in 105ms
+ GET /favicon.ico 200 in 128ms
+ GET /favicon.ico 200 in 67ms
+ GET /manager 200 in 243ms
+ GET /relax 200 in 235ms
+ GET /manager 500 in 5166ms
+ GET /relax 200 in 4160ms
+ GET /favicon.ico 200 in 1582ms

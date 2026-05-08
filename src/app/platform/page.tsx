@@ -22,8 +22,7 @@ export default function PlatformDashboard() {
   const router = useRouter();
 
   const restaurantsQuery = useMemoFirebase(() => {
-    if (!db) return null;
-    return query(collection(db, COLLECTION_NAMES.RESTAURANTS), orderBy('createdAt', 'desc'));
+    return null;
   }, [db]);
 
   const requestsQuery = useMemoFirebase(() => {

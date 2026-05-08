@@ -3,8 +3,8 @@
 import * as React from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { CartProvider, useCart } from '@/components/public/cart-context';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, where, limit, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { collection, doc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { COLLECTION_NAMES, ORDER_STATUS, PAYMENT_STATUS } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,12 +37,20 @@ function CheckoutPage() {
     table: ''
   });
 
-  const restaurantQuery = useMemoFirebase(() => {
+  const slugRef = useMemoFirebase(() => {
     if (!db || !slug) return null;
-    return query(collection(db, COLLECTION_NAMES.RESTAURANTS), where('slug', '==', slug), limit(1));
+    return doc(db, 'restaurantSlugs', slug);
   }, [db, slug]);
-  const { data: restaurants } = useCollection(restaurantQuery);
-  const restaurant = restaurants?.[0];
+
+  const { data: slugData } = useDoc(slugRef);
+  const restaurantId = slugData?.restaurantId;
+
+  const restaurantRef = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null;
+    return doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId);
+  }, [db, restaurantId]);
+
+  const { data: restaurant } = useDoc(restaurantRef);
 
   const handleOrder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,8 +70,10 @@ function CheckoutPage() {
           quantity: i.quantity
         })),
         totalAmount: totalPrice,
-        status: ORDER_STATUS.PENDING,
-        paymentStatus: PAYMENT_STATUS.UNPAID,
+        status: ORDER_STATUS.NOUVELLE,
+        paymentMethod: null,
+        paymentStatus: null,
+        paidAt: null,
         type: formData.table ? 'table' : 'takeaway',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -109,7 +119,7 @@ function CheckoutPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8 space-y-6">
+    <div className="app-background min-h-screen p-4 md:p-8 space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-xl bg-secondary/50">
           <ArrowLeft className="h-5 w-5" />

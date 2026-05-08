@@ -85,7 +85,7 @@
   "firestore": {
     "structure": [
       { "path": "platform/{platformId}", "definition": { "schema": { "$ref": "#/backend/entities/PlatformConfig" }, "description": "Config globale." } },
-      { "path": "platformUsers/{userId}", "definition": { "schema": { "$ref": "#/backend/entities/PlatformUser" }, "description": "Admins SaaS." } },
+      { "path": "users/{userId}", "definition": { "schema": { "$ref": "#/backend/entities/PlatformUser" }, "description": "Admins SaaS." } },
       { "path": "restaurants/{restaurantId}", "definition": { "schema": { "$ref": "#/backend/entities/Restaurant" }, "description": "Données établissements." } },
       { "path": "plans/{planId}", "definition": { "schema": { "$ref": "#/backend/entities/Plan" }, "description": "Offres SaaS." } },
       { "path": "subscriptions/{subId}", "definition": { "schema": { "$ref": "#/backend/entities/Subscription" }, "description": "Abonnements actifs." } }
