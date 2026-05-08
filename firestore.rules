@@ -2,9 +2,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ===============================
-    // 🔐 HELPERS
-    // ===============================
     function isSignedIn() {
       return request.auth != null;
     }
@@ -60,12 +57,7 @@ service cloud.firestore {
         || isRestaurantOwnerEmail(restaurantId);
     }
 
-    // ===============================
-    // 🍽️ RESTAURANTS
-    // ===============================
     match /restaurants/{restaurantId} {
-
-      // Lecture publique minimale (menu public)
       allow get: if true;
       allow list: if isSuperAdmin();
 
@@ -75,41 +67,26 @@ service cloud.firestore {
       allow update: if isSuperAdmin() || isRestaurantOwner(restaurantId);
       allow delete: if isSuperAdmin();
 
-      // ===============================
-      // 👥 STAFF
-      // ===============================
       match /staff/{staffId} {
         allow read: if canUseRestaurant(restaurantId);
         allow write: if isSuperAdmin() || isRestaurantOwner(restaurantId);
       }
 
-      // ===============================
-      // 📂 CATEGORIES
-      // ===============================
       match /categories/{categoryId} {
-        allow get, list: if true; // public menu
+        allow get, list: if true;
         allow write: if canUseRestaurant(restaurantId);
       }
 
-      // ===============================
-      // 🍔 PRODUCTS
-      // ===============================
       match /products/{productId} {
-        allow get, list: if true; // public menu
+        allow get, list: if true;
         allow write: if canUseRestaurant(restaurantId);
       }
 
-      // ===============================
-      // 📦 INVENTORY
-      // ===============================
       match /inventory/{inventoryId} {
         allow get, list: if canUseRestaurant(restaurantId);
         allow write: if canUseRestaurant(restaurantId);
       }
 
-      // ===============================
-      // 👤 CUSTOMERS
-      // ===============================
       match /customers/{customerId} {
         allow get, list: if canUseRestaurant(restaurantId);
         allow write: if canUseRestaurant(restaurantId);
@@ -117,20 +94,13 @@ service cloud.firestore {
 
       match /images/{imageId} {
         allow get, list: if canUseRestaurant(restaurantId);
-
         allow create: if canUseRestaurant(restaurantId)
           && request.resource.data.url is string
           && request.resource.data.publicId is string;
-
         allow update, delete: if canUseRestaurant(restaurantId);
       }
 
-      // ===============================
-      // 🧾 ORDERS (🔥 CRITIQUE)
-      // ===============================
       match /orders/{orderId} {
-
-        // ✅ Création client (QR / public)
         allow create: if
           request.resource.data.restaurantId == restaurantId
           && request.resource.data.items is list
@@ -147,18 +117,15 @@ service cloud.firestore {
             )
           );
 
-        // Staff sees the full lifecycle. Client tracking reads session orders.
-        allow get, list: if canUseRestaurant(restaurantId)
+        allow get: if canUseRestaurant(restaurantId)
           || (
             resource.data.restaurantId == restaurantId
             && resource.data.source == "client"
             && resource.data.sessionId is string
           );
 
-        // ✅ Update staff (kitchen / dashboard / POS)
+        allow list: if canUseRestaurant(restaurantId);
         allow update: if canUseRestaurant(restaurantId);
-
-        // ❌ Suppression
         allow delete: if isSuperAdmin();
 
         match /orderItems/{itemId} {
@@ -169,9 +136,6 @@ service cloud.firestore {
       }
     }
 
-    // ===============================
-    // 👤 USERS
-    // ===============================
     match /users/{userId} {
       allow get: if request.auth.uid == userId || isSuperAdmin();
       allow list: if isSuperAdmin();
@@ -193,9 +157,6 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
-    // ===============================
-    // 💳 SUBSCRIPTIONS
-    // ===============================
     match /restaurantSlugs/{slug} {
       allow get: if true;
       allow list: if false;
@@ -205,14 +166,10 @@ service cloud.firestore {
     match /subscriptions/{id} {
       allow read: if isSuperAdmin()
         || canUseRestaurant(resource.data.restaurantId);
-
       allow create: if isSignedIn();
       allow update, delete: if isSuperAdmin();
     }
 
-    // ===============================
-    // 📩 INVITATIONS
-    // ===============================
     match /invitations/{id} {
       allow create: if isSuperAdmin();
       allow get: if true;
@@ -220,20 +177,30 @@ service cloud.firestore {
       allow update: if true;
     }
 
-    // ===============================
-    // 📬 CONTACT
-    // ===============================
     match /contactRequests/{id} {
       allow create: if true;
       allow get, list: if isSuperAdmin();
       allow update, delete: if isSuperAdmin();
     }
 
-    // ===============================
-    // 📦 PLANS
-    // ===============================
     match /plans/{planId} {
       allow read, write: if isSuperAdmin();
+    }
+
+    match /platformSettings/{settingsId} {
+      allow get: if true;
+      allow list: if isSuperAdmin();
+      allow create, update: if isSuperAdmin()
+        && request.resource.data.name is string
+        && request.resource.data.primaryColor is string
+        && request.resource.data.secondaryColor is string
+        && request.resource.data.supportEmail is string
+        && request.resource.data.supportPhone is string
+        && request.resource.data.supportWhatsapp is string
+        && request.resource.data.logoUrl is string
+        && request.resource.data.faviconUrl is string
+        && request.resource.data.maintenanceMode is bool;
+      allow delete: if isSuperAdmin();
     }
 
     match /platformCountries/{countryId} {
@@ -309,11 +276,8 @@ service cloud.firestore {
         || canUseRestaurant(resource.data.restaurantId);
     }
 
-    // ===============================
-    // 🔒 BLOCK ALL
-    // ===============================
     match /platform/{docId} {
-      allow get: if isSignedIn();
+      allow get: if true;
       allow list: if isSuperAdmin();
       allow create, update, delete: if isSuperAdmin();
     }

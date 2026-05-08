@@ -1,13 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { onSnapshot, query, serverTimestamp, updateDoc, where } from "firebase/firestore"
+import { onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore"
 import { doc } from "firebase/firestore"
-import { useParams, useRouter, useSearchParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 
 import { useDoc, useFirestore, useMemoFirebase } from "@/firebase"
 import { ORDER_STATUS, PAYMENT_STATUS } from "@/lib/constants"
-import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
 import { normalizeOrderStatus, type OrderStatus } from "@/lib/order-status"
 import { CartProvider, useCart } from "@/modules/public/cart/CartContext"
 import CartDrawer from "@/modules/public/components/CartDrawer"
@@ -23,6 +22,7 @@ const ORDER_STEPS: TrackingStatus[] = [
   "preparation",
   "prete",
   "servie",
+  "payment_pending",
   "payee",
 ]
 
@@ -31,8 +31,12 @@ const STATUS_LABELS: Record<TrackingStatus, string> = {
   preparation: "En préparation",
   prete: "Prête",
   servie: "Servie",
+  payment_pending: "Validation paiement",
   payee: "Payée",
 }
+
+const TRACKING_CARD_CLASS =
+  "rounded-2xl bg-white p-5 text-slate-950 shadow ring-1 ring-slate-200/80"
 
 export default function ClientOrderTrackingPage() {
   return (
@@ -46,7 +50,6 @@ function ClientOrderTrackingContent() {
   const db = useFirestore()
   const router = useRouter()
   const params = useParams()
-  const searchParams = useSearchParams()
   const routeParams = params ?? {}
   const { count } = useCart()
   const restaurantId = routeParams.restaurantId as string | undefined
@@ -81,40 +84,21 @@ function ClientOrderTrackingContent() {
     setIsLoading(true)
     setError(null)
 
-    const sessionId =
-      searchParams?.get("sessionId") ||
-      window.localStorage.getItem(getOrderSessionStorageKey(restaurantId))
-
-    if (!sessionId) {
-      setOrder(null)
-      setError("Session de commande introuvable.")
-      setIsLoading(false)
-      return
-    }
+    const orderRef = doc(db, "restaurants", restaurantId, "orders", orderId)
 
     const unsubscribe = onSnapshot(
-      query(
-        restaurantOrdersRef(db, restaurantId),
-        where("sessionId", "==", sessionId)
-      ),
-      (snapshot) => {
-        if (snapshot.empty) {
+      orderRef,
+      (docSnap) => {
+        if (!docSnap.exists()) {
           setOrder(null)
           setIsLoading(false)
           return
         }
 
-        const sessionOrders = snapshot.docs
-          .map((orderDoc) => ({
-            ...(orderDoc.data() as Omit<RestaurantOrder, "id">),
-            id: orderDoc.id,
-          }))
-          .sort((a, b) => getCreatedAtMs(b) - getCreatedAtMs(a))
-
-        setOrder(
-          sessionOrders.find((sessionOrder) => sessionOrder.id === orderId) ??
-            sessionOrders[0]
-        )
+        setOrder({
+          ...(docSnap.data() as Omit<RestaurantOrder, "id">),
+          id: docSnap.id,
+        })
         setIsLoading(false)
       },
       (snapshotError) => {
@@ -125,7 +109,7 @@ function ClientOrderTrackingContent() {
     )
 
     return () => unsubscribe()
-  }, [db, restaurantId, orderId, searchParams])
+  }, [db, restaurantId, orderId])
 
   const slug = restaurant?.slug
   const homePath = slug ? `/${slug}` : "/"
@@ -141,7 +125,7 @@ function ClientOrderTrackingContent() {
         setCartOpen={setCartOpen}
         onHome={goHome}
       >
-        <div className="mx-auto max-w-md rounded-2xl bg-card p-6 text-center text-card-foreground shadow">
+        <div className={`${TRACKING_CARD_CLASS} mx-auto max-w-md p-6 text-center`}>
           Chargement du suivi...
         </div>
       </PublicTrackingLayout>
@@ -158,7 +142,7 @@ function ClientOrderTrackingContent() {
         setCartOpen={setCartOpen}
         onHome={goHome}
       >
-        <div className="mx-auto max-w-md rounded-2xl bg-card p-6 text-center text-card-foreground shadow">
+        <div className={`${TRACKING_CARD_CLASS} mx-auto max-w-md p-6 text-center`}>
           <h1 className="text-lg font-semibold">Commande introuvable</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {error || "Le lien de suivi ne correspond a aucune commande."}
@@ -170,7 +154,9 @@ function ClientOrderTrackingContent() {
 
   const normalizedStatus = normalizeTrackingStatus(order.status)
   const activeIndex = ORDER_STEPS.indexOf(normalizedStatus)
-  const showPaymentSection = normalizedStatus === ORDER_STATUS.SERVIE
+  const showPaymentSection = normalizedStatus === ORDER_STATUS.SERVIE && order.paymentMethod !== "cash"
+  const showCashMessage = normalizedStatus === ORDER_STATUS.SERVIE && order.paymentMethod === "cash"
+  const showMobilePendingMessage = normalizedStatus === ORDER_STATUS.PAYMENT_PENDING
   const paymentMethods = Array.isArray(restaurant?.settings?.paymentMethods)
     ? restaurant.settings.paymentMethods.filter((method: any) => method?.name && method?.code)
     : []
@@ -180,16 +166,14 @@ function ClientOrderTrackingContent() {
 
     setIsCashPaying(true)
     try {
-      await updateDoc(doc(restaurantOrdersRef(db, restaurantId), order.id), {
+      await updateDoc(doc(db, "restaurants", restaurantId, "orders", order.id), {
         paymentMethod: "cash",
-        paymentStatus: PAYMENT_STATUS.VALIDATED,
-        paidAt: serverTimestamp(),
-        status: ORDER_STATUS.PAYEE,
+        // Ne change pas le statut vers payee (sécurité)
         updatedAt: serverTimestamp(),
       })
     } catch (paymentError) {
       console.error(paymentError)
-      setError("Impossible de valider le paiement.")
+      setError("Impossible de signaler le paiement en caisse.")
     } finally {
       setIsCashPaying(false)
     }
@@ -200,9 +184,10 @@ function ClientOrderTrackingContent() {
 
     setIsMobilePaying(true)
     try {
-      await updateDoc(doc(restaurantOrdersRef(db, restaurantId), order.id), {
+      await updateDoc(doc(db, "restaurants", restaurantId, "orders", order.id), {
         paymentMethod: "mobile",
         paymentStatus: PAYMENT_STATUS.PENDING,
+        status: ORDER_STATUS.PAYMENT_PENDING,
         updatedAt: serverTimestamp(),
       })
       setMobilePaymentOpen(false)
@@ -232,7 +217,7 @@ function ClientOrderTrackingContent() {
           ← Retour au menu
         </button>
 
-        <section className="rounded-2xl bg-card p-5 text-card-foreground shadow">
+        <section className={TRACKING_CARD_CLASS}>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-primary)]">
             Suivi commande
           </p>
@@ -245,7 +230,7 @@ function ClientOrderTrackingContent() {
           </p>
         </section>
 
-        <section className="rounded-2xl bg-card p-5 text-card-foreground shadow">
+        <section className={TRACKING_CARD_CLASS}>
           <div className="space-y-4">
             {ORDER_STEPS.map((status, index) => {
               const isActive = index <= activeIndex
@@ -290,7 +275,7 @@ function ClientOrderTrackingContent() {
           </div>
         </section>
 
-        <section className="rounded-2xl bg-card p-5 text-card-foreground shadow">
+        <section className={TRACKING_CARD_CLASS}>
           <h2 className="font-semibold">Articles</h2>
           <div className="mt-3 space-y-3">
             {order.items.map((item) => (
@@ -315,7 +300,7 @@ function ClientOrderTrackingContent() {
         </section>
 
         {showPaymentSection && (
-          <section className="rounded-2xl bg-card p-5 text-card-foreground shadow">
+          <section className={TRACKING_CARD_CLASS}>
             <div className="space-y-1">
               <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-primary)]">
                 Paiement
@@ -344,6 +329,24 @@ function ClientOrderTrackingContent() {
                 Payer avec Mobile Money
               </button>
             </div>
+          </section>
+        )}
+
+        {showCashMessage && (
+          <section className="rounded-2xl border-2 border-orange-200 bg-orange-50 p-5 text-slate-950 shadow">
+            <h2 className="text-lg font-black text-orange-600 dark:text-orange-400">Règlement à la caisse</h2>
+            <p className="mt-2 text-sm text-orange-700/80 dark:text-orange-300/80">
+              Veuillez vous diriger vers la caisse pour finaliser votre règlement de {order.total.toLocaleString()} FCFA.
+            </p>
+          </section>
+        )}
+
+        {showMobilePendingMessage && (
+          <section className="rounded-2xl border-2 border-purple-200 bg-purple-50 p-5 text-slate-950 shadow">
+            <h2 className="text-lg font-black text-purple-600 dark:text-purple-400">Vérification en cours</h2>
+            <p className="mt-2 text-sm text-purple-700/80 dark:text-purple-300/80">
+              Votre paiement mobile est en cours de validation par la caisse.
+            </p>
           </section>
         )}
 
@@ -392,6 +395,7 @@ function PublicTrackingLayout({
         onHome={onHome}
         onOrder={() => setCartOpen(true)}
         onTracking={() => {}}
+        onSearch={() => {}}
       />
 
       <CartDrawer
@@ -405,16 +409,4 @@ function PublicTrackingLayout({
 
 function normalizeTrackingStatus(status: RestaurantOrder["status"]): TrackingStatus {
   return normalizeOrderStatus(status)
-}
-
-function getCreatedAtMs(order: RestaurantOrder) {
-  return (
-    order.createdAt?.toMillis?.() ??
-    order.createdAt?.toDate?.().getTime?.() ??
-    0
-  )
-}
-
-function getOrderSessionStorageKey(restaurantId: string) {
-  return `restaurant_order_session_${restaurantId}`
 }
