@@ -22,7 +22,6 @@ const ORDER_STEPS: TrackingStatus[] = [
   "preparation",
   "prete",
   "servie",
-  "payment_pending",
   "payee",
 ]
 
@@ -31,7 +30,6 @@ const STATUS_LABELS: Record<TrackingStatus, string> = {
   preparation: "En préparation",
   prete: "Prête",
   servie: "Servie",
-  payment_pending: "Validation paiement",
   payee: "Payée",
 }
 
@@ -156,7 +154,7 @@ function ClientOrderTrackingContent() {
   const activeIndex = ORDER_STEPS.indexOf(normalizedStatus)
   const showPaymentSection = normalizedStatus === ORDER_STATUS.SERVIE && order.paymentMethod !== "cash"
   const showCashMessage = normalizedStatus === ORDER_STATUS.SERVIE && order.paymentMethod === "cash"
-  const showMobilePendingMessage = normalizedStatus === ORDER_STATUS.PAYMENT_PENDING
+  const showMobilePendingMessage = normalizedStatus === ORDER_STATUS.NOUVELLE
   const paymentMethods = Array.isArray(restaurant?.settings?.paymentMethods)
     ? restaurant.settings.paymentMethods.filter((method: any) => method?.name && method?.code)
     : []
@@ -187,7 +185,7 @@ function ClientOrderTrackingContent() {
       await updateDoc(doc(db, "restaurants", restaurantId, "orders", order.id), {
         paymentMethod: "mobile",
         paymentStatus: PAYMENT_STATUS.PENDING,
-        status: ORDER_STATUS.PAYMENT_PENDING,
+        status: ORDER_STATUS.NOUVELLE,
         updatedAt: serverTimestamp(),
       })
       setMobilePaymentOpen(false)
@@ -395,7 +393,6 @@ function PublicTrackingLayout({
         onHome={onHome}
         onOrder={() => setCartOpen(true)}
         onTracking={() => {}}
-        onSearch={() => {}}
       />
 
       <CartDrawer
