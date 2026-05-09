@@ -12,7 +12,7 @@ import {
   Users,
 } from "lucide-react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { signOut } from "firebase/auth"
 import { doc } from "firebase/firestore"
 
@@ -44,10 +44,12 @@ type NavItem = {
 
 export function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
   const auth = useAuth()
   const db = useFirestore()
   const { firebaseUser: user, activeRole, isSuperAdmin, restaurantId } = useCurrentUser()
   const { setOpenMobile } = useSidebar()
+  const [optimisticHref, setOptimisticHref] = React.useState<string | null>(null)
 
   const restaurantRole = activeRole ?? ROLES.SERVER
   const hasRestaurantAccess = Boolean(restaurantId && activeRole)
@@ -97,6 +99,15 @@ export function Sidebar() {
   const navItems = businessNav
   const sectionLabel = `Espace ${restaurantRole}`
 
+  React.useEffect(() => {
+    setOptimisticHref(null)
+  }, [pathname])
+
+  const handleLogout = React.useCallback(async () => {
+    await signOut(auth)
+    router.push("/login")
+  }, [auth, router])
+
   return (
     <SidebarPrimitive
       variant="sidebar"
@@ -131,7 +142,7 @@ export function Sidebar() {
           <SidebarGroupContent>
             <SidebarMenu className="gap-1">
               {navItems.map((item) => {
-                const active = isActivePath(pathname, item.href)
+                const active = item.href === optimisticHref || (!optimisticHref && isActivePath(pathname, item.href))
 
                 return (
                   <SidebarMenuItem key={item.name}>
@@ -145,7 +156,14 @@ export function Sidebar() {
                           "!bg-primary !font-medium !text-white hover:!bg-primary hover:!text-white [&>svg]:!text-white"
                       )}
                     >
-                      <Link href={item.href} prefetch onClick={() => setOpenMobile(false)}>
+                      <Link
+                        href={item.href}
+                        prefetch
+                        onClick={() => {
+                          setOptimisticHref(item.href)
+                          setOpenMobile(false)
+                        }}
+                      >
                         <item.icon className="h-5 w-5" />
                         <span>{item.name}</span>
                       </Link>
@@ -175,7 +193,7 @@ export function Sidebar() {
               variant="ghost"
               size="icon"
               className="h-9 w-9 text-secondary-foreground hover:bg-accent hover:text-white group-data-[collapsible=icon]:hidden"
-              onClick={() => signOut(auth)}
+              onClick={handleLogout}
             >
               <LogOut className="h-4 w-4" />
               <span className="sr-only">Se déconnecter</span>

@@ -21,7 +21,7 @@ import {
   WalletCards,
 } from "lucide-react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { signOut } from "firebase/auth"
 
 import { ThemeToggle } from "@/components/ui/theme-toggle"
@@ -53,12 +53,14 @@ type NavItem = {
 
 const AppSidebarComponent = () => {
   const pathname = usePathname()
+  const router = useRouter()
   const currentPathname = pathname ?? ""
   const auth = useAuth()
   const { setOpenMobile } = useSidebar()
   const { restaurant } = useRestaurant()
   const { user, profile, role, isSuperAdmin, restaurantId } = useTenant()
   const isPlatformContext = currentPathname.startsWith("/platform")
+  const [optimisticHref, setOptimisticHref] = React.useState<string | null>(null)
 
   const navItems = React.useMemo<NavItem[]>(() => {
     if (isPlatformContext && isSuperAdmin) {
@@ -109,6 +111,16 @@ const AppSidebarComponent = () => {
     () => getActiveSidebarHref(currentPathname, navItems),
     [currentPathname, navItems]
   )
+  const visibleActiveHref = optimisticHref ?? activeHref
+
+  React.useEffect(() => {
+    setOptimisticHref(null)
+  }, [currentPathname])
+
+  const handleLogout = React.useCallback(async () => {
+    await signOut(auth)
+    router.push("/login")
+  }, [auth, router])
 
   return (
     <Sidebar className="border-r border-border bg-sidebar">
@@ -147,14 +159,17 @@ const AppSidebarComponent = () => {
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => {
-                const isActive = item.href === activeHref
+                const isActive = item.href === visibleActiveHref
 
                 return (
                   <SidebarMenuItem key={item.name}>
                     <Link
                       href={item.href}
                       prefetch
-                      onClick={() => setOpenMobile(false)}
+                      onClick={() => {
+                        setOptimisticHref(item.href)
+                        setOpenMobile(false)
+                      }}
                       className={cn(
                         "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",
                         isActive
@@ -197,7 +212,7 @@ const AppSidebarComponent = () => {
 
               <LogOut
                 className="ml-auto h-4 w-4 cursor-pointer text-secondary-foreground transition-colors hover:text-white"
-                onClick={() => signOut(auth)}
+                onClick={handleLogout}
               />
             </div>
 
