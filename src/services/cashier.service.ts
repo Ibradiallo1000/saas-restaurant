@@ -42,15 +42,31 @@ export class CashierService {
       totalMobileMoney: 0,
       totalSales: 0,
     };
-    return await addDoc(collection(this.db, COLLECTION_NAMES.CASHIER_SESSIONS), sessionData);
+    return await addDoc(
+      collection(
+        this.db,
+        COLLECTION_NAMES.RESTAURANTS,
+        restaurantId,
+        COLLECTION_NAMES.CASHIER_SESSIONS
+      ),
+      sessionData
+    );
   }
 
   /**
    * Clôture la session par le caissier.
    * État: 'closed' (En attente de validation manager)
    */
-  async closeShift(sessionId: string, totals: { cash: number, mobileMoney: number }) {
-    const sessionRef = doc(this.db, COLLECTION_NAMES.CASHIER_SESSIONS, sessionId);
+  async closeShift(restaurantId: string, sessionId: string, totals: { cash: number, mobileMoney: number }) {
+    if (!restaurantId || !sessionId) return;
+
+    const sessionRef = doc(
+      this.db,
+      COLLECTION_NAMES.RESTAURANTS,
+      restaurantId,
+      COLLECTION_NAMES.CASHIER_SESSIONS,
+      sessionId
+    );
     await updateDoc(sessionRef, {
       closedAt: serverTimestamp(),
       totalCash: totals.cash,
@@ -64,8 +80,16 @@ export class CashierService {
    * Validation de la session par un manager ou propriétaire.
    * État final: 'validated'
    */
-  async validateShift(sessionId: string, validatorId: string) {
-    const sessionRef = doc(this.db, COLLECTION_NAMES.CASHIER_SESSIONS, sessionId);
+  async validateShift(restaurantId: string, sessionId: string, validatorId: string) {
+    if (!restaurantId || !sessionId) return;
+
+    const sessionRef = doc(
+      this.db,
+      COLLECTION_NAMES.RESTAURANTS,
+      restaurantId,
+      COLLECTION_NAMES.CASHIER_SESSIONS,
+      sessionId
+    );
     await updateDoc(sessionRef, {
       validatedAt: serverTimestamp(),
       validatedBy: validatorId,
@@ -77,9 +101,15 @@ export class CashierService {
    * Récupère la session active.
    */
   async getCurrentSession(restaurantId: string, cashierId: string) {
+    if (!restaurantId || !cashierId) return null;
+
     const q = query(
-      collection(this.db, COLLECTION_NAMES.CASHIER_SESSIONS),
-      where('restaurantId', '==', restaurantId),
+      collection(
+        this.db,
+        COLLECTION_NAMES.RESTAURANTS,
+        restaurantId,
+        COLLECTION_NAMES.CASHIER_SESSIONS
+      ),
       where('cashierId', '==', cashierId),
       where('status', '==', SESSION_STATUS.OPENED),
       orderBy('openedAt', 'desc'),

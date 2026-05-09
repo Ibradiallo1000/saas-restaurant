@@ -44,8 +44,8 @@ const cashierService = React.useMemo(() => db ? new CashierService(db) : null, [
   };
 
   const handleCloseShift = async () => {
-    if (!cashierService || !session) return;
-    await cashierService.closeShift(session.id, { cash: 0, mobileMoney: 0 }); // Simplifié pour MVP
+    if (!cashierService || !restaurantId || !session) return;
+    await cashierService.closeShift(restaurantId, session.id, { cash: 0, mobileMoney: 0 }); // Simplifié pour MVP
     toast({ title: "Session clôturée", description: "Rapport généré avec succès." });
     loadSession();
   };

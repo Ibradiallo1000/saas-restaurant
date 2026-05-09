@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Zap, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { doc, getDoc, collection, query, where, getDocs, updateDoc } from "firebase/firestore"
+import { doc, getDoc, collection, query, where, getDocs, updateDoc, limit } from "firebase/firestore"
 import { COLLECTION_NAMES } from "@/lib/constants"
 
 export default function LoginPage() {
@@ -22,6 +22,10 @@ export default function LoginPage() {
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [loading, setLoading] = React.useState(false)
+
+  React.useEffect(() => {
+    router.prefetch("/dashboard")
+  }, [router])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,7 +52,8 @@ export default function LoginPage() {
         // 🔥 fallback ancien système
         const q = query(
           collection(db, COLLECTION_NAMES.USERS),
-          where("authUid", "==", uid)
+          where("authUid", "==", uid),
+          limit(1)
         )
 
         const snap = await getDocs(q)
@@ -73,12 +78,14 @@ export default function LoginPage() {
 
       // 🔀 ROUTING CORRIGÉ
       if (userProfile.role === "super_admin") {
+        router.prefetch("/platform")
         router.push("/platform")
         return
       }
 
       if (userProfile.restaurantId) {
         // ✅ FIX ICI
+        router.prefetch("/dashboard")
         router.push("/dashboard")
         return
       }

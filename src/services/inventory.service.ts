@@ -10,6 +10,7 @@ import {
   doc, 
   getDocs, 
   collection, 
+  limit,
   query, 
   where, 
   runTransaction,
@@ -27,7 +28,7 @@ export class InventoryService {
   async decrementStockForProduct(restaurantId: string, productId: string, quantity: number) {
     // Récupération des ingrédients d'inventaire liés à ce produit via l'ID
     const inventoryRef = collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.INVENTORY);
-    const q = query(inventoryRef, where('linkedProductIds', 'array-contains', productId));
+    const q = query(inventoryRef, where('linkedProductIds', 'array-contains', productId), limit(20));
     
     const snapshot = await getDocs(q);
     

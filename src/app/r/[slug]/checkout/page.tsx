@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { CartProvider, useCart } from '@/components/public/cart-context';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { useFirestore, useDocOnce, useMemoFirebase } from '@/firebase';
 import { collection, doc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { COLLECTION_NAMES, ORDER_STATUS, PAYMENT_STATUS } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,7 @@ export default function CheckoutPageWrapper() {
 
 function CheckoutPage() {
   const params = useParams();
-  const slug = params.slug as string;
+  const slug = params?.slug as string | undefined;
   const db = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
@@ -42,7 +42,7 @@ function CheckoutPage() {
     return doc(db, 'restaurantSlugs', slug);
   }, [db, slug]);
 
-  const { data: slugData } = useDoc(slugRef);
+  const { data: slugData } = useDocOnce(slugRef);
   const restaurantId = slugData?.restaurantId;
 
   const restaurantRef = useMemoFirebase(() => {
@@ -50,16 +50,16 @@ function CheckoutPage() {
     return doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId);
   }, [db, restaurantId]);
 
-  const { data: restaurant } = useDoc(restaurantRef);
+  const { data: restaurant } = useDocOnce(restaurantRef);
 
   const handleOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!db || !restaurant || items.length === 0) return;
+    if (!db || !restaurantId || !restaurant || items.length === 0) return;
     setLoading(true);
 
     try {
-      const orderRef = await addDoc(collection(db, COLLECTION_NAMES.ORDERS), {
-        restaurantId: restaurant.id,
+      const orderRef = await addDoc(collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS), {
+        restaurantId,
         customerName: formData.name,
         customerPhone: formData.phone,
         tableId: formData.table || 'Emporté',
@@ -81,7 +81,7 @@ function CheckoutPage() {
 
       // Also create sub-collection for items (redundancy for existing services)
       for (const item of items) {
-        await addDoc(collection(db, COLLECTION_NAMES.ORDERS, orderRef.id, COLLECTION_NAMES.ORDER_ITEMS), {
+        await addDoc(collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS, orderRef.id, COLLECTION_NAMES.ORDER_ITEMS), {
           productId: item.id,
           nameSnapshot: item.name,
           priceSnapshot: item.price,

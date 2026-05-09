@@ -14,12 +14,15 @@ import {
   updateDoc,
   getDocs,
   getDoc,
-  runTransaction
+  runTransaction,
+  writeBatch,
+  query,
+  where,
+  limit
 } from 'firebase/firestore';
 import { COLLECTION_NAMES, ORDER_STATUS, PAYMENT_STATUS } from '@/lib/constants';
 import { normalizePaymentMethod, paymentStatusForMethod, type PaymentMethod } from '@/lib/order-payment';
 import type { SelectedCartOption } from '@/modules/restaurant/types';
-import { InventoryService } from './inventory.service';
 import { LoyaltyService } from './loyalty.service';
 
 export interface OrderItemInput {
@@ -45,11 +48,9 @@ export interface OrderInput {
 }
 
 export class OrderService {
-  private inventoryService: InventoryService;
   private loyaltyService: LoyaltyService;
 
   constructor(private db: Firestore) {
-    this.inventoryService = new InventoryService(db);
     this.loyaltyService = new LoyaltyService(db);
   }
 
@@ -129,8 +130,16 @@ export class OrderService {
   /**
    * Met à jour le statut opérationnel de la commande.
    */
-  async updateOrderStatus(orderId: string, status: string) {
-    const orderRef = doc(this.db, COLLECTION_NAMES.ORDERS, orderId);
+  async updateOrderStatus(restaurantId: string, orderId: string, status: string) {
+    if (!restaurantId || !orderId) return;
+
+    const orderRef = doc(
+      this.db,
+      COLLECTION_NAMES.RESTAURANTS,
+      restaurantId,
+      COLLECTION_NAMES.ORDERS,
+      orderId
+    );
     await updateDoc(orderRef, {
       status,
       updatedAt: serverTimestamp(),
@@ -191,10 +200,16 @@ export class OrderService {
     if (!orderData) return;
 
     // Mise à jour automatique de l'inventaire
-    for (const itemDoc of itemsSnapshot.docs) {
-      const item = itemDoc.data();
-      await this.inventoryService.decrementStockForProduct(restaurantId, item.productId, item.quantity);
-    }
+    await this.decrementStockForOrderItems(
+      restaurantId,
+      itemsSnapshot.docs.map((itemDoc) => {
+        const item = itemDoc.data();
+        return {
+          productId: item.productId as string,
+          quantity: Number(item.quantity || 0),
+        };
+      })
+    );
 
     // Enregistrement de la visite pour le programme de fidélité
     if (orderData.customerPhone) {
@@ -219,5 +234,60 @@ export class OrderService {
       createdAt: serverTimestamp(),
     };
     await addDoc(collection(this.db, COLLECTION_NAMES.REVIEWS), reviewData);
+  }
+
+  private async decrementStockForOrderItems(
+    restaurantId: string,
+    items: Array<{ productId: string; quantity: number }>
+  ) {
+    const quantityByProductId = items.reduce((acc, item) => {
+      if (!item.productId || item.quantity <= 0) return acc;
+      acc.set(item.productId, (acc.get(item.productId) || 0) + item.quantity);
+      return acc;
+    }, new Map<string, number>());
+
+    if (quantityByProductId.size === 0) return;
+
+    const inventoryRef = collection(
+      this.db,
+      COLLECTION_NAMES.RESTAURANTS,
+      restaurantId,
+      COLLECTION_NAMES.INVENTORY
+    );
+
+    const inventorySnapshots = await Promise.all(
+      Array.from(quantityByProductId.keys()).map(async (productId) => ({
+        productId,
+        snapshot: await getDocs(
+          query(
+            inventoryRef,
+            where('linkedProductIds', 'array-contains', productId),
+            limit(20)
+          )
+        ),
+      }))
+    );
+
+    const batch = writeBatch(this.db);
+    let writes = 0;
+
+    for (const { productId, snapshot } of inventorySnapshots) {
+      const soldQuantity = quantityByProductId.get(productId) || 0;
+
+      for (const inventoryDoc of snapshot.docs) {
+        const currentData = inventoryDoc.data();
+        const currentQuantity = Number(currentData.quantity || 0);
+
+        batch.update(inventoryDoc.ref, {
+          quantity: Math.max(0, currentQuantity - soldQuantity),
+          updatedAt: serverTimestamp(),
+        });
+        writes += 1;
+      }
+    }
+
+    if (writes > 0) {
+      await batch.commit();
+    }
   }
 }

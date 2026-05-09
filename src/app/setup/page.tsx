@@ -8,8 +8,8 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { useFirestore, useUser, useDoc, useFirebase } from "@/firebase"
-import { doc, getDoc } from "firebase/firestore"
+import { useFirestore, useUser, useDocOnce } from "@/firebase"
+import { doc } from "firebase/firestore"
 import { RestaurantService } from "@/services/restaurant.service"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,10 +30,10 @@ export default function SetupPage() {
   // Vérification si l'utilisateur est un SuperAdmin de la plateforme
   const platformUserRef = React.useMemo(() => {
     if (!db || !user) return null
-    return doc(db, COLLECTION_NAMES.PLATFORM_USERS, user.uid)
+    return doc(db, COLLECTION_NAMES.USERS, user.uid)
   }, [db, user])
   
-  const { data: platformProfile, isLoading: isPlatformLoading } = useDoc(platformUserRef)
+  const { data: platformProfile, isLoading: isPlatformLoading } = useDocOnce(platformUserRef)
 
   const [formData, setFormData] = React.useState({
     name: "",

@@ -92,6 +92,13 @@ service cloud.firestore {
         allow write: if canUseRestaurant(restaurantId);
       }
 
+      match /cashierSessions/{sessionId} {
+        allow get, list: if canUseRestaurant(restaurantId);
+        allow create, update: if canUseRestaurant(restaurantId)
+          && request.resource.data.restaurantId == restaurantId;
+        allow delete: if isSuperAdmin();
+      }
+
       match /images/{imageId} {
         allow get, list: if canUseRestaurant(restaurantId);
         allow create: if canUseRestaurant(restaurantId)

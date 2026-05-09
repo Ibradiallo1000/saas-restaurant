@@ -4,43 +4,38 @@
 
 import { db } from "@/lib/firebase";
 import {
-  collection,
-  onSnapshot,
+  getDocs,
+  limit,
   query,
   where,
   orderBy,
 } from "firebase/firestore";
 import type { MenuItem, MenuCategory } from "@/types/index";
+import { restaurantCategoriesRef, restaurantProductsRef } from "@/lib/restaurant-firestore-paths";
 
-export const listenMenuItems = (
-  restaurantId: string,
-  callback: (items: MenuItem[]) => void
-) => {
+export const fetchMenuItems = async (restaurantId: string) => {
+  if (!restaurantId) return [];
+
   const q = query(
-    collection(db, "products"),
-    where("restaurantId", "==", restaurantId),
-    where("available", "!=", false)
+    restaurantProductsRef(db, restaurantId),
+    where("available", "!=", false),
+    limit(50)
   );
 
-  return onSnapshot(q, (snap) => {
-    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuItem));
-    callback(items);
-  });
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuItem));
 };
 
-export const listenCategories = (
-  restaurantId: string,
-  callback: (cats: MenuCategory[]) => void
-) => {
+export const fetchCategories = async (restaurantId: string) => {
+  if (!restaurantId) return [];
+
   const q = query(
-    collection(db, "categories"),
-    where("restaurantId", "==", restaurantId),
-    orderBy("order", "asc")
+    restaurantCategoriesRef(db, restaurantId),
+    orderBy("order", "asc"),
+    limit(50)
   );
 
-  return onSnapshot(q, (snap) => {
-    const cats = snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuCategory));
-    callback(cats);
-  });
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuCategory));
 };
 

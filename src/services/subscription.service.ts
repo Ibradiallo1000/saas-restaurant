@@ -59,7 +59,7 @@ export class SubscriptionService {
   // 📋 GET PLANS
   // ===============================
   async getPlans(): Promise<Plan[]> {
-    const snap = await getDocs(collection(this.db, COLLECTION_NAMES.PLANS));
+    const snap = await getDocs(query(collection(this.db, COLLECTION_NAMES.PLANS), limit(20)));
     return snap.docs.map(d => ({
       id: d.id,
       ...d.data()

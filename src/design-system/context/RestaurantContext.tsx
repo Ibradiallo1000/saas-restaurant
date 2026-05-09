@@ -3,7 +3,7 @@
 import * as React from "react"
 import { doc } from "firebase/firestore"
 
-import { useDoc, useFirestore, useMemoFirebase } from "@/firebase"
+import { useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
 
@@ -47,7 +47,7 @@ export function RestaurantProvider({ children }: { children: React.ReactNode }) 
     return doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId)
   }, [db, restaurantId])
 
-  const { data, isLoading } = useDoc<Restaurant>(restaurantRef)
+  const { data, isLoading } = useDocOnce<Restaurant>(restaurantRef)
 
   React.useEffect(() => {
     if (restaurantId && data) {

@@ -206,7 +206,7 @@ const AppSidebarComponent = () => {
             )}
           </div>
         ) : (
-          <Link href="/login" className="text-center text-xs font-bold text-primary">
+          <Link href="/login" prefetch className="text-center text-xs font-bold text-primary">
             Connexion
           </Link>
         )}
@@ -247,6 +247,7 @@ function ButtonLink({ href, children }: { href: string; children: React.ReactNod
   return (
     <Link
       href={href}
+      prefetch
       className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-medium text-secondary-foreground shadow-sm hover:bg-accent hover:text-accent-foreground"
     >
       {children}

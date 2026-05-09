@@ -1,6 +1,5 @@
 // app/layout.tsx
 import Providers from './providers'
-import { SidebarProvider } from "@/components/ui/sidebar"
 import './globals.css'
 
 export default function RootLayout({
@@ -11,11 +10,9 @@ export default function RootLayout({
   return (
     <html lang="fr" suppressHydrationWarning>
       <body suppressHydrationWarning>
-        <SidebarProvider defaultOpen>
-          <Providers>
-            {children}
-          </Providers>
-        </SidebarProvider>
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   )

@@ -5,15 +5,16 @@ import {
   collection,
   query,
   where,
-  doc
+  doc,
+  limit
 } from "firebase/firestore"
 
 import {
   useFirestore,
   useUser,
   useMemoFirebase,
-  useCollection,
-  useDoc
+  useCollectionOnce,
+  useDocOnce
 } from "@/firebase"
 
 import { SUBSCRIPTION_STATUS, ROLES } from "@/lib/constants"
@@ -38,7 +39,7 @@ export function useSubscriptionAccess() {
     return doc(db, "users", user.uid)
   }, [db, user])
 
-  const { data: profile } = useDoc(profileRef)
+  const { data: profile } = useDocOnce(profileRef)
 
   // ===============================
   // 🔥 2. SUPER ADMIN BYPASS
@@ -65,11 +66,12 @@ export function useSubscriptionAccess() {
 
     return query(
       collection(db, "subscriptions"),
-      where("restaurantId", "==", profile.restaurantId)
+      where("restaurantId", "==", profile.restaurantId),
+      limit(1)
     )
   }, [db, profile?.restaurantId])
 
-  const { data: subscriptions } = useCollection(subQuery)
+  const { data: subscriptions } = useCollectionOnce(subQuery)
 
   // ===============================
   // 🔥 4. LOGIC

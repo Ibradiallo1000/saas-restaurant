@@ -128,13 +128,13 @@ export function AdminDashboardPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row">
           <Button asChild variant="outline">
-            <Link href="/admin/demandes">
+            <Link href="/admin/demandes" prefetch>
               <FileText className="mr-2 h-4 w-4" />
               Voir les demandes
             </Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/admin/restaurants">
+            <Link href="/admin/restaurants" prefetch>
               <Building2 className="mr-2 h-4 w-4" />
               Voir les restaurants
             </Link>

@@ -26,10 +26,10 @@ export default function OwnerPage() {
 }
 
 function OwnerPageContent() {
-  const { companyId } = useCurrentUser()
-  const orders = useOrders(companyId ?? undefined)
+  const { restaurantId } = useCurrentUser()
+  const orders = useOrders(restaurantId ?? undefined)
 
-  if (!companyId) {
+  if (!restaurantId) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6 text-center">
         <div>

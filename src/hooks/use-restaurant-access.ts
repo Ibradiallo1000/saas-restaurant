@@ -1,16 +1,15 @@
 "use client"
 
 import * as React from "react"
-import { doc, collection, query, where, orderBy, limit } from "firebase/firestore"
+import { collection, doc, limit, orderBy, query, where } from "firebase/firestore"
 
 import {
-  useDoc,
+  useCollectionOnce,
+  useDocOnce,
   useFirestore,
   useMemoFirebase,
   useUser,
-  useCollection
 } from "@/firebase"
-
 import { COLLECTION_NAMES } from "@/lib/constants"
 
 type StaffAccess = {
@@ -28,37 +27,16 @@ export function useRestaurantAccess(allowedRoles: string[]): StaffAccess {
   const db = useFirestore()
   const { user, isUserLoading } = useUser()
 
-  // ===============================
-  // 👤 USER PROFILE
-  // ===============================
   const userProfileRef = useMemoFirebase(() => {
     if (!db || !user?.uid) return null
     return doc(db, COLLECTION_NAMES.USERS, user.uid)
   }, [db, user?.uid])
 
-  const { data: profile, isLoading: isProfileLoading } = useDoc(userProfileRef)
-
+  const { data: profile, isLoading: isProfileLoading } = useDocOnce(userProfileRef)
   const restaurantId = profile?.restaurantId || null
 
-  // 🔴 STOP TOTAL si pas de restaurant
-  if (!restaurantId) {
-    return {
-      user,
-      isLoading: isUserLoading || isProfileLoading,
-      restaurantId: null,
-      role: null,
-      active: false,
-      subscriptionStatus: null,
-      accessLevel: "blocked",
-      isAllowed: false
-    }
-  }
-
-  // ===============================
-  // 🏢 STAFF PROFILE
-  // ===============================
   const staffRef = useMemoFirebase(() => {
-    if (!db || !user?.uid) return null
+    if (!db || !user?.uid || !restaurantId) return null
     return doc(
       db,
       COLLECTION_NAMES.RESTAURANTS,
@@ -68,13 +46,10 @@ export function useRestaurantAccess(allowedRoles: string[]): StaffAccess {
     )
   }, [db, user?.uid, restaurantId])
 
-  const { data: staffProfile, isLoading: isStaffLoading } = useDoc(staffRef)
+  const { data: staffProfile, isLoading: isStaffLoading } = useDocOnce(staffRef)
 
-  // ===============================
-  // 💳 SUBSCRIPTION
-  // ===============================
   const subQuery = useMemoFirebase(() => {
-    if (!db) return null
+    if (!db || !restaurantId) return null
 
     return query(
       collection(db, COLLECTION_NAMES.SUBSCRIPTIONS),
@@ -84,22 +59,16 @@ export function useRestaurantAccess(allowedRoles: string[]): StaffAccess {
     )
   }, [db, restaurantId])
 
-  const { data: subscriptions, isLoading: isSubLoading } =
-    useCollection(subQuery)
-
+  const { data: subscriptions, isLoading: isSubLoading } = useCollectionOnce(subQuery)
   const subscription = subscriptions?.[0] || null
 
-  // ===============================
-  // 🧠 BUSINESS LOGIC
-  // ===============================
-  const accessLevel = React.useMemo(() => {
+  const accessLevel = React.useMemo<StaffAccess["accessLevel"]>(() => {
     if (!subscription) return "blocked"
 
     const now = new Date()
     const endDate = subscription.endDate?.toDate?.()
 
     if (subscription.status === "suspended") return "blocked"
-
     if (endDate && endDate < now) {
       return subscription.status === "grace" ? "grace" : "expired"
     }
@@ -107,49 +76,45 @@ export function useRestaurantAccess(allowedRoles: string[]): StaffAccess {
     return "active"
   }, [subscription])
 
-  // ===============================
-  // 🔐 FINAL ACCESS
-  // ===============================
   return React.useMemo(() => {
+    if (!restaurantId) {
+      return {
+        user,
+        isLoading: isUserLoading || isProfileLoading,
+        restaurantId: null,
+        role: null,
+        active: false,
+        subscriptionStatus: null,
+        accessLevel: "blocked",
+        isAllowed: false,
+      }
+    }
+
     const role = staffProfile?.role || null
     const active = Boolean(staffProfile && staffProfile.active !== false)
-
-    const roleAllowed = Boolean(
-      user &&
-        role &&
-        active &&
-        allowedRoles.includes(role)
-    )
-
-    const subscriptionAllowed =
-      accessLevel === "active" || accessLevel === "grace"
+    const roleAllowed = Boolean(user && role && active && allowedRoles.includes(role))
+    const subscriptionAllowed = accessLevel === "active" || accessLevel === "grace"
 
     return {
       user,
-      isLoading:
-        isUserLoading ||
-        isProfileLoading ||
-        isStaffLoading ||
-        isSubLoading,
-
+      isLoading: isUserLoading || isProfileLoading || isStaffLoading || isSubLoading,
       restaurantId,
       role,
       active,
-
       subscriptionStatus: subscription?.status || null,
       accessLevel,
-
-      isAllowed: roleAllowed && subscriptionAllowed
+      isAllowed: roleAllowed && subscriptionAllowed,
     }
   }, [
-    allowedRoles,
     accessLevel,
+    allowedRoles,
     isProfileLoading,
     isStaffLoading,
     isSubLoading,
     isUserLoading,
+    restaurantId,
     staffProfile,
     subscription,
-    user
+    user,
   ])
 }

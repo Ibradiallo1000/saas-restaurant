@@ -3,9 +3,6 @@
 
 import { FirebaseProvider } from "@/firebase/provider"
 import { ThemeProvider } from "@/contexts/theme-context"
-import { TenantProvider } from "@/design-system/context/TenantProvider"
-import { RestaurantProvider } from "@/design-system/context/RestaurantContext"
-import { RestaurantThemeProvider } from "@/design-system/theme/RestaurantThemeProvider"
 import { initializeApp, getApps, getApp } from 'firebase/app'
 import { getFirestore } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
@@ -33,13 +30,7 @@ export default function Providers({
   return (
     <FirebaseProvider firebaseApp={app} firestore={firestore} auth={auth}>
       <ThemeProvider>
-        <TenantProvider>
-          <RestaurantProvider>
-            <RestaurantThemeProvider>
-              {children}
-            </RestaurantThemeProvider>
-          </RestaurantProvider>
-        </TenantProvider>
+        {children}
       </ThemeProvider>
     </FirebaseProvider>
   )

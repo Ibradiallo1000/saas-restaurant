@@ -5,7 +5,7 @@ import { onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore"
 import { doc } from "firebase/firestore"
 import { useParams, useRouter } from "next/navigation"
 
-import { useDoc, useFirestore, useMemoFirebase } from "@/firebase"
+import { useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { ORDER_STATUS, PAYMENT_STATUS } from "@/lib/constants"
 import { normalizeOrderStatus, type OrderStatus } from "@/lib/order-status"
 import { CartProvider, useCart } from "@/modules/public/cart/CartContext"
@@ -66,7 +66,7 @@ function ClientOrderTrackingContent() {
     return doc(db, "restaurants", restaurantId)
   }, [db, restaurantId])
 
-  const { data: restaurant } = useDoc(restaurantRef)
+  const { data: restaurant } = useDocOnce(restaurantRef)
 
   React.useEffect(() => {
     const primary = restaurant?.theme?.primary || "#f97316"

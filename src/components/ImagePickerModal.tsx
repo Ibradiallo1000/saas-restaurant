@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { collection, onSnapshot } from "firebase/firestore"
+import { collection, getDocs, limit, query } from "firebase/firestore"
 import { Check, ImageIcon, Loader2, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -37,11 +37,12 @@ export default function ImagePickerModal({
   React.useEffect(() => {
     if (!open || !db || !restaurantId) return
 
+    let cancelled = false
     setIsLoading(true)
 
-    return onSnapshot(
-      collection(db, "restaurants", restaurantId, "images"),
-      (snapshot) => {
+    getDocs(query(collection(db, "restaurants", restaurantId, "images"), limit(50)))
+      .then((snapshot) => {
+        if (cancelled) return
         const nextImages = snapshot.docs.map((imageDoc) => ({
           id: imageDoc.id,
           ...(imageDoc.data() as Omit<RestaurantImage, "id">),
@@ -52,13 +53,17 @@ export default function ImagePickerModal({
           nextImages.find((image) => image.id === selectedImageId) ?? null
         )
         setIsLoading(false)
-      },
-      (error) => {
+      })
+      .catch((error) => {
+        if (cancelled) return
         console.error(error)
         setImages([])
         setIsLoading(false)
-      }
-    )
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [db, open, restaurantId, selectedImageId])
 
   if (!open) return null

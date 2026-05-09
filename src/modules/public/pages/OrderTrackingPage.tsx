@@ -6,13 +6,19 @@ import { doc } from "firebase/firestore"
 import { CheckCircle2, Clock, CookingPot, Bell } from "lucide-react"
 import { normalizeOrderStatus } from "@/lib/order-status"
 
-export default function OrderTrackingPage({ orderId }: { orderId: string }) {
+export default function OrderTrackingPage({
+  orderId,
+  restaurantId,
+}: {
+  orderId: string
+  restaurantId?: string | null
+}) {
   const db = useFirestore()
 
   const orderRef = useMemoFirebase(() => {
-    if (!db || !orderId) return null
-    return doc(db, "orders", orderId)
-  }, [db, orderId])
+    if (!db || !restaurantId || !orderId) return null
+    return doc(db, "restaurants", restaurantId, "orders", orderId)
+  }, [db, restaurantId, orderId])
 
   const { data: order, isLoading } = useDoc(orderRef)
 

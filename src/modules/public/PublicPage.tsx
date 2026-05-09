@@ -1,11 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { collection, doc, query } from "firebase/firestore"
+import { collection, doc, limit, query } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import { ChefHat, ClipboardList, Coffee, Home, ShoppingBag } from "lucide-react"
 
-import { useCollection, useDoc, useFirestore, useMemoFirebase } from "@/firebase"
+import { useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { getOptimizedImage } from "@/lib/image"
 
 import CartDrawer from "./components/CartDrawer"
@@ -50,7 +50,7 @@ function PublicPageContent({ slug }: { slug: string }) {
     return doc(db, "restaurantSlugs", slug)
   }, [db, slug])
 
-  const { data: slugData, isLoading: isSlugLoading, error: slugError } = useDoc(slugRef)
+  const { data: slugData, isLoading: isSlugLoading, error: slugError } = useDocOnce(slugRef)
   const mappedRestaurantId = slugData?.restaurantId
 
   const restaurantRef = useMemoFirebase(() => {
@@ -62,7 +62,7 @@ function PublicPageContent({ slug }: { slug: string }) {
     data: restaurant,
     isLoading: isRestaurantDocLoading,
     error: restaurantError,
-  } = useDoc(restaurantRef)
+  } = useDocOnce(restaurantRef)
 
   const restaurantId = restaurant?.id
 
@@ -76,25 +76,25 @@ function PublicPageContent({ slug }: { slug: string }) {
 
   const productsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
-    return query(collection(db, "restaurants", restaurantId, "products"))
+    return query(collection(db, "restaurants", restaurantId, "products"), limit(50))
   }, [db, restaurantId])
 
   const {
     data: products,
     isLoading: isProductsLoading,
     error: productsError,
-  } = useCollection(productsQuery)
+  } = useCollectionOnce(productsQuery)
 
   const categoriesQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
-    return query(collection(db, "restaurants", restaurantId, "categories"))
+    return query(collection(db, "restaurants", restaurantId, "categories"), limit(50))
   }, [db, restaurantId])
 
   const {
     data: categoriesData,
     isLoading: isCategoriesLoading,
     error: categoriesError,
-  } = useCollection(categoriesQuery)
+  } = useCollectionOnce(categoriesQuery)
 
   const isRestaurantLoading =
     !clientReady ||

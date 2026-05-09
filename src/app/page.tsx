@@ -47,19 +47,19 @@ export default function LandingPage() {
               {isUserLoading ? (
                 <Button disabled size="lg" className="rounded-full px-10 h-14">Chargement...</Button>
               ) : user ? (
-                <Link href="/dashboard">
+                <Link href="/dashboard" prefetch>
                   <Button size="lg" className="rounded-full px-10 h-14 text-lg font-black uppercase italic shadow-2xl shadow-primary/20 hover:scale-105 transition-all">
                     Accéder à ma Console
                   </Button>
                 </Link>
               ) : (
-                <Link href="/contact">
+                <Link href="/contact" prefetch>
                   <Button size="lg" className="rounded-full px-10 h-14 text-lg font-black uppercase italic shadow-2xl shadow-primary/20 hover:scale-105 transition-all">
                     Demander une Démo
                   </Button>
                 </Link>
               )}
-              <Link href="/login">
+              <Link href="/login" prefetch>
                 <Button variant="outline" size="lg" className="rounded-full px-10 h-14 font-bold border-2 hover:bg-secondary">
                   Se Connecter
                 </Button>
@@ -178,7 +178,7 @@ export default function LandingPage() {
               <p className="font-bold">Support Multi-Langues</p>
             </div>
           </div>
-          <Link href="/contact">
+          <Link href="/contact" prefetch>
             <Button size="lg" variant="secondary" className="rounded-full px-12 h-16 text-xl font-black uppercase italic hover:scale-105 transition-transform bg-white text-primary">
               Demander mon accès <ArrowRight className="ml-2" />
             </Button>

@@ -11,6 +11,7 @@ import {
   serverTimestamp, 
   setDoc,
   collection,
+  limit,
   query,
   where,
   getDocs
@@ -88,7 +89,8 @@ export class StaffService {
    */
   async getStaff(restaurantId: string) {
     const q = query(
-      collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, 'staff')
+      collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, 'staff'),
+      limit(50)
     );
     const snap = await getDocs(q);
     return snap.docs.map(d => d.data());

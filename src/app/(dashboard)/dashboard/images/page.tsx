@@ -1,5 +1,5 @@
-import ImagesPage from "@/components/dashboard/ImagesPage"
+import ImagesLazy from "./components/ImagesLazy"
 
 export default function DashboardImagesRoute() {
-  return <ImagesPage />
+  return <ImagesLazy />
 }

@@ -6,18 +6,18 @@ import { useEffect, useState } from "react";
 import { listenOrders } from "@/services/orderService";
 import type { Order, OrderStatus } from "@/types/index";
 
-export const useOrders = (companyId?: string, statuses?: OrderStatus[]) => {
+export const useOrders = (restaurantId?: string, statuses?: OrderStatus[]) => {
   const [orders, setOrders] = useState<Order[]>([]);
 
   useEffect(() => {
-    if (!companyId) {
+    if (!restaurantId) {
       setOrders([]);
       return;
     }
 
-    const unsub = listenOrders(companyId, setOrders, statuses);
+    const unsub = listenOrders(restaurantId, setOrders, statuses);
     return () => unsub();
-  }, [companyId, statuses?.join("|")]);
+  }, [restaurantId, statuses?.join("|")]);
 
   return orders;
 };

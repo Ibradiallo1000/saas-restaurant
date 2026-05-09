@@ -31,7 +31,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { useAuth, useDoc, useFirestore, useMemoFirebase } from "@/firebase"
+import { useAuth, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { useCurrentUser } from "@/hooks/use-current-user"
 import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
@@ -55,7 +55,7 @@ export function Sidebar() {
     if (!db || !restaurantId) return null
     return doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId)
   }, [db, restaurantId])
-  const { data: restaurant } = useDoc(restaurantRef)
+  const { data: restaurant } = useDocOnce(restaurantRef)
   const restaurantName = restaurant?.name?.trim() || "Restaurant"
   const restaurantInitial = restaurantName.charAt(0).toUpperCase() || "R"
 
@@ -145,7 +145,7 @@ export function Sidebar() {
                           "!bg-primary !font-medium !text-white hover:!bg-primary hover:!text-white [&>svg]:!text-white"
                       )}
                     >
-                      <Link href={item.href} onClick={() => setOpenMobile(false)}>
+                      <Link href={item.href} prefetch onClick={() => setOpenMobile(false)}>
                         <item.icon className="h-5 w-5" />
                         <span>{item.name}</span>
                       </Link>

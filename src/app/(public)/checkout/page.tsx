@@ -19,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-import { useDoc, useFirestore, useMemoFirebase } from "@/firebase"
+import { useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { doc } from "firebase/firestore"
@@ -37,7 +37,7 @@ export default function CheckoutPageWrapper() {
 
 function CheckoutPage() {
   const params = useParams()
-  const slug = params.slug as string
+  const slug = params?.slug as string | undefined
 
   const db = useFirestore()
   const router = useRouter()
@@ -55,19 +55,19 @@ function CheckoutPage() {
   })
 
   // 🔥 REDIRECTION TRACKING (IMPORTANT)
-  React.useEffect(() => {
-    if (createdOrderId) {
-      router.replace(`/order/${createdOrderId}`)
-    }
-  }, [createdOrderId, router])
-
   // 🔥 FETCH RESTAURANT
   const restaurantRef = useMemoFirebase(() => {
     if (!db || !slug) return null
     return doc(db, COLLECTION_NAMES.RESTAURANTS, slug)
   }, [db, slug])
 
-  const { data: restaurant } = useDoc(restaurantRef)
+  const { data: restaurant } = useDocOnce(restaurantRef)
+
+  React.useEffect(() => {
+    if (createdOrderId && restaurant?.id) {
+      router.replace(`/order/${restaurant.id}/${createdOrderId}`)
+    }
+  }, [createdOrderId, restaurant?.id, router])
 
   // 🔥 SUBMIT ORDER
   const handleOrder = async (event: React.FormEvent) => {
@@ -119,7 +119,7 @@ function CheckoutPage() {
       total: totalPrice,
     }
 
-    const orderRef = await createOrder(restaurant.companyId, orderData)
+    const orderRef = await createOrder(restaurant.id, orderData)
 
     setCreatedOrderId(orderRef.id)
 

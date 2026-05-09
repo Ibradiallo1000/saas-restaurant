@@ -7,16 +7,14 @@
 
 import { 
   Firestore, 
-  collection, 
   query, 
   where, 
   getDocs, 
-  addDoc, 
   updateDoc, 
-  doc, 
+  limit,
   serverTimestamp 
 } from 'firebase/firestore';
-import { COLLECTION_NAMES } from '@/lib/constants';
+import { restaurantProductRef, restaurantProductsRef } from '@/lib/restaurant-firestore-paths';
 
 export interface ProductInput {
   menuId: string;
@@ -35,9 +33,11 @@ export class ProductService {
    * Récupère tous les produits d'un restaurant.
    */
   async getProducts(restaurantId: string) {
+    if (!restaurantId) return [];
+
     const q = query(
-      collection(this.db, COLLECTION_NAMES.PRODUCTS),
-      where('restaurantId', '==', restaurantId)
+      restaurantProductsRef(this.db, restaurantId),
+      limit(50)
     );
     const snapshot = await getDocs(q);
     return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -47,10 +47,12 @@ export class ProductService {
    * Récupère les suggestions du jour (Plats du Jour).
    */
   async getDailySpecials(restaurantId: string) {
+    if (!restaurantId) return [];
+
     const q = query(
-      collection(this.db, COLLECTION_NAMES.PRODUCTS),
-      where('restaurantId', '==', restaurantId),
-      where('isDailySpecial', '==', true)
+      restaurantProductsRef(this.db, restaurantId),
+      where('isDailySpecial', '==', true),
+      limit(20)
     );
     const snapshot = await getDocs(q);
     return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -59,8 +61,10 @@ export class ProductService {
   /**
    * Met à jour le flag "Plat du Jour".
    */
-  async toggleDailySpecial(productId: string, status: boolean) {
-    const ref = doc(this.db, COLLECTION_NAMES.PRODUCTS, productId);
+  async toggleDailySpecial(restaurantId: string, productId: string, status: boolean) {
+    if (!restaurantId || !productId) return;
+
+    const ref = restaurantProductRef(this.db, restaurantId, productId);
     await updateDoc(ref, {
       isDailySpecial: status,
       updatedAt: serverTimestamp()

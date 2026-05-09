@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { collection, getDocs } from "firebase/firestore"
+import { collection, getDocs, limit, query } from "firebase/firestore"
 
 import { useFirestore } from "@/firebase"
 import { COLLECTION_NAMES } from "@/lib/constants"
@@ -13,6 +13,7 @@ type CatalogCacheEntry = {
 
 type CatalogContextType = CatalogCacheEntry & {
   loading: boolean
+  isLoadingVisible: boolean
   refreshCatalog: () => void
 }
 
@@ -22,6 +23,7 @@ const CatalogContext = React.createContext<CatalogContextType>({
   products: [],
   categories: [],
   loading: false,
+  isLoadingVisible: false,
   refreshCatalog: () => {},
 })
 
@@ -39,6 +41,7 @@ export function CatalogProvider({
   const [categories, setCategories] = React.useState<any[]>(cachedCatalog?.categories ?? [])
   const [loading, setLoading] = React.useState(Boolean(restaurantId && !cachedCatalog))
   const [version, setVersion] = React.useState(0)
+  const isLoadingVisible = loading && products.length === 0 && categories.length === 0
 
   const refreshCatalog = React.useCallback(() => {
     if (cacheKey) {
@@ -69,17 +72,23 @@ export function CatalogProvider({
     setLoading(true)
 
     async function loadCatalog() {
-      const productsQuery = collection(
-        db,
-        COLLECTION_NAMES.RESTAURANTS,
-        safeRestaurantId,
-        COLLECTION_NAMES.PRODUCTS
+      const productsQuery = query(
+        collection(
+          db,
+          COLLECTION_NAMES.RESTAURANTS,
+          safeRestaurantId,
+          COLLECTION_NAMES.PRODUCTS
+        ),
+        limit(50)
       )
-      const categoriesQuery = collection(
-        db,
-        COLLECTION_NAMES.RESTAURANTS,
-        safeRestaurantId,
-        "categories"
+      const categoriesQuery = query(
+        collection(
+          db,
+          COLLECTION_NAMES.RESTAURANTS,
+          safeRestaurantId,
+          "categories"
+        ),
+        limit(50)
       )
 
       const [productsSnapshot, categoriesSnapshot] = await Promise.all([
@@ -122,9 +131,10 @@ export function CatalogProvider({
       products,
       categories,
       loading,
+      isLoadingVisible,
       refreshCatalog,
     }),
-    [products, categories, loading, refreshCatalog]
+    [products, categories, loading, isLoadingVisible, refreshCatalog]
   )
 
   return (

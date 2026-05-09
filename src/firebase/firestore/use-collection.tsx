@@ -48,6 +48,11 @@ type CollectionState = {
   error: FirestoreError | Error | null;
 };
 
+type CollectionOnceCacheEntry = {
+  data: WithId<any>[];
+  expiresAt: number;
+};
+
 type CollectionCacheEntry = CollectionState & {
   subscribers: Set<(state: CollectionState) => void>;
   unsubscribe: Unsubscribe | null;
@@ -55,8 +60,8 @@ type CollectionCacheEntry = CollectionState & {
 };
 
 const collectionCache = new Map<string, CollectionCacheEntry>();
-const collectionOnceCache = new Map<string, WithId<any>[]>();
-const COLLECTION_ONCE_REFRESH_MS = 60_000;
+const COLLECTION_ONCE_CACHE_TTL_MS = 60_000;
+const collectionOnceCache = new Map<string, CollectionOnceCacheEntry>();
 
 function getTargetPath(target: CollectionReference<DocumentData> | Query<DocumentData>) {
   return target.type === 'collection'
@@ -264,6 +269,7 @@ export function useCollection<T = any>(
 
 export function useCollectionOnce<T = any>(
     memoizedTargetRefOrQuery: ((CollectionReference<DocumentData> | Query<DocumentData>) & {__memo?: boolean})  | null | undefined,
+    ttlMs = COLLECTION_ONCE_CACHE_TTL_MS,
 ): UseCollectionResult<T> {
   type ResultItemType = WithId<T>;
   type StateDataType = ResultItemType[] | null;
@@ -284,20 +290,25 @@ export function useCollectionOnce<T = any>(
 
     const cacheKey = getCollectionCacheKey(memoizedTargetRefOrQuery);
     const persistentCacheKey = getPersistentCollectionCacheKey(cacheKey);
-    const cachedData = collectionOnceCache.get(cacheKey) as StateDataType | undefined;
+    const now = Date.now();
+    const cachedEntry = collectionOnceCache.get(cacheKey) as CollectionOnceCacheEntry | undefined;
     let isActive = true;
 
-    if (cachedData) {
-      setData(cachedData);
+    if (cachedEntry && cachedEntry.expiresAt > now && refreshKey === 0) {
+      setData(cachedEntry.data as StateDataType);
       setIsLoading(false);
       setError(null);
       return;
     }
 
-    const persistedData = restoreFirestoreValues(getPersistentCache(persistentCacheKey)) as StateDataType;
-    if (persistedData && refreshKey === 0) {
-      collectionOnceCache.set(cacheKey, persistedData);
-      setData(persistedData);
+    const persistentEntry = getPersistentCache<CollectionOnceCacheEntry>(persistentCacheKey);
+    if (persistentEntry && persistentEntry.expiresAt > now && refreshKey === 0) {
+      const restoredEntry = {
+        data: restoreFirestoreValues(persistentEntry.data) as WithId<any>[],
+        expiresAt: persistentEntry.expiresAt,
+      };
+      collectionOnceCache.set(cacheKey, restoredEntry);
+      setData(restoredEntry.data as StateDataType);
       setIsLoading(false);
       setError(null);
       return;
@@ -315,8 +326,13 @@ export function useCollectionOnce<T = any>(
           results.push({ ...(doc.data() as T), id: doc.id });
         }
 
-        collectionOnceCache.set(cacheKey, results);
-        setPersistentCache(persistentCacheKey, results);
+        const nextEntry = {
+          data: results,
+          expiresAt: Date.now() + ttlMs,
+        };
+
+        collectionOnceCache.set(cacheKey, nextEntry);
+        setPersistentCache(persistentCacheKey, nextEntry);
         setData(results);
         setError(null);
         setIsLoading(false);
@@ -338,19 +354,7 @@ export function useCollectionOnce<T = any>(
     return () => {
       isActive = false;
     };
-  }, [memoizedTargetRefOrQuery, refreshKey]);
-
-  useEffect(() => {
-    if (!memoizedTargetRefOrQuery) return;
-
-    const interval = setInterval(() => {
-      const cacheKey = getCollectionCacheKey(memoizedTargetRefOrQuery);
-      collectionOnceCache.delete(cacheKey);
-      refetch();
-    }, COLLECTION_ONCE_REFRESH_MS);
-
-    return () => clearInterval(interval);
-  }, [memoizedTargetRefOrQuery]);
+  }, [memoizedTargetRefOrQuery, refreshKey, ttlMs]);
 
   if(memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
     throw new Error(memoizedTargetRefOrQuery + ' was not properly memoized using useMemoFirebase');

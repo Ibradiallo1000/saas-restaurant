@@ -10,7 +10,9 @@ import {
   onSnapshot,
   updateDoc,
   doc,
+  limit,
   query,
+  type QueryConstraint,
   where,
   orderBy,
   Timestamp,
@@ -18,8 +20,8 @@ import {
 import type { Order, OrderStatus } from "@/types/index";
 import { normalizeOrderStatus } from "@/lib/order-status";
 
-const ORDERS_SUBCOLLECTION = (companyId: string) =>
-  collection(db, "companies", companyId, "commandes");
+const ORDERS_SUBCOLLECTION = (restaurantId: string) =>
+  collection(db, "restaurants", restaurantId, "orders");
 
 /**
  * Crée une nouvelle commande dans la sous-collection de l'entreprise.
@@ -40,18 +42,19 @@ export const createOrder = async (
  * Optionnellement filtré par statut(s).
  */
 export const listenOrders = (
-  companyId: string,
+  restaurantId: string,
   callback: (orders: Order[]) => void,
   statuses?: OrderStatus[]
 ) => {
-  const base = ORDERS_SUBCOLLECTION(companyId);
-  const constraints = [];
+  const base = ORDERS_SUBCOLLECTION(restaurantId);
+  const constraints: QueryConstraint[] = [];
 
   if (statuses && statuses.length > 0) {
     constraints.push(where("status", "in", statuses));
   }
 
   constraints.push(orderBy("createdAt", "desc"));
+  constraints.push(limit(20));
 
   const q = query(base, ...constraints);
 
@@ -73,11 +76,11 @@ export const listenOrders = (
  * Met à jour le statut d'une commande.
  */
 export const updateOrderStatus = async (
-  companyId: string,
+  restaurantId: string,
   id: string,
   status: OrderStatus
 ) => {
-  const ref = doc(db, "companies", companyId, "commandes", id);
+  const ref = doc(db, "restaurants", restaurantId, "orders", id);
   await updateDoc(ref, { status: normalizeOrderStatus(status) });
 };
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { collection, onSnapshot } from "firebase/firestore"
+import { collection, getDocs, limit, query } from "firebase/firestore"
 import { db } from "../lib/firebase"
 import { ImageIcon } from "lucide-react"
 
@@ -19,26 +19,35 @@ export default function ImageGallery({ restaurantId }: Props) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!restaurantId) {
+      setImages([])
+      setLoading(false)
+      return
+    }
+
+    let cancelled = false
     setLoading(true)
 
-    const unsub = onSnapshot(
-      collection(db, `restaurants/${restaurantId}/images`),
-      (snapshot) => {
+    getDocs(query(collection(db, "restaurants", restaurantId, "images"), limit(50)))
+      .then((snapshot) => {
+        if (cancelled) return
         const data = snapshot.docs.map((doc) => ({
           id: doc.id,
           ...(doc.data() as { url: string }),
         }))
         setImages(data)
         setLoading(false)
-      },
-      (error) => {
+      })
+      .catch((error) => {
+        if (cancelled) return
         console.error(error)
         setImages([])
         setLoading(false)
-      }
-    )
+      })
 
-    return () => unsub()
+    return () => {
+      cancelled = true
+    }
   }, [restaurantId])
 
   if (loading) {

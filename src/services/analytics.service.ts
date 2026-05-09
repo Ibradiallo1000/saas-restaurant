@@ -20,6 +20,21 @@ import { normalizePaymentMethod } from '@/lib/order-payment';
 import { normalizeOrderStatus } from '@/lib/order-status';
 import { startOfDay, endOfDay, startOfWeek, startOfMonth, subDays, format, subWeeks, subMonths } from 'date-fns';
 
+const DASHBOARD_QUERY_LIMIT = 40;
+const ANALYTICS_CACHE_TTL_MS = 30_000;
+const analyticsCache = new Map<string, { data: unknown; timestamp: number }>();
+
+async function cachedQuery<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const cached = analyticsCache.get(key);
+  if (cached && Date.now() - cached.timestamp < ANALYTICS_CACHE_TTL_MS) {
+    return cached.data as T;
+  }
+
+  const data = await fn();
+  analyticsCache.set(key, { data, timestamp: Date.now() });
+  return data;
+}
+
 export interface ComparisonMetric {
   current: number;
   previous: number;
@@ -55,6 +70,7 @@ export class AnalyticsService {
    * Compare les périodes actuelles avec les périodes précédentes (J-1, Semaine-1).
    */
   async getDashboardOverview(restaurantId: string): Promise<DashboardStats> {
+    return cachedQuery(`dashboard-overview:${restaurantId}`, async () => {
     const now = new Date();
     
     // Définition des périodes temporelles
@@ -79,7 +95,8 @@ export class AnalyticsService {
       ordersRef,
       where('paymentStatus', '==', PAYMENT_STATUS.VALIDATED),
       where('createdAt', '>=', Timestamp.fromDate(lastMonthStart)),
-      orderBy('createdAt', 'desc')
+      orderBy('createdAt', 'desc'),
+      limit(DASHBOARD_QUERY_LIMIT)
     );
 
     const snapshot = await getDocs(mainQuery);
@@ -140,13 +157,14 @@ export class AnalyticsService {
     // Récupération des commandes actives
     const activeQuery = query(
       ordersRef,
-      where('status', 'in', [ORDER_STATUS.NOUVELLE, ORDER_STATUS.PREPARATION, ORDER_STATUS.PRETE])
+      where('status', 'in', [ORDER_STATUS.NOUVELLE, ORDER_STATUS.PREPARATION, ORDER_STATUS.PRETE]),
+      limit(DASHBOARD_QUERY_LIMIT)
     );
     const activeSnapshot = await getDocs(activeQuery);
 
     // Analyse des stocks bas
     const inventoryRef = collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.INVENTORY);
-    const lowStockSnapshot = await getDocs(inventoryRef);
+    const lowStockSnapshot = await getDocs(query(inventoryRef, limit(DASHBOARD_QUERY_LIMIT)));
     const lowStockCount = lowStockSnapshot.docs.filter(d => d.data().quantity <= d.data().threshold).length;
 
     return {
@@ -166,12 +184,14 @@ export class AnalyticsService {
         unclosedSessions: 0
       }
     };
+    });
   }
 
   /**
    * Génère les données pour le graphique de tendance des ventes.
    */
   async getSalesTrend(restaurantId: string, days: number = 7) {
+    return cachedQuery(`sales-trend:${restaurantId}:${days}`, async () => {
     const startDate = subDays(new Date(), days);
     const ordersRef = collection(
       this.db,
@@ -183,7 +203,8 @@ export class AnalyticsService {
       ordersRef,
       where('paymentStatus', '==', PAYMENT_STATUS.VALIDATED),
       where('createdAt', '>=', Timestamp.fromDate(startDate)),
-      orderBy('createdAt', 'asc')
+      orderBy('createdAt', 'asc'),
+      limit(DASHBOARD_QUERY_LIMIT)
     );
 
     const snapshot = await getDocs(q);
@@ -195,5 +216,6 @@ export class AnalyticsService {
     });
 
     return Object.entries(trendMap).map(([name, total]) => ({ name, total }));
+    });
   }
 }
