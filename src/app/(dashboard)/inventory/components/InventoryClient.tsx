@@ -1,11 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { useFirestore, useCollectionOnce, useMemoFirebase } from "@/firebase"
-import { collection, query, doc, updateDoc, serverTimestamp, increment, limit } from "firebase/firestore"
+import { useFirestore } from "@/firebase"
+import { doc, updateDoc, serverTimestamp, increment } from "firebase/firestore"
 import { COLLECTION_NAMES } from "@/lib/constants"
-import { AlertCircle, ArrowUpDown, Box, Filter, Plus, Search, Loader2, RefreshCw } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { AlertCircle, Box, Filter, Plus, Search, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -30,6 +29,9 @@ import {
 } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
+import { EmptyState, ErrorState } from "@/components/layout/app-states"
+import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
+import { useRestaurantPage } from "@/hooks/use-restaurant-page"
 
 export default function InventoryPage() {
   const db = useFirestore()
@@ -38,22 +40,29 @@ export default function InventoryPage() {
   const [searchTerm, setSearchTerm] = React.useState("")
   const [restockAmount, setRestockAmount] = React.useState<number>(0)
   const [loading, setLoading] = React.useState(false)
-  const inventoryQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return query(collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.INVENTORY), limit(20))
-  }, [db, restaurantId])
-  const { data: inventory, isLoading, refetch } = useCollectionOnce(inventoryQuery)
+  const {
+    error,
+    hasMore,
+    isLoading,
+    items: inventory,
+    loadMore,
+    refetch,
+  } = useRestaurantPage<any>({
+    collectionName: COLLECTION_NAMES.INVENTORY,
+    orderByField: null,
+    pageSize: 20,
+  })
 
   const filteredInventory = React.useMemo(() => {
-    if (!inventory) return []
-    return inventory.filter(item => 
-      item.name.toLowerCase().includes(searchTerm.toLowerCase())
+    const normalizedSearch = searchTerm.trim().toLowerCase()
+
+    return inventory.filter((item) =>
+      getInventoryItemName(item).toLowerCase().includes(normalizedSearch)
     )
   }, [inventory, searchTerm])
 
   const alertsCount = React.useMemo(() => {
-    if (!inventory) return 0
-    return inventory.filter(item => item.quantity <= item.threshold).length
+    return inventory.filter((item) => getInventoryItemQuantity(item) <= getInventoryItemThreshold(item)).length
   }, [inventory])
 
   const handleRestock = async (itemId: string) => {
@@ -75,7 +84,27 @@ export default function InventoryPage() {
     }
   }
 
-  if (isLoading) return <div className="flex justify-center p-20"><Loader2 className="animate-spin h-10 w-10 text-primary" /></div>
+  if (!restaurantId) {
+    return (
+      <ErrorState
+        title="Restaurant introuvable"
+        description="Aucun restaurant n'est associe a votre session. Impossible de charger l'inventaire."
+      />
+    )
+  }
+
+  if (isLoading && inventory.length === 0) return <AdminRouteSkeleton />
+
+  if (error) {
+    return (
+      <ErrorState
+        title="Inventaire indisponible"
+        description="Impossible de charger les stocks pour le moment."
+        actionLabel="Reessayer"
+        onAction={() => void refetch()}
+      />
+    )
+  }
 
   return (
     <div className="space-y-6 pb-10 animate-in fade-in duration-500">
@@ -111,7 +140,7 @@ export default function InventoryPage() {
             <Box className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-black italic text-primary">{inventory?.length || 0} Références</div>
+            <div className="text-2xl font-black italic text-primary">{inventory.length} Références</div>
             <p className="text-[10px] text-muted-foreground font-medium">Ingrédients enregistrés</p>
           </CardContent>
         </Card>
@@ -152,17 +181,21 @@ export default function InventoryPage() {
             </TableHeader>
             <TableBody>
               {filteredInventory.map((item) => {
-                const isAlert = item.quantity <= item.threshold
-                const percentage = Math.min(100, Math.floor((item.quantity / (item.threshold * 3)) * 100))
+                const itemName = getInventoryItemName(item)
+                const quantity = getInventoryItemQuantity(item)
+                const threshold = getInventoryItemThreshold(item)
+                const unit = getInventoryItemUnit(item)
+                const isAlert = quantity <= threshold
+                const percentage = Math.min(100, Math.floor((quantity / (threshold * 3)) * 100))
                 return (
                   <TableRow key={item.id} className="border-muted/30 hover:bg-primary/5 transition-colors">
-                    <TableCell className="font-black italic text-primary">{item.name}</TableCell>
+                    <TableCell className="font-black italic text-primary">{itemName}</TableCell>
                     <TableCell>
                       <div className="flex flex-col">
                         <span className={cn("text-lg font-black", isAlert ? "text-destructive" : "text-foreground")}>
-                          {item.quantity} {item.unit || 'uds'}
+                          {quantity} {unit}
                         </span>
-                        <span className="text-[9px] font-bold text-muted-foreground uppercase">Seuil: {item.threshold}</span>
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase">Seuil: {threshold}</span>
                       </div>
                     </TableCell>
                     <TableCell className="w-[180px]">
@@ -186,10 +219,10 @@ export default function InventoryPage() {
                         </DialogTrigger>
                         <DialogContent className="rounded-2xl">
                           <DialogHeader>
-                            <DialogTitle className="font-black italic uppercase">Réapprovisionner {item.name}</DialogTitle>
+                            <DialogTitle className="font-black italic uppercase">Réapprovisionner {itemName}</DialogTitle>
                           </DialogHeader>
                           <div className="py-4 space-y-4">
-                            <Label>Quantité à ajouter ({item.unit || 'uds'})</Label>
+                            <Label>Quantité à ajouter ({unit})</Label>
                             <Input 
                               type="number" 
                               value={restockAmount} 
@@ -211,7 +244,14 @@ export default function InventoryPage() {
               {filteredInventory.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center py-20 text-muted-foreground italic">
-                    Aucun ingrédient trouvé.
+                    <EmptyState
+                      title={searchTerm ? "Aucun ingredient trouve" : "Inventaire vide"}
+                      description={
+                        searchTerm
+                          ? "Aucun stock charge ne correspond a votre recherche."
+                          : "Ajoutez vos premiers ingredients pour suivre les ruptures."
+                      }
+                    />
                   </TableCell>
                 </TableRow>
               )}
@@ -219,6 +259,43 @@ export default function InventoryPage() {
           </Table>
         </CardContent>
       </Card>
+      {hasMore && !searchTerm && (
+        <div className="flex justify-center">
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-xl font-black"
+            disabled={isLoading}
+            onClick={() => loadMore()}
+          >
+            {isLoading ? "Chargement..." : "Charger plus"}
+          </Button>
+        </div>
+      )}
     </div>
   )
+}
+
+function getInventoryItemName(item: any) {
+  return typeof item?.name === "string" && item.name.trim().length > 0
+    ? item.name.trim()
+    : "Produit sans nom"
+}
+
+function getInventoryItemQuantity(item: any) {
+  return typeof item?.quantity === "number" && Number.isFinite(item.quantity)
+    ? item.quantity
+    : 0
+}
+
+function getInventoryItemThreshold(item: any) {
+  return typeof item?.threshold === "number" && Number.isFinite(item.threshold) && item.threshold > 0
+    ? item.threshold
+    : 1
+}
+
+function getInventoryItemUnit(item: any) {
+  return typeof item?.unit === "string" && item.unit.trim().length > 0
+    ? item.unit.trim()
+    : "uds"
 }

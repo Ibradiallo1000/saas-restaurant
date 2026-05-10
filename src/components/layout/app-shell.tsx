@@ -23,12 +23,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const currentUser = useCurrentUser()
+  const currentPathname = pathname ?? "/"
 
-  const isPublic = isPublicRoute(pathname)
-  const isFullscreenZone = pathname.startsWith("/pos") || pathname.startsWith("/kitchen")
+  const isPublic = isPublicRoute(currentPathname)
+  const isFullscreenZone = currentPathname.startsWith("/pos") || currentPathname.startsWith("/kitchen")
   const routeRole = currentUser.isSuperAdmin ? "super_admin" : currentUser.activeRole
   const roleHomePath = getRoleHomePath(routeRole)
-  const isAllowed = isRouteAllowedForRole(pathname, routeRole)
+  const isAllowed = isRouteAllowedForRole(currentPathname, routeRole)
 
   React.useEffect(() => {
     if (currentUser.isLoading) return

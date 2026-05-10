@@ -35,12 +35,39 @@ export const RESTAURANT_ROLES = {
 export const SUBSCRIPTION_STATUS = {
   TRIAL: 'trial',          // 🔥 AJOUT CRITIQUE
   ACTIVE: 'active',
+  GRACE: 'grace',
   EXPIRED: 'expired',
   SUSPENDED: 'suspended',
+  LIFETIME: 'lifetime',
 } as const;
 
 export type SubscriptionStatus =
   typeof SUBSCRIPTION_STATUS[keyof typeof SUBSCRIPTION_STATUS];
+
+export const SUBSCRIPTION_STATUS_LABELS = {
+  [SUBSCRIPTION_STATUS.TRIAL]: 'Essai',
+  [SUBSCRIPTION_STATUS.ACTIVE]: 'Actif',
+  [SUBSCRIPTION_STATUS.GRACE]: 'Tolerance',
+  [SUBSCRIPTION_STATUS.EXPIRED]: 'Expire',
+  [SUBSCRIPTION_STATUS.SUSPENDED]: 'Suspendu',
+  [SUBSCRIPTION_STATUS.LIFETIME]: 'Illimite',
+} as const;
+
+export const SUBSCRIPTION_PLAN = {
+  TRIAL: 'trial',
+  BASIC: 'basic',
+  PRO: 'pro',
+  CUSTOM: 'custom',
+  BUSINESS: 'business',
+} as const;
+
+export const SUBSCRIPTION_PLAN_LABELS = {
+  [SUBSCRIPTION_PLAN.TRIAL]: 'Essai',
+  [SUBSCRIPTION_PLAN.BASIC]: 'Basic',
+  [SUBSCRIPTION_PLAN.PRO]: 'Pro',
+  [SUBSCRIPTION_PLAN.CUSTOM]: 'Custom',
+  [SUBSCRIPTION_PLAN.BUSINESS]: 'Business',
+} as const;
 
 
 // ===============================
@@ -53,6 +80,28 @@ export const ORDER_STATUS = {
   PRETE: 'prete',
   SERVIE: 'servie',
   PAYEE: 'payee',
+} as const;
+
+export const ORDER_SOURCE = {
+  CLIENT: 'client',
+  QR: 'qr',
+  MANUAL: 'manual',
+  POS: 'pos',
+} as const;
+
+export const ORDER_TYPE = {
+  DINE_IN: 'table',
+  TABLE: 'table',
+  TAKEAWAY: 'takeaway',
+  DELIVERY: 'delivery',
+  ROOM_SERVICE: 'room',
+} as const;
+
+export const POS_SESSION_STATUS = {
+  OPEN: 'open',
+  OPENED: 'opened',
+  CLOSED: 'closed',
+  VALIDATED: 'validated',
 } as const;
 
 export const DEFAULT_GRACE_DAYS = 7;
@@ -95,6 +144,7 @@ export const COLLECTION_NAMES = {
 
   PLANS: 'plans',
   SUBSCRIPTIONS: 'subscriptions',
+  REQUESTS: 'requests',
 
   RESTAURANTS: 'restaurants',
   MENUS: 'menus',
@@ -104,10 +154,13 @@ export const COLLECTION_NAMES = {
   INVENTORY: 'inventory',
   CUSTOMERS: 'customers',
   TABLES: 'tables',
+  TABLE_SESSIONS: 'tableSessions',
+  VISITS: 'visits',
   ROOMS: 'rooms',
   REVIEWS: 'reviews',
   CASHIER_SESSIONS: 'cashierSessions',
   INVOICES: 'invoices',
   CONTACT_REQUESTS: 'contactRequests',
+  ERROR_LOGS: 'errorLogs',
   COMPANIES: 'companies',
 } as const;

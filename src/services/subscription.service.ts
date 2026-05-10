@@ -11,11 +11,14 @@ import {
   where,
   getDocs,
   doc,
+  getDoc,
   setDoc,
   serverTimestamp,
   limit,
   orderBy,
-  Timestamp
+  Timestamp,
+  updateDoc,
+  type DocumentData,
 } from 'firebase/firestore';
 
 import { COLLECTION_NAMES, SUBSCRIPTION_STATUS } from '@/lib/constants';
@@ -164,4 +167,104 @@ export class SubscriptionService {
 
     return 'active';
   }
+}
+
+const PLAN_PRICES: Record<string, number> = {
+  trial: 0,
+  basic: 15000,
+  pro: 35000,
+  business: 75000,
+  custom: 0,
+};
+
+export function getPlanPrice(plan: string) {
+  return PLAN_PRICES[plan] ?? 0;
+}
+
+export async function updateSubscriptionPlan(
+  db: Firestore,
+  restaurantId: string,
+  plan: string
+) {
+  const ref = await getSubscriptionRef(db, restaurantId);
+  await updateDoc(ref, {
+    plan,
+    planId: plan,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function setSubscriptionCurrentPeriodEnd(
+  db: Firestore,
+  restaurantId: string,
+  endDate: Date
+) {
+  const ref = await getSubscriptionRef(db, restaurantId);
+  await updateDoc(ref, {
+    status: SUBSCRIPTION_STATUS.ACTIVE,
+    currentPeriodEnd: Timestamp.fromDate(endDate),
+    endDate: Timestamp.fromDate(endDate),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function activateGracePeriod(
+  db: Firestore,
+  restaurantId: string,
+  graceEndDate: Date
+) {
+  const ref = await getSubscriptionRef(db, restaurantId);
+  await updateDoc(ref, {
+    status: SUBSCRIPTION_STATUS.GRACE,
+    graceEndsAt: Timestamp.fromDate(graceEndDate),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function grantLifetimeAccess(db: Firestore, restaurantId: string) {
+  const ref = await getSubscriptionRef(db, restaurantId);
+  await updateDoc(ref, {
+    status: SUBSCRIPTION_STATUS.LIFETIME,
+    isManual: true,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function suspendSubscription(db: Firestore, restaurantId: string) {
+  const ref = await getSubscriptionRef(db, restaurantId);
+  await updateDoc(ref, {
+    status: SUBSCRIPTION_STATUS.SUSPENDED,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+async function getSubscriptionRef(db: Firestore, restaurantId: string) {
+  const q = query(
+    collection(db, COLLECTION_NAMES.SUBSCRIPTIONS),
+    where('restaurantId', '==', restaurantId),
+    orderBy('endDate', 'desc'),
+    limit(1)
+  );
+  const snap = await getDocs(q);
+
+  if (!snap.empty) return snap.docs[0].ref;
+
+  const ref = doc(collection(db, COLLECTION_NAMES.SUBSCRIPTIONS));
+  await setDoc(ref, {
+    restaurantId,
+    plan: 'trial',
+    planId: 'trial',
+    status: SUBSCRIPTION_STATUS.TRIAL,
+    startDate: serverTimestamp(),
+    endDate: Timestamp.fromDate(new Date()),
+    currentPeriodEnd: Timestamp.fromDate(new Date()),
+    isTrial: true,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  } satisfies DocumentData);
+
+  const created = await getDoc(ref);
+  if (!created.exists()) throw new Error('Abonnement introuvable.');
+
+  return ref;
 }

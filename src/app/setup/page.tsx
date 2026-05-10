@@ -58,7 +58,15 @@ export default function SetupPage() {
 
     try {
       // Le SuperAdmin crée le restaurant et définit l'email de l'Owner
-      await restaurantService.createRestaurantForOwner(formData.ownerEmail, formData)
+      await restaurantService.createRestaurantForOwner(formData.ownerEmail, {
+        ...formData,
+        context: "standalone",
+        countryCode: formData.country,
+        countryName: formData.country,
+        city: "",
+        phone: "",
+        timezone: "Africa/Abidjan",
+      })
 
       toast({
         title: "Succès",

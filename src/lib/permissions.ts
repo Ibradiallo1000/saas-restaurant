@@ -16,6 +16,7 @@ export const ROLE_PERMISSIONS: Record<RestaurantUserRole, Permission[]> = {
   manager: ["dashboard", "orders", "kitchen", "inventory", "staff"],
   cashier: ["pos"],
   kitchen: ["kitchen"],
+  server: ["pos", "orders"],
 }
 
 export function hasPermission(role: RestaurantUserRole | null, permission: Permission) {

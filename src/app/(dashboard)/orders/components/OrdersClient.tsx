@@ -8,18 +8,12 @@ import * as React from 'react';
 import { useFirestore } from '@/firebase';
 import {
   doc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  QueryDocumentSnapshot,
   serverTimestamp,
-  startAfter,
   updateDoc,
   where,
 } from 'firebase/firestore';
 import { COLLECTION_NAMES, ORDER_STATUS } from '@/lib/constants';
-import { ClipboardList, Loader2, BellRing, Clock, CheckCircle2, Eye, Printer, Wallet } from 'lucide-react';
+import { ClipboardList, BellRing, Clock, CheckCircle2, Eye, Printer, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,10 +21,12 @@ import { cn } from '@/lib/utils';
 import { printOrder } from '@/lib/order-printing';
 import { normalizePaymentMethod, normalizePaymentStatus } from '@/lib/order-payment';
 import { normalizeOrderStatus, orderStatusLabel } from '@/lib/order-status';
-import { restaurantOrdersRef } from '@/lib/restaurant-firestore-paths';
 import { useRestaurant } from '@/design-system/context/RestaurantContext';
 import { OrdersProvider, useOrders } from '@/modules/orders/OrdersProvider';
 import type { RestaurantOrder } from '@/modules/restaurant/types';
+import { AdminRouteSkeleton } from '@/components/performance/route-skeletons';
+import { EmptyState, ErrorState } from '@/components/layout/app-states';
+import { useRestaurantPage } from '@/hooks/use-restaurant-page';
 
 type OrdersTab = "active" | "payments" | "history";
 
@@ -40,22 +36,10 @@ const ORDER_TABS: Array<{ id: OrdersTab; label: string }> = [
   { id: "history", label: "Historique" },
 ];
 
-const HISTORY_ORDER_STATUSES = ["servie", "payee"];
-const HISTORY_PAGE_SIZE = 20;
-const HISTORY_CACHE_TTL_MS = 60_000;
-
-type HistoryCacheEntry = {
-  orders: RestaurantOrder[];
-  cursor: QueryDocumentSnapshot | null;
-  hasMore: boolean;
-  expiresAt: number;
+const ORDER_STATUS_BY_TAB: Record<Exclude<OrdersTab, "active">, string> = {
+  payments: ORDER_STATUS.SERVIE,
+  history: ORDER_STATUS.PAYEE,
 };
-
-const historyOrdersCache = new Map<string, HistoryCacheEntry>();
-
-function getHistoryCacheKey(restaurantId: string, tab: OrdersTab, cursor: QueryDocumentSnapshot | null) {
-  return `${restaurantId}:${tab}:${cursor?.id ?? "first"}`;
-}
 
 export default function OrdersPage() {
   const { restaurantId } = useRestaurant();
@@ -73,80 +57,30 @@ function OrdersPageContent() {
   const { orders: activeOrders, isLoading } = useOrders();
   const [expandedOrderId, setExpandedOrderId] = React.useState<string | null>(null);
   const [activeTab, setActiveTab] = React.useState<OrdersTab>("active");
-  const [historyOrders, setHistoryOrders] = React.useState<RestaurantOrder[]>([]);
-  const [historyCursor, setHistoryCursor] = React.useState<QueryDocumentSnapshot | null>(null);
-  const [historyLoading, setHistoryLoading] = React.useState(false);
-  const [hasMoreHistory, setHasMoreHistory] = React.useState(true);
+  const archiveStatus = activeTab === "active" ? null : ORDER_STATUS_BY_TAB[activeTab];
+  const archiveConstraints = React.useMemo(
+    () => (archiveStatus ? [where("status", "==", archiveStatus)] : []),
+    [archiveStatus]
+  );
+  const {
+    error: archiveError,
+    hasMore: hasMoreArchive,
+    isLoading: archiveLoading,
+    items: archiveOrders,
+    loadMore: loadMoreArchive,
+    refetch: refetchArchive,
+  } = useRestaurantPage<RestaurantOrder>({
+    collectionName: COLLECTION_NAMES.ORDERS,
+    constraints: archiveConstraints,
+    enabled: Boolean(archiveStatus),
+    orderByField: "createdAt",
+    pageSize: 20,
+  });
   const activeOrderList = (activeOrders || []) as RestaurantOrder[];
-  const allOrders = activeTab === "active" ? activeOrderList : historyOrders;
+  const allOrders = activeTab === "active" ? activeOrderList : archiveOrders;
   const filteredOrders = React.useMemo(() => {
     return allOrders.filter((order) => isOrderInTab(order, activeTab));
   }, [activeTab, allOrders]);
-
-  const loadHistory = React.useCallback(
-    async ({ reset = false }: { reset?: boolean } = {}) => {
-      if (!db || !restaurantId || historyLoading) return;
-
-      const cacheKey = getHistoryCacheKey(restaurantId, activeTab, reset ? null : historyCursor);
-      const cached = historyOrdersCache.get(cacheKey);
-      if (cached && cached.expiresAt > Date.now()) {
-        setHistoryOrders((current) => (reset ? cached.orders : [...current, ...cached.orders]));
-        setHistoryCursor(cached.cursor);
-        setHasMoreHistory(cached.hasMore);
-        return;
-      }
-
-      setHistoryLoading(true);
-
-      try {
-        const baseQuery = [
-          where("status", "in", HISTORY_ORDER_STATUSES),
-          orderBy("createdAt", "desc"),
-          limit(HISTORY_PAGE_SIZE),
-        ];
-        const historyQuery = query(
-          restaurantOrdersRef(db, restaurantId),
-          ...(reset || !historyCursor
-            ? baseQuery
-            : [...baseQuery, startAfter(historyCursor)])
-        );
-        const snapshot = await getDocs(historyQuery);
-        const nextOrders = snapshot.docs.map((orderDoc) => ({
-          ...(orderDoc.data() as Omit<RestaurantOrder, "id">),
-          id: orderDoc.id,
-        }));
-
-        setHistoryOrders((current) => (reset ? nextOrders : [...current, ...nextOrders]));
-        const nextCursor = snapshot.docs[snapshot.docs.length - 1] ?? null;
-        const nextHasMore = snapshot.docs.length === HISTORY_PAGE_SIZE;
-        historyOrdersCache.set(cacheKey, {
-          orders: nextOrders,
-          cursor: nextCursor,
-          hasMore: nextHasMore,
-          expiresAt: Date.now() + HISTORY_CACHE_TTL_MS,
-        });
-        setHistoryCursor(nextCursor);
-        setHasMoreHistory(nextHasMore);
-      } finally {
-        setHistoryLoading(false);
-      }
-    },
-    [activeTab, db, historyCursor, historyLoading, restaurantId]
-  );
-
-  React.useEffect(() => {
-    if (activeTab === "payments" || activeTab === "history") {
-      if (historyOrders.length === 0) {
-        loadHistory({ reset: true });
-      }
-    }
-  }, [activeTab, historyOrders.length, loadHistory]);
-
-  React.useEffect(() => {
-    setHistoryOrders([]);
-    setHistoryCursor(null);
-    setHasMoreHistory(true);
-  }, [restaurantId]);
 
   // 🔥 UPDATE CORRIGÉ
   const completeOrder = async (orderId: string) => {
@@ -189,10 +123,17 @@ function OrdersPageContent() {
   };
 
   if (isLoading) {
+    return <AdminRouteSkeleton />;
+  }
+
+  if (archiveError) {
     return (
-      <div className="flex justify-center p-20">
-        <Loader2 className="animate-spin h-8 w-8 text-primary" />
-      </div>
+      <ErrorState
+        title="Commandes indisponibles"
+        description="Impossible de charger les commandes archivees pour le moment."
+        actionLabel="Reessayer"
+        onAction={() => void refetchArchive()}
+      />
     );
   }
 
@@ -226,7 +167,7 @@ function OrdersPageContent() {
       <div className="flex rounded-2xl border bg-card p-1 shadow-sm">
         {ORDER_TABS.map((tab) => {
           const active = activeTab === tab.id;
-          const count = (tab.id === "active" ? activeOrderList : historyOrders).filter((order) => isOrderInTab(order, tab.id)).length;
+          const count = (tab.id === "active" ? activeOrderList : archiveOrders).filter((order) => isOrderInTab(order, tab.id)).length;
 
           return (
             <button
@@ -427,21 +368,28 @@ function OrdersPageContent() {
 
         {/* EMPTY */}
         {filteredOrders.length === 0 && (
-          <div className="col-span-full h-40 flex items-center justify-center text-muted-foreground italic">
-            {historyLoading ? "Chargement..." : "Aucune commande dans cet onglet."}
+          <div className="col-span-full">
+            {archiveLoading ? (
+              <AdminRouteSkeleton />
+            ) : (
+              <EmptyState
+                title="Aucune commande"
+                description={getEmptyTabDescription(activeTab)}
+              />
+            )}
           </div>
         )}
 
       </div>
-      {(activeTab === "payments" || activeTab === "history") && hasMoreHistory && filteredOrders.length > 0 && (
+      {(activeTab === "payments" || activeTab === "history") && hasMoreArchive && filteredOrders.length > 0 && (
         <div className="flex justify-center">
           <Button
             variant="outline"
             className="rounded-xl font-black"
-            disabled={historyLoading}
-            onClick={() => loadHistory()}
+            disabled={archiveLoading}
+            onClick={() => loadMoreArchive()}
           >
-            {historyLoading ? "Chargement..." : "Charger plus"}
+            {archiveLoading ? "Chargement..." : "Charger plus"}
           </Button>
         </div>
       )}
@@ -466,6 +414,12 @@ function isOrderInTab(order: RestaurantOrder, tab: OrdersTab) {
   }
 
   return status === ORDER_STATUS.PAYEE;
+}
+
+function getEmptyTabDescription(tab: OrdersTab) {
+  if (tab === "active") return "Aucune commande active pour le moment."
+  if (tab === "payments") return "Aucune commande servie en attente d'encaissement."
+  return "Aucune commande payee dans l'historique charge."
 }
 
 function isReadyOrder(status: string) {

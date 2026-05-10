@@ -9,8 +9,13 @@ import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
 export const ACTIVE_ORDER_STATUSES = [
   "pending",
   "preparing",
+  "ready",
+  "served",
   "nouvelle",
   "preparation",
+  "prete",
+  "servie",
+  "payee",
 ]
 
 type OrdersContextType = {

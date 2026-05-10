@@ -1,5 +1,5 @@
-import InventoryLazy from "./components/InventoryLazy"
+import InventoryClient from "./components/InventoryClient"
 
 export default function InventoryPage() {
-  return <InventoryLazy />
+  return <InventoryClient />
 }

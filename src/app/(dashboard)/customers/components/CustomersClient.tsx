@@ -1,8 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useFirestore, useCollectionOnce, useMemoFirebase } from "@/firebase"
-import { collection, limit, query } from "firebase/firestore"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { Users, Search, Star, MessageSquare, TrendingUp, Filter, Loader2, Award } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -11,27 +9,26 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
-import { useRestaurant } from "@/design-system/context/RestaurantContext"
+import { EmptyState, ErrorState } from "@/components/layout/app-states"
+import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
+import { useRestaurantPage } from "@/hooks/use-restaurant-page"
 
 export default function CustomersPage() {
-  const db = useFirestore()
-  const { restaurantId } = useRestaurant()
   const { toast } = useToast()
   const [searchTerm, setSearchTerm] = React.useState("")
   const [analyzingId, setAnalyzingId] = React.useState<string | null>(null)
-  const customersQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return query(
-      collection(
-        db,
-        COLLECTION_NAMES.RESTAURANTS,
-        restaurantId,
-        COLLECTION_NAMES.CUSTOMERS
-      ),
-      limit(20)
-    )
-  }, [db, restaurantId])
-  const { data: customers, isLoading } = useCollectionOnce(customersQuery)
+  const {
+    error,
+    hasMore,
+    isLoading,
+    items: customers,
+    loadMore,
+    refetch,
+  } = useRestaurantPage<any>({
+    collectionName: COLLECTION_NAMES.CUSTOMERS,
+    orderByField: null,
+    pageSize: 20,
+  })
 
   const handleAIAnalysis = async (customer: any) => {
     setAnalyzingId(customer.id)
@@ -65,14 +62,24 @@ export default function CustomersPage() {
   }
 
   const filteredCustomers = React.useMemo(() => {
-    if (!customers) return []
     return customers.filter(c => 
       (c.name || "").toLowerCase().includes(searchTerm.toLowerCase()) || 
-      c.phone.includes(searchTerm)
+      (c.phone || "").includes(searchTerm)
     )
   }, [customers, searchTerm])
 
-  if (isLoading) return <div className="flex justify-center p-20"><Loader2 className="animate-spin h-10 w-10 text-primary" /></div>
+  if (isLoading && customers.length === 0) return <AdminRouteSkeleton />
+
+  if (error) {
+    return (
+      <ErrorState
+        title="Clients indisponibles"
+        description="Impossible de charger le repertoire client pour le moment."
+        actionLabel="Reessayer"
+        onAction={() => void refetch()}
+      />
+    )
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -90,10 +97,10 @@ export default function CustomersPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard icon={Users} title="Clients Total" value={customers?.length || 0} />
-        <MetricCard icon={Star} title="Points Distribués" value={customers?.reduce((acc, c) => acc + (c.loyaltyPoints || 0), 0) || 0} />
+        <MetricCard icon={Users} title="Clients Total" value={customers.length} />
+        <MetricCard icon={Star} title="Points Distribués" value={customers.reduce((acc, c) => acc + (c.loyaltyPoints || 0), 0)} />
         <MetricCard icon={TrendingUp} title="Visites / Mois" value="142" />
-        <MetricCard icon={Award} title="Top Clients (VIP)" value={customers?.filter(c => (c.loyaltyPoints || 0) > 100).length || 0} />
+        <MetricCard icon={Award} title="Top Clients (VIP)" value={customers.filter(c => (c.loyaltyPoints || 0) > 100).length} />
       </div>
 
       <Card className="border-none shadow-xl overflow-hidden bg-card/50 backdrop-blur-md">
@@ -160,8 +167,15 @@ export default function CustomersPage() {
               ))}
               {filteredCustomers.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-20 text-muted-foreground italic">
-                    Aucun client ne correspond à votre recherche.
+                  <TableCell colSpan={5} className="py-0">
+                    <EmptyState
+                      title={searchTerm ? "Aucun client trouve" : "Aucun client"}
+                      description={
+                        searchTerm
+                          ? "Aucun client charge ne correspond a votre recherche."
+                          : "Les clients apparaitront ici apres leurs premieres commandes."
+                      }
+                    />
                   </TableCell>
                 </TableRow>
               )}
@@ -169,6 +183,19 @@ export default function CustomersPage() {
           </Table>
         </CardContent>
       </Card>
+      {hasMore && !searchTerm && (
+        <div className="flex justify-center">
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-xl font-black"
+            disabled={isLoading}
+            onClick={() => loadMore()}
+          >
+            {isLoading ? "Chargement..." : "Charger plus"}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

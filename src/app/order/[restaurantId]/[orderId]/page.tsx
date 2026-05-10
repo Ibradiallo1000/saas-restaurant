@@ -390,7 +390,10 @@ function PublicTrackingLayout({
       <PublicBottomNavigation
         active="tracking"
         count={count}
+        searchValue=""
         onHome={onHome}
+        onSearch={() => {}}
+        onSearchChange={() => {}}
         onOrder={() => setCartOpen(true)}
         onTracking={() => {}}
       />

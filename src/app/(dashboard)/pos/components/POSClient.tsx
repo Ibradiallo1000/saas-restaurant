@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { useFirestore } from "@/firebase"
+import { collection, orderBy, query } from "firebase/firestore"
+import { useSearchParams } from "next/navigation"
+import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { 
   Search, 
   CreditCard, 
@@ -24,6 +26,10 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
 import { OrderService } from "@/services/order.service"
+import {
+  getOrCreateActiveTableSession,
+  type RestaurantTableRecord,
+} from "@/services/table-session.service"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { getOptimizedImage } from "@/lib/image"
@@ -49,6 +55,7 @@ export default function POSPage() {
 
 function POSPageContent() {
   const db = useFirestore()
+  const searchParams = useSearchParams()
   const { restaurantId } = useRestaurant()
   const { products, categories, isLoadingVisible } = useCatalog()
   const { toast } = useToast()
@@ -58,7 +65,7 @@ function POSPageContent() {
   
   // ✅ GESTION DES TABLES
   const [orderType, setOrderType] = React.useState<"dine-in" | "takeaway">("takeaway")
-  const [tableNumber, setTableNumber] = React.useState<number | null>(null)
+  const [tableNumber, setTableNumber] = React.useState<string | null>(null)
   
   const [processing, setProcessing] = React.useState(false)
   const [viewMode, setViewMode] = React.useState<"categories" | "products">("categories")
@@ -75,13 +82,16 @@ function POSPageContent() {
   // ✅ CATEGORY USAGE: tracker l'utilisation des catégories
   const [categoryUsage, setCategoryUsage] = React.useState<Record<string, number>>({})
 
-  // ✅ TABLES: préparation pour future synchro Firestore
-  const tables = React.useMemo(() => {
-    return Array.from({ length: 20 }).map((_, i) => ({
-      id: i + 1,
-      isOccupied: false // futur: Firestore temps réel
-    }))
-  }, [])
+  const tablesQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, "restaurants", restaurantId, "tables"),
+      orderBy("createdAt", "asc")
+    )
+  }, [db, restaurantId])
+  const { data: tablesData } = useCollection<RestaurantTableRecord>(tablesQuery)
+  const tables = tablesData || []
+  const initialTableId = searchParams?.get("tableId")
 
   // ✅ BONUS: sauvegarder categoryUsage dans localStorage
   React.useEffect(() => {
@@ -108,12 +118,20 @@ function POSPageContent() {
     try {
       const savedTable = localStorage.getItem("lastTableNumber")
       if (savedTable) {
-        setTableNumber(parseInt(savedTable))
+        setTableNumber(savedTable)
       }
     } catch (e) {
       console.error("Erreur chargement dernière table", e)
     }
   }, [])
+
+  React.useEffect(() => {
+    if (!initialTableId || tables.length === 0) return
+    if (!tables.some((table) => table.id === initialTableId)) return
+
+    setOrderType("dine-in")
+    setTableNumber(initialTableId)
+  }, [initialTableId, tables])
 
   // OPTIMISATION PRO : produits par catégorie pré-indexés
   const productsByCategory = React.useMemo(() => {
@@ -384,9 +402,12 @@ function POSPageContent() {
         items: recalculatedItems
       }
 
-      // ✅ Ajout du tableId uniquement si sur place
       if (orderType === "dine-in" && tableNumber) {
-        orderData.tableId = String(tableNumber)
+        const tableSession = await getOrCreateActiveTableSession(db, restaurantId, tableNumber)
+        orderData.tableId = tableSession.tableId
+        orderData.zoneId = tableSession.zoneId
+        orderData.sessionId = tableSession.sessionId
+        orderData.source = "pos"
       }
 
       const orderId = await orderService.createOrder(orderData)
@@ -413,10 +434,10 @@ function POSPageContent() {
   }
 
   // ✅ BONUS: sauvegarder la dernière table utilisée
-  const handleTableSelect = (tableNum: number) => {
-    setTableNumber(tableNum)
+  const handleTableSelect = (tableId: string) => {
+    setTableNumber(tableId)
     try {
-      localStorage.setItem("lastTableNumber", tableNum.toString())
+      localStorage.setItem("lastTableNumber", tableId)
     } catch (e) {
       console.error("Erreur sauvegarde table", e)
     }
@@ -736,6 +757,7 @@ function POSPageContent() {
                 <div className="grid grid-cols-5 gap-2">
                   {tables.map((table) => {
                     const active = tableNumber === table.id
+                    const occupied = table.status === "occupied"
                     
                     return (
                       <button
@@ -745,13 +767,20 @@ function POSPageContent() {
                           "h-10 rounded-xl text-sm font-black transition-all active:scale-95",
                           active
                             ? "bg-primary text-white shadow-md"
-                            : "bg-secondary hover:bg-secondary/80 text-foreground"
+                            : occupied
+                              ? "bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100"
+                              : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100"
                         )}
                       >
-                        {table.id}
+                        {table.name || table.id}
                       </button>
                     )
                   })}
+                  {tables.length === 0 && (
+                    <p className="col-span-5 rounded-xl bg-muted px-3 py-4 text-center text-xs font-bold text-muted-foreground">
+                      Aucune table configuree
+                    </p>
+                  )}
                 </div>
 
                 {!tableNumber && (

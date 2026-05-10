@@ -38,6 +38,9 @@ export interface OrderInput {
   restaurantId: string;
   type: 'table' | 'room' | 'takeaway' | 'delivery';
   tableId?: string;
+  zoneId?: string;
+  sessionId?: string;
+  source?: 'qr' | 'pos';
   roomId?: string;
   customerName?: string;
   customerPhone?: string;
@@ -64,10 +67,12 @@ export class OrderService {
 
     const orderData = {
       restaurantId: input.restaurantId,
-      source: 'pos',
+      source: input.source || 'pos',
       type: input.type,
       tableId: input.tableId || null,
       table: input.tableId || null,
+      zoneId: input.zoneId || null,
+      sessionId: input.sessionId || null,
       roomId: input.roomId || null,
       customerName: input.customerName || 'Client Anonyme',
       customerPhone: input.customerPhone || null,

@@ -5,8 +5,6 @@
  */
 
 import * as React from 'react';
-import { useFirestore, useCollectionOnce, useMemoFirebase } from '@/firebase';
-import { collection, limit, query, orderBy } from 'firebase/firestore';
 import { COLLECTION_NAMES } from '@/lib/constants';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Building2, Plus, ChevronRight, Search, MapPin, Globe } from 'lucide-react';
@@ -14,30 +12,46 @@ import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { EmptyState, ErrorState } from '@/components/layout/app-states';
+import { AdminRouteSkeleton } from '@/components/performance/route-skeletons';
+import { useCollectionPage } from '@/hooks/use-collection-page';
 
 export default function RestaurantsAdminPage() {
-  const db = useFirestore();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = React.useState('');
-
-  const restaurantsQuery = useMemoFirebase(() => {
-    if (!db) return null;
-    return query(
-      collection(db, COLLECTION_NAMES.RESTAURANTS),
-      orderBy('createdAt', 'desc'),
-      limit(50)
-    );
-  }, [db]);
-
-  const { data: restaurants, isLoading } = useCollectionOnce(restaurantsQuery);
+  const {
+    error,
+    hasMore,
+    isLoading,
+    items: restaurants,
+    loadMore,
+    refetch,
+  } = useCollectionPage<any>({
+    collectionName: COLLECTION_NAMES.RESTAURANTS,
+    orderByField: 'createdAt',
+    orderByDirection: 'desc',
+    pageSize: 50,
+  });
 
   const filteredRestaurants = React.useMemo(() => {
-    if (!restaurants) return [];
     return restaurants.filter(r =>
       r.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       r.ownerEmail?.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [restaurants, searchTerm]);
+
+  if (isLoading && restaurants.length === 0) return <AdminRouteSkeleton />;
+
+  if (error) {
+    return (
+      <ErrorState
+        title="Etablissements indisponibles"
+        description="Impossible de charger la liste des restaurants."
+        actionLabel="Reessayer"
+        onAction={() => void refetch()}
+      />
+    );
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -98,7 +112,7 @@ export default function RestaurantsAdminPage() {
                 </div>
               </div>
             ))}
-            {filteredRestaurants.length === 0 && !isLoading && (
+            {filteredRestaurants.length === 0 && (
               <div className="p-20 text-center space-y-4">
                 <Building2 className="h-12 w-12 text-muted-foreground mx-auto opacity-20" />
                 <p className="text-muted-foreground italic">Aucun établissement trouvé.</p>
@@ -107,6 +121,19 @@ export default function RestaurantsAdminPage() {
           </div>
         </CardContent>
       </Card>
+      {hasMore && !searchTerm && (
+        <div className="flex justify-center">
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-xl font-black"
+            disabled={isLoading}
+            onClick={() => loadMore()}
+          >
+            {isLoading ? "Chargement..." : "Charger plus"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

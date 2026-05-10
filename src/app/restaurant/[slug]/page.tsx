@@ -9,5 +9,5 @@ export default async function RestaurantQrPage({
 }) {
   const { slug } = await params
   const { table } = await searchParams
-  redirect(`/r/${slug}${table ? `?table=${encodeURIComponent(table)}` : ""}`)
+  redirect(`/${slug}${table ? `?t=${encodeURIComponent(table)}` : ""}`)
 }

@@ -9,6 +9,7 @@ const ROLE_LABELS: Record<RestaurantUserRole, string> = {
   manager: "Manager",
   cashier: "Caisse",
   kitchen: "Cuisine",
+  server: "Service",
 }
 
 export function RoleSwitch() {

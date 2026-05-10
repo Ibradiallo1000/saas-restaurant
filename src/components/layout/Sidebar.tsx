@@ -50,6 +50,7 @@ export function Sidebar() {
   const { firebaseUser: user, activeRole, isSuperAdmin, restaurantId } = useCurrentUser()
   const { setOpenMobile } = useSidebar()
   const [optimisticHref, setOptimisticHref] = React.useState<string | null>(null)
+  const currentPathname = pathname ?? "/"
 
   const restaurantRole = activeRole ?? ROLES.SERVER
   const hasRestaurantAccess = Boolean(restaurantId && activeRole)
@@ -101,7 +102,7 @@ export function Sidebar() {
 
   React.useEffect(() => {
     setOptimisticHref(null)
-  }, [pathname])
+  }, [currentPathname])
 
   const handleLogout = React.useCallback(async () => {
     await signOut(auth)
@@ -142,7 +143,7 @@ export function Sidebar() {
           <SidebarGroupContent>
             <SidebarMenu className="gap-1">
               {navItems.map((item) => {
-                const active = item.href === optimisticHref || (!optimisticHref && isActivePath(pathname, item.href))
+                const active = item.href === optimisticHref || (!optimisticHref && isActivePath(currentPathname, item.href))
 
                 return (
                   <SidebarMenuItem key={item.name}>

@@ -1,14 +1,18 @@
 "use client"
 
 import * as React from "react"
-import { doc, serverTimestamp, updateDoc } from "firebase/firestore"
+import { collection, doc, limit, orderBy, query, serverTimestamp, updateDoc, where } from "firebase/firestore"
 import { ChefHat } from "lucide-react"
 
 import { FilterTabs, PageHeader } from "@/design-system/components"
-import { useFirestore } from "@/firebase"
+import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { normalizeOrderStatus } from "@/lib/order-status"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
 import type { RestaurantOrder, KitchenStatus } from "@/modules/restaurant/types"
+import type {
+  RestaurantTableRecord,
+  TableSessionRecord,
+} from "@/services/table-session.service"
 import { KitchenOrderCard } from "./KitchenOrderCard"
 
 type KitchenFilter = "all" | KitchenStatus
@@ -37,6 +41,30 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
   )
   const hasInitializedRef = React.useRef(false)
   const [activeFilter, setActiveFilter] = React.useState<KitchenFilter>("all")
+  const tablesQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, "restaurants", restaurantId, "tables"),
+      orderBy("createdAt", "asc")
+    )
+  }, [db, restaurantId])
+  const { data: tables } = useCollection<RestaurantTableRecord>(tablesQuery)
+  const tablesById = React.useMemo(() => {
+    return new Map((tables || []).map((table) => [table.id, table]))
+  }, [tables])
+  const sessionsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, "restaurants", restaurantId, "tableSessions"),
+      where("status", "==", "active"),
+      orderBy("startedAt", "desc"),
+      limit(50)
+    )
+  }, [db, restaurantId])
+  const { data: sessions } = useCollection<TableSessionRecord>(sessionsQuery)
+  const sessionsById = React.useMemo(() => {
+    return new Map((sessions || []).map((session) => [session.id, session]))
+  }, [sessions])
 
   // Normaliser les commandes avec un statut cuisine unifié
   const normalizedOrders = React.useMemo(() => {
@@ -72,6 +100,44 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
       }
     )
   }, [sortedOrders])
+
+  const groupedVisibleOrders = React.useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        key: string
+        tableName: string
+        zoneName: string
+        startedAt: unknown
+        totalAmount: number
+        orders: typeof visibleOrders
+      }
+    >()
+
+    for (const order of visibleOrders) {
+      const key = order.sessionId || order.id
+      const table = order.tableId ? tablesById.get(order.tableId) : null
+      const session = order.sessionId ? sessionsById.get(order.sessionId) : null
+      const group = groups.get(key)
+
+      if (group) {
+        group.orders.push(order)
+        group.totalAmount += Number(order.total || 0)
+        continue
+      }
+
+      groups.set(key, {
+        key,
+        tableName: table?.name || order.table || order.tableId || "A emporter",
+        zoneName: table?.zoneId || order.zoneId || "Zone non definie",
+        startedAt: session?.startedAt || order.createdAt,
+        totalAmount: Number(order.total || 0),
+        orders: [order],
+      })
+    }
+
+    return Array.from(groups.values())
+  }, [sessionsById, tablesById, visibleOrders])
 
   React.useEffect(() => {
     const previousSnapshot = previousSnapshotRef.current
@@ -151,12 +217,37 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
           </div>
         ) : (
           <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {visibleOrders.map((order) => (
-              <KitchenOrderCard
-                key={order.id}
-                order={order}
-                onUpdateStatus={updateStatus}
-              />
+            {groupedVisibleOrders.map((group) => (
+              <div key={group.key} className="space-y-3 rounded-xl border bg-white p-3 shadow-sm">
+                <div className="flex items-center justify-between gap-3 border-b pb-2">
+                  <div>
+                    <h2 className="text-base font-black">{group.tableName}</h2>
+                    <p className="text-xs font-semibold text-muted-foreground">
+                      {group.zoneName} - session {group.key.slice(-6)}
+                    </p>
+                    <p className="text-xs font-semibold text-muted-foreground">
+                      Debut {formatSessionTime(group.startedAt)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-black text-primary">
+                      {group.orders.length} commande(s)
+                    </span>
+                    <p className="mt-2 text-sm font-black text-primary">
+                      {group.totalAmount.toLocaleString()} FCFA
+                    </p>
+                  </div>
+                </div>
+                <div className="grid gap-3">
+                  {group.orders.map((order) => (
+                    <KitchenOrderCard
+                      key={order.id}
+                      order={order}
+                      onUpdateStatus={updateStatus}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
           </section>
         )}
@@ -171,6 +262,23 @@ function getCreatedAtMs(order: RestaurantOrder & { kitchenStatus?: string }) {
     order.createdAt?.toDate?.().getTime?.() ??
     Date.now()
   )
+}
+
+function formatSessionTime(value: unknown) {
+  const date =
+    value &&
+    typeof value === "object" &&
+    "toDate" in value &&
+    typeof value.toDate === "function"
+      ? value.toDate()
+      : null
+
+  if (!date) return "--:--"
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date)
 }
 
 function playKitchenSound() {

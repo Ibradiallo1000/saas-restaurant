@@ -59,7 +59,7 @@ service cloud.firestore {
 
     match /restaurants/{restaurantId} {
       allow get: if true;
-      allow list: if isSuperAdmin();
+      allow list: if true;
 
       allow create: if isSignedIn()
         && request.resource.data.countryCode is string
@@ -99,6 +99,37 @@ service cloud.firestore {
         allow delete: if isSuperAdmin();
       }
 
+      match /tables/{tableId} {
+        allow get, list: if true;
+        allow create: if canUseRestaurant(restaurantId)
+          && request.resource.data.name is string
+          && request.resource.data.zoneId is string
+          && request.resource.data.status == "free"
+          && request.resource.data.currentSessionId == null;
+        allow update: if canUseRestaurant(restaurantId);
+        allow delete: if isSuperAdmin();
+      }
+
+      match /tableSessions/{sessionId} {
+        allow get: if canUseRestaurant(restaurantId);
+        allow list: if canUseRestaurant(restaurantId);
+        allow create: if canUseRestaurant(restaurantId)
+          && request.resource.data.tableId is string
+          && request.resource.data.zoneId is string
+          && request.resource.data.status == "active"
+          && request.resource.data.closedAt == null;
+        allow update: if canUseRestaurant(restaurantId);
+        allow delete: if isSuperAdmin();
+      }
+
+      match /visits/{visitId} {
+        allow create: if canUseRestaurant(restaurantId)
+          && request.resource.data.tableId is string
+          && request.resource.data.sessionId is string;
+        allow get, list: if canUseRestaurant(restaurantId);
+        allow update, delete: if isSuperAdmin();
+      }
+
       match /images/{imageId} {
         allow get, list: if canUseRestaurant(restaurantId);
         allow create: if canUseRestaurant(restaurantId)
@@ -114,20 +145,38 @@ service cloud.firestore {
           && request.resource.data.total is number
           && (
             (
-              request.resource.data.source == "client"
+              request.resource.data.source in ["client", "qr", "manual"]
               && request.resource.data.status in ["pending", "nouvelle"]
+              && request.resource.data.sessionId is string
+              && request.resource.data.tableId is string
+              && request.resource.data.zoneId is string
+              && exists(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId))
+              && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.status == "active"
+              && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.tableId == request.resource.data.tableId
+              && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.zoneId == request.resource.data.zoneId
             )
             || (
               canUseRestaurant(restaurantId)
               && request.resource.data.source == "pos"
               && request.resource.data.status == "nouvelle"
+              && (
+                !(request.resource.data.tableId is string)
+                || (
+                  request.resource.data.sessionId is string
+                  && request.resource.data.zoneId is string
+                  && exists(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId))
+                  && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.status == "active"
+                  && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.tableId == request.resource.data.tableId
+                  && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.zoneId == request.resource.data.zoneId
+                )
+              )
             )
           );
 
         allow get: if canUseRestaurant(restaurantId)
           || (
             resource.data.restaurantId == restaurantId
-            && resource.data.source == "client"
+            && resource.data.source in ["client", "qr", "manual"]
             && resource.data.sessionId is string
           );
 

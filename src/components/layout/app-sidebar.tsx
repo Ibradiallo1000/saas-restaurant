@@ -16,6 +16,7 @@ import {
   Settings,
   ShieldAlert,
   Store,
+  Table2,
   Users,
   Users2,
   WalletCards,
@@ -82,6 +83,7 @@ const AppSidebarComponent = () => {
     if ([ROLES.OWNER, ROLES.MANAGER].includes(role as any)) {
       nav.push({ name: "Dashboard", href: "/dashboard", icon: LayoutDashboard })
       nav.push({ name: "Gestion Menu", href: "/manager", icon: Store })
+      nav.push({ name: "Tables", href: "/dashboard/tables", icon: Table2 })
       nav.push({ name: "Images", href: "/dashboard/images", icon: ImageIcon })
       nav.push({ name: "Inventaire", href: "/inventory", icon: Package })
     }
@@ -167,8 +169,11 @@ const AppSidebarComponent = () => {
                       href={item.href}
                       prefetch
                       onClick={() => {
-                        setOptimisticHref(item.href)
                         setOpenMobile(false)
+                        if (isActive) return
+
+                        setOptimisticHref(item.href)
+                        window.dispatchEvent(new CustomEvent("app:navigation-start"))
                       }}
                       className={cn(
                         "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",

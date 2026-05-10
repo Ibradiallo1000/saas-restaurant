@@ -1,15 +1,31 @@
 "use client"
 
 import * as React from "react"
-import { addDoc, doc, getDoc, serverTimestamp } from "firebase/firestore"
+import { addDoc, collection, doc, getDoc, orderBy, query, serverTimestamp } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 
-import { useFirestore } from "@/firebase"
+import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { recalculateConfiguredUnitPrice } from "@/lib/order-pricing"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
+import {
+  type ActiveTableSession,
+  type RestaurantTableRecord,
+} from "@/services/table-session.service"
 import { useCart } from "../cart/CartContext"
 
-export default function CheckoutModal({ open, onClose, restaurantId }: any) {
+export default function CheckoutModal({
+  open,
+  onClose,
+  restaurantId,
+  tableContext,
+  activeTableSession,
+}: {
+  open: boolean
+  onClose: () => void
+  restaurantId: string
+  tableContext?: RestaurantTableRecord | null
+  activeTableSession?: ActiveTableSession | null
+}) {
   const db = useFirestore()
   const router = useRouter()
   const { items, total, clear } = useCart()
@@ -19,6 +35,12 @@ export default function CheckoutModal({ open, onClose, restaurantId }: any) {
   const [table, setTable] = React.useState("")
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState("")
+
+  const tablesQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId || tableContext) return null
+    return query(collection(db, "restaurants", restaurantId, "tables"), orderBy("createdAt", "asc"))
+  }, [db, restaurantId, tableContext])
+  const { data: tables } = useCollection<RestaurantTableRecord>(tablesQuery)
 
   if (!open || !db) return null
 
@@ -33,11 +55,20 @@ export default function CheckoutModal({ open, onClose, restaurantId }: any) {
       return
     }
 
+    if (!tableContext && !table) {
+      setError("Veuillez selectionner une table")
+      return
+    }
+
     setError("")
     setLoading(true)
 
     try {
-      const sessionId = getOrCreateOrderSessionId(restaurantId)
+      const selectedTableId = tableContext?.id || table
+      const tableSession =
+        activeTableSession && activeTableSession.tableId === selectedTableId
+          ? activeTableSession
+          : await ensureActiveTableSession(restaurantId, selectedTableId)
       const orderItems = await Promise.all(
         items.map(async (item) => {
           const productSnap = await getDoc(
@@ -68,11 +99,13 @@ export default function CheckoutModal({ open, onClose, restaurantId }: any) {
 
       const order = {
         restaurantId,
-        source: "client",
-        status: "nouvelle",
-        sessionId,
+        source: tableContext ? "qr" : "manual",
+        status: "pending",
+        sessionId: tableSession.sessionId,
+        tableId: tableSession.tableId,
+        zoneId: tableSession.zoneId,
         customer: { name, phone },
-        table: table || undefined,
+        table: tableSession.tableName,
         items: orderItems,
         total: recalculatedTotal,
         paymentMethod: null,
@@ -95,11 +128,11 @@ export default function CheckoutModal({ open, onClose, restaurantId }: any) {
       )
 
       router.push(
-        `/order/${restaurantId}/${orderRef.id}?sessionId=${sessionId}`
+        `/order/${restaurantId}/${orderRef.id}?sessionId=${tableSession.sessionId}`
       )
     } catch (e) {
       console.error(e)
-      setError("Erreur lors de la commande")
+      setError(e instanceof Error ? e.message : "Erreur lors de la commande")
     } finally {
       setLoading(false)
     }
@@ -111,7 +144,7 @@ export default function CheckoutModal({ open, onClose, restaurantId }: any) {
 
         {/* HEADER */}
         <div className="p-4 border-b">
-          <h2 className="text-lg font-black">Finaliser la commande</h2>
+          <h2 className="text-lg font-black">Commande sur place</h2>
         </div>
 
         {/* CONTENT */}
@@ -148,12 +181,25 @@ export default function CheckoutModal({ open, onClose, restaurantId }: any) {
               className="w-full h-12 rounded-xl bg-gray-100 px-3 text-sm outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
             />
 
-            <input
-              placeholder="Numéro de table (optionnel)"
-              value={table}
-              onChange={(e) => setTable(e.target.value)}
-              className="w-full h-12 rounded-xl bg-gray-100 px-3 text-sm outline-none"
-            />
+            {tableContext ? (
+              <div className="inline-flex rounded-full bg-emerald-100 px-3 py-2 text-sm font-black text-emerald-700">
+                Table: {tableContext.name || tableContext.id}
+              </div>
+            ) : (
+              <select
+                value={table}
+                onChange={(e) => setTable(e.target.value)}
+                className="w-full h-12 rounded-xl bg-gray-100 px-3 text-sm outline-none"
+              >
+                <option value="">Selectionner une table *</option>
+                {(tables || []).map((currentTable) => (
+                  <option key={currentTable.id} value={currentTable.id}>
+                    {currentTable.name || currentTable.id}
+                    {currentTable.status === "occupied" ? " - occupee" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
 
           </div>
 
@@ -191,21 +237,24 @@ export default function CheckoutModal({ open, onClose, restaurantId }: any) {
 
 /* ================= HELPERS ================= */
 
-function getOrCreateOrderSessionId(restaurantId: string) {
-  const storageKey = `restaurant_order_session_${restaurantId}`
-  const existing = window.localStorage.getItem(storageKey)
-
-  if (existing) return existing
-
-  const sessionId =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-
-  window.localStorage.setItem(storageKey, sessionId)
-  return sessionId
-}
-
 function getLatestOrderStorageKey(restaurantId: string) {
   return `restaurant_latest_order_${restaurantId}`
+}
+
+async function ensureActiveTableSession(
+  restaurantId: string,
+  tableId: string
+): Promise<ActiveTableSession> {
+  const response = await fetch(`/api/restaurants/${restaurantId}/table-sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tableId }),
+  })
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(body?.error || "Impossible de preparer la session de table")
+  }
+
+  return response.json()
 }

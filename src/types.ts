@@ -187,6 +187,7 @@ export interface RestaurantOrder {
   companyId: string
   restaurantId?: string
   sessionId?: string
+  zoneId?: string | null
   type: OrderType
   source: OrderSource
   location?: OrderLocation
@@ -212,6 +213,27 @@ export interface RestaurantOrder {
   paidAt?: Timestamp | null
 }
 
+export interface RestaurantTable {
+  id: string
+  name: string
+  zoneId: string
+  status: "free" | "occupied"
+  currentSessionId: string | null
+  createdAt: Timestamp
+  updatedAt?: Timestamp
+  lastActivityAt?: Timestamp | null
+}
+
+export interface RestaurantTableSession {
+  id: string
+  tableId: string
+  zoneId: string
+  startedAt: Timestamp
+  lastActivityAt?: Timestamp
+  closedAt: Timestamp | null
+  status: "active" | "closed"
+}
+
 export interface PosSession {
   id: string
   cashierId: string
@@ -221,19 +243,4 @@ export interface PosSession {
   status: PosSessionStatus
 }
 
-export interface RestaurantTable {
-  id: string
-  name?: string
-  number?: number
-  status?: "available" | "occupied" | "reserved"
-}
-
-export interface TableSession {
-  id: string
-  tableNumber: string
-  status: "open" | "closed"
-  currentOrderIds: string[]
-  createdAt?: Timestamp
-  updatedAt?: Timestamp
-  closedAt?: Timestamp
-}
+export interface TableSession extends RestaurantTableSession {}

@@ -20,7 +20,7 @@ export type Category = {
 
 export type OrderStatus = CanonicalOrderStatus
 
-export type OrderSource = "client" | "pos"
+export type OrderSource = "client" | "qr" | "manual" | "pos"
 
 export type OrderItem = {
   productId: string
@@ -37,6 +37,8 @@ export type RestaurantOrder = {
   source: OrderSource
   status: OrderStatus
   sessionId?: string
+  tableId?: string | null
+  zoneId?: string | null
   customer?: {
     name: string
     phone: string

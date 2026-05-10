@@ -1,6 +1,6 @@
-import PublicPage from "@/modules/public/PublicPage"
+import { redirect } from "next/navigation"
 
-export default async function Page({
+export default async function LegacyPublicTableOrderPage({
   params,
   searchParams,
 }: {
@@ -10,5 +10,5 @@ export default async function Page({
   const { slug } = await params
   const { t } = await searchParams
 
-  return <PublicPage slug={slug} tableId={t ?? null} />
+  redirect(`/${slug}${t ? `?t=${encodeURIComponent(t)}` : ""}`)
 }

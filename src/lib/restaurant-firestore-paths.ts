@@ -39,3 +39,27 @@ export function restaurantOrderRef(
 ) {
   return doc(db, "restaurants", restaurantId, "orders", orderId)
 }
+
+export function restaurantTablesRef(db: Firestore, restaurantId: string) {
+  return collection(db, "restaurants", restaurantId, "tables")
+}
+
+export function restaurantTableRef(
+  db: Firestore,
+  restaurantId: string,
+  tableId: string
+) {
+  return doc(db, "restaurants", restaurantId, "tables", tableId)
+}
+
+export function restaurantTableSessionsRef(db: Firestore, restaurantId: string) {
+  return collection(db, "restaurants", restaurantId, "tableSessions")
+}
+
+export function restaurantTableSessionRef(
+  db: Firestore,
+  restaurantId: string,
+  sessionId: string
+) {
+  return doc(db, "restaurants", restaurantId, "tableSessions", sessionId)
+}

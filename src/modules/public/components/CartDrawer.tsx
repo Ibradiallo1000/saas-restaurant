@@ -7,7 +7,7 @@ import type { CartItem } from "@/modules/restaurant/types"
 import { useCart } from "../cart/CartContext"
 import CheckoutModal from "./CheckoutModal"
 
-export default function CartDrawer({ open, onClose, restaurantId }: any) {
+export default function CartDrawer({ open, onClose, restaurantId, tableContext, activeTableSession }: any) {
   const { items, total, updateQty, removeItem } = useCart()
   const [checkoutOpen, setCheckoutOpen] = React.useState(false)
 
@@ -144,6 +144,8 @@ export default function CartDrawer({ open, onClose, restaurantId }: any) {
         open={checkoutOpen}
         onClose={() => setCheckoutOpen(false)}
         restaurantId={restaurantId}
+        tableContext={tableContext}
+        activeTableSession={activeTableSession}
       />
     </div>
   )

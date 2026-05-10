@@ -29,7 +29,7 @@ function InvitePageContent() {
   const db = useFirestore();
   const auth = getAuth();
 
-  const token = params.get("token");
+  const token = params?.get("token");
 
   const [password, setPassword] = useState('');
   const [invitation, setInvitation] = useState<any>(null);

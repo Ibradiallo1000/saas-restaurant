@@ -6,16 +6,13 @@ import {
   collection,
   deleteDoc,
   doc,
-  limit,
-  orderBy,
-  query,
   serverTimestamp,
   updateDoc,
   type Timestamp,
 } from 'firebase/firestore';
 import { Globe2, Loader2, Plus, Trash2 } from 'lucide-react';
 
-import { useCollectionOnce, useFirestore, useMemoFirebase } from '@/firebase';
+import { useFirestore } from '@/firebase';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,6 +21,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { COLLECTION_NAMES } from '@/lib/constants';
+import { EmptyState, ErrorState } from '@/components/layout/app-states';
+import { AdminRouteSkeleton } from '@/components/performance/route-skeletons';
+import { useCollectionPage } from '@/hooks/use-collection-page';
 
 type PlatformCountry = {
   code: string;
@@ -48,16 +48,32 @@ export default function PlatformCountriesPage() {
   const [isSaving, setIsSaving] = React.useState(false);
   const [pendingId, setPendingId] = React.useState<string | null>(null);
 
-  const countriesQuery = useMemoFirebase(() => {
-    if (!db) return null;
-    return query(
-      collection(db, COLLECTION_NAMES.PLATFORM_COUNTRIES),
-      orderBy('name', 'asc'),
-      limit(100)
-    );
-  }, [db]);
+  const {
+    error,
+    hasMore,
+    isLoading,
+    items: countries,
+    loadMore,
+    refetch,
+  } = useCollectionPage<PlatformCountry>({
+    collectionName: COLLECTION_NAMES.PLATFORM_COUNTRIES,
+    orderByField: 'name',
+    orderByDirection: 'asc',
+    pageSize: 50,
+  });
 
-  const { data: countries, isLoading, refetch } = useCollectionOnce<PlatformCountry>(countriesQuery);
+  if (isLoading && countries.length === 0) return <AdminRouteSkeleton />;
+
+  if (error) {
+    return (
+      <ErrorState
+        title="Pays indisponibles"
+        description="Impossible de charger les pays de la plateforme."
+        actionLabel="Reessayer"
+        onAction={() => void refetch()}
+      />
+    );
+  }
 
   const isValid =
     formData.code.trim().length >= 2 &&

@@ -1,17 +1,15 @@
-"use client"
+import { redirect } from "next/navigation"
 
-import { useParams } from "next/navigation"
+export default async function LegacyPublicOrderingPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>
+  searchParams: Promise<{ t?: string; table?: string }>
+}) {
+  const { slug } = await params
+  const { t, table } = await searchParams
+  const tableId = t || table
 
-import PublicPage from "@/modules/public/PublicPage"
-import { CartProvider } from "@/modules/public/cart/CartContext"
-
-export default function PublicOrderingPage() {
-  const params = useParams()
-  const slug = params.slug as string
-
-  return (
-    <CartProvider>
-      <PublicPage slug={slug} />
-    </CartProvider>
-  )
+  redirect(`/${slug}${tableId ? `?t=${encodeURIComponent(tableId)}` : ""}`)
 }

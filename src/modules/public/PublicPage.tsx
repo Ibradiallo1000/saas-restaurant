@@ -1,9 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { collection, doc, limit, query } from "firebase/firestore"
+import { collection, doc, limit, query, where } from "firebase/firestore"
 import { useRouter } from "next/navigation"
-import { ChefHat, ClipboardList, Coffee, Home, ShoppingBag } from "lucide-react"
+import { ChefHat, ClipboardList, Coffee, Home, Search, ShoppingBag } from "lucide-react"
 
 import { useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { getOptimizedImage } from "@/lib/image"
@@ -13,11 +13,14 @@ import CategoriesGrid from "./components/CategoriesGrid"
 import CategoryModal from "./components/CategoryModal"
 import Header from "./components/Header"
 import HeroSection from "./components/HeroSection"
-import SearchBar from "./components/SearchBar"
 import StickyCartBar from "./components/StickyCartBar"
 import { useCart } from "./cart/CartContext"
+import {
+  type ActiveTableSession,
+  type RestaurantTableRecord,
+} from "@/services/table-session.service"
 
-function PublicPageContent({ slug }: { slug: string }) {
+function PublicPageContent({ slug, tableId }: { slug: string; tableId?: string | null }) {
   const db = useFirestore()
   const router = useRouter()
   const { count } = useCart()
@@ -28,7 +31,9 @@ function PublicPageContent({ slug }: { slug: string }) {
   const [modalSearch, setModalSearch] = React.useState("")
   const [selectedCategory, setSelectedCategory] = React.useState<any | null>(null)
   const [cartOpen, setCartOpen] = React.useState(false)
-  const [activeNav, setActiveNav] = React.useState<"home" | "order" | "tracking">("home")
+  const [activeNav, setActiveNav] = React.useState<"home" | "search" | "order" | "tracking">("home")
+  const [tableSessionError, setTableSessionError] = React.useState("")
+  const [activeTableSession, setActiveTableSession] = React.useState<ActiveTableSession | null>(null)
 
   React.useEffect(() => {
     setClientReady(true)
@@ -45,26 +50,70 @@ function PublicPageContent({ slug }: { slug: string }) {
     return () => window.clearTimeout(timeout)
   }, [clientReady, slug])
 
-  const slugRef = useMemoFirebase(() => {
+  const restaurantQuery = useMemoFirebase(() => {
     if (!db || !slug) return null
-    return doc(db, "restaurantSlugs", slug)
+    return query(collection(db, "restaurants"), where("slug", "==", slug), limit(1))
   }, [db, slug])
 
-  const { data: slugData, isLoading: isSlugLoading, error: slugError } = useDocOnce(slugRef)
-  const mappedRestaurantId = slugData?.restaurantId
-
-  const restaurantRef = useMemoFirebase(() => {
-    if (!db || !mappedRestaurantId) return null
-    return doc(db, "restaurants", mappedRestaurantId)
-  }, [db, mappedRestaurantId])
-
   const {
-    data: restaurant,
+    data: restaurants,
     isLoading: isRestaurantDocLoading,
     error: restaurantError,
-  } = useDocOnce(restaurantRef)
+  } = useCollectionOnce(restaurantQuery)
+  const restaurant = restaurants?.[0] ?? null
 
   const restaurantId = restaurant?.id
+
+  const tableRef = useMemoFirebase(() => {
+    if (!db || !restaurantId || !tableId) return null
+    return doc(db, "restaurants", restaurantId, "tables", tableId)
+  }, [db, restaurantId, tableId])
+  const { data: tableContext } = useDocOnce<RestaurantTableRecord>(tableRef)
+
+  React.useEffect(() => {
+    if (!tableId || tableContext || !restaurantId) {
+      setTableSessionError("")
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      setTableSessionError("Table introuvable ou indisponible")
+    }, 1200)
+
+    return () => window.clearTimeout(timeout)
+  }, [restaurantId, tableContext, tableId])
+
+  React.useEffect(() => {
+    if (!restaurantId || !tableContext?.id) {
+      setActiveTableSession(null)
+      return
+    }
+
+    let cancelled = false
+
+    ensureActiveTableSession(restaurantId, tableContext.id)
+      .then((session) => {
+        if (!cancelled) {
+          setActiveTableSession(session)
+          setTableSessionError("")
+        }
+      })
+      .catch((error) => {
+        console.error("table session error", error)
+        if (!cancelled) {
+          setActiveTableSession(null)
+          setTableSessionError(
+            error instanceof Error
+              ? error.message
+              : "Table introuvable ou indisponible"
+          )
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [restaurantId, tableContext?.id])
 
   React.useEffect(() => {
     const primary = restaurant?.theme?.primary || "#f97316"
@@ -98,9 +147,8 @@ function PublicPageContent({ slug }: { slug: string }) {
 
   const isRestaurantLoading =
     !clientReady ||
-    isSlugLoading ||
-    Boolean(slugData && !restaurantRef) ||
-    Boolean(mappedRestaurantId && isRestaurantDocLoading)
+    isRestaurantDocLoading ||
+    restaurants === null
 
   const isMenuLoading =
     Boolean(restaurantId) &&
@@ -198,6 +246,10 @@ function PublicPageContent({ slug }: { slug: string }) {
     setCartOpen(true)
   }
 
+  const handleSearchClick = () => {
+    setActiveNav("search")
+  }
+
   const handleTrackingClick = () => {
     setActiveNav("tracking")
     if (!restaurantId) return
@@ -225,16 +277,12 @@ function PublicPageContent({ slug }: { slug: string }) {
     return <PublicFallbackMessage message="Chargement du restaurant trop long" />
   }
 
-  if (slugError || restaurantError) {
+  if (restaurantError) {
     return <PublicFallbackMessage message="Impossible de charger ce restaurant" />
   }
 
-  if (!slugData || !mappedRestaurantId) {
-    return <PublicFallbackMessage message="Slug non trouve" />
-  }
-
   if (!restaurant) {
-    return <PublicFallbackMessage message="Restaurant non trouve" />
+    return <PublicFallbackMessage message="Slug non trouve" />
   }
 
   return (
@@ -249,10 +297,17 @@ function PublicPageContent({ slug }: { slug: string }) {
 
         <main className="-mt-4 rounded-t-3xl bg-background pt-4 shadow-md">
           <div className="mx-auto w-full max-w-5xl px-4 pb-5">
-            <div className="mb-5">
-              <SearchBar value={homeSearch} onChange={setHomeSearch} />
-            </div>
-
+            {(tableContext || tableSessionError) && (
+              <div className="mb-4 rounded-xl border bg-card px-4 py-3 text-sm font-bold shadow-sm">
+                {tableContext ? (
+                  <span>
+                    Commande sur place - {tableContext.name || tableContext.id}
+                  </span>
+                ) : (
+                  <span className="text-red-600">{tableSessionError}</span>
+                )}
+              </div>
+            )}
             <section>
               <div className="mb-4 flex items-end justify-between gap-4">
                 <div>
@@ -302,7 +357,10 @@ function PublicPageContent({ slug }: { slug: string }) {
         <PublicBottomNavigation
           active={activeNav}
           count={count}
+          searchValue={homeSearch}
           onHome={handleHomeClick}
+          onSearch={handleSearchClick}
+          onSearchChange={setHomeSearch}
           onOrder={handleOrderClick}
           onTracking={handleTrackingClick}
         />
@@ -323,37 +381,85 @@ function PublicPageContent({ slug }: { slug: string }) {
         open={cartOpen}
         onClose={() => setCartOpen(false)}
         restaurantId={restaurantId}
+        tableContext={tableContext}
+        activeTableSession={activeTableSession}
       />
     </div>
   )
 }
 
-export default function PublicPage({ slug }: { slug: string }) {
-  return <PublicPageContent slug={slug} />
+async function ensureActiveTableSession(
+  restaurantId: string,
+  tableId: string
+): Promise<ActiveTableSession> {
+  const response = await fetch(`/api/restaurants/${restaurantId}/table-sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tableId }),
+  })
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(body?.error || "Impossible de preparer la session de table")
+  }
+
+  return response.json()
+}
+
+export default function PublicPage({
+  slug,
+  tableId,
+}: {
+  slug: string
+  tableId?: string | null
+}) {
+  return <PublicPageContent slug={slug} tableId={tableId} />
 }
 
 export function PublicBottomNavigation({
   active,
   count,
+  searchValue,
   onHome,
+  onSearch,
+  onSearchChange,
   onOrder,
   onTracking,
 }: {
-  active: "home" | "order" | "tracking"
+  active: "home" | "search" | "order" | "tracking"
   count: number
+  searchValue: string
   onHome: () => void
+  onSearch: () => void
+  onSearchChange: (value: string) => void
   onOrder: () => void
   onTracking: () => void
 }) {
   const items = [
     { id: "home" as const, label: "Accueil", icon: Home, onClick: onHome },
+    { id: "search" as const, label: "Recherche", icon: Search, onClick: onSearch },
     { id: "order" as const, label: "Commande", icon: ShoppingBag, onClick: onOrder },
     { id: "tracking" as const, label: "Suivi", icon: ClipboardList, onClick: onTracking },
   ]
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 h-[70px] border-t bg-background/95 px-4 pb-2 pt-2 shadow-[0_-16px_35px_rgba(15,23,42,0.1)]">
-      <div className="mx-auto grid h-full max-w-md grid-cols-3 gap-2">
+    <nav className="fixed bottom-0 left-0 right-0 border-t bg-background/95 px-4 pb-2 pt-2 shadow-[0_-16px_35px_rgba(15,23,42,0.1)]">
+      {active === "search" && (
+        <div className="mx-auto mb-2 max-w-md">
+          <div className="relative">
+            <input
+              value={searchValue}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Rechercher un plat..."
+              className="h-12 w-full rounded-xl border bg-card pl-4 pr-11 text-sm font-semibold text-card-foreground outline-none focus:border-[var(--color-primary)] focus:ring-4 focus:ring-[var(--color-primary)]/10"
+              autoFocus
+            />
+            <Search className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-primary)]" />
+          </div>
+        </div>
+      )}
+
+      <div className="mx-auto grid h-[58px] max-w-md grid-cols-4 gap-1">
         {items.map((item) => {
           const Icon = item.icon
           const isActive = active === item.id
