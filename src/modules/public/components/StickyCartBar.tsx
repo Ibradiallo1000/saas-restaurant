@@ -14,10 +14,10 @@ export default function StickyCartBar({ onClick }: { onClick?: () => void }) {
         className="mx-auto flex w-full max-w-md items-center justify-between rounded-xl bg-[var(--color-primary)] px-4 py-3 text-white shadow-sm transition active:scale-[0.98]"
       >
         <div className="flex items-center gap-2">
-          <span className="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-[var(--color-primary)]">
+          <span className="rounded-full bg-background px-2 py-0.5 text-xs font-bold text-[var(--color-primary)]">
             {count}
           </span>
-          <span className="text-sm font-black">Voir le panier</span>
+          <span className="text-sm font-black">Voir la commande</span>
         </div>
 
         <span className="text-sm font-bold">

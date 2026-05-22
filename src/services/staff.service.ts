@@ -32,7 +32,12 @@ export class StaffService {
   /**
    * Crée un membre du personnel (Manager, Caissier, etc.)
    */
-  async createStaffMember(restaurantId: string, email: string, role: string) {
+  async createStaffMember(
+    restaurantId: string,
+    email: string,
+    role: string,
+    profile?: { nomComplet?: string; telephone?: string }
+  ) {
     const tempAppName = `staff-init-${Date.now()}`;
     const tempApp = initializeApp(firebaseConfig, tempAppName);
     const tempAuth = getAuth(tempApp);
@@ -48,9 +53,12 @@ export class StaffService {
       await setDoc(userRef, {
         id: uid,
         email: email.toLowerCase(),
+        nomComplet: profile?.nomComplet ?? "",
+        telephone: profile?.telephone ?? "",
         role: role,
         restaurantId: restaurantId,
         active: true,
+        actif: true,
         status: "active",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -66,9 +74,12 @@ export class StaffService {
       await setDoc(staffRef, {
         id: uid,
         email: email.toLowerCase(),
+        nomComplet: profile?.nomComplet ?? "",
+        telephone: profile?.telephone ?? "",
         role,
         restaurantId,
         active: true,
+        actif: true,
         status: 'active',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),

@@ -10,17 +10,22 @@ import {
   doc,
   serverTimestamp,
   updateDoc,
-  where,
 } from 'firebase/firestore';
-import { COLLECTION_NAMES, ORDER_STATUS } from '@/lib/constants';
+import { COLLECTION_NAMES } from '@/lib/constants';
 import { ClipboardList, BellRing, Clock, CheckCircle2, Eye, Printer, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { printOrder } from '@/lib/order-printing';
-import { normalizePaymentMethod, normalizePaymentStatus } from '@/lib/order-payment';
-import { normalizeOrderStatus, orderStatusLabel } from '@/lib/order-status';
+import { normalizePaymentStatus } from '@/lib/order-payment';
+import {
+  ORDER_OPERATION_STATUS,
+  ORDER_PAYMENT_STATUS,
+  getOrderStatus,
+  isOrderPaid,
+  isOrderServed,
+} from '@/lib/order-lifecycle';
 import { useRestaurant } from '@/design-system/context/RestaurantContext';
 import { OrdersProvider, useOrders } from '@/modules/orders/OrdersProvider';
 import type { RestaurantOrder } from '@/modules/restaurant/types';
@@ -35,11 +40,6 @@ const ORDER_TABS: Array<{ id: OrdersTab; label: string }> = [
   { id: "payments", label: "Paiements" },
   { id: "history", label: "Historique" },
 ];
-
-const ORDER_STATUS_BY_TAB: Record<Exclude<OrdersTab, "active">, string> = {
-  payments: ORDER_STATUS.SERVIE,
-  history: ORDER_STATUS.PAYEE,
-};
 
 export default function OrdersPage() {
   const { restaurantId } = useRestaurant();
@@ -57,10 +57,9 @@ function OrdersPageContent() {
   const { orders: activeOrders, isLoading } = useOrders();
   const [expandedOrderId, setExpandedOrderId] = React.useState<string | null>(null);
   const [activeTab, setActiveTab] = React.useState<OrdersTab>("active");
-  const archiveStatus = activeTab === "active" ? null : ORDER_STATUS_BY_TAB[activeTab];
   const archiveConstraints = React.useMemo(
-    () => (archiveStatus ? [where("status", "==", archiveStatus)] : []),
-    [archiveStatus]
+    () => [],
+    []
   );
   const {
     error: archiveError,
@@ -72,7 +71,7 @@ function OrdersPageContent() {
   } = useRestaurantPage<RestaurantOrder>({
     collectionName: COLLECTION_NAMES.ORDERS,
     constraints: archiveConstraints,
-    enabled: Boolean(archiveStatus),
+    enabled: activeTab !== "active",
     orderByField: "createdAt",
     pageSize: 20,
   });
@@ -95,9 +94,9 @@ function OrdersPageContent() {
     );
 
     await updateDoc(orderRef, {
-      status: ORDER_STATUS.PAYEE,
       paymentMethod: "cash",
-      paymentStatus: "validated",
+      paymentType: "cash",
+      paymentStatus: ORDER_PAYMENT_STATUS.VERIFIED,
       paidAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -115,8 +114,7 @@ function OrdersPageContent() {
     );
 
     await updateDoc(orderRef, {
-      paymentStatus: "validated",
-      status: ORDER_STATUS.PAYEE,
+      paymentStatus: ORDER_PAYMENT_STATUS.VERIFIED,
       paidAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -155,11 +153,11 @@ function OrdersPageContent() {
         <div className="flex flex-wrap gap-2">
           <Badge variant="outline" className="py-2 px-4 bg-primary/5 font-black uppercase">
             <CheckCircle2 className="mr-2 h-4 w-4 text-primary" />
-            {activeOrderList.filter(o => isReadyOrder(o.status)).length || 0} PRETES
+            {activeOrderList.filter(o => isReadyOrder(o)).length || 0} PRETES
           </Badge>
           <Badge variant="outline" className="py-2 px-4 bg-red-500/10 font-black uppercase text-red-600">
             <BellRing className="mr-2 h-4 w-4 animate-pulse" />
-            {activeOrderList.filter(o => isActiveOrder(o.status)).length || 0} actives
+            {activeOrderList.filter(o => isActiveOrder(o)).length || 0} actives
           </Badge>
         </div>
       </div>
@@ -185,7 +183,7 @@ function OrdersPageContent() {
               <span
                 className={cn(
                   "rounded-full px-2 py-0.5 text-[10px]",
-                  active ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                  active ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
                 )}
               >
                 {count}
@@ -196,7 +194,7 @@ function OrdersPageContent() {
       </div>
 
       {/* GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
 
         {filteredOrders.map((order) => {
           const isExpanded = expandedOrderId === order.id;
@@ -208,7 +206,7 @@ function OrdersPageContent() {
             key={order.id}
             className={cn(
               "overflow-hidden rounded-2xl border bg-card shadow-sm transition-all",
-              isReadyOrder(order.status)
+              isReadyOrder(order)
                 ? "ring-2 ring-blue-500"
                 : "border-border"
             )}
@@ -217,16 +215,16 @@ function OrdersPageContent() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <CardTitle className="truncate text-lg font-black tracking-tight">
-                    {getOrderTableLabel(order)}
+                    #{order.id.slice(-6).toUpperCase()}
                   </CardTitle>
-                  <span className="text-[10px] font-mono text-muted-foreground">
-                    #{order.id.slice(-6)}
+                  <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                    {getOrderTypeDisplay(order)} - {getOrderTableLabel(order)}
                   </span>
                 </div>
 
                 <div className="flex shrink-0 flex-col items-end gap-2">
-                  <Badge className={cn("text-[10px] font-black", statusBadgeClass(order.status))}>
-                    {statusLabel(order.status)}
+                  <Badge className={cn("text-[10px] font-black", statusBadgeClass(order))}>
+                    {statusLabel(order)}
                   </Badge>
                   <span className="flex items-center gap-1 text-xs font-bold text-muted-foreground">
                     <Clock className="h-3.5 w-3.5" />
@@ -275,6 +273,24 @@ function OrdersPageContent() {
                 </span>
               </div>
 
+              <div className="space-y-1 rounded-xl border bg-background/50 px-3 py-2 text-xs">
+                <p className="font-black">Paiement :</p>
+                <p>Type : {getPaymentTypeDisplay(order)}</p>
+                <p>Methode : {getPaymentMethodDisplay(order.paymentMethod)}</p>
+                <p>Statut : {order.paymentStatus ?? "pending"}</p>
+              </div>
+
+              <div className="grid gap-2 text-xs text-muted-foreground">
+                <div className="rounded-xl border px-3 py-2">
+                  Client : {getCustomerPhone(order) ? `Tel. ${getCustomerPhone(order)}` : "telephone absent"}
+                </div>
+                {getNormalizedOrderType(order) === "dine_in" ? (
+                  <div className="rounded-xl border px-3 py-2">
+                    Table : {order.table ?? order.tableId ?? "sur place"}
+                  </div>
+                ) : null}
+              </div>
+
               {mobilePaymentPending && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black uppercase text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
                   Paiement à vérifier
@@ -284,7 +300,7 @@ function OrdersPageContent() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   {ORDER_PROGRESS.map((status) => {
-                    const active = progressIndex(order.status) >= progressIndex(status);
+                    const active = progressIndex(order) >= progressIndex(status);
 
                     return (
                       <span
@@ -297,12 +313,11 @@ function OrdersPageContent() {
                     );
                   })}
                 </div>
-                <div className="grid grid-cols-5 text-center text-[9px] font-bold uppercase text-muted-foreground">
+                <div className="grid grid-cols-4 text-center text-[9px] font-bold uppercase text-muted-foreground">
                   <span>Attente</span>
                   <span>Prépa</span>
                   <span>Prêt</span>
                   <span>Servi</span>
-                  <span>Payé</span>
                 </div>
               </div>
 
@@ -319,7 +334,7 @@ function OrdersPageContent() {
                   <Button
                     variant="outline"
                     className="h-10 rounded-xl text-xs font-black border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-900 dark:text-blue-300 dark:hover:bg-blue-950/40"
-                    onClick={() => printOrder(order as RestaurantOrder, restaurant)}
+                    onClick={() => printOrder({ ...(order as any), table: order.table ?? undefined }, restaurant)}
                   >
                     <Printer className="mr-1 h-4 w-4" />
                     Imprimer
@@ -341,7 +356,7 @@ function OrdersPageContent() {
                   >
                     Valider paiement
                   </Button>
-                ) : isPaidOrder(order.status) ? (
+                ) : isPaidOrder(order) ? (
                   <Button
                     variant="outline"
                     className="h-10 rounded-xl border-emerald-200 text-xs font-black text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
@@ -398,22 +413,22 @@ function OrdersPageContent() {
 }
 
 function isOrderInTab(order: RestaurantOrder, tab: OrdersTab) {
-  const status = normalizeOrderStatus(order.status);
+  const orderStatus = getOrderStatus(order);
 
   if (tab === "active") {
     return (
-      status === ORDER_STATUS.NOUVELLE ||
-      status === ORDER_STATUS.PREPARATION ||
-      status === ORDER_STATUS.PRETE ||
-      status === ORDER_STATUS.SERVIE
+      orderStatus === ORDER_OPERATION_STATUS.PENDING ||
+      orderStatus === ORDER_OPERATION_STATUS.IN_PREPARATION ||
+      orderStatus === ORDER_OPERATION_STATUS.READY ||
+      orderStatus === ORDER_OPERATION_STATUS.SERVED
     );
   }
 
   if (tab === "payments") {
-    return status === ORDER_STATUS.SERVIE;
+    return orderStatus === ORDER_OPERATION_STATUS.SERVED && !isOrderPaid(order);
   }
 
-  return status === ORDER_STATUS.PAYEE;
+  return isOrderPaid(order);
 }
 
 function getEmptyTabDescription(tab: OrdersTab) {
@@ -422,70 +437,115 @@ function getEmptyTabDescription(tab: OrdersTab) {
   return "Aucune commande payee dans l'historique charge."
 }
 
-function isReadyOrder(status: string) {
-  return normalizeOrderStatus(status) === ORDER_STATUS.PRETE
+function isReadyOrder(order: RestaurantOrder | string) {
+  return typeof order === "string"
+    ? order === ORDER_OPERATION_STATUS.READY
+    : getOrderStatus(order) === ORDER_OPERATION_STATUS.READY
 }
 
-function isActiveOrder(status: string) {
-  return normalizeOrderStatus(status) !== ORDER_STATUS.PAYEE
+function isActiveOrder(order: RestaurantOrder | string) {
+  return typeof order === "string"
+    ? order !== ORDER_OPERATION_STATUS.SERVED
+    : getOrderStatus(order) !== ORDER_OPERATION_STATUS.SERVED
 }
 
-function isPaidOrder(status: string) {
-  return normalizeOrderStatus(status) === ORDER_STATUS.PAYEE
+function isPaidOrder(orderOrStatus: RestaurantOrder | string) {
+  return typeof orderOrStatus === "string"
+    ? false
+    : isOrderPaid(orderOrStatus)
 }
 
 function canCash(order: RestaurantOrder) {
-  return normalizeOrderStatus(order.status) === ORDER_STATUS.SERVIE
+  return isOrderServed(order) && !isOrderPaid(order)
 }
 
 function canPrint(order: RestaurantOrder) {
-  const status = normalizeOrderStatus(order.status)
-  return status === ORDER_STATUS.SERVIE || status === ORDER_STATUS.PAYEE
+  return isOrderServed(order) || isOrderPaid(order)
 }
 
 function hasPendingMobilePayment(order: RestaurantOrder) {
   return (
-    normalizePaymentMethod(order.paymentMethod) === "mobile" &&
-    normalizePaymentStatus(order.paymentStatus) === "pending"
+    getPaymentTypeDisplay(order) === "mobile" &&
+    normalizePaymentStatus(order.paymentStatus) === "pending_mobile"
   )
 }
 
 const ORDER_PROGRESS = [
-  ORDER_STATUS.NOUVELLE,
-  ORDER_STATUS.PREPARATION,
-  ORDER_STATUS.PRETE,
-  ORDER_STATUS.SERVIE,
-  ORDER_STATUS.PAYEE,
+  ORDER_OPERATION_STATUS.PENDING,
+  ORDER_OPERATION_STATUS.IN_PREPARATION,
+  ORDER_OPERATION_STATUS.READY,
+  ORDER_OPERATION_STATUS.SERVED,
 ] as const;
 
-function progressIndex(status: string) {
-  return ORDER_PROGRESS.indexOf(normalizeOrderStatus(status) as typeof ORDER_PROGRESS[number]);
+function progressIndex(orderOrStatus: RestaurantOrder | string) {
+  const status =
+    typeof orderOrStatus === "string"
+      ? orderOrStatus
+      : getOrderStatus(orderOrStatus)
+  return ORDER_PROGRESS.indexOf(status as (typeof ORDER_PROGRESS)[number]);
 }
 
 function getOrderTableLabel(order: RestaurantOrder) {
   return order.table ? `Table ${order.table}` : "A emporter";
 }
 
-function statusLabel(status: string) {
-  return orderStatusLabel(status);
+function getNormalizedOrderType(order: RestaurantOrder) {
+  const legacyType = (order as any).type;
+  return (order as any).orderType || (legacyType === "table" ? "dine_in" : legacyType);
 }
 
-function statusBadgeClass(status: string) {
-  const normalized = normalizeOrderStatus(status);
-  if (normalized === ORDER_STATUS.NOUVELLE) return "bg-secondary text-white";
-  if (normalized === ORDER_STATUS.PREPARATION) return "bg-orange-500 text-white";
-  if (normalized === ORDER_STATUS.PRETE) return "bg-blue-600 text-white";
-  if (normalized === ORDER_STATUS.SERVIE) return "bg-green-600 text-white";
-  if (normalized === ORDER_STATUS.PAYEE) return "bg-emerald-600 text-white";
+function getCustomerPhone(order: RestaurantOrder) {
+  return order.customer?.phone ?? (order as any).customerPhone ?? null;
+}
+
+function getOrderTypeDisplay(order: RestaurantOrder) {
+  const type = getNormalizedOrderType(order);
+  if (type === "dine_in") return "Sur place";
+  if (type === "delivery") return "Livraison";
+  return "A emporter";
+}
+
+function getPaymentTypeDisplay(order: RestaurantOrder) {
+  const paymentType = (order as any).paymentType;
+  if (paymentType === "cash" || order.paymentMethod === "cash") return "cash";
+  if (paymentType === "mobile" || order.paymentMethod) return "mobile";
+  return "pending";
+}
+
+function getPaymentMethodDisplay(method?: string | null) {
+  if (!method) return "Non defini";
+  if (method === "cash") return "Especes";
+  if (method === "orange_money") return "Orange";
+  if (method === "mtn_money") return "MTN";
+  if (method === "wave") return "Wave";
+  if (method === "mobile") return "Mobile";
+  return method;
+}
+
+function statusLabel(order: RestaurantOrder | string) {
+  const status = typeof order === "string" ? order : getOrderStatus(order)
+  if (status === ORDER_OPERATION_STATUS.PENDING) return "En attente"
+  if (status === ORDER_OPERATION_STATUS.IN_PREPARATION) return "En preparation"
+  if (status === ORDER_OPERATION_STATUS.READY) return "Prete"
+  if (status === ORDER_OPERATION_STATUS.SERVED) return "Servie"
+  return "Terminee"
+}
+
+function statusBadgeClass(order: RestaurantOrder | string) {
+  const normalized = typeof order === "string" ? order : getOrderStatus(order);
+  if (normalized === ORDER_OPERATION_STATUS.PENDING) return "bg-secondary text-white";
+  if (normalized === ORDER_OPERATION_STATUS.IN_PREPARATION) return "bg-orange-500 text-white";
+  if (normalized === ORDER_OPERATION_STATUS.READY) return "bg-blue-600 text-white";
+  if (normalized === ORDER_OPERATION_STATUS.SERVED) return "bg-green-600 text-white";
   return "bg-muted text-muted-foreground";
 }
 
 function statusDotClass(status: string) {
-  if (status === ORDER_STATUS.NOUVELLE) return "bg-secondary";
-  if (status === ORDER_STATUS.PREPARATION) return "bg-orange-500";
-  if (status === ORDER_STATUS.PRETE) return "bg-blue-600";
-  if (status === ORDER_STATUS.SERVIE) return "bg-green-600";
-  if (status === ORDER_STATUS.PAYEE) return "bg-emerald-600";
+  const normalized = status;
+  if (normalized === ORDER_OPERATION_STATUS.PENDING) return "bg-secondary";
+  if (normalized === ORDER_OPERATION_STATUS.IN_PREPARATION) return "bg-orange-500";
+  if (normalized === ORDER_OPERATION_STATUS.READY) return "bg-blue-600";
+  if (normalized === ORDER_OPERATION_STATUS.SERVED) return "bg-green-600";
   return "bg-muted";
 }
 

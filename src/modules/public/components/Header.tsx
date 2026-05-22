@@ -1,8 +1,8 @@
 "use client"
 
 import { ShoppingBag } from "lucide-react"
-
 import { ThemeToggle } from "@/components/ui/theme-toggle"
+import * as React from "react"
 
 export default function Header({
   restaurant,
@@ -17,47 +17,126 @@ export default function Header({
   const logo = restaurant?.logoUrl || restaurant?.logo
   const initial = name.charAt(0).toUpperCase()
 
+  const [scrolled, setScrolled] = React.useState(false)
+
+  // 👉 détection scroll pour changer le style
+  React.useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 40)
+    }
+
+    window.addEventListener("scroll", handleScroll)
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [])
+
   return (
-    <header className="app-header sticky top-0 z-20 flex h-16 items-center justify-between px-4">
+    <header
+      className={`
+        fixed top-0 left-0 right-0 z-30
+        flex h-16 items-center justify-between px-4
+        transition-all duration-300
+        ${scrolled
+          ? "bg-background/90 backdrop-blur-md border-b border-border"
+          : "bg-transparent"
+        }
+      `}
+    >
+      {/* OVERLAY (uniquement quand pas scroll) */}
+      {!scrolled && (
+        <div className="absolute inset-0 bg-gradient-to-b from-black/50 to-transparent pointer-events-none" />
+      )}
 
-      {/* LEFT */}
-      <div className="flex min-w-0 items-center gap-3">
-        {logo ? (
-          <img
-            src={logo}
-            alt={`${name} logo`}
-            className="h-10 w-10 shrink-0 rounded-full object-cover border"
-          />
-        ) : (
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)] text-base font-black text-white">
-            {initial}
-          </div>
-        )}
+      {/* CONTENT */}
+      <div className="relative z-10 flex w-full items-center justify-between">
 
-        <p className="truncate text-base font-black text-foreground">
-          {name}
-        </p>
-      </div>
+        {/* LEFT */}
+        <div className="flex items-center gap-3 min-w-0">
 
-      {/* RIGHT */}
-      <div className="flex items-center gap-2">
-        <ThemeToggle />
-
-        <button
-          type="button"
-          onClick={onCartClick}
-          className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-[var(--color-primary)] transition hover:bg-muted/80 active:scale-95"
-          aria-label="Ouvrir le panier"
-        >
-          <ShoppingBag className="h-5 w-5" />
-          {cartCount > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-black text-white">
-              {cartCount > 99 ? "99+" : cartCount}
-            </span>
+          {/* LOGO */}
+          {logo ? (
+            <div
+              className={`
+                h-10 w-10 rounded-full overflow-hidden
+                transition-all duration-300
+                ${scrolled
+                  ? "bg-muted shadow-sm"
+                  : "bg-white/10 backdrop-blur"
+                }
+              `}
+            >
+              <img
+                src={logo}
+                alt={name}
+                className="h-full w-full object-cover"
+              />
+            </div>
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)] text-white text-sm font-black">
+              {initial}
+            </div>
           )}
-        </button>
-      </div>
 
+          {/* NAME */}
+          <p
+            className={`
+              truncate font-extrabold transition-colors duration-300
+              ${scrolled ? "text-foreground" : "text-white"}
+            `}
+          >
+            {name}
+          </p>
+        </div>
+
+        {/* RIGHT */}
+        <div className="flex items-center gap-2">
+
+          {/* THEME */}
+          <div
+            className={`
+              flex h-9 w-9 items-center justify-center rounded-lg
+              transition-all duration-300
+              ${scrolled
+                ? "bg-muted border border-border"
+                : "bg-white/10 backdrop-blur text-white"
+              }
+            `}
+          >
+            <ThemeToggle />
+          </div>
+
+          {/* CART */}
+          <button
+            onClick={onCartClick}
+            className={`
+              relative flex h-9 w-9 items-center justify-center rounded-lg
+              transition-all duration-300
+              ${scrolled
+                ? "bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+                : "bg-white/10 backdrop-blur text-white"
+              }
+              active:scale-95
+            `}
+          >
+            <ShoppingBag className="h-4 w-4" />
+
+            {cartCount > 0 && (
+              <span
+                className="
+                  absolute -top-1 -right-1
+                  h-4 min-w-[16px]
+                  flex items-center justify-center
+                  rounded-full
+                  bg-[var(--color-primary)]
+                  text-[9px] font-black text-white px-1
+                "
+              >
+                {cartCount > 99 ? "99+" : cartCount}
+              </span>
+            )}
+          </button>
+
+        </div>
+      </div>
     </header>
   )
 }

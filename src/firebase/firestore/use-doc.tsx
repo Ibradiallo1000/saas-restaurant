@@ -63,6 +63,9 @@ export function useDoc<T = any>(
   const refetch = () => {};
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
 
     // 🔴 IMPORTANT : ne rien faire si ref non prête
     if (!memoizedDocRef) {
@@ -145,6 +148,10 @@ export function useDocOnce<T = any>(
   const refetch = () => setRefreshKey((key) => key + 1);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     if (!memoizedDocRef) {
       setData(null);
       setError(null);

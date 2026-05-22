@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Zap, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, limit } from "firebase/firestore"
-import { COLLECTION_NAMES } from "@/lib/constants"
+import { doc, getDoc } from "firebase/firestore"
+import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
+import { getRoleHomePath } from "@/lib/guards"
 
 export default function LoginPage() {
   const auth = useAuth()
@@ -37,46 +38,17 @@ export default function LoginPage() {
       // 🔐 AUTH
       const cred = await signInWithEmailAndPassword(auth, email, password)
       const uid = cred.user.uid
+      clearAuthSessionCache(uid)
 
-      let userProfile: any = null
-      let userDocId: string | null = null
-
-      // 🔥 1. PRIORITÉ → doc direct
       const userRef = doc(db, COLLECTION_NAMES.USERS, uid)
       const userSnap = await getDoc(userRef)
 
-      if (userSnap.exists()) {
-        userProfile = userSnap.data()
-        userDocId = uid
-      } else {
-        // 🔥 fallback ancien système
-        const q = query(
-          collection(db, COLLECTION_NAMES.USERS),
-          where("authUid", "==", uid),
-          limit(1)
-        )
-
-        const snap = await getDocs(q)
-
-        if (!snap.empty) {
-          const docSnap = snap.docs[0]
-          userProfile = docSnap.data()
-          userDocId = docSnap.id
-        }
+      if (!userSnap.exists()) {
+        throw new Error("Aucun profil utilisateur lie.")
       }
 
-      if (!userProfile || !userDocId) {
-        throw new Error("Aucun profil utilisateur lié.")
-      }
+      const userProfile: any = userSnap.data()
 
-      // 🔥 AUTO FIX
-      if (!userProfile.authUid) {
-        await updateDoc(doc(db, COLLECTION_NAMES.USERS, userDocId), {
-          authUid: uid
-        })
-      }
-
-      // 🔀 ROUTING CORRIGÉ
       if (userProfile.role === "super_admin") {
         router.prefetch("/platform")
         router.push("/platform")
@@ -84,14 +56,13 @@ export default function LoginPage() {
       }
 
       if (userProfile.restaurantId) {
-        // ✅ FIX ICI
-        router.prefetch("/dashboard")
-        router.push("/dashboard")
+        const homePath = getRoleHomePath(userProfile.role)
+        router.prefetch(homePath)
+        router.push(homePath)
         return
       }
 
-      throw new Error("Profil incomplet.")
-
+      throw new Error("Compte non lié à un restaurant")
     } catch (error: any) {
       console.error(error)
 
@@ -155,4 +126,11 @@ export default function LoginPage() {
       </Card>
     </div>
   )
+}
+
+function clearAuthSessionCache(uid: string) {
+  if (typeof window === "undefined") return
+
+  window.localStorage.removeItem(`restaurant-active-role:${uid}`)
+  window.sessionStorage.clear()
 }

@@ -1,10 +1,16 @@
 "use client"
 
 import * as React from "react"
-import { useFirestore, useDoc, useMemoFirebase } from "@/firebase"
 import { doc } from "firebase/firestore"
-import { CheckCircle2, Clock, CookingPot, Bell } from "lucide-react"
-import { normalizeOrderStatus } from "@/lib/order-status"
+import { CheckCircle2 } from "lucide-react"
+
+import { OrderStepper } from "@/components/OrderStepper"
+import { PaymentBadge } from "@/components/PaymentBadge"
+import { useDoc, useFirestore, useMemoFirebase } from "@/firebase"
+import {
+  ORDER_OPERATION_STATUS,
+  getOrderStatus,
+} from "@/lib/order-lifecycle"
 
 export default function OrderTrackingPage({
   orderId,
@@ -24,124 +30,82 @@ export default function OrderTrackingPage({
 
   if (isLoading) {
     return (
-      <div className="app-background min-h-screen flex items-center justify-center text-foreground">
+      <div className="app-background flex min-h-screen items-center justify-center text-foreground">
         Chargement...
       </div>
     )
   }
 
   if (!order) {
-    return <div className="app-background min-h-screen p-10 text-center text-foreground">Commande introuvable</div>
+    return (
+      <div className="app-background min-h-screen p-10 text-center text-foreground">
+        Commande introuvable
+      </div>
+    )
   }
 
-  const steps = [
-    { key: "nouvelle", label: "Nouvelle", icon: Clock },
-    { key: "preparation", label: "En préparation", icon: CookingPot },
-    { key: "prete", label: "Prête", icon: Bell },
-    { key: "servie", label: "Servie", icon: CheckCircle2 },
-    { key: "payee", label: "Payée", icon: CheckCircle2 },
-  ]
-
-  const currentIndex = steps.findIndex(s => s.key === normalizeOrderStatus(order.status))
+  const orderStatus = getOrderStatus(order)
+  const orderWithPayment = order as typeof order & {
+    paymentIntentStatus?: string | null
+    paymentVerificationStatus?: string | null
+  }
+  const isServed =
+    orderStatus === ORDER_OPERATION_STATUS.SERVED ||
+    orderStatus === ORDER_OPERATION_STATUS.PICKED_UP ||
+    orderStatus === ORDER_OPERATION_STATUS.COMPLETED
 
   return (
-    <div className="app-background max-w-md mx-auto min-h-screen p-4 space-y-6 text-foreground">
-
-      {/* 🔥 HEADER SUCCESS */}
-      <div className="bg-green-500 text-white rounded-2xl p-5 shadow-lg">
+    <div className="app-background mx-auto min-h-screen max-w-md space-y-6 p-4 text-foreground">
+      <div className="rounded-2xl bg-green-500 p-5 text-white shadow-lg">
         <div className="flex items-center gap-3">
-          <CheckCircle2 className="w-8 h-8" />
+          <CheckCircle2 className="h-8 w-8" />
           <div>
             <h2 className="text-lg font-bold">
-              Commande confirmée
+              {isServed ? "Commande finalisée" : "Commande confirmée"}
             </h2>
             <p className="text-sm opacity-90">
-              La cuisine prépare votre commande
+              {isServed ? "Merci pour votre commande" : "La cuisine prépare votre commande"}
             </p>
           </div>
         </div>
       </div>
 
-      {/* 🔥 ORDER CARD */}
-      <div className="bg-card text-card-foreground rounded-2xl shadow p-4 space-y-2">
-
-        <div className="flex justify-between items-center">
-          <span className="font-semibold">
-            Commande #{order.id?.slice(-6)}
-          </span>
-          <span className="text-green-600 font-bold">
-            {order.total} FCFA
+      <div className="space-y-2 rounded-2xl bg-card p-4 text-card-foreground shadow">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold">Commande #{order.id?.slice(-6)}</span>
+          <span className="font-bold text-green-600">
+            {Number(order.total ?? 0).toLocaleString()} FCFA
           </span>
         </div>
 
         <div className="text-sm text-muted-foreground">
-          {order.items?.length} article(s)
+          {order.items?.length ?? 0} article(s)
         </div>
 
-        {order.table && (
-          <div className="text-xs bg-muted px-3 py-1 rounded-full w-fit">
+        {order.table ? (
+          <div className="w-fit rounded-full bg-muted px-3 py-1 text-xs">
             Sur place - Table {order.table}
           </div>
-        )}
-
+        ) : null}
       </div>
 
-      {/* 🔥 TIMELINE */}
-      <div className="bg-card text-card-foreground rounded-2xl shadow p-5 space-y-6">
+      <PaymentBadge
+        paymentIntentStatus={orderWithPayment.paymentIntentStatus}
+        paymentVerificationStatus={orderWithPayment.paymentVerificationStatus}
+      />
 
-        <h3 className="font-semibold">
-          Suivi de la commande
-        </h3>
-
-        <div className="space-y-4">
-
-          {steps.map((step, index) => {
-            const active = index <= currentIndex
-            const isCurrent = index === currentIndex
-            const Icon = step.icon
-
-            return (
-              <div key={step.key} className="flex items-start gap-4">
-
-                {/* DOT */}
-                <div className="flex flex-col items-center">
-                  <div
-                    className={`w-8 h-8 flex items-center justify-center rounded-full
-                    ${active ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"}`}
-                  >
-                    <Icon className="w-4 h-4" />
-                  </div>
-
-                  {index !== steps.length - 1 && (
-                    <div className={`w-[2px] h-10 ${
-                      active ? "bg-green-500" : "bg-muted"
-                    }`} />
-                  )}
-                </div>
-
-                {/* TEXT */}
-                <div className="flex-1">
-                  <p className={`font-medium ${
-                    active ? "text-foreground" : "text-muted-foreground"
-                  }`}>
-                    {step.label}
-                  </p>
-
-                  {isCurrent && (
-                    <p className="text-xs text-green-600 mt-1">
-                      En cours...
-                    </p>
-                  )}
-                </div>
-
-              </div>
-            )
-          })}
-
+      {isServed ? (
+        <div className="space-y-2 rounded-2xl bg-card p-5 text-card-foreground shadow">
+          <h3 className="text-xl font-black">Commande servie</h3>
+          <p className="text-sm text-muted-foreground">Profitez de votre repas</p>
         </div>
+      ) : (
+        <div className="space-y-6 rounded-2xl bg-card p-5 text-card-foreground shadow">
+          <h3 className="font-semibold">Suivi de la commande</h3>
 
-      </div>
-
+          <OrderStepper orderType={order.orderType} orderStatus={order.orderStatus} />
+        </div>
+      )}
     </div>
   )
 }

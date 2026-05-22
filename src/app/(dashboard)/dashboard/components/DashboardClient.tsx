@@ -145,7 +145,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-4xl font-black italic text-primary uppercase tracking-tighter flex items-center gap-3">
           <LayoutDashboard className="h-10 w-10" />
-          {restaurant?.name || "Dashboard"}
+          {restaurant?.name || "Analytics"}
         </h1>
 
         <Badge

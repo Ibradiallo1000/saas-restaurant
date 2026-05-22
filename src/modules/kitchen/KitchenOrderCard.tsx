@@ -1,352 +1,499 @@
 "use client"
 
 import * as React from "react"
-import {
-  CheckCircle,
-  CookingPot,
-  Package,
-  Printer,
-  Users,
-  ChevronRight,
-  AlertCircle,
-  Clock
-} from "lucide-react"
+import { CheckCircle, Clock, CookingPot, Package, Users } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Separator } from "@/components/ui/separator"
 import { useToast } from "@/hooks/use-toast"
 import {
-  canTransition,
+  ORDER_ITEM_STATUS,
+  ORDER_OPERATION_STATUS,
+  type OrderOperationStatus,
   nextOrderStatus,
-  normalizeOrderStatus,
-  orderStatusLabel,
-  type OrderStatus,
-} from "@/lib/order-status"
+  normalizeOrderItemStatus,
+  normalizeOperationStatus,
+  normalizeOrderType,
+  isOrderPaid,
+} from "@/lib/order-lifecycle"
 import { cn } from "@/lib/utils"
-
 import type { RestaurantOrder } from "@/modules/restaurant/types"
 
 type KitchenOrderCardProps = {
   order: RestaurantOrder
-  onUpdateStatus: (
-    orderId: string,
-    status: OrderStatus
-  ) => Promise<void>
+  onUpdateStatus: (orderId: string, status: OrderOperationStatus) => Promise<void>
 }
 
 const statusLabels: Record<string, string> = {
-  nouvelle: "En attente",
-  preparation: "En préparation",
-  prete: "Prête",
-  servie: "Servie",
-  payee: "Payée",
+  pending: "EN ATTENTE",
+  preparing: "EN PR\u00c9PARATION",
+  ready: "PR\u00caTES",
+  served: "SERVIES",
+  picked_up: "R\u00c9CUP\u00c9R\u00c9ES",
+  completed: "TERMIN\u00c9ES",
+}
+
+const actionLabels: Record<string, string> = {
+  pending: "EN ATTENTE",
+  preparing: "EN PR\u00c9PARATION",
+  ready: "PR\u00caTES",
+  served: "SERVIES",
+  picked_up: "R\u00c9CUP\u00c9R\u00c9ES",
+  completed: "TERMIN\u00c9ES",
+  en_preparation: "EN PR\u00c9PARATION",
+  pretes: "PR\u00caTES",
+  servies: "SERVIES",
 }
 
 const statusColors: Record<string, string> = {
-  nouvelle: "bg-yellow-100 text-yellow-800",
-  preparation: "bg-orange-100 text-orange-800",
-  prete: "bg-blue-100 text-blue-800",
-  servie: "bg-green-100 text-green-800",
-  payee: "bg-emerald-100 text-emerald-800",
+  pending: "border-orange-500/40 bg-orange-500/10 text-orange-700 dark:text-orange-300",
+  preparing: "border-orange-500/40 bg-orange-500/10 text-orange-700 dark:text-orange-300",
+  ready: "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300",
+  served: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  picked_up: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  completed: "border-slate-500/40 bg-slate-500/10 text-slate-700 dark:text-slate-300",
 }
 
 const statusIcons: Record<string, React.ReactNode> = {
-  nouvelle: <AlertCircle className="h-3 w-3" />,
-  preparation: <CookingPot className="h-3 w-3" />,
-  prete: <CheckCircle className="h-3 w-3" />,
-  servie: <CheckCircle className="h-3 w-3" />,
-  payee: <CheckCircle className="h-3 w-3" />,
+  pending: <Clock className="h-3 w-3" />,
+  preparing: <CookingPot className="h-3 w-3" />,
+  ready: <CheckCircle className="h-3 w-3" />,
+  served: <CheckCircle className="h-3 w-3" />,
+  picked_up: <CheckCircle className="h-3 w-3" />,
+  completed: <CheckCircle className="h-3 w-3" />,
+}
+
+type KitchenDisplayOrderType = "dine_in" | "pickup" | "delivery"
+
+function getKitchenDisplayOrderType(order: RestaurantOrder): KitchenDisplayOrderType {
+  const details = order as RestaurantOrder & {
+    publicOrderType?: "pickup" | "delivery" | null
+    type?: string
+  }
+
+  if (
+    order.table ||
+    order.tableId ||
+    order.orderType === "dine_in" ||
+    details.type === "table"
+  ) {
+    return "dine_in"
+  }
+
+  if (details.publicOrderType === "delivery" || order.orderType === "delivery") {
+    return "delivery"
+  }
+
+  return "pickup"
+}
+
+const orderTypeLabels: Record<KitchenDisplayOrderType, string> = {
+  dine_in: "SUR PLACE",
+  pickup: "\u00c0 EMPORTER",
+  delivery: "LIVRAISON",
+}
+
+function isPaymentLockedForKitchen(order: RestaurantOrder) {
+  return normalizeOrderType(order.orderType) !== "dine_in" && !isOrderPaid(order)
+}
+
+function getCreatedAtMs(order: RestaurantOrder) {
+  return (
+    order.createdAt?.toMillis?.() ??
+    order.createdAt?.toDate?.().getTime?.() ??
+    Date.now()
+  )
+}
+
+function formatElapsedTime(createdAtMs: number, nowMs: number) {
+  const elapsedMinutes = Math.max(0, Math.floor((nowMs - createdAtMs) / 60000))
+
+  if (elapsedMinutes < 1) return "moins d'1 min"
+  if (elapsedMinutes < 60) return `${elapsedMinutes} min`
+
+  const hours = Math.floor(elapsedMinutes / 60)
+  const minutes = elapsedMinutes % 60
+
+  return minutes > 0 ? `${hours}h ${minutes}min` : `${hours}h`
+}
+
+function getElapsedMinutes(createdAtMs: number, nowMs: number) {
+  return Math.max(0, Math.floor((nowMs - createdAtMs) / 60000))
+}
+
+function getKitchenContextLines(order: RestaurantOrder, type: KitchenDisplayOrderType) {
+  const details = order as RestaurantOrder & {
+    customerName?: string | null
+    phoneNumber?: string | null
+    customerPhone?: string | null
+    tableNumber?: string | null
+    deliveryAddress?: string | { street?: string; label?: string; zone?: string; city?: string } | null
+  }
+  const customerName = details.customer?.name || details.customerName || null
+  const phoneNumber =
+    details.customer?.phone || details.phoneNumber || details.customerPhone || null
+  const tableNumber = details.table || details.tableNumber || details.tableId || null
+  const deliveryAddress = formatDeliveryAddress(details.deliveryAddress)
+
+  if (type === "dine_in") {
+    return [`SUR PLACE${tableNumber ? ` • Table ${tableNumber}` : ""}`]
+  }
+
+  if (type === "delivery") {
+    return [
+      "LIVRAISON",
+      customerName ? `Client : ${customerName}` : null,
+      phoneNumber ? `Tel : ${phoneNumber}` : null,
+      deliveryAddress ? `Adresse : ${deliveryAddress}` : null,
+    ].filter(Boolean) as string[]
+  }
+
+  return ["\u00c0 EMPORTER"]
+}
+
+function formatDeliveryAddress(
+  value: string | { street?: string; label?: string; zone?: string; city?: string } | null | undefined
+) {
+  if (!value) return null
+  if (typeof value === "string") return value
+
+  return [value.label, value.street, value.zone, value.city].filter(Boolean).join(", ") || null
 }
 
 export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProps) {
   const { toast } = useToast()
   const [isUpdating, setIsUpdating] = React.useState(false)
   const [isDetailOpen, setIsDetailOpen] = React.useState(false)
-  const [now, setNow] = React.useState(() => Date.now())
+  const [nowMs, setNowMs] = React.useState(() => Date.now())
+  const [isPaymentJustVerified, setIsPaymentJustVerified] = React.useState(false)
 
-  const minutes = getMinutesSinceCreated(order.createdAt, now)
-  const status = normalizeOrderStatus(order.status)
-  const urgent = minutes > 15
-  const warning = minutes >= 5 && minutes <= 15
-
-  const cardAccentClass = urgent
-    ? "border-l-red-500"
-    : warning
-      ? "border-l-orange-400"
-      : "border-l-slate-200"
-
-  const timeBadgeClass = urgent
-    ? "bg-red-100 text-red-700 ring-red-200"
-    : warning
-      ? "bg-orange-100 text-orange-700 ring-orange-200"
-      : "bg-slate-100 text-slate-700 ring-slate-200"
-
-  const followingStatus = nextOrderStatus(status)
-  const nextAction = followingStatus && canTransition(status, followingStatus)
+  const orderStatus = normalizeOperationStatus(order.orderStatus)
+  const status = orderStatus
+  const followingStatus = nextOrderStatus(orderStatus, order.orderType)
+  const nextAction = followingStatus
     ? {
-        label: orderStatusLabel(followingStatus),
+        label: actionLabels[followingStatus] || statusLabels[status] || followingStatus,
         status: followingStatus,
-        bg:
-          followingStatus === "preparation"
-            ? "bg-orange-600 hover:bg-orange-700"
-            : followingStatus === "prete"
-              ? "bg-blue-600 hover:bg-blue-700"
-              : "bg-emerald-600 hover:bg-emerald-700",
       }
     : null
 
-  const visibleItems = order.items?.slice(0, 3) ?? []
-  const remainingItems = Math.max(0, (order.items?.length ?? 0) - visibleItems.length)
   const totalItems = order.items?.reduce((acc, item) => acc + item.quantity, 0) ?? 0
-  const isTableOrder = Boolean(order.table)
+  const displayOrderType = getKitchenDisplayOrderType(order)
+  const isTableOrder = displayOrderType === "dine_in"
+  const orderCode = `#${order.id.slice(-6).toUpperCase()}`
+  const orderTypeLabel = orderTypeLabels[displayOrderType]
+  const contextLines = getKitchenContextLines(order, displayOrderType)
+  const isPaymentLocked = isPaymentLockedForKitchen(order)
+  const previousPaymentLockedRef = React.useRef(isPaymentLocked)
+  const createdAtMs = getCreatedAtMs(order)
+  const elapsedTime = formatElapsedTime(createdAtMs, nowMs)
+  const elapsedMinutes = getElapsedMinutes(createdAtMs, nowMs)
+  const isPaymentDelayed = isPaymentLocked && elapsedMinutes > 10
+  const isPaidNonTableOrder = normalizeOrderType(order.orderType) !== "dine_in" && !isPaymentLocked
+  const isPaid = isOrderPaid(order)
 
-  const displayIdentifier = isTableOrder
-    ? `Table ${order.table || order.sessionId?.slice(-4) || "?"}`
-    : `À emporter #${order.id.slice(-4)}`
+  const lastItemAddedAt = React.useMemo(() => {
+    const itemTimes = (order.items || []).map((item: any) => {
+      if (item.createdAt?.toMillis) return item.createdAt.toMillis()
+      if (item.createdAt?.getTime) return item.createdAt.getTime()
+      if (typeof item.createdAt === "number") return item.createdAt
+      return 0
+    })
+    return Math.max(0, ...itemTimes, createdAtMs)
+  }, [order.items, createdAtMs])
+
+  const isRecentActivity = (nowMs - lastItemAddedAt) < 20000 // 20 secondes
+  const isNewOrder = (lastItemAddedAt - createdAtMs) < 10000 // dans les 10s apres creation
 
   React.useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 30000)
+    console.log({
+      orderId: order.id,
+      type: order.orderType,
+      payment: (order as { paymentStatus?: string | null }).paymentStatus,
+    })
+  }, [order])
+
+  React.useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNowMs(Date.now())
+    }, 30000)
+
     return () => window.clearInterval(interval)
   }, [])
 
-  const handleAction = async () => {
+  React.useEffect(() => {
+    const wasLocked = previousPaymentLockedRef.current
+
+    if (wasLocked && !isPaymentLocked) {
+      setIsPaymentJustVerified(true)
+      toast({
+        title: "Paiement verifie",
+        description: `${orderCode} peut passer en preparation.`,
+      })
+
+      const timeout = window.setTimeout(() => {
+        setIsPaymentJustVerified(false)
+      }, 2500)
+
+      previousPaymentLockedRef.current = isPaymentLocked
+      return () => window.clearTimeout(timeout)
+    }
+
+    previousPaymentLockedRef.current = isPaymentLocked
+    return undefined
+  }, [isPaymentLocked, orderCode, toast])
+
+  const handleAction = async (event?: React.MouseEvent<HTMLButtonElement>) => {
+    event?.stopPropagation()
     if (!nextAction || isUpdating) return
+    if (isPaymentLocked) {
+      toast({
+        title: "Paiement en attente",
+        description: "Cette commande doit etre verifiee avant preparation.",
+        variant: "destructive",
+      })
+      return
+    }
 
     setIsUpdating(true)
     try {
       await onUpdateStatus(order.id, nextAction.status)
       toast({
-        title: "Statut mis à jour",
-        description: `${displayIdentifier} → ${statusLabels[nextAction.status]}`,
+        title: "Statut mis a jour",
+        description: `${orderCode} -> ${nextAction.label}`,
       })
     } finally {
       setIsUpdating(false)
     }
   }
 
-  const handlePrint = () => {
-    toast({ title: "Impression", description: "Ticket envoyé à l'imprimante" })
-  }
-
-  const formatTime = (date: any) => {
-    if (!date) return ""
-    const d = date.toDate ? date.toDate() : new Date(date)
-    return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
-  }
-
   return (
     <>
-      {/* CARTE */}
       <article
-        className={cn(
-          "flex h-56 flex-col rounded-2xl border border-l-[6px] bg-white p-5 shadow-sm transition-all duration-300 ease-in-out cursor-pointer",
-          "hover:-translate-y-0.5 hover:shadow-xl",
-          cardAccentClass
-        )}
+        role="button"
+        tabIndex={0}
         onClick={() => setIsDetailOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault()
+            setIsDetailOpen(true)
+          }
+        }}
+        className={cn(
+          "cursor-pointer rounded-xl border border-border bg-card p-3 text-card-foreground shadow-sm outline-none ring-primary/40 transition focus:ring-2",
+          isPaymentLocked && "cursor-not-allowed opacity-50",
+          isPaymentDelayed && "border-red-500/50 ring-1 ring-red-500/20",
+          isPaidNonTableOrder && "border-emerald-500/40 ring-1 ring-emerald-500/20",
+          isPaymentJustVerified && "animate-pulse border-emerald-500 ring-2 ring-emerald-500/50",
+          isRecentActivity && "border-orange-500 ring-2 ring-orange-500/50 animate-pulse bg-orange-500/5"
+        )}
       >
-        {/* EN-TÊTE */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate text-xl font-black text-slate-950">
-              {displayIdentifier}
-            </h3>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge
-                variant="outline"
-                className="text-[10px] font-bold bg-white/50"
-              >
-                {totalItems} plat{totalItems !== 1 ? 's' : ''}
-              </Badge>
-              <Badge
-                variant="outline"
-                className="text-[10px] font-bold bg-white/50"
-              >
-                <Clock className="h-2 w-2 mr-1" />
-                {formatTime(order.createdAt)}
-              </Badge>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-black">{orderCode}</h3>
+            <div className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+              {isTableOrder ? (
+                <Users className="h-3.5 w-3.5 shrink-0 text-primary" />
+              ) : (
+                <Package className="h-3.5 w-3.5 shrink-0 text-primary" />
+              )}
+              <span className="line-clamp-2 text-[11px] font-black uppercase leading-tight text-foreground">
+                {contextLines[0] || orderTypeLabel}
+              </span>
             </div>
+            {contextLines.length > 1 ? (
+              <div className="mt-2 space-y-0.5 text-[10px] font-semibold leading-tight text-muted-foreground">
+                {contextLines.slice(1).map((line) => (
+                  <p key={line} className="line-clamp-1">
+                    {line}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            
+            {(order as any).notes || (order as any).customerNote || (order as any).customerNotes ? (
+              <div className="mt-2 rounded bg-orange-500/10 px-2 py-1 text-[10px] font-semibold italic text-orange-700 dark:text-orange-300">
+                Note : {(order as any).notes || (order as any).customerNote || (order as any).customerNotes}
+              </div>
+            ) : null}
+
+            {isRecentActivity && (
+              <p className="mt-1.5 text-[10px] font-black text-orange-600 dark:text-orange-400">
+                {isNewOrder ? "🆕 Nouvelle commande" : "🆕 Ajout à la commande"}
+              </p>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <div
-              className={cn(
-                "shrink-0 rounded-full px-3 py-1.5 text-sm font-black leading-none ring-1",
-                timeBadgeClass
-              )}
-            >
-              {minutes} min
-            </div>
-          </div>
+          <Badge
+            variant="outline"
+            className={cn("shrink-0 gap-1 text-[10px] font-black uppercase", statusColors[status])}
+          >
+            {statusIcons[status]}
+            {statusLabels[status] || status}
+          </Badge>
         </div>
 
-        {/* LISTE DES PRODUITS */}
-        <ul className="mt-4 min-h-0 flex-1 space-y-1.5 overflow-hidden">
-          {visibleItems.map((item) => (
+        {isPaymentLocked ? (
+          <Badge
+            variant="outline"
+            className={cn(
+              "mt-3 w-fit text-[10px] font-black uppercase",
+              isPaymentDelayed
+                ? "border-red-500/50 bg-red-500/10 text-red-700 dark:text-red-300"
+                : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+            )}
+          >
+            {isPaymentDelayed ? "RETARD PAIEMENT" : "EN ATTENTE DE PAIEMENT"} - {elapsedTime}
+          </Badge>
+        ) : null}
+
+        {isPaid ? (
+          <Badge
+            variant="outline"
+            className="mt-3 w-fit border-emerald-500/40 bg-emerald-500/10 text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-300"
+          >
+            ✔ Déjà payé
+          </Badge>
+        ) : null}
+
+        <ul className="mt-3 space-y-2">
+          {(order.items || []).slice(0, 5).map((item, index) => {
+            const itemStatus = normalizeOrderItemStatus((item as any).status ?? order.orderStatus)
+            const { options, extras, note } = parseItemDetails(item)
+            
+            return (
             <li
-              key={`${order.id}-${item.productId}-${item.name}`}
-              className="truncate text-sm font-bold leading-tight text-slate-700"
+              key={`${order.id}-${item.productId ?? index}-${item.name}`}
+              className={cn(
+                "flex flex-col gap-1 rounded-md px-2 py-1.5 text-xs leading-tight",
+                itemStatus === ORDER_ITEM_STATUS.SERVED && "bg-muted text-muted-foreground line-through opacity-70",
+                itemStatus === ORDER_ITEM_STATUS.PENDING && "bg-orange-500/10 text-card-foreground ring-1 ring-orange-500/20",
+                itemStatus !== ORDER_ITEM_STATUS.SERVED &&
+                  itemStatus !== ORDER_ITEM_STATUS.PENDING &&
+                  "text-card-foreground"
+              )}
             >
-              {item.quantity}x {item.name}
+              <div className="flex items-start justify-between font-bold">
+                <span>{item.quantity}x {item.name}</span>
+                <span className="ml-2 shrink-0 text-[9px] font-black uppercase opacity-70">
+                  {formatItemStatus(itemStatus)}
+                </span>
+              </div>
+
+              {options.length > 0 ? (
+                <div className="text-[10px] text-muted-foreground">
+                  {options.map((opt, idx) => (
+                    <div key={idx}>({opt.name} : {opt.value})</div>
+                  ))}
+                </div>
+              ) : null}
+
+              {extras.length > 0 ? (
+                <div className="text-[10px] font-semibold text-orange-600 dark:text-orange-400 space-y-0.5">
+                  {extras.map((ext, idx) => (
+                    <div key={idx}>+ {ext.name}</div>
+                  ))}
+                </div>
+              ) : null}
+
+              {note ? (
+                <div className="mt-1 inline-block w-fit rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-red-700 dark:text-red-400 border border-red-500/20">
+                  NOTE : {note}
+                </div>
+              ) : null}
             </li>
-          ))}
-          {remainingItems > 0 && (
-            <li className="text-sm font-black text-slate-500 flex items-center gap-1">
-              <ChevronRight className="h-3 w-3" />
-              +{remainingItems} autre{remainingItems !== 1 ? 's' : ''}
-            </li>
-          )}
+            )
+          })}
         </ul>
 
-        {/* TYPE CLIENT + ACTIONS */}
-        <div className="mt-4 flex gap-2">
-          {/* Type client */}
-          <div className="flex-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
-            {isTableOrder ? (
-              <Users className="h-3.5 w-3.5" />
-            ) : (
-              <Package className="h-3.5 w-3.5" />
-            )}
-            <span className="truncate">
-              {isTableOrder ? "Sur place" : "À emporter"}
-            </span>
-          </div>
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <span className="text-xs font-bold text-muted-foreground">
+            {totalItems} produit{totalItems !== 1 ? "s" : ""}
+          </span>
 
-          {/* Actions */}
-          <div className="flex gap-2">
-            {nextAction && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleAction()
-                }}
-                disabled={isUpdating}
-                className={cn(
-                  "h-8 px-4 rounded-lg text-xs font-black uppercase italic text-white shadow transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-60",
-                  nextAction.bg
-                )}
-              >
-                {isUpdating ? "..." : nextAction.label}
-              </button>
-            )}
+          {nextAction && !isPaymentLocked ? (
             <button
-              onClick={(e) => {
-                e.stopPropagation()
-                handlePrint()
-              }}
-              className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 flex items-center justify-center"
+              type="button"
+              onClick={handleAction}
+              disabled={isUpdating}
+              className="h-8 rounded-lg bg-primary px-3 text-[10px] font-black uppercase text-primary-foreground shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Printer className="h-3.5 w-3.5" />
+              {isUpdating ? "..." : nextAction.label}
             </button>
-          </div>
+          ) : null}
         </div>
       </article>
 
-      {/* MODAL DÉTAIL */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl">
+        <DialogContent className="max-w-md border-border bg-card text-card-foreground">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-black flex items-center gap-2">
-              {displayIdentifier}
+            <DialogTitle className="flex items-center justify-between gap-3 text-lg font-black">
+              <span>{orderCode}</span>
+              <Badge
+                variant="outline"
+                className={cn("gap-1 text-[10px] font-black uppercase", statusColors[status])}
+              >
+                {statusIcons[status]}
+                {statusLabels[status] || status}
+              </Badge>
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Statut et heure + timer */}
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <Badge className={cn("font-black uppercase gap-1 text-[10px]", statusColors[status])}>
-                  {statusIcons[status]}
-                  <span>{statusLabels[status] || status}</span>
-                </Badge>
-                <div
-                  className={cn(
-                    "rounded-full px-2 py-1 text-xs font-black leading-none ring-1",
-                    timeBadgeClass
-                  )}
-                >
-                  {minutes} min
-                </div>
+            <div className="rounded-lg border border-border bg-muted p-3 text-sm">
+              <div className="space-y-1">
+                {contextLines.map((line, index) => (
+                  <p
+                    key={line}
+                    className={cn(
+                      index === 0
+                        ? "text-sm font-black uppercase text-foreground"
+                        : "text-xs font-semibold text-muted-foreground"
+                    )}
+                  >
+                    {line}
+                  </p>
+                ))}
               </div>
-              <span className="text-xs text-muted-foreground">
-                {formatTime(order.createdAt)}
-              </span>
+              <div className="mt-2 flex justify-between gap-3">
+                <span className="text-muted-foreground">Temps ecoule</span>
+                <span className="font-bold text-foreground">{elapsedTime}</span>
+              </div>
             </div>
 
-            <Separator />
+            {isPaymentLocked ? (
+              <div
+                className={cn(
+                  "rounded-lg border p-3 text-xs font-black uppercase",
+                  isPaymentDelayed
+                    ? "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
+                    : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                )}
+              >
+                {isPaymentDelayed ? "RETARD PAIEMENT" : "EN ATTENTE DE PAIEMENT"}
+              </div>
+            ) : null}
 
-            {/* Liste des articles */}
             <div>
-              <h3 className="font-black uppercase text-sm tracking-wider mb-3">Articles</h3>
+              <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-muted-foreground">
+                Produits
+              </h3>
               <div className="space-y-2">
-                {order.items.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-100">
-                    <div>
-                      <span className="font-bold text-gray-900">{item.quantity}×</span>
-                      <span className="ml-2 text-gray-700">{item.name}</span>
-                    </div>
-                    <span className="font-bold text-primary">
-                      {(item.unitPrice * item.quantity).toLocaleString()} FCFA
-                    </span>
-                  </div>
+                {(order.items || []).map((item, index) => (
+                  <OrderItemDetail
+                    key={`${order.id}-detail-${item.productId ?? index}-${item.name}`}
+                    item={item}
+                  />
                 ))}
               </div>
             </div>
 
-            <Separator />
-
-            {/* Informations */}
-            <div>
-              <h3 className="font-black uppercase text-sm tracking-wider mb-3">Informations</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Type</span>
-                  <span className="font-medium">
-                    {isTableOrder ? "Client sur place" : "À emporter"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Total articles</span>
-                  <span className="font-medium">{totalItems}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Total TTC</span>
-                  <span className="font-medium text-primary">{order.total.toLocaleString()} FCFA</span>
-                </div>
-                {order.customer?.name && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Client</span>
-                    <span className="font-medium">{order.customer.name}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Action modal */}
-            {nextAction && (
-              <div className="pt-2">
-                <button
-                  className={cn(
-                    "w-full h-12 rounded-xl text-base font-black uppercase italic text-white shadow-lg transition hover:-translate-y-0.5",
-                    nextAction.bg
-                  )}
-                  onClick={() => {
-                    handleAction()
-                    setIsDetailOpen(false)
-                  }}
-                  disabled={isUpdating}
-                >
-                  {isUpdating ? "..." : nextAction.label}
-                </button>
-              </div>
-            )}
+            <OrderNotes order={order} />
           </div>
         </DialogContent>
       </Dialog>
@@ -354,14 +501,107 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
   )
 }
 
-function getMinutesSinceCreated(
-  createdAt: RestaurantOrder["createdAt"],
-  now: number
-) {
-  const createdAtMs =
-    createdAt?.toMillis?.() ??
-    createdAt?.toDate?.().getTime?.() ??
-    now
+function parseItemDetails(item: any) {
+  const options: Array<{ name: string; value: string }> = item.options || []
+  const extras: Array<{ name: string; price?: number }> = item.extras || []
+  const note: string | null = item.note || item.notes || null
 
-  return Math.max(0, Math.floor((now - createdAtMs) / 60000))
+  if (!item.options && !item.extras && item.selectedOptions) {
+    item.selectedOptions.forEach((opt: any) => {
+      const name = String(opt.optionName || "").toLowerCase().trim()
+      if (name && name !== "supplement" && name !== "supplément" && name !== "extra") {
+        options.push({ name: opt.optionName || "Option", value: opt.choiceName })
+      } else {
+        extras.push({ name: opt.choiceName, price: opt.price })
+      }
+    })
+  }
+
+  if (extras.length === 0 && (item.supplements || item.supplementNames)?.length > 0) {
+    const sups = item.supplements || item.supplementNames
+    sups.forEach((sup: any) => {
+      if (typeof sup === "string") {
+        extras.push({ name: sup, price: 0 })
+      } else {
+        extras.push({ name: `${sup.quantity ? `${sup.quantity}x ` : ""}${sup.name || ""}`, price: 0 })
+      }
+    })
+  }
+
+  return { options, extras, note }
+}
+
+function OrderItemDetail({ item }: { item: RestaurantOrder["items"][number] }) {
+  const itemStatus = normalizeOrderItemStatus((item as any).status)
+  const { options, extras, note } = parseItemDetails(item)
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg border border-border bg-muted p-3",
+        itemStatus === ORDER_ITEM_STATUS.SERVED && "opacity-60",
+        itemStatus === ORDER_ITEM_STATUS.PENDING && "border-orange-500/30 bg-orange-500/10"
+      )}
+    >
+      <div className="flex justify-between gap-3">
+        <span className="font-bold text-foreground">
+          {item.quantity}x {item.name}
+        </span>
+        <span className="shrink-0 text-[10px] font-black uppercase text-muted-foreground">
+          {formatItemStatus(itemStatus)}
+        </span>
+      </div>
+
+      {options.length > 0 ? (
+        <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
+          {options.map((opt, idx) => (
+             <div key={idx}>({opt.name} : {opt.value})</div>
+          ))}
+        </div>
+      ) : null}
+
+      {extras.length > 0 ? (
+        <div className="mt-1.5 space-y-0.5 text-xs font-semibold text-orange-600 dark:text-orange-400">
+          {extras.map((ext, idx) => (
+             <div key={idx}>+ {ext.name}</div>
+          ))}
+        </div>
+      ) : null}
+
+      {note ? (
+        <div className="mt-2 inline-block rounded bg-red-500/10 px-2 py-1 text-[11px] font-black uppercase text-red-700 dark:text-red-400 border border-red-500/20">
+          NOTE : {note}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function formatItemStatus(status: string) {
+  if (status === ORDER_ITEM_STATUS.PREPARING) return "Preparation"
+  if (status === ORDER_ITEM_STATUS.READY) return "Pret"
+  if (status === ORDER_ITEM_STATUS.SERVED) return "Servi"
+  return "Nouveau"
+}
+
+function OrderNotes({ order }: { order: RestaurantOrder }) {
+  const details = order as RestaurantOrder & {
+    notes?: string
+    customerNote?: string
+    customerNotes?: string
+  }
+  const note = details.notes || details.customerNote || details.customerNotes
+
+  if (!note) return null
+
+  return (
+    <div>
+      <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-muted-foreground">
+        Notes client
+      </h3>
+      <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-3 text-sm font-semibold text-orange-700 dark:text-orange-200">
+        {note}
+      </div>
+    </div>
+  )
 }

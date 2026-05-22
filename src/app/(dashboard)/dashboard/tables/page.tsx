@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { collection, limit, orderBy, query, where } from "firebase/firestore"
 import {
   CheckCircle2,
   Download,
@@ -27,14 +26,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
+import { useFirestore } from "@/firebase"
 import { useToast } from "@/hooks/use-toast"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
+import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 import {
   closeActiveTableSession,
   createRestaurantTablesBatch,
   type RestaurantTableRecord,
-  type TableSessionRecord,
 } from "@/services/table-session.service"
 
 type SessionMetric = {
@@ -46,6 +45,12 @@ type SessionMetric = {
 export default function DashboardTablesPage() {
   const db = useFirestore()
   const { restaurantId, restaurant } = useRestaurant()
+  const {
+    activeOrders,
+    isLoadingTables: isLoading,
+    tableSessions: sessions,
+    tables,
+  } = useRestaurantLiveData()
   const { toast } = useToast()
 
   const [zoneMode, setZoneMode] = React.useState<"existing" | "new">("new")
@@ -54,38 +59,6 @@ export default function DashboardTablesPage() {
   const [tableCount, setTableCount] = React.useState(10)
   const [prefix, setPrefix] = React.useState("T")
   const [isSaving, setIsSaving] = React.useState(false)
-
-  const tablesQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return query(
-      collection(db, "restaurants", restaurantId, "tables"),
-      orderBy("createdAt", "asc")
-    )
-  }, [db, restaurantId])
-
-  const { data: tables, isLoading } = useCollection<RestaurantTableRecord>(tablesQuery)
-
-  const sessionsQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return query(
-      collection(db, "restaurants", restaurantId, "tableSessions"),
-      where("status", "==", "active"),
-      orderBy("startedAt", "desc"),
-      limit(100)
-    )
-  }, [db, restaurantId])
-  const { data: sessions } = useCollection<TableSessionRecord>(sessionsQuery)
-
-  const ordersQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return query(
-      collection(db, "restaurants", restaurantId, "orders"),
-      where("status", "in", ["pending", "nouvelle", "preparation", "prete", "servie"]),
-      orderBy("createdAt", "desc"),
-      limit(200)
-    )
-  }, [db, restaurantId])
-  const { data: activeOrders } = useCollection<any>(ordersQuery)
 
   const zones = React.useMemo(() => {
     return Array.from(new Set((tables || []).map((table) => table.zoneId || "Zone")))
@@ -426,7 +399,7 @@ function TableQrCard({
           </Badge>
         </div>
 
-        <div className="flex justify-center rounded-lg border bg-white p-3">
+        <div className="flex justify-center rounded-lg border bg-background p-3">
           <QRCodeSVG id={qrId} value={qrUrl} size={150} includeMargin />
         </div>
 
@@ -447,21 +420,21 @@ function TableQrCard({
         ) : null}
 
         <div className="grid grid-cols-2 gap-2">
-          <Button type="button" variant="outline" onClick={() => printQr(table.name, qrUrl, qrId)}>
+          <Button type="button" variant="primary" onClick={() => printQr(table.name, qrUrl, qrId)}>
             <Printer className="h-4 w-4" />
             Imprimer
           </Button>
-          <Button type="button" variant="outline" onClick={() => downloadQr(table.name, qrId)}>
+          <Button type="button" variant="primary" onClick={() => downloadQr(table.name, qrId)}>
             <Download className="h-4 w-4" />
             Telecharger
           </Button>
-          <Button asChild type="button" variant="outline">
+          <Button asChild type="button" variant="primary">
             <Link href={`/pos?tableId=${encodeURIComponent(table.id)}`}>
               <Monitor className="h-4 w-4" />
               POS
             </Link>
           </Button>
-          <Button type="button" variant="outline" disabled={!occupied} onClick={onRelease}>
+          <Button type="button" variant="primary" disabled={!occupied} onClick={onRelease}>
             <Unlock className="h-4 w-4" />
             Liberer
           </Button>

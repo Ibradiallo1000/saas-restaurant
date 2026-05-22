@@ -15,9 +15,11 @@ import { Input } from '@/components/ui/input';
 import { EmptyState, ErrorState } from '@/components/layout/app-states';
 import { AdminRouteSkeleton } from '@/components/performance/route-skeletons';
 import { useCollectionPage } from '@/hooks/use-collection-page';
+import { usePlatform } from '@/contexts/platform-context';
 
 export default function RestaurantsAdminPage() {
   const router = useRouter();
+  const { settings } = usePlatform();
   const [searchTerm, setSearchTerm] = React.useState('');
   const {
     error,
@@ -58,7 +60,7 @@ export default function RestaurantsAdminPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-4xl font-black italic uppercase tracking-tighter text-primary">Établissements</h1>
-          <p className="text-muted-foreground font-medium">Gestion du parc de restaurants et hôtels GastronomeAI.</p>
+          <p className="text-muted-foreground font-medium">Gestion du parc de restaurants et hôtels {settings.name}.</p>
         </div>
         <Button onClick={() => router.push('/platform/restaurants/new')} className="shadow-xl">
           <Plus className="mr-2 h-4 w-4" /> Provisionner un Restaurant
@@ -69,7 +71,7 @@ export default function RestaurantsAdminPage() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input 
           placeholder="Rechercher par nom ou email..." 
-          className="pl-10 h-12 bg-white border-none shadow-sm rounded-xl"
+          className="pl-10 h-12 bg-background border-none shadow-sm rounded-xl"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />

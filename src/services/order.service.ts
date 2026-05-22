@@ -10,6 +10,7 @@ import {
   doc, 
   addDoc, 
   collection, 
+  arrayUnion,
   serverTimestamp, 
   updateDoc,
   getDocs,
@@ -20,16 +21,25 @@ import {
   where,
   limit
 } from 'firebase/firestore';
-import { COLLECTION_NAMES, ORDER_STATUS, PAYMENT_STATUS } from '@/lib/constants';
+import { COLLECTION_NAMES, PAYMENT_STATUS } from '@/lib/constants';
+import {
+  ORDER_OPERATION_STATUS,
+  ORDER_PAYMENT_STATUS,
+  normalizeOperationStatus,
+  toKitchenServedEventStatus,
+} from '@/lib/order-lifecycle';
 import { normalizePaymentMethod, paymentStatusForMethod, type PaymentMethod } from '@/lib/order-payment';
 import type { SelectedCartOption } from '@/modules/restaurant/types';
 import { LoyaltyService } from './loyalty.service';
 
 export interface OrderItemInput {
+  id?: string;
   productId: string;
   nameSnapshot: string;
   priceSnapshot: number;
   quantity: number;
+  status?: string;
+  createdAt?: Date;
   selectedOptions?: SelectedCartOption[];
   instructions?: string;
 }
@@ -37,9 +47,12 @@ export interface OrderItemInput {
 export interface OrderInput {
   restaurantId: string;
   type: 'table' | 'room' | 'takeaway' | 'delivery';
+  orderType?: 'dine_in' | 'takeaway' | 'pickup' | 'delivery';
   tableId?: string;
   zoneId?: string;
   sessionId?: string;
+  cashierId?: string;
+  cashSessionId?: string;
   source?: 'qr' | 'pos';
   roomId?: string;
   customerName?: string;
@@ -48,6 +61,7 @@ export interface OrderInput {
   deliveryAddress?: string;
   deliveryFee?: number;
   tipAmount?: number;
+  discountAmount?: number;
 }
 
 export class OrderService {
@@ -63,32 +77,54 @@ export class OrderService {
    */
   async createOrder(input: OrderInput) {
     const subtotal = input.items.reduce((acc, item) => acc + (item.priceSnapshot * item.quantity), 0);
-    const totalAmount = subtotal + (input.deliveryFee || 0) + (input.tipAmount || 0);
+    const discountAmount = Math.max(0, Number(input.discountAmount || 0));
+    const totalAmount = Math.max(0, subtotal - discountAmount + (input.deliveryFee || 0) + (input.tipAmount || 0));
+
+    const normalizedOrderType =
+      input.orderType === 'takeaway' ? 'pickup' : input.orderType || (input.type === 'table' ? 'dine_in' : input.type);
 
     const orderData = {
       restaurantId: input.restaurantId,
       source: input.source || 'pos',
       type: input.type,
+      orderType: normalizedOrderType,
       tableId: input.tableId || null,
       table: input.tableId || null,
       zoneId: input.zoneId || null,
       sessionId: input.sessionId || null,
+      cashierId: input.cashierId || null,
+      cashSessionId: input.cashSessionId || null,
       roomId: input.roomId || null,
       customerName: input.customerName || 'Client Anonyme',
       customerPhone: input.customerPhone || null,
-      status: ORDER_STATUS.NOUVELLE,
+      orderStatus: ORDER_OPERATION_STATUS.PENDING,
+      statusHistory: [
+        {
+          status: ORDER_OPERATION_STATUS.PENDING,
+          at: new Date(),
+          source: "order",
+        },
+      ],
+      sessionActive: normalizedOrderType === 'dine_in',
       paymentMethod: null,
-      paymentStatus: null,
+      paymentType: null,
+      paymentIntentStatus: "none",
+      paymentStatus: ORDER_PAYMENT_STATUS.UNPAID,
+      paymentCode: null,
       paidAt: null,
       subtotal,
+      discountAmount,
       deliveryFee: input.deliveryFee || 0,
       tipAmount: input.tipAmount || 0,
       totalAmount,
       deliveryAddress: input.deliveryAddress || null,
       total: totalAmount,
       items: input.items.map((item) => ({
+        id: (item as any).id || `${item.productId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         productId: item.productId,
         name: item.nameSnapshot,
+        status: (item as any).status || "pending",
+        createdAt: (item as any).createdAt || new Date(),
         unitPrice: item.priceSnapshot,
         quantity: item.quantity,
         total: item.priceSnapshot * item.quantity,
@@ -112,9 +148,11 @@ export class OrderService {
     for (const item of input.items) {
       const itemData = {
         ...item,
+        id: (item as any).id || `${item.productId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        status: (item as any).status || "pending",
+        createdAt: (item as any).createdAt || serverTimestamp(),
         orderId: orderRef.id,
         subtotal: item.priceSnapshot * item.quantity,
-        createdAt: serverTimestamp(),
       };
       await addDoc(
         collection(
@@ -145,8 +183,22 @@ export class OrderService {
       COLLECTION_NAMES.ORDERS,
       orderId
     );
+    const orderSnap = await getDoc(orderRef);
+    const orderData = orderSnap.data();
+
+    if (orderData?.sessionActive === false) {
+      throw new Error("Session terminee - action impossible");
+    }
+
+    const normalizedStatus = normalizeOperationStatus(status);
+
     await updateDoc(orderRef, {
-      status,
+      orderStatus: normalizedStatus,
+      statusHistory: arrayUnion({
+        status: toKitchenServedEventStatus(normalizedStatus),
+        at: new Date(),
+        source: "service",
+      }),
       updatedAt: serverTimestamp(),
     });
   }
@@ -171,7 +223,16 @@ export class OrderService {
       if (!orderDoc.exists()) throw new Error("Commande introuvable");
       
       const orderData = orderDoc.data();
-      if (orderData.paymentStatus === PAYMENT_STATUS.VALIDATED) {
+      if (orderData.sessionActive === false) {
+        throw new Error("Session terminee - action impossible");
+      }
+
+      if (
+        orderData.paymentStatus === "paid" ||
+        orderData.paymentStatus === "paye" ||
+        orderData.paymentStatus === "verified" ||
+        orderData.paymentStatus === PAYMENT_STATUS.VALIDATED
+      ) {
         throw new Error("Cette commande a déjà été payée");
       }
       const paymentMethod = normalizePaymentMethod(method);
@@ -182,8 +243,8 @@ export class OrderService {
       transaction.update(orderRef, {
         paymentMethod,
         paymentStatus,
-        status: paymentStatus === PAYMENT_STATUS.VALIDATED ? ORDER_STATUS.PAYEE : orderData.status,
-        paidAt: paymentStatus === PAYMENT_STATUS.VALIDATED ? serverTimestamp() : null,
+        paymentType: paymentMethod === "cash" ? "cash" : "mobile",
+        paidAt: paymentStatus === "paid" ? serverTimestamp() : null,
         updatedAt: serverTimestamp(),
       });
     });

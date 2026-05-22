@@ -16,10 +16,12 @@ import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { usePlatform } from '@/contexts/platform-context';
 
 export default function PlatformDashboard() {
   const db = useFirestore();
   const router = useRouter();
+  const { settings } = usePlatform();
 
   const restaurantsQuery = useMemoFirebase(() => {
     return null;
@@ -41,7 +43,7 @@ export default function PlatformDashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-4xl font-black italic uppercase tracking-tighter text-primary">Administration SaaS</h1>
-          <p className="text-muted-foreground font-medium">Contrôle global du réseau GastronomeAI.</p>
+          <p className="text-muted-foreground font-medium">Contrôle global du réseau {settings.name}.</p>
         </div>
         <Button onClick={() => router.push('/platform/restaurants/new')} className="shadow-xl">
           <Plus className="mr-2 h-4 w-4" /> Nouveau Restaurant

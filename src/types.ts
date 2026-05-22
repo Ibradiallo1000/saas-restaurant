@@ -1,4 +1,9 @@
 import type { Timestamp } from "firebase/firestore"
+import type {
+  KitchenLifecycleStatus,
+  OrderItemStatus,
+  OrderPaymentLifecycleStatus,
+} from "@/lib/order-lifecycle"
 import { ORDER_SOURCE, ORDER_STATUS, ORDER_TYPE, POS_SESSION_STATUS, RESTAURANT_ROLES, SUBSCRIPTION_STATUS } from "@/lib/constants"
 
 export type RestaurantStatus = "pending" | "active" | "suspended"
@@ -94,6 +99,7 @@ export interface ErrorLog {
 export interface PlatformSettings {
   name: string
   logoUrl: string
+  faviconUrl: string
   primaryColor: string
   secondaryColor: string
   supportEmail: string
@@ -163,7 +169,10 @@ export interface Product {
 }
 
 export interface OrderItemSnapshot {
+  id?: string
   productId: string
+  status?: OrderItemStatus | string | null
+  createdAt?: Timestamp | Date | null
   name: string
   price: number
   nameSnapshot: string
@@ -202,7 +211,8 @@ export interface RestaurantOrder {
   total: number
   totalAmount?: number
   status: "nouvelle" | "preparation" | "prete" | "servie" | "payee"
-  paymentStatus?: "pending" | "validated" | null
+  kitchenStatus?: KitchenLifecycleStatus | null
+  paymentStatus?: "pending" | "validated" | OrderPaymentLifecycleStatus | null
   paymentMethod?: "cash" | "mobile" | null
   createdAt: Timestamp
   updatedAt?: Timestamp

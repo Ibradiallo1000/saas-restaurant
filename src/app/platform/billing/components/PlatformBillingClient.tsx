@@ -183,7 +183,7 @@ export default function BillingAdminPage() {
 
         <CardContent className="space-y-3">
           {plans?.map(plan => (
-            <div key={plan.id} className="p-4 bg-white/10 rounded-xl">
+            <div key={plan.id} className="p-4 bg-background/10 rounded-xl">
 
               <div className="flex justify-between">
                 <span>{plan.name}</span>

@@ -1,262 +1,277 @@
 "use client"
 
 import * as React from "react"
-import { collection, doc, limit, orderBy, query, serverTimestamp, updateDoc, where } from "firebase/firestore"
-import { ChefHat } from "lucide-react"
+import { arrayUnion, doc, serverTimestamp, updateDoc } from "firebase/firestore"
+import { signOut } from "firebase/auth"
+import { useRouter } from "next/navigation"
+import { ChefHat, LogOut } from "lucide-react"
 
-import { FilterTabs, PageHeader } from "@/design-system/components"
-import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
-import { normalizeOrderStatus } from "@/lib/order-status"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { useRestaurant } from "@/design-system/context/RestaurantContext"
+import { useTenant } from "@/design-system/context/TenantProvider"
+import { useAuth, useFirestore } from "@/firebase"
+import { useToast } from "@/hooks/use-toast"
+import {
+  ORDER_OPERATION_STATUS,
+  type OrderOperationStatus,
+  itemStatusFromOperationStatus,
+  normalizeOperationStatus,
+  normalizeOrderItemStatus,
+  normalizeOrderType,
+  toKitchenServedEventStatus,
+} from "@/lib/order-lifecycle"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
-import type { RestaurantOrder, KitchenStatus } from "@/modules/restaurant/types"
-import type {
-  RestaurantTableRecord,
-  TableSessionRecord,
-} from "@/services/table-session.service"
-import { KitchenOrderCard } from "./KitchenOrderCard"
-
-type KitchenFilter = "all" | KitchenStatus
+import { cn } from "@/lib/utils"
+import { KitchenOrderCard } from "@/modules/kitchen/KitchenOrderCard"
+import type { RestaurantOrder } from "@/modules/restaurant/types"
+import { playNewOrderNotificationSound } from "@/services/notification-sound.service"
 
 type KitchenBoardProps = {
   orders: RestaurantOrder[]
   restaurantId: string
 }
 
-const FILTERS: Array<{
-  value: KitchenFilter
+type KitchenColumnStatus =
+  | typeof ORDER_OPERATION_STATUS.PENDING
+  | typeof ORDER_OPERATION_STATUS.IN_PREPARATION
+  | typeof ORDER_OPERATION_STATUS.READY
+  | typeof ORDER_OPERATION_STATUS.SERVED
+
+const KITCHEN_COLUMNS: Array<{
+  status: KitchenColumnStatus
   title: string
+  accent: string
 }> = [
-  { value: "all", title: "Tous" },
-  { value: "nouvelle", title: "En attente" },
-  { value: "preparation", title: "En préparation" },
-  { value: "prete", title: "Prêtes" },
-  { value: "servie", title: "Servies" },
-  { value: "payee", title: "Payées" },
+  { status: ORDER_OPERATION_STATUS.PENDING, title: "EN ATTENTE", accent: "border-t-orange-500" },
+  { status: ORDER_OPERATION_STATUS.IN_PREPARATION, title: "EN PR\u00c9PARATION", accent: "border-t-orange-500" },
+  { status: ORDER_OPERATION_STATUS.READY, title: "PR\u00caTES", accent: "border-t-orange-500" },
+  { status: ORDER_OPERATION_STATUS.SERVED, title: "SERVIES", accent: "border-t-orange-500" },
 ]
 
 export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
   const db = useFirestore()
-  const previousSnapshotRef = React.useRef<Map<string, RestaurantOrder["status"]>>(
+  const auth = useAuth()
+  const router = useRouter()
+  const { restaurant } = useRestaurant()
+  const { user } = useTenant()
+  const { toast } = useToast()
+  const previousSnapshotRef = React.useRef<Map<string, string | null | undefined>>(
     new Map()
   )
-  const hasInitializedRef = React.useRef(false)
-  const [activeFilter, setActiveFilter] = React.useState<KitchenFilter>("all")
-  const tablesQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return query(
-      collection(db, "restaurants", restaurantId, "tables"),
-      orderBy("createdAt", "asc")
-    )
-  }, [db, restaurantId])
-  const { data: tables } = useCollection<RestaurantTableRecord>(tablesQuery)
-  const tablesById = React.useMemo(() => {
-    return new Map((tables || []).map((table) => [table.id, table]))
-  }, [tables])
-  const sessionsQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return query(
-      collection(db, "restaurants", restaurantId, "tableSessions"),
-      where("status", "==", "active"),
-      orderBy("startedAt", "desc"),
-      limit(50)
-    )
-  }, [db, restaurantId])
-  const { data: sessions } = useCollection<TableSessionRecord>(sessionsQuery)
-  const sessionsById = React.useMemo(() => {
-    return new Map((sessions || []).map((session) => [session.id, session]))
-  }, [sessions])
+  const previousItemCountsRef = React.useRef<Map<string, number>>(new Map())
+  const kitchenAlertedOrderIdsRef = React.useRef<Set<string>>(new Set())
 
-  // Normaliser les commandes avec un statut cuisine unifié
-  const normalizedOrders = React.useMemo(() => {
-    return orders.map(order => ({
-      ...order,
-      kitchenStatus: normalizeOrderStatus(order.status)
-    }))
+  const handleLogout = React.useCallback(async () => {
+    await signOut(auth)
+    router.push("/login")
+  }, [auth, router])
+
+  const kitchenOrders = React.useMemo(() => {
+    return orders
+      .sort((a, b) => {
+        const priorityDiff = getKitchenQueuePriority(a) - getKitchenQueuePriority(b)
+
+        if (priorityDiff !== 0) return priorityDiff
+
+        return getCreatedAtMs(a) - getCreatedAtMs(b)
+      })
   }, [orders])
 
-  const sortedOrders = React.useMemo(() => {
-    return [...normalizedOrders].sort((a, b) => getCreatedAtMs(a) - getCreatedAtMs(b))
-  }, [normalizedOrders])
-
-  const visibleOrders = React.useMemo(() => {
-    if (activeFilter === "all") return sortedOrders
-    return sortedOrders.filter((order) => order.kitchenStatus === activeFilter)
-  }, [activeFilter, sortedOrders])
-
-  const counts = React.useMemo(() => {
-    return sortedOrders.reduce<Record<KitchenFilter, number>>(
-      (acc, order) => {
-        acc.all += 1
-        acc[order.kitchenStatus] += 1
-        return acc
-      },
-      {
-        all: 0,
-        nouvelle: 0,
-        preparation: 0,
-        prete: 0,
-        servie: 0,
-        payee: 0,
-      }
-    )
-  }, [sortedOrders])
-
-  const groupedVisibleOrders = React.useMemo(() => {
-    const groups = new Map<
-      string,
-      {
-        key: string
-        tableName: string
-        zoneName: string
-        startedAt: unknown
-        totalAmount: number
-        orders: typeof visibleOrders
-      }
-    >()
-
-    for (const order of visibleOrders) {
-      const key = order.sessionId || order.id
-      const table = order.tableId ? tablesById.get(order.tableId) : null
-      const session = order.sessionId ? sessionsById.get(order.sessionId) : null
-      const group = groups.get(key)
-
-      if (group) {
-        group.orders.push(order)
-        group.totalAmount += Number(order.total || 0)
-        continue
+  const groupedOrders = React.useMemo(() => {
+      const groups: Record<KitchenColumnStatus, RestaurantOrder[]> = {
+        pending: [],
+        preparing: [],
+        ready: [],
+        served: [],
       }
 
-      groups.set(key, {
-        key,
-        tableName: table?.name || order.table || order.tableId || "A emporter",
-        zoneName: table?.zoneId || order.zoneId || "Zone non definie",
-        startedAt: session?.startedAt || order.createdAt,
-        totalAmount: Number(order.total || 0),
-        orders: [order],
-      })
-    }
+    kitchenOrders.forEach((order) => {
+      const kitchenStatus = normalizeOperationStatus(order.orderStatus)
 
-    return Array.from(groups.values())
-  }, [sessionsById, tablesById, visibleOrders])
+      if (kitchenStatus !== ORDER_OPERATION_STATUS.COMPLETED) {
+        const columnStatus =
+          kitchenStatus === ORDER_OPERATION_STATUS.PICKED_UP
+            ? ORDER_OPERATION_STATUS.SERVED
+            : kitchenStatus
+        groups[columnStatus].push(order)
+      }
+    })
+
+    return groups
+  }, [kitchenOrders])
 
   React.useEffect(() => {
-    const previousSnapshot = previousSnapshotRef.current
-    const currentSnapshot = new Map(
-      orders.map((order) => [order.id, order.status])
-    )
+    if (!kitchenOrders.length) return
 
-    if (hasInitializedRef.current) {
-      const hasNewOrder = orders.some(
-        (order) => 
-          normalizeOrderStatus(order.status) === "nouvelle" && 
-          !previousSnapshot.has(order.id)
-      )
-      const hasReadyOrder = orders.some(
-        (order) =>
-          normalizeOrderStatus(order.status) === "prete" && 
-          previousSnapshot.get(order.id) !== order.status
-      )
+    const previous = previousSnapshotRef.current
+    const previousItemCounts = previousItemCountsRef.current
 
-      if (hasNewOrder || hasReadyOrder) {
-        playKitchenSound()
+    kitchenOrders.forEach((order) => {
+      const currentPaymentStatus = getOrderPaymentStatus(order)
+      const previousPaymentStatus = previous.get(order.id)
+      
+      const currentItemsCount = order.items?.length || 0
+      const previousItemsCount = previousItemCounts.get(order.id)
+      
+      const shouldAlertKitchen =
+        previous.has(order.id) &&
+        normalizeOrderType(order.orderType) !== "dine_in" &&
+        previousPaymentStatus !== "verified" &&
+        currentPaymentStatus === "verified" &&
+        !kitchenAlertedOrderIdsRef.current.has(order.id)
+
+      if (shouldAlertKitchen) {
+        kitchenAlertedOrderIdsRef.current.add(order.id)
+        triggerKitchenAlert(order, toast)
       }
-    } else {
-      hasInitializedRef.current = true
-    }
 
-    previousSnapshotRef.current = currentSnapshot
-  }, [orders])
+      if (previousItemsCount !== undefined && currentItemsCount > previousItemsCount) {
+        triggerKitchenAlert(order, toast, "Nouvel article ajouté", "Un ou plusieurs articles ont été ajoutés à cette commande.")
+      }
 
-  const updateStatus = async (orderId: string, newKitchenStatus: KitchenStatus) => {
-    await updateDoc(doc(restaurantOrdersRef(db, restaurantId), orderId), {
-      status: newKitchenStatus,
+      previous.set(order.id, currentPaymentStatus)
+      previousItemCounts.set(order.id, currentItemsCount)
+    })
+  }, [kitchenOrders, toast])
+
+  const updateStatus = async (orderId: string, newOrderStatus: OrderOperationStatus) => {
+    if (!db) return
+    const order = orders.find((currentOrder) => currentOrder.id === orderId)
+    if (!order) return
+
+    const currentStatus = normalizeOperationStatus(order.orderStatus)
+    const nextItemStatus = itemStatusFromOperationStatus(newOrderStatus)
+    const nextItems = (order.items || []).map((item) => {
+      const itemStatus = normalizeOrderItemStatus((item as any).status ?? order.orderStatus)
+
+      if (itemStatus !== itemStatusFromOperationStatus(currentStatus)) {
+        return item
+      }
+
+      return {
+        ...item,
+        status: nextItemStatus,
+        ...(nextItemStatus === "served" ? { servedAt: new Date() } : {}),
+      }
+    })
+
+    const orderRef = doc(restaurantOrdersRef(db, restaurantId), orderId)
+    const historyStatus = toKitchenServedEventStatus(newOrderStatus)
+    await updateDoc(orderRef, {
+      orderStatus: newOrderStatus,
+      statusHistory: arrayUnion({
+        status: historyStatus,
+        at: new Date(),
+        source: "kitchen",
+      }),
+      items: nextItems,
       updatedAt: serverTimestamp(),
     })
   }
 
   return (
-    <main className="space-y-8 pb-20 animate-in fade-in duration-500">
-      <div className="space-y-6">
-        <PageHeader
-          icon={ChefHat}
-          title="Cuisine"
-          subtitle="Commandes temps réel et préparation en salle."
-          action={
-            <span
-              className="rounded-xl px-4 py-2 text-sm font-black uppercase shadow-sm"
-              style={{
-                backgroundColor: "color-mix(in srgb, var(--color-primary) 10%, white)",
-                color: "var(--color-primary)",
-              }}
-            >
-              {orders.length} commande(s)
-            </span>
-          }
-        />
-
-        <FilterTabs
-          tabs={FILTERS.map((filter) => ({
-            value: filter.value,
-            label: filter.title,
-            count: counts[filter.value as KitchenFilter],
-          }))}
-          value={activeFilter}
-          onChange={(value) => setActiveFilter(value as KitchenFilter)}
-        />
-
-        {visibleOrders.length === 0 ? (
-          <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-dashed bg-white text-center shadow-sm">
-            <div>
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-xl">
-                --
-              </div>
-              <p className="text-base font-black text-slate-500">
-                Aucune commande
-              </p>
+    <main className="flex h-screen min-h-screen flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex h-16 shrink-0 items-center justify-between bg-primary px-6 text-white">
+        {/* LEFT */}
+        <div className="flex items-center gap-3">
+          {restaurant?.logoUrl ? (
+            <img
+              src={restaurant.logoUrl}
+              alt={restaurant?.name || "Restaurant"}
+              className="h-10 w-10 rounded-lg object-cover"
+            />
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/15 text-white ring-1 ring-white/20">
+              <ChefHat className="h-5 w-5" />
             </div>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black">
+              {restaurant?.name || "Restaurant"}
+            </p>
+            <p className="text-xs font-bold text-white/70 uppercase tracking-wide">
+              CUISINE
+            </p>
           </div>
-        ) : (
-          <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {groupedVisibleOrders.map((group) => (
-              <div key={group.key} className="space-y-3 rounded-xl border bg-white p-3 shadow-sm">
-                <div className="flex items-center justify-between gap-3 border-b pb-2">
-                  <div>
-                    <h2 className="text-base font-black">{group.tableName}</h2>
-                    <p className="text-xs font-semibold text-muted-foreground">
-                      {group.zoneName} - session {group.key.slice(-6)}
-                    </p>
-                    <p className="text-xs font-semibold text-muted-foreground">
-                      Debut {formatSessionTime(group.startedAt)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-black text-primary">
-                      {group.orders.length} commande(s)
-                    </span>
-                    <p className="mt-2 text-sm font-black text-primary">
-                      {group.totalAmount.toLocaleString()} FCFA
-                    </p>
-                  </div>
+        </div>
+
+        {/* RIGHT */}
+        <div className="flex items-center gap-4">
+          <div className="hidden items-center gap-2 rounded-full border border-white/30 bg-white/15 px-3 py-1.5 text-xs font-black uppercase text-white sm:flex">
+            <span className="h-2 w-2 rounded-full bg-emerald-300" />
+            service actif
+          </div>
+
+          {/* THEME */}
+          <div className="[&_button]:text-white [&_button:hover]:bg-white/15 [&_button:hover]:text-white">
+            <ThemeToggle />
+          </div>
+
+          {/* USER */}
+          <div className="hidden text-right sm:block">
+            <p className="text-sm font-bold">{user?.displayName || user?.email?.split("@")[0] || "Cuisine"}</p>
+            <p className="text-xs text-white/70">Chef</p>
+          </div>
+
+          {/* LOGOUT */}
+          <button
+            onClick={handleLogout}
+            className="rounded-md p-2 text-white hover:bg-white/15 transition-colors"
+          >
+            <LogOut size={16} />
+          </button>
+        </div>
+      </header>
+
+      <section className="min-h-0 flex-1 overflow-hidden p-3">
+        <div className="grid h-full min-h-0 grid-cols-4 gap-3">
+          {KITCHEN_COLUMNS.map((column) => {
+            const columnOrders = groupedOrders[column.status]
+
+            return (
+              <section
+                key={column.status}
+                className={cn(
+                  "flex min-h-0 flex-col overflow-hidden rounded-xl border border-border border-t-4 bg-card text-card-foreground",
+                  column.accent
+                )}
+              >
+                <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
+                  <h2 className="text-xs font-black uppercase tracking-wide text-foreground">
+                    {column.title}
+                  </h2>
+                  <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-black text-primary">
+                    {columnOrders.length}
+                  </span>
+                </header>
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                  {columnOrders.length === 0 ? (
+                    <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border text-center text-xs font-semibold text-muted-foreground">
+                      Aucune commande
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2">
+                      {columnOrders.map((order) => (
+                        <KitchenOrderCard
+                          key={order.id}
+                          order={order}
+                          onUpdateStatus={updateStatus}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="grid gap-3">
-                  {group.orders.map((order) => (
-                    <KitchenOrderCard
-                      key={order.id}
-                      order={order}
-                      onUpdateStatus={updateStatus}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </section>
-        )}
-      </div>
+              </section>
+            )
+          })}
+        </div>
+      </section>
     </main>
   )
 }
 
-function getCreatedAtMs(order: RestaurantOrder & { kitchenStatus?: string }) {
+function getCreatedAtMs(order: RestaurantOrder) {
   return (
     order.createdAt?.toMillis?.() ??
     order.createdAt?.toDate?.().getTime?.() ??
@@ -264,75 +279,32 @@ function getCreatedAtMs(order: RestaurantOrder & { kitchenStatus?: string }) {
   )
 }
 
-function formatSessionTime(value: unknown) {
-  const date =
-    value &&
-    typeof value === "object" &&
-    "toDate" in value &&
-    typeof value.toDate === "function"
-      ? value.toDate()
-      : null
+function getKitchenQueuePriority(order: RestaurantOrder) {
+  const paymentStatus = (order as { paymentStatus?: string | null }).paymentStatus
+  const isDineIn = normalizeOrderType(order.orderType) === "dine_in"
+  const isVerified = paymentStatus === "verified"
 
-  if (!date) return "--:--"
+  if (!isDineIn && isVerified) return 0
+  if (isDineIn) return 1
 
-  return new Intl.DateTimeFormat("fr-FR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date)
+  return 2
 }
 
-function playKitchenSound() {
-  if (typeof window === "undefined") return
+function getOrderPaymentStatus(order: RestaurantOrder) {
+  return (order as { paymentStatus?: string | null }).paymentStatus ?? null
+}
 
-  const audio = new Audio(createBeepDataUrl())
-  audio.volume = 0.65
-  void audio.play().catch(() => {
-    // Browsers can block audio until the first user interaction.
+
+
+function triggerKitchenAlert(
+  order: RestaurantOrder,
+  toast: ReturnType<typeof useToast>["toast"],
+  title = "Commande prete pour preparation",
+  description = `#${order.id.slice(-6).toUpperCase()} est payee et debloquee.`
+) {
+  playNewOrderNotificationSound()
+  toast({
+    title,
+    description,
   })
-}
-
-function createBeepDataUrl() {
-  const sampleRate = 8000
-  const duration = 0.22
-  const sampleCount = Math.floor(sampleRate * duration)
-  const headerSize = 44
-  const buffer = new ArrayBuffer(headerSize + sampleCount * 2)
-  const view = new DataView(buffer)
-
-  writeString(view, 0, "RIFF")
-  view.setUint32(4, 36 + sampleCount * 2, true)
-  writeString(view, 8, "WAVE")
-  writeString(view, 12, "fmt ")
-  view.setUint32(16, 16, true)
-  view.setUint16(20, 1, true)
-  view.setUint16(22, 1, true)
-  view.setUint32(24, sampleRate, true)
-  view.setUint32(28, sampleRate * 2, true)
-  view.setUint16(32, 2, true)
-  view.setUint16(34, 16, true)
-  writeString(view, 36, "data")
-  view.setUint32(40, sampleCount * 2, true)
-
-  for (let i = 0; i < sampleCount; i += 1) {
-    const tone =
-      Math.sin((2 * Math.PI * 880 * i) / sampleRate) * 0.6 +
-      Math.sin((2 * Math.PI * 1320 * i) / sampleRate) * 0.25
-    const fade = 1 - i / sampleCount
-    view.setInt16(headerSize + i * 2, tone * fade * 32767, true)
-  }
-
-  const bytes = new Uint8Array(buffer)
-  let binary = ""
-
-  for (let i = 0; i < bytes.length; i += 1) {
-    binary += String.fromCharCode(bytes[i])
-  }
-
-  return `data:audio/wav;base64,${window.btoa(binary)}`
-}
-
-function writeString(view: DataView, offset: number, value: string) {
-  for (let i = 0; i < value.length; i += 1) {
-    view.setUint8(offset + i, value.charCodeAt(i))
-  }
 }

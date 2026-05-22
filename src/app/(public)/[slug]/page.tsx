@@ -5,10 +5,18 @@ export default async function Page({
   searchParams,
 }: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ t?: string }>
+  searchParams: Promise<{ t?: string; table?: string; sessionId?: string; mode?: string; orderId?: string }>
 }) {
   const { slug } = await params
-  const { t } = await searchParams
+  const { t, table, sessionId, mode, orderId } = await searchParams
 
-  return <PublicPage slug={slug} tableId={t ?? null} />
+  return (
+    <PublicPage
+      slug={slug}
+      tableId={t ?? table ?? null}
+      sessionId={sessionId ?? null}
+      mode={mode ?? null}
+      orderId={orderId ?? null}
+    />
+  )
 }

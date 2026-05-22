@@ -12,15 +12,13 @@ import {
   where, 
   getDocs, 
   orderBy, 
-  Timestamp,
-  limit
+  Timestamp
 } from 'firebase/firestore';
-import { COLLECTION_NAMES, PAYMENT_STATUS, ORDER_STATUS } from '@/lib/constants';
+import { COLLECTION_NAMES } from '@/lib/constants';
 import { normalizePaymentMethod } from '@/lib/order-payment';
-import { normalizeOrderStatus } from '@/lib/order-status';
+import { ORDER_OPERATION_STATUS, getOrderStatus, isOrderPaid } from '@/lib/order-lifecycle';
 import { startOfDay, endOfDay, startOfWeek, startOfMonth, subDays, format, subWeeks, subMonths } from 'date-fns';
 
-const DASHBOARD_QUERY_LIMIT = 40;
 const ANALYTICS_CACHE_TTL_MS = 30_000;
 const analyticsCache = new Map<string, { data: unknown; timestamp: number }>();
 
@@ -93,10 +91,8 @@ export class AnalyticsService {
     // Requête principale filtrée par restaurant et statut payé
     const mainQuery = query(
       ordersRef,
-      where('paymentStatus', '==', PAYMENT_STATUS.VALIDATED),
       where('createdAt', '>=', Timestamp.fromDate(lastMonthStart)),
-      orderBy('createdAt', 'desc'),
-      limit(DASHBOARD_QUERY_LIMIT)
+      orderBy('createdAt', 'desc')
     );
 
     const snapshot = await getDocs(mainQuery);
@@ -113,9 +109,12 @@ export class AnalyticsService {
     // Agrégation manuelle des données pour optimiser les lectures Firestore
     snapshot.forEach(doc => {
       const data = doc.data();
-      const amount = data.totalAmount || 0;
+      const amount = data.total || data.totalAmount || 0;
       const date = data.createdAt?.toDate();
       const method = normalizePaymentMethod(data.paymentMethod);
+      const paid = isOrderPaid(data);
+
+      if (!date || !paid) return;
 
       if (date >= todayStart) {
         stats.today += amount;
@@ -133,13 +132,14 @@ export class AnalyticsService {
       if (date >= monthStart) {
         stats.thisMonth += amount;
         if (method === 'cash') stats.cash += amount;
-        if (method === 'mobile') stats.mm += amount;
+        if (method && method !== 'cash') stats.mm += amount;
       } else if (date >= lastMonthStart && date < monthStart) {
         stats.lastMonth += amount;
       }
 
       // Calcul du temps de préparation moyen
-      if (normalizeOrderStatus(data.status) === ORDER_STATUS.SERVIE || normalizeOrderStatus(data.status) === ORDER_STATUS.PAYEE) {
+      const orderStatus = getOrderStatus(data);
+      if (orderStatus === ORDER_OPERATION_STATUS.SERVED || orderStatus === ORDER_OPERATION_STATUS.COMPLETED) {
         const start = data.createdAt?.toDate();
         const updated = data.updatedAt?.toDate();
         if (start && updated) {
@@ -155,16 +155,18 @@ export class AnalyticsService {
     };
 
     // Récupération des commandes actives
-    const activeQuery = query(
-      ordersRef,
-      where('status', 'in', [ORDER_STATUS.NOUVELLE, ORDER_STATUS.PREPARATION, ORDER_STATUS.PRETE]),
-      limit(DASHBOARD_QUERY_LIMIT)
-    );
-    const activeSnapshot = await getDocs(activeQuery);
+    const activeCount = snapshot.docs.filter((orderDoc) => {
+      const status = getOrderStatus(orderDoc.data());
+      return [
+        ORDER_OPERATION_STATUS.PENDING,
+        ORDER_OPERATION_STATUS.IN_PREPARATION,
+        ORDER_OPERATION_STATUS.READY,
+      ].includes(status as any);
+    }).length;
 
     // Analyse des stocks bas
     const inventoryRef = collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.INVENTORY);
-    const lowStockSnapshot = await getDocs(query(inventoryRef, limit(DASHBOARD_QUERY_LIMIT)));
+    const lowStockSnapshot = await getDocs(query(inventoryRef));
     const lowStockCount = lowStockSnapshot.docs.filter(d => d.data().quantity <= d.data().threshold).length;
 
     return {
@@ -175,7 +177,7 @@ export class AnalyticsService {
         breakdown: { cash: stats.cash, mobileMoney: stats.mm }
       },
       orders: {
-        active: activeSnapshot.size,
+        active: activeCount,
         completedToday: stats.completedToday,
         avgPrepTime: stats.prepCount > 0 ? Math.round(stats.prepTime / stats.prepCount) : 0
       },
@@ -201,18 +203,18 @@ export class AnalyticsService {
     );
     const q = query(
       ordersRef,
-      where('paymentStatus', '==', PAYMENT_STATUS.VALIDATED),
       where('createdAt', '>=', Timestamp.fromDate(startDate)),
-      orderBy('createdAt', 'asc'),
-      limit(DASHBOARD_QUERY_LIMIT)
+      orderBy('createdAt', 'asc')
     );
 
     const snapshot = await getDocs(q);
     const trendMap: Record<string, number> = {};
 
     snapshot.forEach(doc => {
-      const date = format(doc.data().createdAt.toDate(), 'dd/MM');
-      trendMap[date] = (trendMap[date] || 0) + (doc.data().totalAmount || 0);
+      const data = doc.data();
+      if (!isOrderPaid(data)) return;
+      const date = format(data.createdAt.toDate(), 'dd/MM');
+      trendMap[date] = (trendMap[date] || 0) + (data.total || data.totalAmount || 0);
     });
 
     return Object.entries(trendMap).map(([name, total]) => ({ name, total }));

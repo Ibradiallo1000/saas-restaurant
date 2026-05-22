@@ -5,36 +5,44 @@ import { onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore"
 import { doc } from "firebase/firestore"
 import { useParams, useRouter } from "next/navigation"
 
+import { OrderStepper } from "@/components/OrderStepper"
+import { PaymentBadge } from "@/components/PaymentBadge"
 import { useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
-import { ORDER_STATUS, PAYMENT_STATUS } from "@/lib/constants"
-import { normalizeOrderStatus, type OrderStatus } from "@/lib/order-status"
+import { PAYMENT_STATUS } from "@/lib/constants"
+import {
+  ORDER_OPERATION_STATUS,
+  getOrderStatus,
+  normalizeOrderType,
+} from "@/lib/order-lifecycle"
 import { CartProvider, useCart } from "@/modules/public/cart/CartContext"
 import CartDrawer from "@/modules/public/components/CartDrawer"
 import Header from "@/modules/public/components/Header"
 import PaymentModal from "@/modules/public/components/PaymentModal"
+import QRPaymentModal from "@/modules/public/components/QRPaymentModal"
 import { PublicBottomNavigation } from "@/modules/public/PublicPage"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
 
-type TrackingStatus = OrderStatus
-
-const ORDER_STEPS: TrackingStatus[] = [
-  "nouvelle",
-  "preparation",
-  "prete",
-  "servie",
-  "payee",
-]
-
-const STATUS_LABELS: Record<TrackingStatus, string> = {
-  nouvelle: "Commande reçue",
-  preparation: "En préparation",
-  prete: "Prête",
-  servie: "Servie",
-  payee: "Payée",
-}
-
 const TRACKING_CARD_CLASS =
   "rounded-2xl bg-white p-5 text-slate-950 shadow ring-1 ring-slate-200/80"
+
+type ClientOrderType = "dine_in" | "pickup" | "delivery"
+type ClientStepKey = "pending" | "preparing" | "ready" | "served" | "picked_up"
+
+function getCurrentStepKey(order: RestaurantOrder, orderType: ClientOrderType): ClientStepKey {
+  const rawStatus = order.orderStatus
+
+  const orderStatus = getOrderStatus(order)
+  if (orderStatus === ORDER_OPERATION_STATUS.IN_PREPARATION) return "preparing"
+  if (orderStatus === ORDER_OPERATION_STATUS.READY) return "ready"
+
+  if (orderStatus === ORDER_OPERATION_STATUS.PICKED_UP) return "picked_up"
+
+  if (orderStatus === ORDER_OPERATION_STATUS.SERVED || orderStatus === ORDER_OPERATION_STATUS.COMPLETED) {
+    return orderType === "dine_in" ? "served" : "picked_up"
+  }
+
+  return "pending"
+}
 
 export default function ClientOrderTrackingPage() {
   return (
@@ -150,11 +158,25 @@ function ClientOrderTrackingContent() {
     )
   }
 
-  const normalizedStatus = normalizeTrackingStatus(order.status)
-  const activeIndex = ORDER_STEPS.indexOf(normalizedStatus)
-  const showPaymentSection = normalizedStatus === ORDER_STATUS.SERVIE && order.paymentMethod !== "cash"
-  const showCashMessage = normalizedStatus === ORDER_STATUS.SERVIE && order.paymentMethod === "cash"
-  const showMobilePendingMessage = normalizedStatus === ORDER_STATUS.NOUVELLE
+  const orderType = normalizeOrderType(order.orderType) as ClientOrderType
+  const isQrTableOrder = orderType === "dine_in" && (order.source === "qr_table" || order.source === "qr")
+  const currentStepKey = getCurrentStepKey(order, orderType)
+  const isProductionComplete =
+    currentStepKey === "served" ||
+    currentStepKey === "picked_up"
+  const showPaymentSection = !isQrTableOrder && isProductionComplete && order.paymentMethod !== "cash"
+  const showQrPaymentSection =
+    isQrTableOrder &&
+    currentStepKey === "served" &&
+    order.paymentStatus === "unpaid"
+  const showCashMessage =
+    isProductionComplete &&
+    order.paymentMethod === "cash" &&
+    order.paymentStatus !== "paid"
+  const orderWithPaymentVerification = order as RestaurantOrder & {
+    paymentIntentStatus?: string | null
+    paymentVerificationStatus?: string | null
+  }
   const paymentMethods = Array.isArray(restaurant?.settings?.paymentMethods)
     ? restaurant.settings.paymentMethods.filter((method: any) => method?.name && method?.code)
     : []
@@ -166,7 +188,13 @@ function ClientOrderTrackingContent() {
     try {
       await updateDoc(doc(db, "restaurants", restaurantId, "orders", order.id), {
         paymentMethod: "cash",
-        // Ne change pas le statut vers payee (sécurité)
+        paymentMethodCode: null,
+        paymentType: "cash",
+        paymentStatus: "pending_cash",
+        paymentIntentStatus: "pending",
+        needsCashCollection: true,
+        source: "qr_table",
+        // Ne change pas le statut de production.
         updatedAt: serverTimestamp(),
       })
     } catch (paymentError) {
@@ -184,8 +212,7 @@ function ClientOrderTrackingContent() {
     try {
       await updateDoc(doc(db, "restaurants", restaurantId, "orders", order.id), {
         paymentMethod: "mobile",
-        paymentStatus: PAYMENT_STATUS.PENDING,
-        status: ORDER_STATUS.NOUVELLE,
+        paymentStatus: "pending_mobile",
         updatedAt: serverTimestamp(),
       })
       setMobilePaymentOpen(false)
@@ -220,7 +247,7 @@ function ClientOrderTrackingContent() {
             Suivi commande
           </p>
           <h1 className="mt-1 text-2xl font-bold">
-            {STATUS_LABELS[normalizedStatus]}
+            Suivi de la commande
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">Commande #{order.id.slice(-6)}</p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -229,48 +256,7 @@ function ClientOrderTrackingContent() {
         </section>
 
         <section className={TRACKING_CARD_CLASS}>
-          <div className="space-y-4">
-            {ORDER_STEPS.map((status, index) => {
-              const isActive = index <= activeIndex
-              const isCurrent = status === normalizedStatus
-
-              return (
-                <div key={status} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <div
-                      className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
-                        isActive
-                          ? "bg-[var(--color-primary)] text-white"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {index + 1}
-                    </div>
-                    {index < ORDER_STEPS.length - 1 && (
-                      <div
-                        className={`h-8 w-0.5 ${
-                          index < activeIndex ? "bg-[var(--color-primary)]" : "bg-muted"
-                        }`}
-                      />
-                    )}
-                  </div>
-
-                  <div className="pt-1">
-                    <p
-                      className={`font-medium ${
-                        isActive ? "text-foreground" : "text-muted-foreground"
-                      }`}
-                    >
-                      {STATUS_LABELS[status]}
-                    </p>
-                    {isCurrent && (
-                      <p className="text-xs text-[var(--color-primary)]">Etape actuelle</p>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          <OrderStepper orderType={order.orderType} orderStatus={order.orderStatus} />
         </section>
 
         <section className={TRACKING_CARD_CLASS}>
@@ -330,23 +316,40 @@ function ClientOrderTrackingContent() {
           </section>
         )}
 
+        {showQrPaymentSection ? (
+          <section className={TRACKING_CARD_CLASS}>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-primary)]">
+                Paiement
+              </p>
+              <h2 className="text-xl font-black">Votre commande est servie</h2>
+              <p className="text-sm text-muted-foreground">
+                Vous pouvez maintenant choisir le mode de règlement.
+              </p>
+            </div>
+
+            <QRPaymentModal
+              open={showQrPaymentSection}
+              restaurantId={restaurantId || ""}
+              order={order}
+              onClose={() => {}}
+            />
+          </section>
+        ) : null}
+
         {showCashMessage && (
           <section className="rounded-2xl border-2 border-orange-200 bg-orange-50 p-5 text-slate-950 shadow">
             <h2 className="text-lg font-black text-orange-600 dark:text-orange-400">Règlement à la caisse</h2>
             <p className="mt-2 text-sm text-orange-700/80 dark:text-orange-300/80">
-              Veuillez vous diriger vers la caisse pour finaliser votre règlement de {order.total.toLocaleString()} FCFA.
+              Un serveur viendra à votre table pour encaisser votre commande de {order.total.toLocaleString()} FCFA.
             </p>
           </section>
         )}
 
-        {showMobilePendingMessage && (
-          <section className="rounded-2xl border-2 border-purple-200 bg-purple-50 p-5 text-slate-950 shadow">
-            <h2 className="text-lg font-black text-purple-600 dark:text-purple-400">Vérification en cours</h2>
-            <p className="mt-2 text-sm text-purple-700/80 dark:text-purple-300/80">
-              Votre paiement mobile est en cours de validation par la caisse.
-            </p>
-          </section>
-        )}
+        <PaymentBadge
+          paymentIntentStatus={orderWithPaymentVerification.paymentIntentStatus}
+          paymentVerificationStatus={orderWithPaymentVerification.paymentVerificationStatus}
+        />
 
         <PaymentModal
           open={mobilePaymentOpen}
@@ -355,6 +358,7 @@ function ClientOrderTrackingContent() {
           onClose={() => setMobilePaymentOpen(false)}
           onConfirm={handleMobilePayment}
         />
+
       </div>
     </PublicTrackingLayout>
   )
@@ -407,6 +411,3 @@ function PublicTrackingLayout({
   )
 }
 
-function normalizeTrackingStatus(status: RestaurantOrder["status"]): TrackingStatus {
-  return normalizeOrderStatus(status)
-}

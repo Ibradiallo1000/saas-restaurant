@@ -3,7 +3,7 @@
 import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
 import { FirebaseApp } from 'firebase/app';
 import { Firestore } from 'firebase/firestore';
-import { Auth, User, onAuthStateChanged } from 'firebase/auth';
+import { Auth, User, browserLocalPersistence, onAuthStateChanged, setPersistence } from 'firebase/auth';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener'
 
 interface FirebaseProviderProps {
@@ -67,7 +67,6 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     userError: null,
   });
 
-  // Effect to subscribe to Firebase auth state changes
   useEffect(() => {
     if (!auth) { // If no Auth service instance, cannot determine user state
       setUserAuthState({ user: null, isUserLoading: false, userError: new Error("Auth service not provided.") });
@@ -75,18 +74,36 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     }
 
     setUserAuthState({ user: null, isUserLoading: true, userError: null }); // Reset on auth instance change
+    let unsubscribe: (() => void) | null = null;
+    let cancelled = false;
 
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      (firebaseUser) => { // Auth state determined
-        setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: null });
-      },
-      (error) => { // Auth listener error
-        console.error("FirebaseProvider: onAuthStateChanged error:", error);
-        setUserAuthState({ user: null, isUserLoading: false, userError: error });
+    async function subscribeToAuth() {
+      try {
+        await setPersistence(auth, browserLocalPersistence);
+      } catch (error) {
+        console.error("FirebaseProvider: setPersistence error:", error);
       }
-    );
-    return () => unsubscribe(); // Cleanup
+
+      if (cancelled) return;
+
+      unsubscribe = onAuthStateChanged(
+        auth,
+        (firebaseUser) => { // Auth state determined
+          setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: null });
+        },
+        (error) => { // Auth listener error
+          console.error("FirebaseProvider: onAuthStateChanged error:", error);
+          setUserAuthState({ user: null, isUserLoading: false, userError: error });
+        }
+      );
+    }
+
+    void subscribeToAuth();
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, [auth]); // Depends on the auth instance
 
   // Memoize the context value
@@ -106,10 +123,18 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
   return (
     <FirebaseContext.Provider value={contextValue}>
       <FirebaseErrorListener />
-      {children}
+      {userAuthState.isUserLoading ? <AuthLoadingScreen /> : children}
     </FirebaseContext.Provider>
   );
 };
+
+function AuthLoadingScreen() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+    </div>
+  );
+}
 
 /**
  * Hook to access core Firebase services and user authentication state.

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { printCustomerReceipt, printKitchenTicket } from "@/lib/order-printing"
+import { getOrderStatus } from "@/lib/order-lifecycle"
 import {
   getOrderItemName,
   getOrderItemPrice,
@@ -24,7 +25,7 @@ export function OrderDetails({ order }: { order: RestaurantOrder }) {
               {getOrderTypeLabel(order.type)} - {getOrderLocationLabel(order)}
             </p>
           </div>
-          <Badge>{order.status}</Badge>
+          <Badge>{getOrderStatus(order)}</Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

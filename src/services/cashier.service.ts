@@ -1,122 +1,185 @@
-'use client';
+"use client"
 
-/**
- * @fileOverview Service gérant les sessions de caisse.
- * Assure la traçabilité des ouvertures, clôtures et validations par le management.
- */
-
-import { 
-  Firestore, 
-  doc, 
-  addDoc, 
-  collection, 
-  serverTimestamp, 
-  updateDoc,
-  query,
-  where,
+import {
+  Firestore,
+  addDoc,
+  collection,
+  doc,
   getDocs,
   limit,
-  orderBy
-} from 'firebase/firestore';
-import { COLLECTION_NAMES, SESSION_STATUS } from '@/lib/constants';
+  orderBy,
+  query,
+  runTransaction,
+  serverTimestamp,
+  where,
+} from "firebase/firestore"
+
+import { COLLECTION_NAMES } from "@/lib/constants"
+import { PaymentLedgerService } from "@/services/payment-ledger.service"
+
+export type CashSession = {
+  id: string
+  restaurantId: string
+  cashierId: string
+  status: "open" | "closed" | "pending_validation" | "validated" | "rejected"
+  openedAt: any
+  closedAt?: any
+  openingBalance: number
+  closingBalance?: number
+  closingCash?: number
+  closingMobileMoney?: number
+  declaredCash?: number
+  declaredMobileMoney?: number
+  declaredTotal?: number
+  cashDifference?: number
+  mobileMoneyDifference?: number
+  discrepancyAmount?: number
+  discrepancyStatus?: "balanced" | "pending_review" | "validated" | "investigate"
+  closeSnapshot?: Record<string, any>
+  totalCash: number
+  totalMobile: number
+  totalOrders: number
+  validatedByManager: boolean
+  validatedAt?: any
+  validatedBy?: string
+  depositCreated?: boolean
+}
+
+export type CashMovement = {
+  id: string
+  restaurantId: string
+  type: "deposit" | "expense" | "transfer"
+  amount: number
+  source: "session" | "manual"
+  sessionId?: string | null
+  reason?: string | null
+  category?: string | null
+  createdAt: any
+  createdBy: string
+}
 
 export class CashierService {
   constructor(private db: Firestore) {}
 
-  /**
-   * Ouvre une nouvelle session de caisse.
-   * État initial: 'opened'
-   */
-  async openShift(restaurantId: string, cashierId: string) {
-    const existing = await this.getCurrentSession(restaurantId, cashierId);
+  async openShift(restaurantId: string, cashierId: string, openingBalance = 0) {
+    const existing = await this.getCurrentSession(restaurantId, cashierId)
     if (existing) {
-      throw new Error("Une session est déjà ouverte pour ce caissier.");
+      throw new Error("Une session est deja ouverte pour ce caissier.")
     }
 
-    const sessionData = {
+    return addDoc(collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS), {
       restaurantId,
       cashierId,
+      status: "open",
       openedAt: serverTimestamp(),
-      status: SESSION_STATUS.OPENED,
+      closedAt: null,
+      openingBalance: Number(openingBalance || 0),
+      closingBalance: null,
       totalCash: 0,
-      totalMobileMoney: 0,
-      totalSales: 0,
-    };
-    return await addDoc(
-      collection(
-        this.db,
-        COLLECTION_NAMES.RESTAURANTS,
-        restaurantId,
-        COLLECTION_NAMES.CASHIER_SESSIONS
-      ),
-      sessionData
-    );
+      totalMobile: 0,
+      totalOrders: 0,
+      validatedByManager: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
   }
 
-  /**
-   * Clôture la session par le caissier.
-   * État: 'closed' (En attente de validation manager)
-   */
-  async closeShift(restaurantId: string, sessionId: string, totals: { cash: number, mobileMoney: number }) {
-    if (!restaurantId || !sessionId) return;
+  async closeShift(
+    restaurantId: string,
+    sessionId: string,
+    closingBalance:
+      | number
+      | {
+          declaredCash?: number
+          declaredMobileMoney?: number
+          closingBalance?: number
+          closedBy?: string
+        }
+  ) {
+    const ledger = new PaymentLedgerService(this.db)
+    const declared =
+      typeof closingBalance === "number"
+        ? { closingBalance }
+        : closingBalance
 
-    const sessionRef = doc(
-      this.db,
-      COLLECTION_NAMES.RESTAURANTS,
+    await ledger.snapshotSessionClose({
       restaurantId,
-      COLLECTION_NAMES.CASHIER_SESSIONS,
-      sessionId
-    );
-    await updateDoc(sessionRef, {
-      closedAt: serverTimestamp(),
-      totalCash: totals.cash,
-      totalMobileMoney: totals.mobileMoney,
-      totalSales: totals.cash + totals.mobileMoney,
-      status: SESSION_STATUS.CLOSED,
-    });
+      sessionId,
+      closedBy: declared.closedBy || sessionId,
+      closingBalance: declared.closingBalance,
+      declaredCash: declared.declaredCash,
+      declaredMobileMoney: declared.declaredMobileMoney,
+    })
   }
 
-  /**
-   * Validation de la session par un manager ou propriétaire.
-   * État final: 'validated'
-   */
   async validateShift(restaurantId: string, sessionId: string, validatorId: string) {
-    if (!restaurantId || !sessionId) return;
+    const sessionRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS, sessionId)
+    const movementRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_MOVEMENTS, `session-${sessionId}`)
 
-    const sessionRef = doc(
-      this.db,
-      COLLECTION_NAMES.RESTAURANTS,
-      restaurantId,
-      COLLECTION_NAMES.CASHIER_SESSIONS,
-      sessionId
-    );
-    await updateDoc(sessionRef, {
-      validatedAt: serverTimestamp(),
-      validatedBy: validatorId,
-      status: SESSION_STATUS.VALIDATED,
-    });
+    await runTransaction(this.db, async (transaction) => {
+      const sessionSnap = await transaction.get(sessionRef)
+      const movementSnap = await transaction.get(movementRef)
+      if (!sessionSnap.exists()) {
+        throw new Error("Session caisse introuvable.")
+      }
+
+      const session = sessionSnap.data()
+      if (session.validatedByManager || session.status === "validated") return
+
+      const amount = Number(
+        session.closeSnapshot?.systemTotal ??
+          session.closeSnapshot?.systemTotals?.total ??
+          Number(session.totalCash || 0) + Number(session.totalMobile || 0)
+      )
+
+      transaction.update(sessionRef, {
+        status: "validated",
+        validatedByManager: true,
+        validatedBy: validatorId,
+        validatedAt: serverTimestamp(),
+        depositCreated: true,
+        updatedAt: serverTimestamp(),
+      })
+
+      if (movementSnap.exists()) {
+        console.info("[finance] depot session deja existant", { sessionId, amount })
+        return
+      }
+
+      console.info("[finance] creation depot session", { sessionId, amount })
+      transaction.set(movementRef, {
+        restaurantId,
+        type: "deposit",
+        amount,
+        source: "session",
+        sessionId,
+        createdAt: serverTimestamp(),
+        createdBy: validatorId,
+        reason: "Validation manager de session caisse",
+        category: "session",
+      })
+    })
   }
 
-  /**
-   * Récupère la session active.
-   */
-  async getCurrentSession(restaurantId: string, cashierId: string) {
-    if (!restaurantId || !cashierId) return null;
+  async getCurrentSession(restaurantId: string, cashierId: string): Promise<CashSession | null> {
+    if (!restaurantId || !cashierId) return null
 
-    const q = query(
-      collection(
-        this.db,
-        COLLECTION_NAMES.RESTAURANTS,
-        restaurantId,
-        COLLECTION_NAMES.CASHIER_SESSIONS
-      ),
-      where('cashierId', '==', cashierId),
-      where('status', '==', SESSION_STATUS.OPENED),
-      orderBy('openedAt', 'desc'),
-      limit(1)
-    );
-    const snapshot = await getDocs(q);
-    if (snapshot.empty) return null;
-    return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+    const snapshot = await getDocs(
+      query(
+        collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS),
+        where("cashierId", "==", cashierId),
+        where("status", "==", "open"),
+        orderBy("openedAt", "desc"),
+        limit(1)
+      )
+    )
+
+    if (snapshot.empty) return null
+    return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as CashSession
+  }
+
+  async calculateSessionTotals(restaurantId: string, sessionId: string) {
+    const ledger = new PaymentLedgerService(this.db)
+    return ledger.aggregateSessionPayments(restaurantId, sessionId)
   }
 }

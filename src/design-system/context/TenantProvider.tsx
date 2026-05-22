@@ -31,9 +31,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading } = useUser()
   const uid = user?.uid ?? null
 
-  const [profile, setProfile] = React.useState<TenantProfile | null>(() => {
-    return uid ? globalCache.get(uid) ?? null : null
-  })
+  const [profile, setProfile] = React.useState<TenantProfile | null>(null)
 
   const [isLoading, setIsLoading] = React.useState(!isUserLoading && !!uid)
   const previousUidRef = React.useRef<string | null>(uid)
@@ -41,8 +39,9 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (previousUidRef.current === uid) return
 
+    globalCache.clear()
     previousUidRef.current = uid
-    setProfile(uid ? globalCache.get(uid) ?? null : null)
+    setProfile(null)
     setIsLoading(Boolean(uid && !isUserLoading))
   }, [uid, isUserLoading])
 
@@ -62,7 +61,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     const userDocRef = doc(db, COLLECTION_NAMES.USERS, uid)
 
     getDoc(userDocRef)
-      .then((docSnapshot) => {
+      .then(async (docSnapshot) => {
         if (cancelled) return
 
         if (docSnapshot.exists()) {

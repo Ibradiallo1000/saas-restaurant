@@ -3,6 +3,7 @@
 
 import { FirebaseProvider } from "@/firebase/provider"
 import { ThemeProvider } from "@/contexts/theme-context"
+import { PlatformProvider } from "@/contexts/platform-context"
 import { initializeApp, getApps, getApp } from 'firebase/app'
 import { getFirestore } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
@@ -29,9 +30,11 @@ export default function Providers({
 }) {
   return (
     <FirebaseProvider firebaseApp={app} firestore={firestore} auth={auth}>
-      <ThemeProvider>
-        {children}
-      </ThemeProvider>
+      <PlatformProvider>
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
+      </PlatformProvider>
     </FirebaseProvider>
   )
 }

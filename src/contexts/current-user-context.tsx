@@ -2,16 +2,10 @@
 
 import * as React from "react"
 import {
-  collectionGroup,
   doc,
-  documentId,
   getDoc,
-  getDocs,
-  limit,
-  query,
   serverTimestamp,
   updateDoc,
-  where,
 } from "firebase/firestore"
 
 import { useFirestore, useUser } from "@/firebase"
@@ -107,18 +101,12 @@ export function CurrentUserProvider({ children }: { children: React.ReactNode })
         const resolvedCompanyId = typeof rootUser?.companyId === "string" ? rootUser.companyId : null
         const resolvedRestaurantId =
           typeof rootUser?.restaurantId === "string" ? rootUser.restaurantId : null
-        const staffResolution =
-          resolvedCompanyId && resolvedRestaurantId
-            ? await getNestedRestaurantUser(db, resolvedCompanyId, resolvedRestaurantId, user.uid)
-            : await findNestedRestaurantUser(db, user.uid)
 
-        const companyId = resolvedCompanyId ?? staffResolution.companyId
-        const restaurantId = resolvedRestaurantId ?? staffResolution.restaurantId
-        const staffUser = staffResolution.staffUser ?? createFallbackStaffUser(user.uid, rootUser, user.email)
+        const companyId = resolvedCompanyId
+        const restaurantId = resolvedRestaurantId
+        const staffUser = createFallbackStaffUser(user.uid, rootUser, user.email)
         const roles = normalizeRoles(staffUser?.roles)
-        const storedRole = localStorage.getItem(`${ACTIVE_ROLE_STORAGE_KEY}:${user.uid}`)
-        const activeRole =
-          normalizeActiveRole(roles, storedRole) ?? normalizeActiveRole(roles, staffUser?.activeRole)
+        const activeRole = normalizeActiveRole(roles, rootUser?.role)
         const subscription = companyId ? await getCompanySubscription(db, companyId) : null
 
         if (cancelled) return
@@ -221,65 +209,6 @@ export function useCurrentUser() {
   return context
 }
 
-async function getNestedRestaurantUser(
-  db: NonNullable<ReturnType<typeof useFirestore>>,
-  companyId: string,
-  restaurantId: string,
-  userId: string
-) {
-  const userSnap = await getDoc(
-    doc(
-      db,
-      COLLECTION_NAMES.COMPANIES,
-      companyId,
-      COLLECTION_NAMES.RESTAURANTS,
-      restaurantId,
-      COLLECTION_NAMES.USERS,
-      userId
-    )
-  )
-
-  return {
-    companyId,
-    restaurantId,
-    staffUser: userSnap.exists() ? toRestaurantUser(userId, userSnap.data()) : null,
-  }
-}
-
-async function findNestedRestaurantUser(
-  db: NonNullable<ReturnType<typeof useFirestore>>,
-  userId: string
-) {
-  const staffQuery = query(collectionGroup(db, COLLECTION_NAMES.USERS), where(documentId(), "==", userId), limit(1))
-  const snapshot = await getDocs(staffQuery)
-
-  if (snapshot.empty) {
-    return {
-      companyId: null,
-      restaurantId: null,
-      staffUser: null,
-    }
-  }
-
-  const staffDoc = snapshot.docs[0]
-  const restaurantRef = staffDoc.ref.parent.parent
-  const companyRef = restaurantRef?.parent.parent
-
-  if (!restaurantRef || !companyRef) {
-    return {
-      companyId: null,
-      restaurantId: null,
-      staffUser: null,
-    }
-  }
-
-  return {
-    companyId: companyRef.id,
-    restaurantId: restaurantRef.id,
-    staffUser: toRestaurantUser(staffDoc.id, staffDoc.data()),
-  }
-}
-
 async function getCompanySubscription(
   db: NonNullable<ReturnType<typeof useFirestore>>,
   companyId: string
@@ -315,23 +244,6 @@ function createFallbackStaffUser(
   }
 }
 
-function toRestaurantUser(id: string, data: Record<string, any>): RestaurantUser {
-  const roles = normalizeRoles(data.roles)
-  const activeRole = normalizeActiveRole(roles, data.activeRole) ?? roles[0] ?? RESTAURANT_ROLES.MANAGER
-
-  return {
-    id,
-    name: data.name ?? "",
-    phone: data.phone ?? "",
-    email: data.email,
-    roles,
-    activeRole,
-    pinCode: data.pinCode,
-    isActive: data.isActive ?? true,
-    createdAt: data.createdAt,
-  }
-}
-
 function normalizeRoles(roles: unknown): RestaurantUserRole[] {
   if (!Array.isArray(roles)) return []
   return roles.filter((role): role is RestaurantUserRole =>
@@ -340,7 +252,6 @@ function normalizeRoles(roles: unknown): RestaurantUserRole[] {
 }
 
 function normalizeRootRole(role: unknown): RestaurantUserRole | null {
-  if (role === "staff") return RESTAURANT_ROLES.MANAGER
   if (Object.values(RESTAURANT_ROLES).includes(role as RestaurantUserRole)) return role as RestaurantUserRole
   return null
 }

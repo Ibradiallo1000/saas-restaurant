@@ -1,5 +1,5 @@
-import ManagerLazy from "./components/ManagerLazy"
+import { redirect } from "next/navigation"
 
 export default function ManagerPage() {
-  return <ManagerLazy />
+  redirect("/manager/dashboard")
 }

@@ -83,7 +83,7 @@ export default function ProductEditor({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl p-6 w-full max-w-lg"
+        className="bg-card rounded-xl p-6 w-full max-w-lg"
         onClick={(e) => e.stopPropagation()}
       >
         {/* HEADER */}

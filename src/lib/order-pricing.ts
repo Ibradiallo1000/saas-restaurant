@@ -1,4 +1,4 @@
-import type { SelectedCartOption } from "@/modules/restaurant/types"
+﻿import type { SelectedCartOption } from "@/modules/restaurant/types"
 
 export function getProductBasePrice(product: any) {
   const price = Number(product?.unitPrice ?? product?.basePrice ?? product?.price ?? 0)
@@ -41,7 +41,7 @@ export function recalculateConfiguredUnitPrice(
     if (!option?.required) return
 
     const hasSelection = selectedOptions.some(
-      (selectedOption) => selectedOption.optionName === option.name
+      (selectedOption) => normalizeOptionName(selectedOption.optionName) === normalizeOptionName(option.name)
     )
 
     if (!hasSelection) {
@@ -51,16 +51,20 @@ export function recalculateConfiguredUnitPrice(
 
   const optionsTotal = selectedOptions.reduce((sum, selectedOption) => {
     const option = productOptions.find(
-      (productOption: any) => productOption?.name === selectedOption.optionName
+      (productOption: any) => normalizeOptionName(productOption?.name) === normalizeOptionName(selectedOption.optionName)
     )
 
     if (!option) {
+      if (canTrustSelectedOptionPrice(selectedOption)) {
+        return sum + Number(selectedOption.price ?? 0)
+      }
+
       throw new Error(`Option inconnue: ${selectedOption.optionName}`)
     }
 
-    const choices = Array.isArray(option.choices) ? option.choices : []
+    const choices = getOptionChoices(option)
     const choice = choices.find(
-      (productChoice: any) => productChoice?.name === selectedOption.choiceName
+      (productChoice: any) => normalizeOptionName(productChoice?.name ?? productChoice?.label) === normalizeOptionName(selectedOption.choiceName)
     )
 
     if (!choice) {
@@ -71,4 +75,30 @@ export function recalculateConfiguredUnitPrice(
   }, 0)
 
   return Math.round(basePrice + optionsTotal)
+}
+
+function getOptionChoices(option: any) {
+  if (Array.isArray(option?.choices)) return option.choices
+  if (Array.isArray(option?.options)) return option.options
+  return []
+}
+
+function normalizeOptionName(value: string | null | undefined) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+}
+
+function isBaseSelection(selectedOption: SelectedCartOption) {
+  const optionName = normalizeOptionName(selectedOption.optionName)
+  return optionName === "taille" || optionName === "variante"
+}
+
+function isSupplementSelection(selectedOption: SelectedCartOption) {
+  const optionName = normalizeOptionName(selectedOption.optionName)
+  return optionName === "supplement" || optionName === "supplément" || optionName === "supplements" || optionName === "suppléments"
+}
+
+function canTrustSelectedOptionPrice(selectedOption: SelectedCartOption) {
+  return isBaseSelection(selectedOption) || isSupplementSelection(selectedOption)
 }

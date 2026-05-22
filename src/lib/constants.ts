@@ -122,6 +122,7 @@ export const PAYMENT_STATUS = {
 // ===============================
 
 export const SESSION_STATUS = {
+  OPEN: 'open',
   OPENED: 'opened',
   CLOSED: 'closed',
   VALIDATED: 'validated',
@@ -134,6 +135,8 @@ export const SESSION_STATUS = {
 
 export const COLLECTION_NAMES = {
   PLATFORM: 'platform',
+  PLATFORM_SETTINGS: 'platformSettings',
+  PLATFORM_MEDIA: 'platformMedia',
   PLATFORM_COUNTRIES: 'platformCountries',
   PLATFORM_PAYMENT_METHODS: 'platformPaymentMethods',
   PLATFORM_PAYMENT_VARIANTS: 'platformPaymentVariants',
@@ -151,6 +154,13 @@ export const COLLECTION_NAMES = {
   PRODUCTS: 'products',
   ORDERS: 'orders',
   ORDER_ITEMS: 'orderItems',
+  PAYMENTS: 'payments',
+  CASH_MOVEMENTS: 'cashMovements',
+  EXPENSES: 'expenses',
+  EXPENSE_LOGS: 'expenseLogs',
+  SUPPLIERS: 'suppliers',
+  SUPPLIER_PAYMENTS: 'supplierPayments',
+  INVENTORY_MOVEMENTS: 'inventoryMovements',
   INVENTORY: 'inventory',
   CUSTOMERS: 'customers',
   TABLES: 'tables',
@@ -159,6 +169,7 @@ export const COLLECTION_NAMES = {
   ROOMS: 'rooms',
   REVIEWS: 'reviews',
   CASHIER_SESSIONS: 'cashierSessions',
+  CASH_SESSIONS: 'cashSessions',
   INVOICES: 'invoices',
   CONTACT_REQUESTS: 'contactRequests',
   ERROR_LOGS: 'errorLogs',

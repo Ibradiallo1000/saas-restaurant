@@ -1,126 +1,164 @@
-'use client';
+"use client"
 
-/**
- * @fileOverview Page de configuration globale de la plateforme SaaS (Branding & Paramètres).
- */
+import * as React from "react"
+import { Globe, Loader2, Mail, Palette, Save, Settings, Shield } from "lucide-react"
 
-import * as React from 'react';
-import { useFirestore, useDocOnce, useMemoFirebase } from '@/firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Settings, Save, Loader2, Globe, Palette, Mail, Shield } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { Switch } from '@/components/ui/switch';
+import { MediaSelector } from "@/components/platform/MediaSelector"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { usePlatform } from "@/contexts/platform-context"
+import { useToast } from "@/hooks/use-toast"
 
 export default function PlatformSettingsPage() {
-  const db = useFirestore();
-  const { toast } = useToast();
-  const [loading, setLoading] = React.useState(false);
-
-  const configRef = useMemoFirebase(() => {
-    if (!db) return null;
-    return doc(db, 'platformSettings', 'default');
-  }, [db]);
-
-  const { data: config, isLoading } = useDocOnce(configRef);
-
+  const { toast } = useToast()
+  const { settings, isLoading, updateSettings } = usePlatform()
+  const [loading, setLoading] = React.useState(false)
   const [formData, setFormData] = React.useState({
-    name: '',
-    supportEmail: '',
-    primaryColor: '',
-    secondaryColor: '',
+    name: "",
+    logoUrl: "",
+    supportEmail: "",
+    primaryColor: "",
+    secondaryColor: "",
     maintenanceMode: false,
-  });
+  })
 
   React.useEffect(() => {
-    if (config) {
-      setFormData({
-        name: config.name || '',
-        supportEmail: config.supportEmail || '',
-        primaryColor: config.primaryColor || '',
-        secondaryColor: config.secondaryColor || '',
-        maintenanceMode: config.maintenanceMode || false,
-      });
-    }
-  }, [config]);
+    setFormData({
+      name: settings.name || "",
+      logoUrl: settings.logoUrl || "",
+      supportEmail: settings.supportEmail || "",
+      primaryColor: settings.primaryColor || "",
+      secondaryColor: settings.secondaryColor || "",
+      maintenanceMode: settings.maintenanceMode || false,
+    })
+  }, [settings])
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!configRef) return;
-    setLoading(true);
+  const handleSave = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setLoading(true)
 
     try {
-      await updateDoc(configRef, {
+      await updateSettings({
+        ...settings,
         ...formData,
-        updatedAt: serverTimestamp(),
-      });
-      toast({ title: "Configuration mise à jour", description: "Le branding de la plateforme a été actualisé." });
-    } catch (e) {
-      toast({ variant: "destructive", title: "Erreur", description: "Impossible d'enregistrer les paramètres." });
+      })
+      toast({
+        title: "Configuration mise à jour",
+        description: "Le branding de la plateforme a été actualisé.",
+      })
+    } catch (error) {
+      console.error(error)
+      toast({
+        variant: "destructive",
+        title: "Erreur",
+        description: "Impossible d'enregistrer les paramètres.",
+      })
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  if (isLoading) return <div className="flex justify-center p-20"><Loader2 className="animate-spin text-primary h-10 w-10" /></div>;
+  if (isLoading) {
+    return (
+      <div className="flex justify-center p-20">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
+    <div className="mx-auto max-w-4xl space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center gap-3">
-        <div className="p-3 bg-primary rounded-xl text-primary-foreground">
+        <div className="rounded-xl bg-primary p-3 text-primary-foreground">
           <Settings className="h-8 w-8" />
         </div>
         <div>
-          <h1 className="text-4xl font-black italic uppercase tracking-tighter text-primary">Configuration SaaS</h1>
-          <p className="text-muted-foreground font-medium">Personnalisez l'identité visuelle de votre plateforme GastronomeAI.</p>
+          <h1 className="text-4xl font-black italic uppercase tracking-tighter text-primary">
+            Configuration SaaS
+          </h1>
+          <p className="font-medium text-muted-foreground">
+            Personnalisez l'identité visuelle de votre plateforme {settings.name}.
+          </p>
         </div>
       </div>
 
-      <form onSubmit={handleSave} className="grid md:grid-cols-2 gap-8">
-        <Card className="border-none shadow-2xl overflow-hidden md:col-span-2">
-          <CardHeader className="bg-primary text-primary-foreground p-8">
-            <CardTitle className="text-2xl font-black italic uppercase">Identité de Marque</CardTitle>
-            <CardDescription className="text-white/80">Ces paramètres affectent l'ensemble des pages publiques et des emails.</CardDescription>
+      <form onSubmit={handleSave} className="grid gap-8 md:grid-cols-2">
+        <Card className="overflow-hidden border-none shadow-2xl md:col-span-2">
+          <CardHeader className="bg-primary p-8 text-primary-foreground">
+            <CardTitle className="text-2xl font-black italic uppercase">
+              Identité de marque
+            </CardTitle>
+            <CardDescription className="text-white/80">
+              Ces paramètres alimentent la sidebar, le header et les écrans plateforme.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="p-8 grid md:grid-cols-2 gap-6">
+          <CardContent className="grid gap-6 p-8 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <MediaSelector
+                type="logo"
+                label="Logo de la plateforme"
+                description="Utilisé globalement dans l'interface d'administration."
+                value={formData.logoUrl}
+                onChange={(logoUrl) => setFormData({ ...formData, logoUrl: logoUrl ?? "" })}
+              />
+            </div>
+
             <div className="space-y-2">
-              <Label className="flex items-center gap-2"><Globe className="h-4 w-4" /> Nom de la Plateforme</Label>
-              <Input 
+              <Label className="flex items-center gap-2">
+                <Globe className="h-4 w-4" /> Nom de la plateforme
+              </Label>
+              <Input
                 value={formData.name}
-                onChange={e => setFormData({...formData, name: e.target.value})}
-                className="h-12 bg-secondary/30 border-none rounded-xl"
+                onChange={(event) => setFormData({ ...formData, name: event.target.value })}
+                className="h-12 rounded-xl border-none bg-secondary/30"
               />
             </div>
+
             <div className="space-y-2">
-              <Label className="flex items-center gap-2"><Mail className="h-4 w-4" /> Email de Support</Label>
-              <Input 
+              <Label className="flex items-center gap-2">
+                <Mail className="h-4 w-4" /> Email de support
+              </Label>
+              <Input
                 value={formData.supportEmail}
-                onChange={e => setFormData({...formData, supportEmail: e.target.value})}
-                className="h-12 bg-secondary/30 border-none rounded-xl"
+                onChange={(event) => setFormData({ ...formData, supportEmail: event.target.value })}
+                className="h-12 rounded-xl border-none bg-secondary/30"
               />
             </div>
+
             <div className="space-y-2">
-              <Label className="flex items-center gap-2"><Palette className="h-4 w-4" /> Couleur Primaire (HEX)</Label>
+              <Label className="flex items-center gap-2">
+                <Palette className="h-4 w-4" /> Couleur primaire (HEX)
+              </Label>
               <div className="flex gap-2">
                 <div className="h-12 w-12 rounded-xl border" style={{ backgroundColor: formData.primaryColor }} />
-                <Input 
+                <Input
                   value={formData.primaryColor}
-                  onChange={e => setFormData({...formData, primaryColor: e.target.value})}
-                  className="h-12 bg-secondary/30 border-none rounded-xl flex-1"
+                  onChange={(event) => setFormData({ ...formData, primaryColor: event.target.value })}
+                  className="h-12 flex-1 rounded-xl border-none bg-secondary/30"
                 />
               </div>
             </div>
+
             <div className="space-y-2">
-              <Label className="flex items-center gap-2"><Palette className="h-4 w-4" /> Couleur Secondaire (HEX)</Label>
+              <Label className="flex items-center gap-2">
+                <Palette className="h-4 w-4" /> Couleur secondaire (HEX)
+              </Label>
               <div className="flex gap-2">
                 <div className="h-12 w-12 rounded-xl border" style={{ backgroundColor: formData.secondaryColor }} />
-                <Input 
+                <Input
                   value={formData.secondaryColor}
-                  onChange={e => setFormData({...formData, secondaryColor: e.target.value})}
-                  className="h-12 bg-secondary/30 border-none rounded-xl flex-1"
+                  onChange={(event) => setFormData({ ...formData, secondaryColor: event.target.value })}
+                  className="h-12 flex-1 rounded-xl border-none bg-secondary/30"
                 />
               </div>
             </div>
@@ -129,30 +167,36 @@ export default function PlatformSettingsPage() {
 
         <Card className="border-none shadow-2xl">
           <CardHeader>
-            <CardTitle className="text-xl font-black italic uppercase flex items-center gap-2">
-              <Shield className="h-5 w-5 text-primary" /> Sécurité & État
+            <CardTitle className="flex items-center gap-2 text-xl font-black italic uppercase">
+              <Shield className="h-5 w-5 text-primary" /> Sécurité & état
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-xl">
+            <div className="flex items-center justify-between rounded-xl bg-secondary/30 p-4">
               <div className="space-y-0.5">
-                <Label className="font-bold">Mode Maintenance</Label>
-                <p className="text-[10px] text-muted-foreground italic">Désactive l'accès aux dashboards restaurants.</p>
+                <Label className="font-bold">Mode maintenance</Label>
+                <p className="text-[10px] italic text-muted-foreground">
+                  Désactive l'accès aux dashboards restaurants.
+                </p>
               </div>
-              <Switch 
+              <Switch
                 checked={formData.maintenanceMode}
-                onCheckedChange={v => setFormData({...formData, maintenanceMode: v})}
+                onCheckedChange={(checked) => setFormData({ ...formData, maintenanceMode: checked })}
               />
             </div>
           </CardContent>
           <CardFooter>
-            <Button type="submit" className="w-full h-12 font-bold uppercase italic shadow-lg" disabled={loading}>
-              {loading ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />}
+            <Button type="submit" className="h-12 w-full font-bold uppercase italic shadow-lg" disabled={loading}>
+              {loading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
               Enregistrer les modifications
             </Button>
           </CardFooter>
         </Card>
       </form>
     </div>
-  );
+  )
 }

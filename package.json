@@ -9,7 +9,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "migrate:order-status": "node scripts/migrate-order-status.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

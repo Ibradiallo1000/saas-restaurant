@@ -19,12 +19,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast"
 import { Building2, Save, Loader2, ShieldAlert } from "lucide-react"
 import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
+import { usePlatform } from "@/contexts/platform-context"
 
 export default function SetupPage() {
   const { user, isUserLoading } = useUser()
   const db = useFirestore()
   const router = useRouter()
   const { toast } = useToast()
+  const { settings } = usePlatform()
   const [loading, setLoading] = React.useState(false)
   
   // Vérification si l'utilisateur est un SuperAdmin de la plateforme
@@ -102,11 +104,11 @@ export default function SetupPage() {
           <div className="space-y-2">
             <h1 className="text-2xl font-black uppercase italic">Accès Refusé</h1>
             <p className="text-sm opacity-80">
-              Seuls les administrateurs de la plateforme GastronomeAI peuvent créer de nouveaux établissements.
+              Seuls les administrateurs de la plateforme {settings.name} peuvent créer de nouveaux établissements.
             </p>
           </div>
           <Button onClick={() => router.push("/dashboard")} variant="outline" className="w-full">
-            Retour au Dashboard
+            Retour aux Analytics
           </Button>
         </div>
       </div>

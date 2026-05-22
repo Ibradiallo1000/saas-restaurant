@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label"
 import { useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
+import { ORDER_PAYMENT_STATUS } from "@/lib/order-lifecycle"
 import { doc } from "firebase/firestore"
 
 import { createOrder } from "@/services/orderService"
@@ -87,7 +88,7 @@ function CheckoutPage() {
   setLoading(true)
 
   try {
-    const orderData: Omit<Order, "id" | "createdAt"> = {
+    const orderData = {
       restaurantId: restaurant.id,
       companyId: restaurant.companyId,
 
@@ -95,7 +96,8 @@ function CheckoutPage() {
       table: formData.table || undefined,
 
       // ✅ ALIGNÉ AVEC TON TYPE
-      status: "nouvelle",
+      orderStatus: "pending",
+      paymentStatus: ORDER_PAYMENT_STATUS.UNPAID,
 
       customer: {
         name: formData.name,
@@ -103,12 +105,15 @@ function CheckoutPage() {
       },
 
       // ✅ ALIGNÉ AVEC OrderItem
-      items: items.map((item) => {
+      items: items.map((item, index) => {
         const total = item.price * item.quantity
 
         return {
+          id: `${item.productId}-${Date.now()}-${index}`,
           productId: item.productId,
           name: item.name,
+          status: "pending",
+          createdAt: new Date(),
           price: item.price, // 🔥 plus de unitPrice
           quantity: item.quantity,
           selections: item.selections || {},
@@ -119,7 +124,7 @@ function CheckoutPage() {
       total: totalPrice,
     }
 
-    const orderRef = await createOrder(restaurant.id, orderData)
+    const orderRef = await createOrder(restaurant.id, orderData as any)
 
     setCreatedOrderId(orderRef.id)
 

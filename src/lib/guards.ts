@@ -12,7 +12,7 @@ export function getRoleHomePath(role: AppRouteRole | null) {
     case "owner":
       return "/owner"
     case "manager":
-      return "/manager"
+      return "/manager/dashboard"
     case "cashier":
       return "/pos"
     case "kitchen":
@@ -22,23 +22,44 @@ export function getRoleHomePath(role: AppRouteRole | null) {
   }
 }
 
+export function canAccessOwner(role: AppRouteRole | null) {
+  return role === "owner" || role === "super_admin"
+}
+
+export function canAccessManager(role: AppRouteRole | null) {
+  return role === "manager" || role === "super_admin"
+}
+
 export function isRouteAllowedForRole(pathname: string, role: AppRouteRole | null) {
   if (isPublicRoute(pathname)) return true
 
   switch (role) {
     case "super_admin":
+      return true
     case "owner":
       return (
         pathname.startsWith("/owner") ||
-        pathname.startsWith("/manager") ||
-        pathname.startsWith("/pos") ||
-        pathname.startsWith("/kitchen")
+        pathname.startsWith("/settings") ||
+        pathname.startsWith("/menu") ||
+        pathname.startsWith("/tables") ||
+        pathname.startsWith("/images") ||
+        pathname.startsWith("/dashboard/images") ||
+        pathname.startsWith("/dashboard/tables") ||
+        pathname.startsWith("/settings/payments")
       )
     case "manager":
       return (
-        pathname.startsWith("/manager") ||
-        pathname.startsWith("/pos") ||
-        pathname.startsWith("/kitchen")
+        pathname === "/manager" ||
+        pathname.startsWith("/manager/dashboard") ||
+        pathname.startsWith("/manager/commandes") ||
+        pathname.startsWith("/manager/cuisine") ||
+        pathname.startsWith("/manager/caisse") ||
+        pathname.startsWith("/manager/menu") ||
+        pathname.startsWith("/manager/images") ||
+        pathname.startsWith("/manager/inventory") ||
+        pathname.startsWith("/manager/expenses") ||
+        pathname.startsWith("/manager/suppliers") ||
+        pathname.startsWith("/manager/treasury")
       )
     case "cashier":
       return pathname.startsWith("/pos")

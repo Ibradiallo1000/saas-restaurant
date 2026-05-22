@@ -1,22 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { limit, orderBy, query, where } from "firebase/firestore"
+import { limit, orderBy, query } from "firebase/firestore"
 
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
-
-export const ACTIVE_ORDER_STATUSES = [
-  "pending",
-  "preparing",
-  "ready",
-  "served",
-  "nouvelle",
-  "preparation",
-  "prete",
-  "servie",
-  "payee",
-]
 
 type OrdersContextType = {
   orders: any[]
@@ -42,9 +30,8 @@ export function OrdersProvider({
 
     return query(
       restaurantOrdersRef(db, restaurantId),
-      where("status", "in", ACTIVE_ORDER_STATUSES),
       orderBy("createdAt", "desc"),
-      limit(30)
+      limit(200)
     )
   }, [db, restaurantId])
 

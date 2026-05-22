@@ -1,25 +1,17 @@
 "use client"
 
 import type { RestaurantOrder } from "@/modules/restaurant/types"
-import type { OrderStatus } from "@/lib/order-status"
+import type { KitchenLifecycleStatus, OrderOperationStatus } from "@/lib/order-lifecycle"
 import { KitchenOrderCard } from "./KitchenOrderCard"
 
 type KitchenColumnProps = {
   title: string
-  status: OrderStatus
+  status: KitchenLifecycleStatus
   orders: RestaurantOrder[]
   onUpdateStatus: (
     orderId: string,
-    status: OrderStatus
+    status: OrderOperationStatus
   ) => Promise<void>
-}
-
-const STATUS_STYLES = {
-  nouvelle: "border-yellow-300 bg-yellow-50",
-  preparation: "border-orange-300 bg-orange-50",
-  prete: "border-blue-300 bg-blue-50",
-  servie: "border-green-300 bg-green-50",
-  payee: "border-emerald-300 bg-emerald-50",
 }
 
 export function KitchenColumn({
@@ -29,22 +21,25 @@ export function KitchenColumn({
   onUpdateStatus,
 }: KitchenColumnProps) {
   return (
-    <section className={`flex h-full flex-col rounded-lg border ${STATUS_STYLES[status]}`}>
-      <header className="flex items-center justify-between border-b border-border px-3 py-2">
-        <h2 className="text-sm font-black uppercase text-gray-950">{title}</h2>
-
-        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-gray-800 shadow-sm">
+    <section className="flex h-full flex-col rounded-xl border bg-card">
+      {/* 🔥 HEADER SIMPLIFIÉ - Plus de détails techniques */}
+      <header className="flex items-center justify-between border-b border-border px-4 py-3">
+        <h2 className="text-sm font-black uppercase tracking-wider text-card-foreground">
+          {title}
+        </h2>
+        <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-black text-primary">
           {orders.length}
         </span>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-2">
+      {/* 🔥 CONTENU - PAS de fond supplémentaire */}
+      <div className="flex-1 overflow-y-auto p-3">
         {orders.length === 0 ? (
-          <div className="py-6 text-center text-gray-400">
+          <div className="py-8 text-center text-sm font-medium text-muted-foreground">
             Aucune commande
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3">
             {orders.map((order) => (
               <KitchenOrderCard
                 key={order.id}

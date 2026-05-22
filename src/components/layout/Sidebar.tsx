@@ -9,6 +9,7 @@ import {
   LogOut,
   Monitor,
   Store,
+  Table2,
   Users,
 } from "lucide-react"
 import Link from "next/link"
@@ -42,6 +43,11 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>
 }
 
+type NavSection = {
+  label: string
+  items: NavItem[]
+}
+
 export function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
@@ -49,7 +55,6 @@ export function Sidebar() {
   const db = useFirestore()
   const { firebaseUser: user, activeRole, isSuperAdmin, restaurantId } = useCurrentUser()
   const { setOpenMobile } = useSidebar()
-  const [optimisticHref, setOptimisticHref] = React.useState<string | null>(null)
   const currentPathname = pathname ?? "/"
 
   const restaurantRole = activeRole ?? ROLES.SERVER
@@ -62,47 +67,67 @@ export function Sidebar() {
   const restaurantName = restaurant?.name?.trim() || "Restaurant"
   const restaurantInitial = restaurantName.charAt(0).toUpperCase() || "R"
 
-  const businessNav = React.useMemo<NavItem[]>(() => {
+  const navSections = React.useMemo<NavSection[]>(() => {
     if (!hasRestaurantAccess) return []
 
     if (restaurantRole === ROLES.OWNER || isSuperAdmin) {
-      return [
-        { name: "Analytics", href: "/owner", icon: LayoutDashboard },
-        { name: "Manager", href: "/manager", icon: Store },
-        { name: "Images", href: "/dashboard/images", icon: ImageIcon },
-        { name: "Paiements", href: "/settings/payments", icon: CreditCard },
-        { name: "Caisse", href: "/pos", icon: Monitor },
-        { name: "Cuisine", href: "/kitchen", icon: ChefHat },
-      ]
+      if (restaurantRole === ROLES.OWNER && !isSuperAdmin) {
+        return [{
+          label: "Restaurant",
+          items: [
+            { name: "Analytics", href: "/owner", icon: LayoutDashboard },
+            { name: "Menu", href: "/menu", icon: Store },
+            { name: "Tables", href: "/tables", icon: Table2 },
+            { name: "Images", href: "/images", icon: ImageIcon },
+            { name: "Configuration", href: "/settings", icon: Store },
+          ],
+        }]
+      }
+
+      return [{
+        label: "Administration",
+        items: [
+          { name: "Analytics", href: "/owner", icon: LayoutDashboard },
+          { name: "Manager", href: "/manager", icon: Store },
+          { name: "Images", href: "/dashboard/images", icon: ImageIcon },
+          { name: "Caisse", href: "/pos", icon: Monitor },
+          { name: "Cuisine", href: "/kitchen", icon: ChefHat },
+        ],
+      }]
     }
 
     if (restaurantRole === ROLES.MANAGER) {
-      return [
-        { name: "Manager", href: "/manager", icon: Store },
-        { name: "Images", href: "/dashboard/images", icon: ImageIcon },
-        { name: "Paiements", href: "/settings/payments", icon: CreditCard },
-        { name: "Caisse", href: "/pos", icon: Monitor },
-        { name: "Cuisine", href: "/kitchen", icon: ChefHat },
-      ]
+      return [{
+        label: "Opérations",
+        items: [
+          { name: "Manager", href: "/manager", icon: Store },
+          { name: "Menu", href: "/manager/menu", icon: Store },
+          { name: "Images", href: "/manager/images", icon: ImageIcon },
+          { name: "Caisse", href: "/pos", icon: Monitor },
+          { name: "Cuisine", href: "/kitchen", icon: ChefHat },
+        ],
+      }]
     }
 
     if (restaurantRole === ROLES.CASHIER) {
-      return [{ name: "Caisse POS", href: "/pos", icon: Monitor }]
+      return [{ label: "Caisse", items: [{ name: "Caisse POS", href: "/pos", icon: Monitor }] }]
     }
 
     if (restaurantRole === ROLES.KITCHEN) {
-      return [{ name: "Cuisine", href: "/kitchen", icon: ChefHat }]
+      return [{ label: "Cuisine", items: [{ name: "Cuisine", href: "/kitchen", icon: ChefHat }] }]
     }
 
     return []
   }, [hasRestaurantAccess, restaurantRole, isSuperAdmin])
 
-  const navItems = businessNav
-  const sectionLabel = `Espace ${restaurantRole}`
-
-  React.useEffect(() => {
-    setOptimisticHref(null)
-  }, [currentPathname])
+  const navItems = React.useMemo(
+    () => navSections.flatMap((section) => section.items),
+    [navSections]
+  )
+  const activeHref = React.useMemo(
+    () => getActiveSidebarHref(currentPathname, navItems),
+    [currentPathname, navItems]
+  )
 
   const handleLogout = React.useCallback(async () => {
     await signOut(auth)
@@ -136,45 +161,45 @@ export function Sidebar() {
       </SidebarHeader>
 
       <SidebarContent className="px-1">
-        <SidebarGroup>
-          <SidebarGroupLabel className="px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            {sectionLabel}
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu className="gap-1">
-              {navItems.map((item) => {
-                const active = item.href === optimisticHref || (!optimisticHref && isActivePath(currentPathname, item.href))
+        {navSections.map((section) => (
+          <SidebarGroup key={section.label}>
+            <SidebarGroupLabel className="px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              {section.label}
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu className="gap-1">
+                {section.items.map((item) => {
+                  const active = activeHref === item.href
 
-                return (
-                  <SidebarMenuItem key={item.name}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={active}
-                      tooltip={item.name}
-                      className={cn(
-                        "min-h-10 rounded-md text-secondary-foreground transition-all duration-200 hover:bg-secondary hover:text-white focus-visible:ring-2 focus-visible:ring-primary",
-                        active &&
-                          "!bg-primary !font-medium !text-white hover:!bg-primary hover:!text-white [&>svg]:!text-white"
-                      )}
-                    >
-                      <Link
-                        href={item.href}
-                        prefetch
-                        onClick={() => {
-                          setOptimisticHref(item.href)
-                          setOpenMobile(false)
-                        }}
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={active}
+                        tooltip={item.name}
+                        className={cn(
+                          "min-h-10 rounded-md text-secondary-foreground transition-all duration-200 hover:bg-secondary hover:text-white focus-visible:ring-2 focus-visible:ring-primary",
+                          active &&
+                            "!bg-primary !font-medium !text-white hover:!bg-primary hover:!text-white [&>svg]:!text-white"
+                        )}
                       >
-                        <item.icon className="h-5 w-5" />
-                        <span>{item.name}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+                        <Link
+                          href={item.href}
+                          prefetch
+                          onClick={() => setOpenMobile(false)}
+                          aria-current={active ? "page" : undefined}
+                        >
+                          <item.icon className="h-5 w-5" />
+                          <span>{item.name}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
 
       <SidebarFooter className="p-3">
@@ -207,7 +232,21 @@ export function Sidebar() {
   )
 }
 
-function isActivePath(pathname: string, href: string) {
-  if (href === "/") return pathname === href
-  return pathname === href || pathname.startsWith(`${href}/`)
+function getActiveSidebarHref(pathname: string, items: NavItem[]) {
+  const normalizedPathname = normalizePath(pathname)
+
+  return items
+    .filter((item) => isRouteMatch(normalizedPathname, item.href))
+    .sort((a, b) => normalizePath(b.href).length - normalizePath(a.href).length)[0]
+    ?.href ?? null
+}
+
+function isRouteMatch(pathname: string, href: string) {
+  const normalizedHref = normalizePath(href)
+  return pathname === normalizedHref || pathname.startsWith(`${normalizedHref}/`)
+}
+
+function normalizePath(path: string) {
+  if (path.length > 1 && path.endsWith("/")) return path.slice(0, -1)
+  return path || "/"
 }

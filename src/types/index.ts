@@ -3,6 +3,12 @@
  */
 
 import { Timestamp } from "firebase/firestore"
+import type {
+  KitchenLifecycleStatus,
+  OrderItemStatus,
+  OrderOperationStatus,
+  OrderPaymentLifecycleStatus,
+} from "@/lib/order-lifecycle"
 
 export type OrderStatus =
   | "nouvelle"
@@ -12,6 +18,9 @@ export type OrderStatus =
   | "payee"
 
 export interface OrderItem {
+  id?: string
+  status?: OrderItemStatus | string | null
+  createdAt?: Timestamp | Date | null
   productId: string // 🔥 lien produit
   name: string
 
@@ -43,6 +52,9 @@ export interface Order {
   mode: "sur_place" | "a_emporter"
 
   status: OrderStatus
+  kitchenStatus?: KitchenLifecycleStatus
+  orderStatus?: OrderOperationStatus
+  paymentStatus?: OrderPaymentLifecycleStatus
 
   // 🔥 UX cuisine
   priority?: "normale" | "urgente"

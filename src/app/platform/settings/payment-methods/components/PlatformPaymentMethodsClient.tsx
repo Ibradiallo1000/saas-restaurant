@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MediaSelector } from '@/components/platform/MediaSelector';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { COLLECTION_NAMES } from '@/lib/constants';
@@ -77,10 +78,12 @@ export default function PlatformPaymentMethodsPage() {
 
     setIsSaving(true);
 
+    const finalLogoUrl = formData.logoUrl.startsWith('blob:') ? "" : formData.logoUrl.trim();
+
     const payload = {
       name: formData.name.trim(),
       code: formData.code.trim().toLowerCase(),
-      logoUrl: formData.logoUrl.trim(),
+      logoUrl: finalLogoUrl,
       type: formData.type,
       isActive: formData.isActive,
     };
@@ -114,7 +117,7 @@ export default function PlatformPaymentMethodsPage() {
     setFormData({
       name: method.name || '',
       code: method.code || '',
-      logoUrl: method.logoUrl || '',
+      logoUrl: method.logoUrl?.startsWith('blob:') ? '' : (method.logoUrl || ''),
       type: method.type || 'ussd',
       isActive: method.isActive ?? true,
     });
@@ -228,12 +231,13 @@ export default function PlatformPaymentMethodsPage() {
               </div>
             </div>
 
-            <div className="space-y-2 md:col-span-6">
-              <Label>Logo URL</Label>
-              <Input
-                placeholder="https://..."
+            <div className="md:col-span-6">
+              <MediaSelector
+                type="payment"
+                label="Logo"
+                description="Logo affiché pour ce moyen de paiement."
                 value={formData.logoUrl}
-                onChange={(event) => setFormData({ ...formData, logoUrl: event.target.value })}
+                onChange={(logoUrl) => setFormData({ ...formData, logoUrl: logoUrl || "" })}
               />
             </div>
 
@@ -270,7 +274,7 @@ export default function PlatformPaymentMethodsPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/10">
-                      {method.logoUrl ? (
+                      {method.logoUrl && !method.logoUrl.startsWith('blob:') ? (
                         <img src={method.logoUrl} alt={method.name} className="h-full w-full object-cover" />
                       ) : (
                         <CreditCard className="h-6 w-6 text-primary" />

@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { useFirestore } from "@/firebase"
+import Link from "next/link"
+import { useSearchParams } from "next/navigation"
+import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 
 import {
   collection,
@@ -9,10 +11,10 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
-  serverTimestamp
+  serverTimestamp,
 } from "firebase/firestore"
 
-import { Store, Plus, Search, X, MoreVertical, Edit2, Trash2, Power, PowerOff, Eye, ImageIcon, ArrowLeft } from "lucide-react"
+import { Store, Plus, Search, X, MoreVertical, Edit2, Trash2, Power, PowerOff, Eye, ImageIcon, ArrowLeft, AlertTriangle, Clock, ShieldCheck, Banknote, ReceiptText, Wallet, ClipboardList } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,7 +25,23 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
+import { useTenant } from "@/design-system/context/TenantProvider"
 import { getOptimizedImage } from "@/lib/image"
+import { COLLECTION_NAMES } from "@/lib/constants"
+import { getFinancialSummary, getSupportedBusinessTimeZone } from "@/lib/finance/financial-summary"
+import {
+  assertValidComponentMultiplier,
+  buildComponentsFromLegacy,
+  computeEstimatedCost,
+  hasComplexConsumption,
+  hasTrackedConsumption,
+} from "@/lib/product-components"
+import {
+  ORDER_OPERATION_STATUS,
+  getOrderStatus,
+  isOrderPaid,
+} from "@/lib/order-lifecycle"
+import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -36,6 +54,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import OptionEditor from "@/components/menu/OptionEditor"
 import ImagePickerModal from "@/components/ImagePickerModal"
 import { CatalogProvider, useCatalog } from "@/modules/catalog/CatalogProvider"
@@ -197,6 +216,8 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
   const displayImage = product.imageUrl || category?.imageUrl
   const isInactive = product.isActive === false
   const hasOptions = product.options && product.options.length > 0
+  const isComplexConsumption = product.hasComplexConsumption === true || hasComplexConsumption(product)
+  const isTracked = hasTrackedConsumption(product)
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
@@ -226,7 +247,7 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
                 <Button 
                   size="icon" 
                   variant="secondary" 
-                  className="h-7 w-7 bg-white/90 hover:bg-white shadow-md"
+                  className="h-7 w-7 bg-background/90 hover:bg-background shadow-md"
                 >
                   <MoreVertical size={14} />
                 </Button>
@@ -280,11 +301,21 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
               {product.name}
             </h3>
             <span className="text-sm font-black italic text-primary whitespace-nowrap">
-              {product.basePrice} FCFA
+              {product.basePrice > 0 ? `${product.basePrice} FCFA` : "Prix sur option"}
             </span>
           </div>
 
           <div className="flex gap-1 flex-wrap">
+            {isComplexConsumption ? (
+              <Badge variant="secondary" className="text-[10px] bg-orange-100 text-orange-700">
+                🔥 Consommation variable
+              </Badge>
+            ) : null}
+            {!isTracked ? (
+              <Badge variant="secondary" className="text-[10px] bg-yellow-100 text-yellow-800">
+                ⚠️ Recette non configurée
+              </Badge>
+            ) : null}
             <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-700">
               {category?.name || "Sans catégorie"}
             </Badge>
@@ -301,7 +332,7 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
                 <div></div>
               )}
               
-              {!isInactive && (
+              {!isInactive && product.basePrice > 0 && (
                 <div className="flex items-center gap-1">
                   <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse"></div>
                   <span>Disponible</span>
@@ -318,21 +349,28 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
-export default function ManagerDashboard() {
+type ManagerMode = "dashboard" | "orders" | "menu"
+
+export default function ManagerDashboard({ mode = "dashboard" }: { mode?: ManagerMode }) {
   const { restaurantId } = useRestaurant()
 
   return (
     <CatalogProvider restaurantId={restaurantId}>
-      <ManagerDashboardContent />
+      <ManagerDashboardContent mode={mode} />
     </CatalogProvider>
   )
 }
 
-function ManagerDashboardContent() {
+function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   const db = useFirestore()
   const { restaurantId } = useRestaurant()
   const { products, categories, isLoadingVisible, refreshCatalog } = useCatalog()
   const { toast } = useToast()
+  const inventoryItemsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryItems")
+  }, [db, restaurantId])
+  const { data: inventoryItems } = useCollection<any>(inventoryItemsQuery)
 
   const [searchTerm, setSearchTerm] = React.useState("")
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null)
@@ -363,10 +401,28 @@ function ManagerDashboardContent() {
   })
 
   const [options, setOptions] = React.useState<any[]>([])
+  const [recipe, setRecipe] = React.useState<any[]>([])
+  const draftProductForConsumption = React.useMemo(() => {
+    const components = buildComponentsFromLegacy({ recipe, options })
+    return { recipe, options, components }
+  }, [recipe, options])
+  const draftEstimatedCost = React.useMemo(
+    () => computeEstimatedCost(draftProductForConsumption, inventoryItems || []),
+    [draftProductForConsumption, inventoryItems]
+  )
+  const draftHasComplexConsumption = React.useMemo(
+    () => hasComplexConsumption(draftProductForConsumption),
+    [draftProductForConsumption]
+  )
+  const draftHasTrackedConsumption = React.useMemo(
+    () => hasTrackedConsumption(draftProductForConsumption),
+    [draftProductForConsumption]
+  )
 
   // Order states for drag & drop
   const [categoryOrder, setCategoryOrder] = React.useState<string[]>([])
   const [productOrder, setProductOrder] = React.useState<string[]>([])
+  
   // FILTER
   const filteredProducts = React.useMemo(() => {
     if (!products) return []
@@ -414,7 +470,7 @@ function ManagerDashboardContent() {
     }
   }, [selectedCategory, products])
 
-  // SANITIZE OPTIONS BEFORE SAVING
+  // 🔥 SANITIZE OPTIONS WITH MULTIPLE SUPPORT
   const sanitizeOptions = (rawOptions: any[]): any[] => {
     if (!rawOptions || !Array.isArray(rawOptions)) return []
 
@@ -430,13 +486,19 @@ function ManagerDashboardContent() {
               return null
             }
 
+            // Prix final, pas un supplément
             let price = Number(choice.price)
             if (isNaN(price)) price = 0
             price = Math.round(price)
 
+            const recipe = sanitizeRecipe(choice.recipe)
+            const multiplier = assertValidComponentMultiplier(choice.multiplier ?? 1)
+
             return {
               name: choice.name.trim(),
-              price: price
+              price,
+              multiplier,
+              recipe,
             }
           })
           .filter((choice: any) => choice !== null)
@@ -446,6 +508,7 @@ function ManagerDashboardContent() {
         return {
           name: option.name.trim(),
           required: option.required === true,
+          multiple: option.multiple === true, // 🔥 Support multi-sélection
           choices: validChoices
         }
       })
@@ -613,7 +676,7 @@ function ManagerDashboardContent() {
     }
   }
 
-  // CREATE OR UPDATE PRODUCT
+  // 🔥 CREATE OR UPDATE PRODUCT (WITH NEW VALIDATION)
   const handleSaveProduct = async () => {
     if (!restaurantId) return
 
@@ -623,13 +686,49 @@ function ManagerDashboardContent() {
     }
 
     const basePrice = Number(productForm.price)
-    if (isNaN(basePrice) || basePrice <= 0) {
-      toast({ title: "Prix invalide", description: "Le prix doit être un nombre supérieur à 0", variant: "destructive" })
+    
+    // 🔥 Vérifier si le produit a des options avec prix
+    const hasOptionsWithPrice = options.some(opt =>
+      opt.choices?.some((c: any) => Number(c.price) > 0)
+    )
+
+    // 🔥 Nouvelle validation : prix requis seulement si pas d'options avec prix
+    if (!hasOptionsWithPrice && (isNaN(basePrice) || basePrice <= 0)) {
+      toast({ 
+        title: "Prix requis", 
+        description: "Ajoute un prix de base ou des options avec prix",
+        variant: "destructive" 
+      })
       return
     }
 
-    const sanitizedBasePrice = Math.round(basePrice)
-    const sanitizedOptions = sanitizeOptions(options)
+    // Si basePrice est valide, on l'arrondit, sinon 0
+    const sanitizedBasePrice = !isNaN(basePrice) && basePrice > 0 ? Math.round(basePrice) : 0
+    let sanitizedOptions: any[] = []
+    let sanitizedRecipe: any[] = []
+    let sanitizedComponents: any[] = []
+    let productHasComplexConsumption = false
+
+    try {
+      sanitizedOptions = sanitizeOptions(options)
+      sanitizedRecipe = sanitizeRecipe(recipe)
+      sanitizedComponents = buildComponentsFromLegacy({
+        recipe: sanitizedRecipe,
+        options: sanitizedOptions,
+      })
+      productHasComplexConsumption = hasComplexConsumption({
+        recipe: sanitizedRecipe,
+        options: sanitizedOptions,
+        components: sanitizedComponents,
+      })
+    } catch (error: any) {
+      toast({
+        title: "Configuration produit invalide",
+        description: error?.message || "Vérifie les variantes et suppléments.",
+        variant: "destructive",
+      })
+      return
+    }
 
     const payload = {
       name: productForm.name.trim(),
@@ -639,6 +738,9 @@ function ManagerDashboardContent() {
       imageId: productForm.imageId || "",
       basePrice: sanitizedBasePrice,
       options: sanitizedOptions,
+      recipe: sanitizedRecipe,
+      components: sanitizedComponents,
+      hasComplexConsumption: productHasComplexConsumption,
       updatedAt: serverTimestamp()
     }
 
@@ -686,6 +788,7 @@ function ManagerDashboardContent() {
         imageId: ""
       })
       setOptions([])
+      setRecipe([])
     } catch (error) {
       console.error(error)
       toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" })
@@ -711,13 +814,14 @@ function ManagerDashboardContent() {
     setEditingProduct(product)
     setProductForm({
       name: product.name,
-      price: product.basePrice,
+      price: product.basePrice?.toString() || "",
       description: product.description || "",
       categoryId: product.categoryId || "",
       imageUrl: product.imageUrl || "",
       imageId: product.imageId || ""
     })
     setOptions(product.options || [])
+    setRecipe(normalizeRecipe(product.recipe))
     setIsProductOpen(true)
   }
 
@@ -733,6 +837,7 @@ function ManagerDashboardContent() {
       imageId: ""
     })
     setOptions([])
+    setRecipe([])
     setIsProductOpen(true)
   }
 
@@ -740,6 +845,14 @@ function ManagerDashboardContent() {
   const openPreviewModal = (product: any) => {
     setPreviewProduct(product)
     setIsPreviewOpen(true)
+  }
+
+  if (mode === "dashboard") {
+    return <ManagerDashboardPage restaurantId={restaurantId} />
+  }
+
+  if (mode === "orders") {
+    return <ManagerOrdersPage restaurantId={restaurantId} />
   }
 
   return (
@@ -927,7 +1040,7 @@ function ManagerDashboardContent() {
       {/* MODAL CATEGORY */}
       {isCategoryOpen && (
         <div className="fixed inset-0 bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)] flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-2xl w-[400px] space-y-4 shadow-2xl">
+          <div className="h-full w-full space-y-4 overflow-y-auto bg-card p-4 shadow-2xl sm:h-auto sm:w-[400px] sm:rounded-2xl sm:p-6">
             <div className="flex justify-between items-center">
               <h2 className="font-bold text-lg">
                 {editingCategory ? "Modifier la catégorie" : "Nouvelle catégorie"}
@@ -973,7 +1086,7 @@ function ManagerDashboardContent() {
               {selectedCategoryImage ? (
                 <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 p-2">
                   <img
-                    src={getOptimizedImage(selectedCategoryImage.url, 120)}
+                    src={getOptimizedImage(selectedCategoryImage!.url, 120)}
                     alt="Image catégorie"
                     loading="lazy"
                     width={120}
@@ -985,7 +1098,7 @@ function ManagerDashboardContent() {
                       Image sélectionnée
                     </p>
                     <p className="truncate text-[10px] text-muted-foreground">
-                      {selectedCategoryImage.url}
+                      {selectedCategoryImage!.url}
                     </p>
                   </div>
                   <Button
@@ -1023,10 +1136,10 @@ function ManagerDashboardContent() {
         </div>
       )}
 
-      {/* MODAL PRODUCT */}
+      {/* MODAL PRODUCT - 🔥 MODIFIED PLACEHOLDER */}
       {isProductOpen && (
         <div className="fixed inset-0 bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)] flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-2xl w-[550px] space-y-4 overflow-y-auto max-h-[90vh] shadow-2xl">
+          <div className="h-full max-h-dvh w-full space-y-4 overflow-y-auto bg-card p-4 shadow-2xl sm:h-auto sm:max-h-[90vh] sm:w-[550px] sm:rounded-2xl sm:p-6">
             <div className="flex justify-between items-center">
               <h2 className="font-bold text-xl">
                 {editingProduct ? "✏️ Modifier le produit" : "➕ Nouveau produit"}
@@ -1044,9 +1157,9 @@ function ManagerDashboardContent() {
             />
 
             <Input
-              placeholder="Prix de base (ex: 3000) *"
+              placeholder="Prix (ou laisser vide si options avec prix) *"
               type="number"
-              min="1"
+              min="0"
               step="1"
               value={productForm.price}
               onChange={(e) => setProductForm({ ...productForm, price: e.target.value })}
@@ -1130,8 +1243,37 @@ function ManagerDashboardContent() {
               }
             />
 
+            <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">
+                  💰 Coût estimé : {Math.round(draftEstimatedCost)} FCFA
+                </Badge>
+                {draftHasComplexConsumption ? (
+                  <Badge variant="secondary" className="bg-orange-100 text-orange-700">
+                    🔥 Consommation variable
+                  </Badge>
+                ) : null}
+                {!draftHasTrackedConsumption ? (
+                  <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                    ⚠️ Recette non configurée
+                  </Badge>
+                ) : null}
+              </div>
+              {!draftHasTrackedConsumption ? (
+                <p className="text-xs font-medium text-yellow-800">Inventaire non suivi pour ce produit.</p>
+              ) : null}
+            </div>
+
             <div className="border-t pt-4">
-              <OptionEditor options={options} setOptions={setOptions} />
+              <RecipeEditor
+                recipe={recipe}
+                setRecipe={setRecipe}
+                inventoryItems={inventoryItems || []}
+              />
+            </div>
+
+            <div className="border-t pt-4">
+              <OptionEditor options={options} setOptions={setOptions} inventoryItems={inventoryItems || []} />
             </div>
 
             <div className="flex justify-end gap-2 pt-4 border-t">
@@ -1147,9 +1289,9 @@ function ManagerDashboardContent() {
         </div>
       )}
 
-      {/* PREVIEW MODAL */}
+      {/* PREVIEW MODAL - 🔥 MODIFIED TO SHOW FINAL PRICES */}
       <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="h-dvh max-h-dvh max-w-none overflow-y-auto sm:h-auto sm:max-h-[90vh] sm:max-w-2xl">
           {previewProduct && (
             <>
               <DialogHeader>
@@ -1176,7 +1318,9 @@ function ManagerDashboardContent() {
                 <div className="space-y-3">
                   <div className="flex justify-between items-start">
                     <h3 className="text-2xl font-bold text-gray-900">{previewProduct.name}</h3>
-                    <span className="text-2xl font-bold text-primary">{previewProduct.basePrice} FCFA</span>
+                    {previewProduct.basePrice > 0 && (
+                      <span className="text-2xl font-bold text-primary">{previewProduct.basePrice} FCFA</span>
+                    )}
                   </div>
 
                   {previewProduct.description && (
@@ -1196,11 +1340,16 @@ function ManagerDashboardContent() {
                     
                     {previewProduct.options.map((option: any, idx: number) => (
                       <div key={idx} className="space-y-2 bg-gray-50 p-4 rounded-lg">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium text-gray-900">{option.name}</span>
                           {option.required && (
                             <Badge variant="destructive" className="text-xs bg-red-100 text-red-700">
                               Obligatoire
+                            </Badge>
+                          )}
+                          {option.multiple && (
+                            <Badge variant="outline" className="text-xs">
+                              Multi-sélection
                             </Badge>
                           )}
                         </div>
@@ -1209,9 +1358,7 @@ function ManagerDashboardContent() {
                           {option.choices.map((choice: any, cIdx: number) => (
                             <div key={cIdx} className="flex justify-between items-center text-sm">
                               <span className="text-gray-600">{choice.name}</span>
-                              {choice.price > 0 && (
-                                <span className="text-primary font-medium">+{choice.price} FCFA</span>
-                              )}
+                              <span className="text-primary font-medium">{choice.price} FCFA</span>
                             </div>
                           ))}
                         </div>
@@ -1238,7 +1385,7 @@ function ManagerDashboardContent() {
       {restaurantId && (
         <ImagePickerModal
           open={isCategoryImagePickerOpen}
-          restaurantId={restaurantId}
+          restaurantId={restaurantId!}
           selectedImageId={selectedCategoryImage?.id}
           onClose={() => setIsCategoryImagePickerOpen(false)}
           onSelect={(image) =>
@@ -1253,7 +1400,7 @@ function ManagerDashboardContent() {
       {restaurantId && (
         <ImagePickerModal
           open={isImagePickerOpen}
-          restaurantId={restaurantId}
+          restaurantId={restaurantId!}
           selectedImageId={productForm.imageId}
           onClose={() => setIsImagePickerOpen(false)}
           onSelect={(image) =>
@@ -1284,4 +1431,707 @@ function ManagerCatalogSkeleton() {
       ))}
     </>
   )
+}
+
+function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null }) {
+  const db = useFirestore()
+  const now = useLiveNow()
+  const { restaurant } = useRestaurant()
+  const {
+    activeOrders,
+    cashSessionRequests,
+    cashSessions,
+    payments,
+    isLoadingOrders: isLoading,
+  } = useRestaurantLiveData()
+
+  const cashMovementsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_MOVEMENTS)
+  }, [db, restaurantId])
+  const { data: cashMovements } = useCollection<any>(cashMovementsQuery)
+
+  const orderedOrders = activeOrders
+  const activeCashSession = cashSessions.find((session: any) => session.status === "open") ?? null
+  const activeCashSessionId = activeCashSession?.id ?? null
+  const financialScope = React.useMemo(
+    () =>
+      activeCashSessionId
+        ? ({ mode: "session", sessionId: activeCashSessionId } as const)
+        : ({ mode: "global", sessionId: null } as const),
+    [activeCashSessionId]
+  )
+  const businessTimeZone = getSupportedBusinessTimeZone(restaurant?.timezone)
+  const pendingSessionRequests = cashSessionRequests
+  const lateOrders = orderedOrders.filter((order: any) => isLateOrder(order, now))
+  const kitchenProductionStats = getKitchenProductionStats(orderedOrders)
+  const activeOperationalOrders = orderedOrders.filter((order: any) => {
+    const status = getOrderStatus(order)
+    return status === ORDER_OPERATION_STATUS.PENDING || status === ORDER_OPERATION_STATUS.IN_PREPARATION || status === ORDER_OPERATION_STATUS.READY
+  })
+  const unpaidServedOrders = orderedOrders.filter((order: any) => isServedForPaymentAlert(order) && !isOrderPaid(order))
+  const financialSummary = React.useMemo(
+    () =>
+      getFinancialSummary({
+        movements: cashMovements || [],
+        payments: payments || [],
+        scope: financialScope,
+        businessTimeZone,
+        nowMs: now,
+      }),
+    [businessTimeZone, cashMovements, financialScope, now, payments]
+  )
+
+  if (!restaurantId) {
+    return <div className="p-6 text-muted-foreground">Restaurant non disponible.</div>
+  }
+
+  return (
+    <main className="space-y-3 pb-20 md:space-y-6">
+      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="flex items-center gap-2 text-xl font-black uppercase tracking-tight text-primary md:gap-3 md:text-3xl">
+            <ShieldCheck className="h-6 w-6 md:h-8 md:w-8" />
+            Analytics
+          </h1>
+          <p className="text-xs text-muted-foreground md:text-sm">Production, alertes et finance en temps reel.</p>
+        </div>
+      </div>
+
+      <section className="space-y-3">
+        <SectionTitle title="Production cuisine" />
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-4">
+          <KitchenProductionCard label="En attente" value={kitchenProductionStats.pending} tone="orange" />
+          <KitchenProductionCard label="Preparation" value={kitchenProductionStats.preparing} tone="blue" />
+          <KitchenProductionCard label="Pret" value={kitchenProductionStats.ready} tone="purple" />
+          <KitchenProductionCard label="Servi" value={kitchenProductionStats.served} tone="green" />
+        </div>
+      </section>
+
+      <section className="space-y-2 rounded-xl border bg-card/95 p-3 shadow-sm md:rounded-2xl md:p-4">
+        <div className="flex items-center justify-between gap-3">
+          <SectionTitle title="Alertes" />
+          <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-black">
+            {lateOrders.length + unpaidServedOrders.length + pendingSessionRequests.length}
+          </span>
+        </div>
+
+        {lateOrders.length + unpaidServedOrders.length + pendingSessionRequests.length === 0 ? (
+          <div className="rounded-xl border border-dashed p-3 text-xs text-muted-foreground md:text-sm">
+            Aucune alerte critique.
+          </div>
+        ) : (
+          <div className="grid gap-2 md:grid-cols-3">
+            <AlertRow
+              href="/manager/commandes?status=late"
+              label={`${lateOrders.length} commande(s) en retard`}
+              context={lateOrders[0] ? `Commande #${String(lateOrders[0].id).slice(-6).toUpperCase()}` : "Cuisine a jour"}
+              action="Voir"
+              value={lateOrders.length}
+              danger={lateOrders.length > 0}
+            />
+            <AlertRow
+              href="/manager/caisse?filter=payments"
+              label={`${unpaidServedOrders.length} paiement(s) a verifier`}
+              context={unpaidServedOrders[0] ? `Commande #${String(unpaidServedOrders[0].id).slice(-6).toUpperCase()}` : "Paiements a jour"}
+              action="Verifier"
+              value={unpaidServedOrders.length}
+              danger={unpaidServedOrders.length > 0}
+            />
+            <AlertRow
+              href="/manager/caisse"
+              label={`${pendingSessionRequests.length} demande(s) caisse`}
+              context={pendingSessionRequests[0]?.cashierName || pendingSessionRequests[0]?.cashierId || "Caisse a jour"}
+              action="Traiter"
+              value={pendingSessionRequests.length}
+              danger={pendingSessionRequests.length > 0}
+            />
+          </div>
+        )}
+      </section>
+
+      <section className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4">
+        <ManagerFinancialCard
+          icon={Wallet}
+          title="Solde"
+          value={financialSummary.balance}
+          priority
+          danger={financialSummary.balance < 0}
+        />
+        <ManagerFinancialCard icon={ReceiptText} title="CA aujourd'hui" value={financialSummary.todayDeposits} />
+        <ManagerFinancialCard icon={Banknote} title="Depenses" value={financialSummary.todayExpenses} danger={financialSummary.todayExpenses > 0} />
+      </section>
+
+      <section className="space-y-2">
+        <SectionTitle title="Analytics secondaire" />
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4">
+          <ManagerMetric href="/manager/commandes?status=late" title="Retard" value={lateOrders.length} danger={lateOrders.length > 0} />
+          <ManagerMetric href="/manager/commandes?status=pending" title="En cours" value={activeOperationalOrders.length} />
+        </div>
+      </section>
+
+      {isLoading ? (
+        <div className="rounded-xl border bg-card p-6 text-center text-muted-foreground md:rounded-2xl md:p-8">Chargement...</div>
+      ) : null}
+    </main>
+  )
+}
+
+function ManagerMetric({
+  title,
+  value,
+  danger,
+  href,
+  dominant,
+}: {
+  title: string
+  value: React.ReactNode
+  danger?: boolean
+  href?: string
+  dominant?: boolean
+}) {
+  const className = [
+    "block rounded-xl border bg-card p-3 shadow-sm transition hover:border-primary/40 hover:bg-muted/30 md:rounded-2xl",
+    dominant ? "md:col-span-2 md:p-5" : "",
+    danger ? "border-red-300 bg-red-50/80 hover:border-red-400 dark:border-red-900 dark:bg-red-950/20" : "",
+  ].filter(Boolean).join(" ")
+  const content = (
+    <>
+      <p className={`text-xs font-black uppercase ${danger ? "text-red-700 dark:text-red-300" : "text-muted-foreground"}`}>{title}</p>
+      <p className={`mt-1 font-black ${dominant ? "text-3xl md:text-5xl" : "text-2xl"} ${danger ? "text-red-600" : "text-primary"}`}>{value}</p>
+    </>
+  )
+
+  if (href) {
+    return (
+      <Link href={href} className={className} aria-label={`Voir les commandes ${title.toLowerCase()}`}>
+        {content}
+      </Link>
+    )
+  }
+
+  return <div className={className}>{content}</div>
+}
+
+function SectionTitle({ title }: { title: string }) {
+  return <h2 className="text-sm font-black uppercase tracking-tight md:text-lg">{title}</h2>
+}
+
+function RecipeEditor({
+  recipe,
+  setRecipe,
+  inventoryItems,
+}: {
+  recipe: any[]
+  setRecipe: (recipe: any[]) => void
+  inventoryItems: any[]
+}) {
+  const addIngredient = () => {
+    if (recipe.length >= 5) return
+    const firstAvailable = inventoryItems.find((item) => !recipe.some((line) => line.inventoryItemId === item.id))
+    setRecipe([
+      ...recipe,
+      {
+        inventoryItemId: firstAvailable?.id || "",
+        quantity: 1,
+      },
+    ])
+  }
+
+  const updateIngredient = (index: number, field: "inventoryItemId" | "quantity", value: string | number) => {
+    const nextRecipe = [...recipe]
+    nextRecipe[index] = {
+      ...nextRecipe[index],
+      [field]: field === "quantity" ? Number(value) : value,
+    }
+    setRecipe(nextRecipe)
+  }
+
+  const removeIngredient = (index: number) => {
+    setRecipe(recipe.filter((_, currentIndex) => currentIndex !== index))
+  }
+
+  const estimatedCost = recipe.reduce((total, line) => {
+    const item = inventoryItems.find((entry) => entry.id === line.inventoryItemId)
+    return total + Number(line.quantity || 0) * Number(item?.costPerUnit || 0)
+  }, 0)
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-black">🍳 Recette</h3>
+          <p className="text-xs text-muted-foreground">
+            Ingrédients déduits automatiquement après vente.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={addIngredient}
+          disabled={recipe.length >= 5 || inventoryItems.length === 0}
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          Ajouter ingrédient
+        </Button>
+      </div>
+
+      {recipe.length === 0 ? (
+        <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs font-bold text-orange-700">
+          ⚠ aucune recette → inventaire non suivi
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {recipe.map((line, index) => (
+            <div key={`${line.inventoryItemId || "new"}-${index}`} className="grid gap-2 rounded-lg border bg-background p-2 sm:grid-cols-[1fr_120px_40px]">
+              <select
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+                value={line.inventoryItemId || ""}
+                onChange={(event) => updateIngredient(index, "inventoryItemId", event.target.value)}
+              >
+                <option value="">Choisir ingrédient</option>
+                {inventoryItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {getInventoryItemName(item)}
+                  </option>
+                ))}
+              </select>
+              <Input
+                type="number"
+                min={0}
+                step="0.05"
+                value={line.quantity ?? ""}
+                onChange={(event) => updateIngredient(index, "quantity", event.target.value)}
+                placeholder="Qté"
+              />
+              <Button type="button" variant="ghost" size="icon" onClick={() => removeIngredient(index)}>
+                <Trash2 className="h-4 w-4 text-red-600" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {recipe.length > 0 ? (
+        <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2 text-xs">
+          <span className="font-bold text-muted-foreground">Coût estimé produit</span>
+          <span className="font-black">{Math.round(estimatedCost).toLocaleString()} FCFA</span>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function AlertRow({
+  label,
+  context,
+  action,
+  value,
+  danger,
+  href,
+}: {
+  label: string
+  context: string
+  action: string
+  value: number
+  danger?: boolean
+  href?: string
+}) {
+  const className = [
+    "flex items-center justify-between gap-3 rounded-xl border bg-background px-3 py-2 transition hover:border-primary/40 hover:bg-muted/30",
+    danger ? "border-red-200 bg-red-50/80 dark:border-red-400/30 dark:bg-red-500/10" : "",
+  ].filter(Boolean).join(" ")
+  const content = (
+    <>
+      <span className="min-w-0">
+        <span className="block truncate text-xs font-black md:text-sm">{label}</span>
+        <span className="block truncate text-[11px] text-muted-foreground">{context}</span>
+      </span>
+      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${value > 0 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+        {action}
+      </span>
+    </>
+  )
+
+  if (href) {
+    return (
+      <Link href={href} className={className} aria-label={label}>
+        {content}
+      </Link>
+    )
+  }
+
+  return <div className={className}>{content}</div>
+}
+
+function KitchenProductionCard({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone: "orange" | "blue" | "purple" | "green"
+}) {
+  const toneClassName = {
+    orange: "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300",
+    blue: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-400/30 dark:bg-blue-500/10 dark:text-blue-300",
+    purple: "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-400/30 dark:bg-purple-500/10 dark:text-purple-300",
+    green: "border-green-200 bg-green-50 text-green-700 dark:border-green-400/30 dark:bg-green-500/10 dark:text-green-300",
+  }[tone]
+
+  return (
+    <div className={`rounded-xl border p-3 ${toneClassName}`}>
+      <p className="text-[10px] font-black uppercase leading-tight">{label}</p>
+      <p className="mt-1 text-2xl font-black leading-none">{value}</p>
+    </div>
+  )
+}
+
+function ManagerOrdersPage({ restaurantId }: { restaurantId: string | null }) {
+  const searchParams = useSearchParams()
+  const now = useLiveNow()
+  const { activeOrders, isLoadingOrders: isLoading } = useRestaurantLiveData()
+  const initialTab = normalizeOrderTab(searchParams?.get("status") ?? null)
+  const [activeTab, setActiveTab] = React.useState(initialTab)
+  const [expandedOrderId, setExpandedOrderId] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    setActiveTab(initialTab)
+  }, [initialTab])
+
+  const ordersByTab = React.useMemo(() => {
+    return {
+      pending: sortManagerOrders(activeOrders.filter((order: any) => getOrderStatus(order) === ORDER_OPERATION_STATUS.PENDING), now),
+      preparing: sortManagerOrders(activeOrders.filter((order: any) => getOrderStatus(order) === ORDER_OPERATION_STATUS.IN_PREPARATION), now),
+      ready: sortManagerOrders(activeOrders.filter((order: any) => getOrderStatus(order) === ORDER_OPERATION_STATUS.READY), now),
+      served: sortManagerOrders(activeOrders.filter((order: any) => isKitchenServedStatus(getOrderStatus(order))), now),
+      delivery: sortManagerOrders(activeOrders.filter((order: any) => getManagerOrderType(order) === "Livraison"), now),
+      late: sortManagerOrders(activeOrders.filter((order: any) => isLateOrder(order, now)), now),
+    }
+  }, [activeOrders, now])
+
+  if (!restaurantId) {
+    return <div className="p-6 text-muted-foreground">Restaurant non disponible.</div>
+  }
+
+  return (
+    <main className="space-y-4 pb-20 md:space-y-6">
+      <div>
+        <h1 className="flex items-center gap-2 text-2xl font-black uppercase tracking-tight text-primary md:text-3xl">
+          <ClipboardList className="h-7 w-7 md:h-8 md:w-8" />
+          Commandes
+        </h1>
+        <p className="text-sm text-muted-foreground">Traitement centralise des commandes terrain.</p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <div className="-mx-3 overflow-x-auto px-3">
+          <TabsList className="h-12 w-max justify-start gap-1">
+            <OrderTab value="pending" label="Attente" count={ordersByTab.pending.length} />
+            <OrderTab value="preparing" label="Preparation" count={ordersByTab.preparing.length} />
+            <OrderTab value="ready" label="Pretes" count={ordersByTab.ready.length} />
+            <OrderTab value="served" label="Servies" count={ordersByTab.served.length} />
+            <OrderTab value="delivery" label="Delivery" count={ordersByTab.delivery.length} />
+            <OrderTab value="late" label="Retard" count={ordersByTab.late.length} />
+          </TabsList>
+        </div>
+
+        {Object.entries(ordersByTab).map(([tab, orders]) => (
+          <TabsContent key={tab} value={tab} className="space-y-3">
+            {isLoading ? (
+              <div className="rounded-xl border bg-card p-6 text-center text-muted-foreground">Chargement...</div>
+            ) : orders.length === 0 ? (
+              <div className="rounded-xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
+                Aucune commande.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {orders.map((order: any) => (
+                  <ManagerOrderCard
+                    key={order.id}
+                    order={order}
+                    now={now}
+                    expanded={expandedOrderId === order.id}
+                    onToggleDetails={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        ))}
+      </Tabs>
+    </main>
+  )
+}
+
+function OrderTab({ value, label, count }: { value: string; label: string; count: number }) {
+  return (
+    <TabsTrigger value={value} className="min-h-10 gap-2 px-3 font-black">
+      {label}
+      <span className="rounded-full bg-background px-2 py-0.5 text-[10px] font-black text-muted-foreground">
+        {count}
+      </span>
+    </TabsTrigger>
+  )
+}
+
+function ManagerOrderCard({
+  order,
+  now,
+  expanded,
+  onToggleDetails,
+}: {
+  order: any
+  now: number
+  expanded: boolean
+  onToggleDetails: () => void
+}) {
+  const status = getOrderStatus(order)
+  const minutes = getOrderAgeMinutes(order, now)
+  const late = isLateOrder(order, now)
+  const nearLate = isNearLateOrder(order, now)
+  const items = order.items || []
+  const visibleItems = expanded ? items : items.slice(0, 2)
+  const hiddenItemsCount = Math.max(0, items.length - visibleItems.length)
+  const orderType = getManagerOrderType(order)
+  const total = Number(order.total ?? order.totalAmount ?? 0)
+  const cardClassName = [
+    "min-w-0 rounded-xl border bg-card p-3 shadow-sm transition",
+    late ? "border-red-300 bg-red-50/70 dark:border-red-900 dark:bg-red-950/20" : "",
+    !late && nearLate ? "border-orange-300 bg-orange-50/70 dark:border-orange-900 dark:bg-orange-950/20" : "",
+  ].filter(Boolean).join(" ")
+
+  return (
+    <article className={cardClassName}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <h2 className="truncate text-base font-black leading-tight">#{order.id.slice(-6).toUpperCase()}</h2>
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-black leading-none">
+              {formatManagerStatus(status)}
+            </Badge>
+          </div>
+          <p className="truncate text-[11px] font-bold uppercase leading-tight text-muted-foreground">
+            {orderType}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-base font-black leading-tight text-primary">{total.toLocaleString()}</p>
+          <p className="text-[10px] font-bold uppercase leading-tight text-muted-foreground">FCFA</p>
+        </div>
+      </div>
+
+      {late ? (
+        <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] font-bold leading-tight text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">Retard preparation</span>
+        </div>
+      ) : null}
+
+      {!late && nearLate ? (
+        <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-2 py-1.5 text-[11px] font-bold leading-tight text-orange-700 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-300">
+          <Clock className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">Proche retard</span>
+        </div>
+      ) : null}
+
+      <div className="mt-2 space-y-1 rounded-lg bg-muted/50 px-2.5 py-2">
+        {visibleItems.map((item: any, index: number) => (
+          <div key={`${order.id}-${item.productId || index}-${item.name || item.nameSnapshot}`} className="flex items-center justify-between gap-2 text-xs leading-tight">
+            <span className="min-w-0 truncate font-semibold">{item.quantity}x {item.name || item.nameSnapshot}</span>
+            <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{Number(item.total ?? ((item.priceSnapshot ?? 0) * item.quantity)).toLocaleString()}</span>
+          </div>
+        ))}
+        {hiddenItemsCount > 0 ? (
+          <p className="text-[11px] font-bold leading-tight text-muted-foreground">+{hiddenItemsCount} autres</p>
+        ) : null}
+        {items.length === 0 ? (
+          <p className="text-[11px] font-medium leading-tight text-muted-foreground">Aucun produit liste</p>
+        ) : null}
+      </div>
+
+      {expanded ? (
+        <div className="mt-2 grid gap-1.5 rounded-lg border bg-background p-2 text-[11px] font-bold leading-tight text-muted-foreground sm:grid-cols-2">
+          <span>Statut: {formatManagerStatus(status)}</span>
+          <span>Temps: {minutes} min</span>
+          <span>Paiement: {isOrderPaid(order) ? "Valide" : "Non valide"}</span>
+          <span>Priorite: {order.priority === "high" ? "Haute" : "Normale"}</span>
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <span className={`inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-black ${late ? "bg-red-500/10 text-red-600" : nearLate ? "bg-orange-500/10 text-orange-600" : "bg-muted text-muted-foreground"}`}>
+          <Clock className="h-3.5 w-3.5" /> {minutes} min
+        </span>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs font-black" onClick={onToggleDetails}>
+            {expanded ? "Fermer" : "Detail"}
+          </Button>
+          <Button asChild variant="outline" size="sm" className="h-8 px-2 text-xs font-black">
+            <Link href="/manager/cuisine">Cuisine</Link>
+          </Button>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function ManagerFinancialCard({
+  icon: Icon,
+  title,
+  value,
+  priority,
+  danger,
+}: {
+  icon: React.ElementType
+  title: string
+  value: number
+  priority?: boolean
+  danger?: boolean
+}) {
+  return (
+    <Card className={danger ? "border-orange-300" : undefined}>
+      <CardContent className="p-3">
+        <Icon className={`mb-2 h-4 w-4 ${danger ? "text-orange-600" : "text-primary"}`} />
+        <p className="text-xs font-black uppercase text-muted-foreground">{title}</p>
+        <p className={`mt-1 font-black leading-tight ${priority ? "text-2xl md:text-4xl" : "text-xl md:text-2xl"} ${danger ? "text-orange-600" : "text-foreground"}`}>
+          {value.toLocaleString()} FCFA
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function getManagerOrderType(order: any) {
+  const type = order.orderType || (order.type === "table" ? "dine_in" : order.type)
+  if (type === "dine_in") return "Sur place"
+  if (type === "delivery") return "Livraison"
+  return "A emporter"
+}
+
+function useLiveNow(intervalMs = 30000) {
+  const [now, setNow] = React.useState(() => Date.now())
+
+  React.useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), intervalMs)
+    return () => window.clearInterval(interval)
+  }, [intervalMs])
+
+  return now
+}
+
+function getOrderAgeMinutes(order: any, now = Date.now()) {
+  const createdAt = order.createdAt?.toDate?.().getTime?.() ?? now
+  return Math.max(0, Math.floor((now - createdAt) / 60000))
+}
+
+const LATE_ORDER_THRESHOLD_MINUTES = 20
+const NEAR_LATE_ORDER_THRESHOLD_MINUTES = 15
+
+function isLateOrder(order: any, now = Date.now()) {
+  const status = getOrderStatus(order)
+  return [ORDER_OPERATION_STATUS.PENDING, ORDER_OPERATION_STATUS.IN_PREPARATION].includes(status as any) && getOrderAgeMinutes(order, now) > LATE_ORDER_THRESHOLD_MINUTES
+}
+
+function isNearLateOrder(order: any, now = Date.now()) {
+  const status = getOrderStatus(order)
+  const minutes = getOrderAgeMinutes(order, now)
+  return [ORDER_OPERATION_STATUS.PENDING, ORDER_OPERATION_STATUS.IN_PREPARATION].includes(status as any) && minutes >= NEAR_LATE_ORDER_THRESHOLD_MINUTES && minutes <= LATE_ORDER_THRESHOLD_MINUTES
+}
+
+function sortManagerOrders(orders: any[], now = Date.now()) {
+  return [...orders].sort((a, b) => {
+    const aLate = isLateOrder(a, now)
+    const bLate = isLateOrder(b, now)
+    if (aLate !== bLate) return aLate ? -1 : 1
+
+    const aPending = getOrderStatus(a) === ORDER_OPERATION_STATUS.PENDING
+    const bPending = getOrderStatus(b) === ORDER_OPERATION_STATUS.PENDING
+    if (aPending !== bPending) return aPending ? -1 : 1
+
+    return getOrderAgeMinutes(b, now) - getOrderAgeMinutes(a, now)
+  })
+}
+
+function normalizeOrderTab(value: string | null) {
+  if (value === "late") return "late"
+  if (value === "preparing") return "preparing"
+  if (value === "ready") return "ready"
+  if (value === "served") return "served"
+  if (value === "delivery") return "delivery"
+  return "pending"
+}
+
+function isServedForPaymentAlert(order: any) {
+  const status = getOrderStatus(order)
+  return isKitchenServedStatus(status)
+}
+
+function getKitchenProductionStats(orders: any[]) {
+  return orders.reduce(
+    (stats, order) => {
+      const status = getOrderStatus(order)
+      if (status === ORDER_OPERATION_STATUS.PENDING) stats.pending += 1
+      if (status === ORDER_OPERATION_STATUS.IN_PREPARATION) stats.preparing += 1
+      if (status === ORDER_OPERATION_STATUS.READY) stats.ready += 1
+      if (isKitchenServedStatus(status)) stats.served += 1
+      return stats
+    },
+    { pending: 0, preparing: 0, ready: 0, served: 0 }
+  )
+}
+
+function isKitchenServedStatus(status: string | null | undefined) {
+  return (
+    status === ORDER_OPERATION_STATUS.SERVED ||
+    status === ORDER_OPERATION_STATUS.PICKED_UP ||
+    status === ORDER_OPERATION_STATUS.COMPLETED
+  )
+}
+
+function formatManagerStatus(status: string) {
+  if (status === ORDER_OPERATION_STATUS.PENDING) return "En attente"
+  if (status === ORDER_OPERATION_STATUS.IN_PREPARATION) return "En preparation"
+  if (status === ORDER_OPERATION_STATUS.READY) return "Pret"
+  if (status === ORDER_OPERATION_STATUS.SERVED) return "Servi"
+  if (status === ORDER_OPERATION_STATUS.COMPLETED) return "Termine"
+  return status
+}
+
+function normalizeRecipe(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((line: any) => ({
+      inventoryItemId: String(line.inventoryItemId || line.itemId || line.ingredientId || ""),
+      quantity: Number(line.quantity || line.qty || 0),
+    }))
+    .filter((line) => line.inventoryItemId && Number.isFinite(line.quantity) && line.quantity > 0)
+    .slice(0, 5)
+}
+
+function sanitizeRecipe(value: unknown) {
+  return normalizeRecipe(value).map((line) => ({
+    inventoryItemId: line.inventoryItemId,
+    quantity: Number(line.quantity),
+  }))
+}
+
+function getInventoryItemName(item: any) {
+  return typeof item?.name === "string" && item.name.trim() ? item.name.trim() : "Ingrédient sans nom"
+}
+
+function getAveragePrepTime(orders: any[]) {
+  const durations = orders
+    .map((order) => {
+      const started = order.preparingAt?.toDate?.().getTime?.() ?? order.createdAt?.toDate?.().getTime?.()
+      const ready = order.readyAt?.toDate?.().getTime?.()
+      if (!started || !ready || ready < started) return null
+      return Math.round((ready - started) / 60000)
+    })
+    .filter((value): value is number => typeof value === "number")
+
+  if (!durations.length) return null
+  return Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
 }

@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { CartProvider, useCart } from '@/components/public/cart-context';
 import { useFirestore, useDocOnce, useMemoFirebase } from '@/firebase';
 import { collection, doc, addDoc, serverTimestamp } from 'firebase/firestore';
-import { COLLECTION_NAMES, ORDER_STATUS, PAYMENT_STATUS } from '@/lib/constants';
+import { COLLECTION_NAMES } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -63,14 +63,18 @@ function CheckoutPage() {
         customerName: formData.name,
         customerPhone: formData.phone,
         tableId: formData.table || 'Emporté',
-        items: items.map(i => ({
+        items: items.map((i, index) => ({
+          id: `${i.id}-${Date.now()}-${index}`,
           productId: i.id,
           name: i.name,
+          status: "pending",
+          createdAt: new Date(),
           price: i.price,
           quantity: i.quantity
         })),
         totalAmount: totalPrice,
-        status: ORDER_STATUS.NOUVELLE,
+        total: totalPrice,
+        orderStatus: "pending",
         paymentMethod: null,
         paymentStatus: null,
         paidAt: null,

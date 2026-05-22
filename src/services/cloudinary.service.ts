@@ -7,27 +7,39 @@ interface CloudinaryUploadResponse {
   }
 }
 
-export async function uploadImage(file: File): Promise<string> {
-  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
-  const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
+export const uploadImage = async (file: File): Promise<string> => {
+  const cloudinaryConfigured =
+    process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME &&
+    process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
 
-  if (!cloudName || !uploadPreset) {
-    throw new Error("Configuration Cloudinary manquante.")
+  // ✅ MODE DEV : preview local (convert to base64 to allow Firestore persistence)
+  if (!cloudinaryConfigured) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   }
 
+  // ✅ Upload réel
   const formData = new FormData()
   formData.append("file", file)
-  formData.append("upload_preset", uploadPreset)
+  formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!)
 
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-    method: "POST",
-    body: formData,
-  })
-  const result = (await response.json()) as CloudinaryUploadResponse
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  )
 
-  if (!response.ok || !result.secure_url) {
-    throw new Error(result.error?.message || "Upload Cloudinary impossible.")
+  const data = await res.json()
+
+  if (!data.secure_url) {
+    throw new Error("Upload échoué")
   }
 
-  return result.secure_url
+  return data.secure_url
 }

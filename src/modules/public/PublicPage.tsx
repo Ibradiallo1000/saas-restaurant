@@ -7,12 +7,13 @@ import { ChefHat, ClipboardList, Coffee, Home, Search, ShoppingBag } from "lucid
 
 import { useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { getOptimizedImage } from "@/lib/image"
-
+import { formatPrice } from "@/lib/pricing"
 import CartDrawer from "./components/CartDrawer"
-import CategoriesGrid from "./components/CategoriesGrid"
-import CategoryModal from "./components/CategoryModal"
+import CategoriesBar from "./components/CategoriesBar"
+import DishCard from "./components/DishCard"
 import Header from "./components/Header"
 import HeroSection from "./components/HeroSection"
+import ProductModal from "./components/ProductModal"
 import StickyCartBar from "./components/StickyCartBar"
 import { useCart } from "./cart/CartContext"
 import {
@@ -20,24 +21,41 @@ import {
   type RestaurantTableRecord,
 } from "@/services/table-session.service"
 
-function PublicPageContent({ slug, tableId }: { slug: string; tableId?: string | null }) {
+function PublicPageContent({
+  slug,
+  tableId,
+  sessionId,
+  mode,
+  orderId,
+}: {
+  slug: string
+  tableId?: string | null
+  sessionId?: string | null
+  mode?: string | null
+  orderId?: string | null
+}) {
   const db = useFirestore()
   const router = useRouter()
-  const { count } = useCart()
+  const { addItem, count, items } = useCart()
 
   const [clientReady, setClientReady] = React.useState(false)
   const [loadTimedOut, setLoadTimedOut] = React.useState(false)
   const [homeSearch, setHomeSearch] = React.useState("")
-  const [modalSearch, setModalSearch] = React.useState("")
-  const [selectedCategory, setSelectedCategory] = React.useState<any | null>(null)
   const [cartOpen, setCartOpen] = React.useState(false)
   const [activeNav, setActiveNav] = React.useState<"home" | "search" | "order" | "tracking">("home")
   const [tableSessionError, setTableSessionError] = React.useState("")
   const [activeTableSession, setActiveTableSession] = React.useState<ActiveTableSession | null>(null)
+  const [activeCategoryId, setActiveCategoryId] = React.useState<string>("")
+  const [selectedProduct, setSelectedProduct] = React.useState<any | null>(null)
+  const isDineInContinuation = mode === "dine_in" && Boolean(tableId)
 
   React.useEffect(() => {
     setClientReady(true)
   }, [])
+
+  React.useEffect(() => {
+    console.log("CART STATE", items)
+  }, [items])
 
   React.useEffect(() => {
     if (!clientReady) return
@@ -186,6 +204,9 @@ function PublicPageContent({ slug, tableId }: { slug: string; tableId?: string |
 
       if (!map[categoryId]) map[categoryId] = []
       map[categoryId].push(enrichedProduct)
+      
+      // 🔥 TRI PAR POPULARITÉ À L'INTÉRIEUR DE CHAQUE CATÉGORIE
+      map[categoryId].sort((a, b) => (b.orderCount || 0) - (a.orderCount || 0))
     })
 
     return map
@@ -218,25 +239,8 @@ function PublicPageContent({ slug, tableId }: { slug: string; tableId?: string |
     })
   }, [optimizedCategories, homeSearch, productsByCategory])
 
-  const modalProducts = React.useMemo(() => {
-    if (!selectedCategory) return []
-
-    const categoryProducts = productsByCategory[selectedCategory.id] || []
-    const search = modalSearch.trim().toLowerCase()
-
-    if (!search) return categoryProducts
-
-    return categoryProducts.filter((product: any) => {
-      return (
-        product.name?.toLowerCase().includes(search) ||
-        product.description?.toLowerCase().includes(search)
-      )
-    })
-  }, [modalSearch, productsByCategory, selectedCategory])
-
   const handleHomeClick = () => {
     setActiveNav("home")
-    setSelectedCategory(null)
     setHomeSearch("")
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
@@ -264,9 +268,18 @@ function PublicPageContent({ slug, tableId }: { slug: string; tableId?: string |
     setCartOpen(true)
   }
 
-  const handleCategorySelect = (category: any) => {
-    setSelectedCategory(category)
-    setModalSearch("")
+  const handleCategorySelect = (categoryId: string) => {
+    setActiveCategoryId(categoryId)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  const handleOpenProduct = (product: any) => {
+    setSelectedProduct(product)
+  }
+
+  function handleAddToCartGlobal(item: any) {
+    addItem(item)
+    setSelectedProduct(null)
   }
 
   if (isRestaurantLoading && !loadTimedOut) {
@@ -296,60 +309,17 @@ function PublicPageContent({ slug, tableId }: { slug: string; tableId?: string |
         <HeroSection restaurant={restaurant} />
 
         <main className="-mt-4 rounded-t-3xl bg-background pt-4 shadow-md">
-          <div className="mx-auto w-full max-w-5xl px-4 pb-5">
-            {(tableContext || tableSessionError) && (
-              <div className="mb-4 rounded-xl border bg-card px-4 py-3 text-sm font-bold shadow-sm">
-                {tableContext ? (
-                  <span>
-                    Commande sur place - {tableContext.name || tableContext.id}
-                  </span>
-                ) : (
-                  <span className="text-red-600">{tableSessionError}</span>
-                )}
-              </div>
-            )}
-            <section>
-              <div className="mb-4 flex items-end justify-between gap-4">
-                <div>
-                  <p className="text-[20px] font-black uppercase tracking-[0.18em] text-[var(--color-primary)]">
-                    Menu
-                  </p>
-                </div>
-                <span className="text-xs font-bold text-muted-foreground">
-                  {visibleCategories.length}
-                </span>
-              </div>
-
-              {productsError || categoriesError ? (
-                <div className="rounded-2xl bg-card px-6 py-14 text-center text-card-foreground shadow-sm">
-                  <ChefHat className="mx-auto mb-3 h-12 w-12 text-muted-foreground/60" />
-                  <h2 className="text-base font-black">
-                    Menu indisponible
-                  </h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Impossible de charger les categories et les plats.
-                  </p>
-                </div>
-              ) : isMenuLoading ? (
-                <CategoriesSkeleton />
-              ) : visibleCategories.length > 0 ? (
-                <CategoriesGrid
-                  categories={visibleCategories}
-                  onSelect={handleCategorySelect}
-                />
-              ) : (
-                <div className="rounded-2xl bg-card px-6 py-14 text-center text-card-foreground shadow-sm">
-                  <ChefHat className="mx-auto mb-3 h-12 w-12 text-muted-foreground/60" />
-                  <h2 className="text-base font-black">
-                    Aucune categorie trouvee
-                  </h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Essayez une autre recherche.
-                  </p>
-                </div>
-              )}
-            </section>
-          </div>
+          <MainContent
+            categories={visibleCategories}
+            isLoading={isMenuLoading}
+            hasError={Boolean(productsError || categoriesError)}
+            productsByCategory={productsByCategory}
+            table={tableContext}
+            tableError={tableSessionError}
+            activeCategoryId={activeCategoryId}
+            onCategorySelect={handleCategorySelect}
+            onOpenProduct={handleOpenProduct}
+          />
         </main>
 
         <StickyCartBar onClick={() => setCartOpen(true)} />
@@ -366,24 +336,22 @@ function PublicPageContent({ slug, tableId }: { slug: string; tableId?: string |
         />
       </div>
 
-      {selectedCategory && (
-        <CategoryModal
-          category={selectedCategory}
-          products={modalProducts}
-          search={modalSearch}
-          onSearchChange={setModalSearch}
-          onClose={() => setSelectedCategory(null)}
-          onOpenProduct={() => undefined}
-        />
-      )}
-
       <CartDrawer
         open={cartOpen}
         onClose={() => setCartOpen(false)}
         restaurantId={restaurantId}
         tableContext={tableContext}
         activeTableSession={activeTableSession}
+        activeOrderId={isDineInContinuation ? orderId : null}
       />
+
+      {selectedProduct && (
+        <ProductModal
+          product={selectedProduct}
+          onAddToCart={handleAddToCartGlobal}
+          onClose={() => setSelectedProduct(null)}
+        />
+      )}
     </div>
   )
 }
@@ -409,11 +377,162 @@ async function ensureActiveTableSession(
 export default function PublicPage({
   slug,
   tableId,
+  sessionId,
+  mode,
+  orderId,
 }: {
   slug: string
   tableId?: string | null
+  sessionId?: string | null
+  mode?: string | null
+  orderId?: string | null
 }) {
-  return <PublicPageContent slug={slug} tableId={tableId} />
+  return (
+    <PublicPageContent
+      slug={slug}
+      tableId={tableId}
+      sessionId={sessionId}
+      mode={mode}
+      orderId={orderId}
+    />
+  )
+}
+
+function MainContent({
+  categories,
+  isLoading,
+  hasError,
+  productsByCategory,
+  table,
+  tableError,
+  activeCategoryId,
+  onCategorySelect,
+  onOpenProduct,
+}: any) {
+
+  // AUTO-SÉLECTION DE LA PREMIÈRE CATÉGORIE
+  React.useEffect(() => {
+    if (!activeCategoryId && categories.length > 0) {
+      onCategorySelect(categories[0].id)
+    }
+  }, [categories, activeCategoryId, onCategorySelect])
+
+  // FILTRE : UNE SEULE CATÉGORIE À LA FOIS
+  const filteredCategories = React.useMemo(() => {
+    if (!activeCategoryId) return []
+    return categories.filter((c: any) => c.id === activeCategoryId)
+  }, [categories, activeCategoryId])
+
+  if (isLoading) {
+    return (
+      <div className="mx-auto w-full max-w-5xl pb-5">
+        <div className="px-4">
+          <div className="mb-4 h-16 animate-pulse rounded-xl bg-muted" />
+          <div className="mb-6 h-10 animate-pulse rounded-full bg-muted" />
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-24 animate-pulse rounded-xl bg-muted" />
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (hasError) {
+    return (
+      <div className="mx-auto w-full max-w-5xl pb-5">
+        <div className="rounded-2xl bg-card px-6 py-14 text-center">
+          <ChefHat className="mx-auto mb-3 h-12 w-12 text-muted-foreground/60" />
+          <h2 className="text-base font-black">Menu indisponible</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Impossible de charger les produits
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const currentCategory = filteredCategories[0]
+
+  return (
+    <div className="mx-auto w-full max-w-5xl pb-5">
+      
+      <div className="px-4">
+        <TableContextBanner table={table} error={tableError} />
+      </div>
+
+      {/* CATÉGORIES BAR */}
+      <div className="mb-4">
+        <CategoriesBar
+          categories={categories}
+          activeId={activeCategoryId}
+          onSelect={onCategorySelect}
+        />
+      </div>
+
+      {/* PRODUITS (UNE SEULE CATÉGORIE) */}
+      {currentCategory && (
+        <div className="px-4 mb-6">
+          <h2 className="text-lg font-black mb-3 text-[var(--color-primary)]">
+            {currentCategory.name}
+          </h2>
+
+          <div className="flex flex-col gap-3">
+            {(productsByCategory[currentCategory.id] || []).map((product: any) => (
+              <DishCard
+                key={product.id}
+                product={product}
+                onOpenDetails={() => onOpenProduct(product)}
+              />
+            ))}
+          </div>
+
+          {(productsByCategory[currentCategory.id] || []).length === 0 && (
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              Aucun produit disponible dans cette catégorie
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TableContextBanner({
+  table,
+  error,
+}: {
+  table: RestaurantTableRecord | null
+  error: string
+}) {
+  if (!table && !error) return null
+
+  return (
+    <div className="mb-4 rounded-xl border bg-card px-4 py-3 text-sm font-bold shadow-sm">
+      {table ? (
+        <span>Commande sur place - {table.name || table.id}</span>
+      ) : (
+        <span className="text-red-600">{error}</span>
+      )}
+    </div>
+  )
+}
+
+function MenuState({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
+  return (
+    <div className="rounded-2xl bg-card px-6 py-14 text-center text-card-foreground shadow-sm">
+      <ChefHat className="mx-auto mb-3 h-12 w-12 text-muted-foreground/60" />
+      <h2 className="text-base font-black">{title}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+    </div>
+  )
 }
 
 export function PublicBottomNavigation({
@@ -435,15 +554,8 @@ export function PublicBottomNavigation({
   onOrder: () => void
   onTracking: () => void
 }) {
-  const items = [
-    { id: "home" as const, label: "Accueil", icon: Home, onClick: onHome },
-    { id: "search" as const, label: "Recherche", icon: Search, onClick: onSearch },
-    { id: "order" as const, label: "Commande", icon: ShoppingBag, onClick: onOrder },
-    { id: "tracking" as const, label: "Suivi", icon: ClipboardList, onClick: onTracking },
-  ]
-
   return (
-    <nav className="fixed bottom-0 left-0 right-0 border-t bg-background/95 px-4 pb-2 pt-2 shadow-[0_-16px_35px_rgba(15,23,42,0.1)]">
+    <nav className="fixed bottom-0 left-0 right-0 border-t bg-background/95 px-4 pb-2 pt-2 shadow-[0_-16px_35px_rgba(15,23,42,0.1)] z-50">
       {active === "search" && (
         <div className="mx-auto mb-2 max-w-md">
           <div className="relative">
@@ -459,8 +571,13 @@ export function PublicBottomNavigation({
         </div>
       )}
 
-      <div className="mx-auto grid h-[58px] max-w-md grid-cols-4 gap-1">
-        {items.map((item) => {
+      <div className="mx-auto grid h-12 max-w-md grid-cols-4 gap-1">
+        {[
+          { id: "home" as const, label: "Accueil", icon: Home, onClick: onHome },
+          { id: "search" as const, label: "Recherche", icon: Search, onClick: onSearch },
+          { id: "order" as const, label: "Commande", icon: ShoppingBag, onClick: onOrder },
+          { id: "tracking" as const, label: "Suivi", icon: ClipboardList, onClick: onTracking },
+        ].map((item) => {
           const Icon = item.icon
           const isActive = active === item.id
 
@@ -471,11 +588,11 @@ export function PublicBottomNavigation({
               onClick={item.onClick}
               className={`relative flex h-full flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-black transition-all ${
                 isActive
-                  ? "scale-105 bg-[var(--color-primary)] text-white shadow-lg"
+                  ? "text-[var(--color-primary)]"
                   : "text-muted-foreground hover:bg-muted"
               }`}
             >
-              <Icon className="h-5 w-5" />
+              <Icon className="h-4 w-4" />
               <span>{item.label}</span>
               {item.id === "order" && count > 0 && (
                 <span

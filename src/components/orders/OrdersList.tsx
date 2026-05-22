@@ -19,7 +19,7 @@ type OrdersListProps = {
 export function OrdersList({ orders, isLoading, ...actions }: OrdersListProps) {
   if (isLoading) {
     return (
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {Array.from({ length: 6 }).map((_, index) => (
           <Skeleton key={index} className="h-44" />
         ))}
@@ -36,7 +36,7 @@ export function OrdersList({ orders, isLoading, ...actions }: OrdersListProps) {
   }
 
   return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       {orders.map((order) => (
         <OrderCard key={order.id} order={order} mode="pos" {...actions} />
       ))}

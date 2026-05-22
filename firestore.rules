@@ -50,6 +50,385 @@ service cloud.firestore {
         );
     }
 
+    function isRestaurantManager(restaurantId) {
+      return isSignedIn()
+        && (
+          (
+            userExists()
+            && userDoc().data.restaurantId == restaurantId
+            && userDoc().data.role in ["manager", "owner"]
+          )
+          || (
+            isRestaurantStaff(restaurantId)
+            && get(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid)).data.role in ["manager", "owner"]
+          )
+          || isRestaurantOwnerEmail(restaurantId)
+        );
+    }
+
+    function canApproveCashSession(restaurantId) {
+      return isSuperAdmin() || isRestaurantOwner(restaurantId) || isRestaurantManager(restaurantId);
+    }
+
+    function canReadRestaurantInventoryItems(restaurantId) {
+      return isSuperAdmin() || isRestaurantOwner(restaurantId) || isRestaurantManager(restaurantId) || canManageRestaurantMenu(restaurantId);
+    }
+
+    function canWriteRestaurantInventoryItems(restaurantId) {
+      return isSuperAdmin()
+        || (
+          isSignedIn()
+          && (
+            (
+              userExists()
+              && userDoc().data.restaurantId == restaurantId
+              && userDoc().data.role == "manager"
+            )
+            || (
+              isRestaurantStaff(restaurantId)
+              && get(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid)).data.role == "manager"
+            )
+          )
+        );
+    }
+
+    function canManageRestaurantMenu(restaurantId) {
+      return isSuperAdmin()
+        || (
+          userExists()
+          && userDoc().data.restaurantId == restaurantId
+          && userDoc().data.role in ["owner", "manager"]
+        );
+    }
+
+    function isInventorySaleDecrement(restaurantId) {
+      return canUseRestaurant(restaurantId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "stockEstimated",
+          "updatedAt"
+        ])
+        && request.resource.data.stockEstimated is number
+        && request.resource.data.stockEstimated <= resource.data.stockEstimated;
+    }
+
+    function isInventoryConsumptionStatsUpdate(restaurantId) {
+      return canUseRestaurant(restaurantId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "avgDailyConsumption",
+          "consumptionTotal",
+          "consumptionDays",
+          "dailyConsumptionDate",
+          "dailyConsumptionUsed",
+          "updatedAt"
+        ])
+        && request.resource.data.avgDailyConsumption is number
+        && request.resource.data.avgDailyConsumption >= 0
+        && request.resource.data.consumptionTotal is number
+        && request.resource.data.consumptionTotal >= 0
+        && request.resource.data.consumptionDays is number
+        && request.resource.data.consumptionDays >= 0
+        && request.resource.data.dailyConsumptionDate is string
+        && request.resource.data.dailyConsumptionUsed is number
+        && request.resource.data.dailyConsumptionUsed >= 0;
+    }
+
+    function isInventorySupplyUpdate(restaurantId) {
+      return canWriteRestaurantInventoryItems(restaurantId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "stockEstimated",
+          "costPerUnit",
+          "updatedAt"
+        ])
+        && request.resource.data.stockEstimated is number
+        && request.resource.data.stockEstimated >= resource.data.stockEstimated
+        && request.resource.data.costPerUnit is number
+        && request.resource.data.costPerUnit >= 0;
+    }
+
+    function isInventoryThresholdUpdate(restaurantId) {
+      return canWriteRestaurantInventoryItems(restaurantId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "minThreshold",
+          "updatedAt"
+        ])
+        && request.resource.data.minThreshold is number
+        && request.resource.data.minThreshold >= 0;
+    }
+
+    function canReadRestaurantBusinessDocs(restaurantId) {
+      return isSuperAdmin() || isRestaurantOwner(restaurantId) || isRestaurantManager(restaurantId);
+    }
+
+    function canWriteRestaurantBusinessDocs(restaurantId) {
+      return isSuperAdmin() || isRestaurantManager(restaurantId);
+    }
+
+    function isPaidStatus(status) {
+      return status in ["paye", "paid", "validated", "verified"];
+    }
+
+    function isValidOrderStatus(status) {
+      return status in ["pending", "preparing", "ready", "served", "picked_up", "cancelled"];
+    }
+
+    function hasLegacyOrderStatusFields(data) {
+      return data.keys().hasAny(["status", "kitchenStatus"]);
+    }
+
+    function changesLegacyOrderStatusFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(["status", "kitchenStatus"]);
+    }
+
+    function hasValidOrderStatusIfPresent() {
+      return !request.resource.data.keys().hasAny(["orderStatus"])
+        || isValidOrderStatus(request.resource.data.orderStatus);
+    }
+
+    function hasCashSessionForVerifiedPayment() {
+      return !isPaidStatus(request.resource.data.paymentStatus)
+        || request.resource.data.cashSessionId is string;
+    }
+
+    function isCriticalOrderDataChange() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        "amount",
+        "total",
+        "totalAmount",
+        "subtotal",
+        "deliveryFee",
+        "items"
+      ]);
+    }
+
+    function isKitchenProductionUpdate() {
+      return canUseRestaurant(resource.data.restaurantId)
+        && request.resource.data.restaurantId == resource.data.restaurantId
+        && !changesLegacyOrderStatusFields()
+        && hasValidOrderStatusIfPresent()
+        && request.resource.data.paymentStatus == resource.data.paymentStatus
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "orderStatus",
+          "statusHistory",
+          "items",
+          "updatedAt"
+        ]);
+    }
+
+    function isTechnicalPaidOrderUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        "printedKitchen",
+        "printedClient",
+        "paymentIntentStatus",
+        "paymentVerificationStatus",
+        "paymentVerifiedAt",
+        "paymentVerifiedBy",
+        "sessionActive",
+        "completedAt",
+        "updatedAt"
+      ]);
+    }
+
+    function isRefundMarkerUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        "refunded",
+        "refundTotal",
+        "updatedAt"
+      ]);
+    }
+
+    function canUpdateOrder(restaurantId) {
+      return canUseRestaurant(restaurantId)
+        && request.resource.data.restaurantId == restaurantId
+        && !changesLegacyOrderStatusFields()
+        && hasValidOrderStatusIfPresent()
+        && (hasCashSessionForVerifiedPayment() || isKitchenProductionUpdate())
+        && (!isCriticalOrderDataChange() || isKitchenProductionUpdate())
+        && (
+          (
+            !isPaidStatus(resource.data.paymentStatus)
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(["paymentStatus"])
+              || !isPaidStatus(resource.data.paymentStatus)
+            )
+          )
+          || (
+            isPaidStatus(resource.data.paymentStatus)
+            && isTechnicalPaidOrderUpdate()
+          )
+          || (
+            isPaidStatus(resource.data.paymentStatus)
+            && isKitchenProductionUpdate()
+          )
+          || (
+            isPaidStatus(resource.data.paymentStatus)
+            && canApproveCashSession(restaurantId)
+            && isRefundMarkerUpdate()
+          )
+        );
+    }
+
+    function canUpdatePublicPaymentIntent(restaurantId) {
+      return resource.data.restaurantId == restaurantId
+        && request.resource.data.restaurantId == restaurantId
+        && resource.data.source in ["client", "qr", "qr_table", "manual"]
+        && !isPaidStatus(resource.data.paymentStatus)
+        && (
+          request.resource.data.paymentStatus == resource.data.paymentStatus
+          || (
+            resource.data.paymentStatus == "unpaid"
+            && request.resource.data.paymentStatus in ["pending_mobile", "pending", "pending_cash"]
+          )
+          || (
+            resource.data.source != "qr_table"
+            && resource.data.paymentStatus == "unpaid"
+            && request.resource.data.paymentStatus == "pending_verification"
+          )
+        )
+        && request.resource.data.orderStatus == resource.data.orderStatus
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "source",
+          "paymentMethod",
+          "paymentMethodCode",
+          "paymentProvider",
+          "paymentType",
+          "paymentIntentStatus",
+          "paymentStatus",
+          "paymentCode",
+          "paymentInstruction",
+          "needsCashCollection",
+          "paymentVerificationStatus",
+          "paymentVerificationRequestedAt",
+          "updatedAt"
+        ])
+        && request.resource.data.paymentMethod is string
+        && request.resource.data.paymentIntentStatus in ["pending", "submitted"];
+    }
+
+    function canAppendActiveDineInOrder(restaurantId) {
+      return resource.data.restaurantId == restaurantId
+        && request.resource.data.restaurantId == restaurantId
+        && resource.data.source in ["qr", "qr_table"]
+        && resource.data.orderType == "dine_in"
+        && request.resource.data.orderType == resource.data.orderType
+        && resource.data.sessionActive == true
+        && !isPaidStatus(resource.data.paymentStatus)
+        && request.resource.data.sessionId == resource.data.sessionId
+        && request.resource.data.tableId == resource.data.tableId
+        && request.resource.data.zoneId == resource.data.zoneId
+        && request.resource.data.items is list
+        && request.resource.data.items.size() >= resource.data.items.size()
+        && request.resource.data.subtotal is number
+        && request.resource.data.total is number
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "items",
+          "subtotal",
+          "total",
+          "totalAmount",
+          "updatedAt"
+        ])
+        && request.resource.data.sessionActive == true
+        && request.resource.data.paymentStatus == resource.data.paymentStatus
+        && request.resource.data.orderStatus == resource.data.orderStatus
+        && exists(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(resource.data.sessionId))
+        && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(resource.data.sessionId)).data.status == "active"
+        && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(resource.data.sessionId)).data.tableId == resource.data.tableId;
+    }
+
+    function isValidPaymentSource(source) {
+      return source in ["pos", "qr_table", "delivery"];
+    }
+
+    function isValidPaymentType(type) {
+      return type in ["cash", "mobile_money"];
+    }
+
+    function isValidPaymentLedgerStatus(status) {
+      return status in ["pending", "confirmed", "failed", "refunded", "voided"];
+    }
+
+    function isValidPaymentCreateTimestamps(data) {
+      return data.createdAt is timestamp
+        && (
+          data.status == "confirmed"
+          ? (data.confirmedAt is timestamp && data.confirmedBy == request.auth.uid)
+          : (!data.keys().hasAny(["confirmedAt"]) || data.confirmedAt == null)
+        )
+        && (
+          data.status == "failed"
+          ? (data.failedAt is timestamp && data.failedBy == request.auth.uid && data.failureReason is string)
+          : (!data.keys().hasAny(["failedAt"]) || data.failedAt == null)
+        );
+    }
+
+    function isValidPaymentStatusTransition() {
+      return resource.data.status == "pending"
+        && (
+          (
+            request.resource.data.status == "confirmed"
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "confirmedAt", "confirmedBy"])
+            && request.resource.data.confirmedAt is timestamp
+            && request.resource.data.confirmedBy == request.auth.uid
+          )
+          || (
+            request.resource.data.status == "failed"
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "failedAt", "failedBy", "failureReason"])
+            && request.resource.data.failedAt is timestamp
+            && request.resource.data.failedBy == request.auth.uid
+            && request.resource.data.failureReason is string
+          )
+        );
+    }
+
+    function hasOpenCashSession(restaurantId, sessionId, cashierId) {
+      return sessionId is string
+        && exists(/databases/$(database)/documents/restaurants/$(restaurantId)/cashSessions/$(sessionId))
+        && get(/databases/$(database)/documents/restaurants/$(restaurantId)/cashSessions/$(sessionId)).data.status == "open"
+        && (
+          get(/databases/$(database)/documents/restaurants/$(restaurantId)/cashSessions/$(sessionId)).data.cashierId == cashierId
+          || get(/databases/$(database)/documents/restaurants/$(restaurantId)/cashSessions/$(sessionId)).data.userId == cashierId
+        );
+    }
+
+    function isValidPaymentCreate(restaurantId) {
+      return canUseRestaurant(restaurantId)
+        && request.resource.data.orderId is string
+        && request.resource.data.sessionId is string
+        && request.resource.data.cashierId == request.auth.uid
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.amount <= 10000000
+        && isValidPaymentSource(request.resource.data.source)
+        && isValidPaymentType(request.resource.data.type)
+        && isValidPaymentLedgerStatus(request.resource.data.status)
+        && request.resource.data.idempotencyKey is string
+        && isValidPaymentCreateTimestamps(request.resource.data)
+        && (
+          request.resource.data.type == "cash"
+          ? request.resource.data.provider == null
+          : (request.resource.data.provider == null || request.resource.data.provider is string)
+        )
+        && hasOpenCashSession(restaurantId, request.resource.data.sessionId, request.resource.data.cashierId);
+    }
+
+    function isCashSessionAggregateUpdate(restaurantId) {
+      return canUseRestaurant(restaurantId)
+        && resource.data.status == "open"
+        && request.resource.data.status == "open"
+        && (resource.data.cashierId == request.auth.uid || resource.data.userId == request.auth.uid)
+        && request.resource.data.restaurantId == restaurantId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "totalCash",
+          "totalMobile",
+          "totalMobileMoney",
+          "totalOrders",
+          "totalPayments",
+          "totalConfirmed",
+          "totalsByProvider",
+          "totalsBySource",
+          "updatedAt"
+        ]);
+    }
+
     function canUseRestaurant(restaurantId) {
       return isSuperAdmin()
         || isRestaurantMember(restaurantId)
@@ -74,17 +453,160 @@ service cloud.firestore {
 
       match /categories/{categoryId} {
         allow get, list: if true;
-        allow write: if canUseRestaurant(restaurantId);
+        allow write: if canManageRestaurantMenu(restaurantId);
       }
 
       match /products/{productId} {
         allow get, list: if true;
-        allow write: if canUseRestaurant(restaurantId);
+        allow write: if canManageRestaurantMenu(restaurantId);
+      }
+
+      match /menuItems/{menuItemId} {
+        allow get, list: if true;
+        allow write: if canManageRestaurantMenu(restaurantId);
       }
 
       match /inventory/{inventoryId} {
         allow get, list: if canUseRestaurant(restaurantId);
         allow write: if canUseRestaurant(restaurantId);
+      }
+
+      match /inventoryItems/{itemId} {
+        allow get, list: if canReadRestaurantInventoryItems(restaurantId);
+        allow create: if canWriteRestaurantInventoryItems(restaurantId)
+          && request.resource.data.name is string
+          && request.resource.data.unit in ["pièce", "kg", "litre"]
+          && request.resource.data.stockEstimated is number
+          && request.resource.data.stockEstimated >= 0
+          && (!("minThreshold" in request.resource.data) || request.resource.data.minThreshold is number)
+          && (!("minThreshold" in request.resource.data) || request.resource.data.minThreshold >= 0)
+          && request.resource.data.lastCountedStock is number
+          && request.resource.data.lastCountedStock >= 0
+          && request.resource.data.avgDailyConsumption is number
+          && request.resource.data.avgDailyConsumption >= 0
+          && request.resource.data.costPerUnit is number
+          && request.resource.data.costPerUnit >= 0
+          && request.resource.data.lossRate is number
+          && request.resource.data.lossRate >= 0
+          && request.resource.data.lossRate <= 1;
+        allow update: if (
+          canWriteRestaurantInventoryItems(restaurantId)
+          && request.resource.data.name is string
+          && request.resource.data.unit in ["pièce", "kg", "litre"]
+          && request.resource.data.stockEstimated is number
+          && request.resource.data.stockEstimated >= 0
+          && (!("minThreshold" in request.resource.data) || request.resource.data.minThreshold is number)
+          && (!("minThreshold" in request.resource.data) || request.resource.data.minThreshold >= 0)
+          && request.resource.data.costPerUnit is number
+          && request.resource.data.costPerUnit >= 0
+          && request.resource.data.lossRate is number
+          && request.resource.data.lossRate >= 0
+          && request.resource.data.lossRate <= 1
+        ) || isInventorySaleDecrement(restaurantId)
+          || isInventorySupplyUpdate(restaurantId)
+          || isInventoryThresholdUpdate(restaurantId)
+          || isInventoryConsumptionStatsUpdate(restaurantId);
+        allow delete: if isSuperAdmin();
+      }
+
+      match /inventoryMovements/{movementId} {
+        allow get, list: if canReadRestaurantBusinessDocs(restaurantId);
+        allow create: if canUseRestaurant(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.type in ["supply", "adjustment", "sale"]
+          && request.resource.data.inventoryItemId is string
+          && request.resource.data.quantity is number
+          && (
+            (
+              request.resource.data.type in ["supply", "adjustment"]
+              && request.resource.data.quantity > 0
+              && request.resource.data.createdBy == request.auth.uid
+            )
+            || (
+              request.resource.data.type == "sale"
+              && request.resource.data.quantity < 0
+              && request.resource.data.source == "system"
+            )
+          )
+          && request.resource.data.createdAt is timestamp;
+        allow update, delete: if false;
+      }
+
+      match /suppliers/{supplierId} {
+        allow get, list: if canReadRestaurantBusinessDocs(restaurantId);
+        allow create: if canWriteRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.name is string
+          && request.resource.data.balance is number
+          && request.resource.data.balance >= 0
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdAt is timestamp;
+        allow update: if canWriteRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.name is string
+          && request.resource.data.balance is number
+          && request.resource.data.balance >= 0;
+        allow delete: if isSuperAdmin();
+      }
+
+      match /expenses/{expenseId} {
+        allow get, list: if canReadRestaurantBusinessDocs(restaurantId);
+        allow create: if canWriteRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.type in ["supply", "salary", "other"]
+          && request.resource.data.paymentStatus in ["paid", "partial", "unpaid"]
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.paidAmount is number
+          && request.resource.data.paidAmount >= 0
+          && request.resource.data.paidAmount <= request.resource.data.amount
+          && request.resource.data.validated == false
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdAt is timestamp;
+        allow update: if isRestaurantOwner(restaurantId)
+          && request.resource.data.validated is bool;
+        allow delete: if false;
+      }
+
+      match /expenseLogs/{expenseId} {
+        allow get, list: if canReadRestaurantBusinessDocs(restaurantId);
+        allow create: if canWriteRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.expenseId == expenseId
+          && request.resource.data.createdAt is timestamp;
+        allow update, delete: if false;
+      }
+
+      match /supplierPayments/{paymentId} {
+        allow get, list: if canReadRestaurantBusinessDocs(restaurantId);
+        allow create: if canWriteRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.supplierId is string
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdAt is timestamp;
+        allow update, delete: if false;
+      }
+
+      match /inventoryAlerts/{alertId} {
+        allow get, list: if canUseRestaurant(restaurantId);
+        allow create: if canUseRestaurant(restaurantId)
+          && request.resource.data.type in ["low_stock", "incoherent_stock", "missing_cost"]
+          && request.resource.data.itemId is string
+          && request.resource.data.message is string
+          && request.resource.data.severity in ["low", "medium", "high"]
+          && request.resource.data.resolved is bool
+          && request.resource.data.createdAt is timestamp;
+        allow update: if canUseRestaurant(restaurantId)
+          && request.resource.data.resolved is bool;
+        allow delete: if isSuperAdmin();
+      }
+
+      match /inventoryLogs/{logId} {
+        allow get, list: if canUseRestaurant(restaurantId);
+        allow create: if canUseRestaurant(restaurantId)
+          && request.resource.data.paymentId == logId
+          && request.resource.data.decrementCount is number
+          && request.resource.data.createdAt is timestamp;
+        allow update, delete: if false;
       }
 
       match /customers/{customerId} {
@@ -96,6 +618,84 @@ service cloud.firestore {
         allow get, list: if canUseRestaurant(restaurantId);
         allow create, update: if canUseRestaurant(restaurantId)
           && request.resource.data.restaurantId == restaurantId;
+        allow delete: if isSuperAdmin();
+      }
+
+      match /cashSessions/{sessionId} {
+        allow get, list: if canUseRestaurant(restaurantId);
+        allow create: if (
+          canUseRestaurant(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && (request.resource.data.cashierId == request.auth.uid || request.resource.data.userId == request.auth.uid)
+          && request.resource.data.status == "open"
+        ) || (
+          canApproveCashSession(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.cashierId is string
+          && request.resource.data.status == "open"
+          && request.resource.data.approvedBy == request.auth.uid
+        );
+        allow update: if isCashSessionAggregateUpdate(restaurantId)
+          || (
+            resource.data.status != "validated"
+            && request.resource.data.restaurantId == restaurantId
+            && request.resource.data.status in ["open", "closed", "pending_validation", "validated"]
+            && (
+              canApproveCashSession(restaurantId)
+              || (
+                canUseRestaurant(restaurantId)
+                && (resource.data.cashierId == request.auth.uid || resource.data.userId == request.auth.uid)
+                && resource.data.status == "open"
+                && request.resource.data.status in ["closed", "pending_validation"]
+                && request.resource.data.validatedByManager == false
+              )
+            )
+          );
+        allow delete: if isSuperAdmin();
+      }
+
+      match /payments/{paymentId} {
+        allow get, list: if canApproveCashSession(restaurantId) || canUseRestaurant(restaurantId);
+        allow create: if isValidPaymentCreate(restaurantId);
+        allow update: if canUseRestaurant(restaurantId)
+          && resource.data.status != "confirmed"
+          && isValidPaymentStatusTransition()
+          && hasOpenCashSession(restaurantId, resource.data.sessionId, resource.data.cashierId);
+        allow delete: if false;
+      }
+
+      match /cashMovements/{movementId} {
+        allow get, list: if canUseRestaurant(restaurantId);
+        allow create: if canApproveCashSession(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.type in ["deposit", "expense", "transfer"]
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.source in ["session", "manual"]
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdAt is timestamp
+          && (
+            request.resource.data.type != "deposit"
+            || (
+              request.resource.data.source == "session"
+              && request.resource.data.sessionId is string
+              && movementId == "session-" + request.resource.data.sessionId
+              && !exists(/databases/$(database)/documents/restaurants/$(restaurantId)/cashMovements/$(movementId))
+            )
+          );
+        allow update, delete: if false;
+      }
+
+      match /cashSessionRequests/{requestId} {
+        allow get, list: if canUseRestaurant(restaurantId);
+        allow create: if canUseRestaurant(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.cashierId == request.auth.uid
+          && request.resource.data.status == "pending";
+        allow update: if canApproveCashSession(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.cashierId == resource.data.cashierId
+          && request.resource.data.status in ["pending", "approved", "rejected"];
         allow delete: if isSuperAdmin();
       }
 
@@ -131,11 +731,11 @@ service cloud.firestore {
       }
 
       match /images/{imageId} {
-        allow get, list: if canUseRestaurant(restaurantId);
-        allow create: if canUseRestaurant(restaurantId)
+        allow get, list: if canManageRestaurantMenu(restaurantId);
+        allow create: if canManageRestaurantMenu(restaurantId)
           && request.resource.data.url is string
           && request.resource.data.publicId is string;
-        allow update, delete: if canUseRestaurant(restaurantId);
+        allow update, delete: if canManageRestaurantMenu(restaurantId);
       }
 
       match /orders/{orderId} {
@@ -143,22 +743,37 @@ service cloud.firestore {
           request.resource.data.restaurantId == restaurantId
           && request.resource.data.items is list
           && request.resource.data.total is number
+          && !hasLegacyOrderStatusFields(request.resource.data)
+          && request.resource.data.orderStatus is string
+          && isValidOrderStatus(request.resource.data.orderStatus)
+          && hasCashSessionForVerifiedPayment()
           && (
             (
-              request.resource.data.source in ["client", "qr", "manual"]
-              && request.resource.data.status in ["pending", "nouvelle"]
-              && request.resource.data.sessionId is string
-              && request.resource.data.tableId is string
-              && request.resource.data.zoneId is string
-              && exists(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId))
-              && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.status == "active"
-              && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.tableId == request.resource.data.tableId
-              && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.zoneId == request.resource.data.zoneId
+              request.resource.data.source in ["client", "qr", "qr_table", "manual"]
+              && (
+                (
+                  // Dine-in orders require a table session
+                  request.resource.data.orderType == "dine_in"
+                  && request.resource.data.sessionId is string
+                  && request.resource.data.tableId is string
+                  && request.resource.data.zoneId is string
+                  && exists(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId))
+                  && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.status == "active"
+                  && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.tableId == request.resource.data.tableId
+                  && get(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.sessionId)).data.zoneId == request.resource.data.zoneId
+                )
+                ||
+                (
+                  // Takeaway and delivery don't require table sessions
+                  request.resource.data.orderType in ["takeaway", "pickup", "delivery"]
+                  && request.resource.data.sessionId == null
+                  && request.resource.data.tableId == null
+                )
+              )
             )
             || (
               canUseRestaurant(restaurantId)
               && request.resource.data.source == "pos"
-              && request.resource.data.status == "nouvelle"
               && (
                 !(request.resource.data.tableId is string)
                 || (
@@ -176,19 +791,70 @@ service cloud.firestore {
         allow get: if canUseRestaurant(restaurantId)
           || (
             resource.data.restaurantId == restaurantId
-            && resource.data.source in ["client", "qr", "manual"]
+            && resource.data.source in ["client", "qr", "qr_table", "manual"]
             && resource.data.sessionId is string
           );
 
         allow list: if canUseRestaurant(restaurantId);
-        allow update: if canUseRestaurant(restaurantId);
-        allow delete: if isSuperAdmin();
+        allow update: if canUpdateOrder(restaurantId)
+          || canUpdatePublicPaymentIntent(restaurantId)
+          || canAppendActiveDineInOrder(restaurantId);
+        allow delete: if false;
+
+        match /auditLogs/{logId} {
+          allow get, list: if canApproveCashSession(restaurantId);
+          allow create: if canUseRestaurant(restaurantId)
+            && request.resource.data.userId == request.auth.uid
+            && request.resource.data.orderId == orderId
+            && request.resource.data.action is string
+            && request.resource.data.before is map
+            && request.resource.data.after is map
+            && request.resource.data.createdAt is timestamp;
+          allow update, delete: if false;
+        }
+
+        match /costSnapshot/{snapshotId} {
+          allow get, list: if canReadRestaurantInventoryItems(restaurantId);
+          allow create: if canUseRestaurant(restaurantId)
+            && request.resource.data.paymentId == snapshotId
+            && request.resource.data.totalCost is number
+            && request.resource.data.totalCost >= 0
+            && request.resource.data.totalSales is number
+            && request.resource.data.margin is number
+            && request.resource.data.createdDate is string
+            && request.resource.data.createdAt is timestamp;
+          allow update, delete: if false;
+        }
 
         match /orderItems/{itemId} {
           allow get, list: if canUseRestaurant(restaurantId);
           allow create, update: if canUseRestaurant(restaurantId);
           allow delete: if isSuperAdmin();
         }
+      }
+
+      match /auditLogs/{logId} {
+        allow get, list: if canApproveCashSession(restaurantId);
+        allow create: if canUseRestaurant(restaurantId)
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.orderId is string
+          && request.resource.data.action is string
+          && request.resource.data.before is map
+          && request.resource.data.after is map
+          && request.resource.data.createdAt is timestamp;
+        allow update, delete: if false;
+      }
+
+      match /refunds/{refundId} {
+        allow get, list: if canApproveCashSession(restaurantId);
+        allow create: if canApproveCashSession(restaurantId)
+          && request.resource.data.orderId is string
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.reason is string
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdAt is timestamp;
+        allow update, delete: if false;
       }
     }
 
@@ -259,6 +925,19 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
+    match /platformMedia/{mediaId} {
+      allow get, list: if isSuperAdmin();
+      allow create: if isSuperAdmin()
+        && request.resource.data.url is string
+        && request.resource.data.publicId is string
+        && request.resource.data.type is string;
+      allow update: if isSuperAdmin()
+        && request.resource.data.url is string
+        && request.resource.data.publicId is string
+        && request.resource.data.type is string;
+      allow delete: if isSuperAdmin();
+    }
+
     match /platformCountries/{countryId} {
       allow get, list: if isSignedIn();
       allow create: if isSuperAdmin()
@@ -278,7 +957,7 @@ service cloud.firestore {
     }
 
     match /platformPaymentMethods/{methodId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if true;
       allow create: if isSuperAdmin()
         && request.resource.data.name is string
         && request.resource.data.code is string
@@ -295,7 +974,7 @@ service cloud.firestore {
     }
 
     match /platformPaymentVariants/{variantId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if true;
       allow create: if isSuperAdmin()
         && request.resource.data.methodCode is string
         && request.resource.data.countryCode is string
@@ -316,8 +995,7 @@ service cloud.firestore {
     }
 
     match /restaurantPaymentConfigs/{configId} {
-      allow get, list: if isSuperAdmin()
-        || canUseRestaurant(resource.data.restaurantId);
+      allow get, list: if true;
       allow create: if canUseRestaurant(request.resource.data.restaurantId)
         && request.resource.data.restaurantId is string
         && request.resource.data.methodCode is string

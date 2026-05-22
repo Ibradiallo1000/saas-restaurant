@@ -14,6 +14,8 @@ import {
 } from 'firebase/firestore';
 import { COLLECTION_NAMES } from '@/lib/constants';
 
+const PLATFORM_SETTINGS_DOC_ID = 'default';
+
 export interface PlatformConfig {
   name: string;
   logoUrl: string;
@@ -31,7 +33,7 @@ export class PlatformService {
    * Récupère la configuration principale de la plateforme.
    */
   async getConfig(): Promise<PlatformConfig | null> {
-    const docRef = doc(this.db, COLLECTION_NAMES.PLATFORM, 'main');
+    const docRef = doc(this.db, COLLECTION_NAMES.PLATFORM_SETTINGS, PLATFORM_SETTINGS_DOC_ID);
     const snap = await getDoc(docRef);
     if (!snap.exists()) return null;
     return snap.data() as PlatformConfig;
@@ -41,7 +43,7 @@ export class PlatformService {
    * Initialise ou met à jour la configuration (SuperAdmin uniquement).
    */
   async updateConfig(data: Partial<PlatformConfig>) {
-    const docRef = doc(this.db, COLLECTION_NAMES.PLATFORM, 'main');
+    const docRef = doc(this.db, COLLECTION_NAMES.PLATFORM_SETTINGS, PLATFORM_SETTINGS_DOC_ID);
     await setDoc(docRef, {
       ...data,
       updatedAt: serverTimestamp()

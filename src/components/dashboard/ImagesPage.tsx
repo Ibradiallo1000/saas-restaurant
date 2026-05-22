@@ -24,14 +24,14 @@ export default function ImagesPage() {
 
   if (!restaurantId) {
     return (
-      <div className="rounded-lg border border-dashed bg-white p-8 text-center text-sm text-muted-foreground">
+      <div className="rounded-lg border border-dashed border-gray-200 bg-card p-8 text-center text-sm text-muted-foreground dark:border-gray-700 dark:bg-[#1E293B] dark:text-gray-400">
         Aucun restaurant rattache a ce compte.
       </div>
     )
   }
 
   return (
-    <div className="space-y-8 pb-20 animate-in fade-in duration-500">
+    <div className="space-y-8 pb-20 animate-in fade-in duration-500 dark:bg-[#0F172A]">
       <PageHeader
         icon={ImageIcon}
         title="Bibliotheque d'images"
@@ -39,16 +39,16 @@ export default function ImagesPage() {
       />
 
       <section className="grid gap-6 lg:grid-cols-[360px_1fr]">
-        <Card className="h-fit">
-          <div className="mb-6 flex items-center gap-2 text-xl font-black italic uppercase">
+        <Card className="h-fit border border-gray-200 bg-card shadow-sm dark:border-gray-700 dark:bg-[#1E293B] dark:shadow-md">
+          <div className="mb-6 flex items-center gap-2 text-xl font-black italic uppercase dark:text-white">
             <UploadCloud className="h-5 w-5" style={{ color: "var(--color-primary)" }} />
             Ajouter une image
           </div>
           <ImageUploader restaurantId={restaurantId} />
         </Card>
 
-        <Card>
-          <div className="mb-6 flex items-center gap-2 text-xl font-black italic uppercase">
+        <Card className="border border-gray-200 bg-card shadow-sm dark:border-gray-700 dark:bg-[#1E293B] dark:shadow-md">
+          <div className="mb-6 flex items-center gap-2 text-xl font-black italic uppercase dark:text-white">
             <ImageIcon className="h-5 w-5" style={{ color: "var(--color-primary)" }} />
             Galerie
           </div>

@@ -3,7 +3,10 @@
 import * as React from "react"
 import {
   Building2,
+  Banknote,
   ChefHat,
+  ChevronLeft,
+  ChevronRight,
   CreditCard,
   GitBranch,
   Globe2,
@@ -12,13 +15,14 @@ import {
   ListOrdered,
   LogOut,
   Monitor,
-  Package,
+  ReceiptText,
   Settings,
   ShieldAlert,
   Store,
   Table2,
   Users,
   Users2,
+  Wallet,
   WalletCards,
 } from "lucide-react"
 import Link from "next/link"
@@ -41,6 +45,7 @@ import {
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { useAuth } from "@/firebase"
+import { usePlatform } from "@/contexts/platform-context"
 import { getOptimizedImage } from "@/lib/image"
 import { ROLES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
@@ -52,72 +57,106 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>
 }
 
+type NavSection = {
+  label: string
+  items: NavItem[]
+}
+
 const AppSidebarComponent = () => {
   const pathname = usePathname()
   const router = useRouter()
   const currentPathname = pathname ?? ""
   const auth = useAuth()
-  const { setOpenMobile } = useSidebar()
+  const { isMobile, setOpenMobile, state, toggleSidebar } = useSidebar()
   const { restaurant } = useRestaurant()
+  const { settings: platformSettings, isLoading: isPlatformLoading } = usePlatform()
   const { user, profile, role, isSuperAdmin, restaurantId } = useTenant()
   const isPlatformContext = currentPathname.startsWith("/platform")
-  const [optimisticHref, setOptimisticHref] = React.useState<string | null>(null)
 
-  const navItems = React.useMemo<NavItem[]>(() => {
+  const navSections = React.useMemo<NavSection[]>(() => {
     if (isPlatformContext && isSuperAdmin) {
       return [
-        { name: "SaaS Overview", href: "/platform", icon: LayoutDashboard },
-        { name: "Restaurants", href: "/platform/restaurants", icon: Building2 },
-        { name: "Abonnements", href: "/platform/billing", icon: CreditCard },
-        { name: "Pays", href: "/platform/settings/countries", icon: Globe2 },
-        { name: "Moyens paiement", href: "/platform/settings/payment-methods", icon: WalletCards },
-        { name: "Variantes paiement", href: "/platform/settings/payment-variants", icon: GitBranch },
-        { name: "Parametres SaaS", href: "/platform/settings", icon: Settings },
+        {
+          label: "Administration",
+          items: [
+            { name: "Analytics Admin", href: "/platform", icon: LayoutDashboard },
+            { name: "Restaurants", href: "/platform/restaurants", icon: Building2 },
+            { name: "Abonnements", href: "/platform/billing", icon: CreditCard },
+          ],
+        },
+        {
+          label: "Configuration",
+          items: [
+            { name: "Pays", href: "/platform/settings/countries", icon: Globe2 },
+            { name: "Paiements", href: "/platform/settings/payment-methods", icon: WalletCards },
+            { name: "Variantes paiement", href: "/platform/settings/payment-variants", icon: GitBranch },
+          ],
+        },
+        {
+          label: "Système",
+          items: [
+            { name: "Paramètres SaaS", href: "/platform/settings", icon: Settings },
+          ],
+        },
       ]
     }
 
     if (!restaurantId) return []
 
-    const nav: NavItem[] = []
+    const items: NavItem[] = []
 
-    if ([ROLES.OWNER, ROLES.MANAGER].includes(role as any)) {
-      nav.push({ name: "Dashboard", href: "/dashboard", icon: LayoutDashboard })
-      nav.push({ name: "Gestion Menu", href: "/manager", icon: Store })
-      nav.push({ name: "Tables", href: "/dashboard/tables", icon: Table2 })
-      nav.push({ name: "Images", href: "/dashboard/images", icon: ImageIcon })
-      nav.push({ name: "Inventaire", href: "/inventory", icon: Package })
+    if (role === ROLES.OWNER) {
+      items.push({ name: "Analytics", href: "/owner", icon: LayoutDashboard })
+      items.push({ name: "Commandes", href: "/manager/commandes", icon: ListOrdered })
+      items.push({ name: "Caisse", href: "/manager/caisse", icon: Wallet })
+      items.push({ name: "Dépenses", href: "/manager/expenses", icon: ReceiptText })
+      items.push({ name: "Trésorerie", href: "/manager/treasury", icon: Banknote })
+      if (isMobile) return [{ label: "Terrain", items }]
+      items.push({ name: "Menu", href: "/menu", icon: Store })
+      items.push({ name: "Tables", href: "/tables", icon: Table2 })
+      items.push({ name: "Images", href: "/images", icon: ImageIcon })
+      items.push({ name: "Configuration", href: "/settings", icon: Settings })
+      return [{ label: "Restaurant", items }]
     }
 
-    if ([ROLES.OWNER, ROLES.MANAGER, ROLES.CASHIER].includes(role as any)) {
-      nav.push({ name: "Caisse (POS)", href: "/pos", icon: Monitor })
+    if (role === ROLES.MANAGER) {
+      items.push({ name: "Analytics", href: "/manager/dashboard", icon: Store })
+      items.push({ name: "Commandes", href: "/manager/commandes", icon: ListOrdered })
+      items.push({ name: "Caisse", href: "/manager/caisse", icon: Wallet })
+      items.push({ name: "Cuisine", href: "/manager/cuisine", icon: ChefHat })
+      items.push({ name: "Menu", href: "/manager/menu", icon: Store })
+      items.push({ name: "Images", href: "/manager/images", icon: ImageIcon })
+      items.push({ name: "Dépenses", href: "/manager/expenses", icon: ReceiptText })
+      items.push({ name: "Trésorerie", href: "/manager/treasury", icon: Banknote })
     }
 
-    if ([ROLES.OWNER, ROLES.MANAGER, ROLES.KITCHEN].includes(role as any)) {
-      nav.push({ name: "Cuisine", href: "/kitchen", icon: ChefHat })
+    if (role === ROLES.CASHIER) {
+      items.push({ name: "Caisse (POS)", href: "/pos", icon: Monitor })
     }
 
-    nav.push({ name: "Commandes", href: "/orders", icon: ListOrdered })
-
-    if ([ROLES.OWNER, ROLES.MANAGER].includes(role as any)) {
-      nav.push({ name: "Fidelite", href: "/customers", icon: Users2 })
-      nav.push({ name: "Paiements", href: "/settings/payments", icon: WalletCards })
-      nav.push({ name: "Configuration", href: "/settings", icon: Settings })
+    if (role === ROLES.KITCHEN) {
+      items.push({ name: "Cuisine", href: "/kitchen", icon: ChefHat })
     }
 
-    return nav
-  }, [isPlatformContext, isSuperAdmin, restaurantId, role])
+    return [{ label: `Espace ${role}`, items }]
+  }, [isMobile, isPlatformContext, isSuperAdmin, restaurantId, role])
 
+  const navItems = React.useMemo(
+    () => navSections.flatMap((section) => section.items),
+    [navSections]
+  )
   const restaurantName = restaurant?.name?.trim() || "Restaurant"
   const restaurantInitial = restaurantName.charAt(0).toUpperCase() || "R"
+  const platformName = platformSettings.name?.trim() || "Plateforme"
+  const platformInitial = platformName.charAt(0).toUpperCase() || "P"
+  const brandName = isPlatformContext ? platformName : restaurantName
+  const brandInitial = isPlatformContext ? platformInitial : restaurantInitial
+  const brandLogoUrl = isPlatformContext ? platformSettings.logoUrl : restaurant?.logoUrl
   const activeHref = React.useMemo(
     () => getActiveSidebarHref(currentPathname, navItems),
     [currentPathname, navItems]
   )
-  const visibleActiveHref = optimisticHref ?? activeHref
-
-  React.useEffect(() => {
-    setOptimisticHref(null)
-  }, [currentPathname])
+  const isCollapsed = state === "collapsed"
 
   const handleLogout = React.useCallback(async () => {
     await signOut(auth)
@@ -125,79 +164,95 @@ const AppSidebarComponent = () => {
   }, [auth, router])
 
   return (
-    <Sidebar className="border-r border-border bg-sidebar">
-      <SidebarHeader className="p-4 border-b border-border">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            {restaurant?.logoUrl ? (
-              <img
-                src={getOptimizedImage(restaurant.logoUrl, 120)}
-                alt={restaurantName}
-                width={120}
-                height={120}
-                className="h-10 w-10 rounded-xl object-cover shadow"
-              />
+    <Sidebar collapsible="icon" className="border-r border-border bg-sidebar">
+      <SidebarHeader className="border-b border-border px-3 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className={cn("flex min-w-0 items-center gap-2", isCollapsed && "justify-center")}>
+            {brandLogoUrl ? (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-transparent">
+                <img
+                  src={getOptimizedImage(brandLogoUrl, 120)}
+                  alt={brandName}
+                  width={120}
+                  height={120}
+                  className="h-full w-full object-contain"
+                />
+              </div>
             ) : (
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary)] text-white font-bold">
-                {restaurantInitial}
+                {brandInitial}
               </div>
             )}
 
-            <span className="truncate text-sm font-semibold text-foreground">
-              {isPlatformContext ? "GastronomeAI" : restaurantName}
-            </span>
+            {!isCollapsed ? (
+              <span className="min-w-0 break-words text-sm font-semibold leading-snug text-foreground">
+                {isPlatformContext && isPlatformLoading ? "Chargement..." : brandName}
+              </span>
+            ) : null}
           </div>
 
-          <ThemeToggle />
+          <div className="flex shrink-0 items-center gap-2">
+            <ThemeToggle />
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              title={isCollapsed ? "Ouvrir la sidebar" : "Reduire la sidebar"}
+              aria-label={isCollapsed ? "Ouvrir la sidebar" : "Reduire la sidebar"}
+              className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-secondary-foreground">
-            {isPlatformContext ? "Administration SaaS" : `Espace ${role}`}
-          </SidebarGroupLabel>
+        {navSections.map((section) => (
+          <SidebarGroup key={section.label}>
+            {!isCollapsed ? (
+              <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-secondary-foreground">
+                {section.label}
+              </SidebarGroupLabel>
+            ) : null}
 
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map((item) => {
-                const isActive = item.href === visibleActiveHref
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {section.items.map((item) => {
+                  const isActive = isSidebarItemActive(item, activeHref)
 
-                return (
-                  <SidebarMenuItem key={item.name}>
-                    <Link
-                      href={item.href}
-                      prefetch
-                      onClick={() => {
-                        setOpenMobile(false)
-                        if (isActive) return
-
-                        setOptimisticHref(item.href)
-                        window.dispatchEvent(new CustomEvent("app:navigation-start"))
-                      }}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",
-                        isActive
-                          ? "bg-primary text-white [&>svg]:text-white"
-                          : "text-secondary-foreground hover:bg-secondary hover:text-white [&>svg]:text-secondary-foreground hover:[&>svg]:text-white"
-                      )}
-                    >
-                      <item.icon className="h-5 w-5" />
-                      <span>{item.name}</span>
-                      {item.href === "/orders" && <OrdersBadge />}
-                    </Link>
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <Link
+                        href={item.href}
+                        prefetch
+                        onClick={() => setOpenMobile(false)}
+                        title={isCollapsed ? item.name : undefined}
+                        className={cn(
+                          "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                          isCollapsed && "justify-center px-0",
+                          isActive
+                            ? "bg-primary text-white [&>svg]:text-white"
+                            : "text-secondary-foreground hover:bg-secondary hover:text-white [&>svg]:text-secondary-foreground hover:[&>svg]:text-white"
+                        )}
+                        aria-current={isActive ? "page" : undefined}
+                      >
+                        <item.icon className="h-5 w-5" />
+                        {!isCollapsed ? <span>{item.name}</span> : null}
+                        {!isCollapsed && item.href === "/orders" && <OrdersBadge />}
+                      </Link>
+                    </SidebarMenuItem>
+                  )
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
 
-      <SidebarFooter className="p-4 border-t border-border">
+      <SidebarFooter className="border-t border-border p-4">
         {user ? (
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-3 rounded-xl border border-border bg-secondary p-3">
+            <div className={cn("flex items-center gap-3 rounded-xl border border-border bg-secondary p-3", isCollapsed && "justify-center p-2")}>
               <div className="h-8 w-8 flex items-center justify-center rounded-full bg-primary/20">
                 {isPlatformContext ? (
                   <ShieldAlert className="h-4 w-4 text-primary" />
@@ -206,22 +261,24 @@ const AppSidebarComponent = () => {
                 )}
               </div>
 
-              <div className="flex flex-col overflow-hidden">
-                <span className="truncate text-xs font-semibold text-foreground">
-                  {user.email?.split("@")[0]}
-                </span>
-                <span className="text-[9px] text-muted-foreground uppercase">
-                  {profile?.role || role}
-                </span>
-              </div>
+              {!isCollapsed ? (
+                <div className="flex flex-col overflow-hidden">
+                  <span className="truncate text-xs font-semibold text-foreground">
+                    {user.email?.split("@")[0]}
+                  </span>
+                  <span className="text-[9px] text-muted-foreground uppercase">
+                    {profile?.role || role}
+                  </span>
+                </div>
+              ) : null}
 
               <LogOut
-                className="ml-auto h-4 w-4 cursor-pointer text-secondary-foreground transition-colors hover:text-white"
+                className={cn("h-4 w-4 cursor-pointer text-secondary-foreground transition-colors hover:text-white", !isCollapsed && "ml-auto")}
                 onClick={handleLogout}
               />
             </div>
 
-            {isSuperAdmin && !isPlatformContext && (
+            {isSuperAdmin && !isPlatformContext && !isCollapsed && (
               <ButtonLink href="/platform">Aller a la Platform</ButtonLink>
             )}
           </div>
@@ -273,4 +330,8 @@ function ButtonLink({ href, children }: { href: string; children: React.ReactNod
       {children}
     </Link>
   )
+}
+
+function isSidebarItemActive(item: NavItem, activeHref: string | null) {
+  return activeHref === item.href
 }

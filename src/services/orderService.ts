@@ -10,15 +10,15 @@ import {
   onSnapshot,
   updateDoc,
   doc,
-  limit,
   query,
+  arrayUnion,
   type QueryConstraint,
   where,
   orderBy,
   Timestamp,
 } from "firebase/firestore";
 import type { Order, OrderStatus } from "@/types/index";
-import { normalizeOrderStatus } from "@/lib/order-status";
+import { getOrderStatus, normalizeOperationStatus, toKitchenServedEventStatus } from "@/lib/order-lifecycle";
 
 const ORDERS_SUBCOLLECTION = (restaurantId: string) =>
   collection(db, "restaurants", restaurantId, "orders");
@@ -30,9 +30,18 @@ export const createOrder = async (
   companyId: string,
   order: Omit<Order, "id" | "createdAt">
 ) => {
+  const { status: _legacyStatus, kitchenStatus: _legacyKitchenStatus, ...safeOrder } = order as any;
+
   return await addDoc(ORDERS_SUBCOLLECTION(companyId), {
-    ...order,
-    status: normalizeOrderStatus(order.status),
+    ...safeOrder,
+    orderStatus: normalizeOperationStatus(safeOrder.orderStatus),
+    statusHistory: [
+      {
+        status: normalizeOperationStatus(safeOrder.orderStatus),
+        at: new Date(),
+        source: "order",
+      },
+    ],
     createdAt: Timestamp.now(),
   });
 };
@@ -50,12 +59,10 @@ export const listenOrders = (
   const constraints: QueryConstraint[] = [];
 
   if (statuses && statuses.length > 0) {
-    constraints.push(where("status", "in", statuses));
+    constraints.push(where("orderStatus", "in", statuses.map((status) => normalizeOperationStatus(status))));
   }
 
   constraints.push(orderBy("createdAt", "desc"));
-  constraints.push(limit(20));
-
   const q = query(base, ...constraints);
 
   return onSnapshot(q, (snap) => {
@@ -64,9 +71,9 @@ export const listenOrders = (
       return {
         id: d.id,
         ...data,
-        status: normalizeOrderStatus(data.status),
+        status: getOrderStatus(data),
         createdAt: data.createdAt?.toMillis?.() ?? Date.now(),
-      } as Order;
+      } as unknown as Order;
     });
     callback(orders);
   });
@@ -81,6 +88,14 @@ export const updateOrderStatus = async (
   status: OrderStatus
 ) => {
   const ref = doc(db, "restaurants", restaurantId, "orders", id);
-  await updateDoc(ref, { status: normalizeOrderStatus(status) });
+  const normalizedStatus = normalizeOperationStatus(status);
+  await updateDoc(ref, {
+    orderStatus: normalizedStatus,
+    statusHistory: arrayUnion({
+      status: toKitchenServedEventStatus(normalizedStatus),
+      at: new Date(),
+      source: "service",
+    }),
+  });
 };
 

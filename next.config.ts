@@ -1,6 +1,20 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      {
+        source: "/payments",
+        destination: "/settings?tab=paiements",
+        permanent: false,
+      },
+      {
+        source: "/settings/payments",
+        destination: "/settings?tab=paiements",
+        permanent: false,
+      },
+    ]
+  },
   typescript: {
     ignoreBuildErrors: true,
   },

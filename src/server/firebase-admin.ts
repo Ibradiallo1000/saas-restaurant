@@ -42,6 +42,14 @@ function getServiceAccount(): ServiceAccount | null {
     return normalizeServiceAccount(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY))
   }
 
+  if (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+    return normalizeServiceAccount({
+      projectId: process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY,
+    })
+  }
+
   return null
 }
 

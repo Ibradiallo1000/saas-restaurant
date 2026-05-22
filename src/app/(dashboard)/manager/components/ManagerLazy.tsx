@@ -10,6 +10,8 @@ const ManagerClient = dynamic(loadManagerClient, {
   loading: () => <ManagerRouteSkeleton />,
 })
 
-export default function ManagerLazy() {
-  return <ManagerClient />
+type ManagerMode = "dashboard" | "orders" | "menu"
+
+export default function ManagerLazy({ mode = "dashboard" }: { mode?: ManagerMode }) {
+  return <ManagerClient mode={mode} />
 }

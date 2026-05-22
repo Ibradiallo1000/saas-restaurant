@@ -12,7 +12,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore"
-import { CreditCard, Loader2, Plus, Trash2 } from "lucide-react"
+import { CreditCard, Loader2, Plus, Smartphone, Trash2 } from "lucide-react"
 
 import { useCollectionOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +27,7 @@ import { generatePaymentLinkOrUSSD } from "@/lib/payment-generation"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 
 type PaymentMethod = {
+  id: string
   name: string
   code: string
   logoUrl?: string
@@ -34,6 +35,7 @@ type PaymentMethod = {
 }
 
 type PaymentVariant = {
+  id: string
   methodCode: string
   countryCode: string
   type: "ussd" | "link"
@@ -44,13 +46,15 @@ type PaymentVariant = {
 }
 
 type RestaurantPaymentConfig = {
+  id: string
   restaurantId: string
   methodCode: string
+  variantId: string
   merchantNumber: string
   isActive: boolean
 }
 
-export default function RestaurantPaymentsSettingsPage() {
+export default function RestaurantPaymentsSettingsClient() {
   const db = useFirestore()
   const { restaurantId, restaurant } = useRestaurant()
   const { toast } = useToast()
@@ -59,6 +63,8 @@ export default function RestaurantPaymentsSettingsPage() {
   const [isSaving, setIsSaving] = React.useState(false)
   const [pendingId, setPendingId] = React.useState<string | null>(null)
   const [preview, setPreview] = React.useState("")
+  const [testAmount, setTestAmount] = React.useState(5000)
+  
   const countryCode = React.useMemo(() => {
     const value = restaurant?.countryCode || restaurant?.country || restaurant?.countryIso
     return typeof value === "string" ? value.toUpperCase() : ""
@@ -97,13 +103,19 @@ export default function RestaurantPaymentsSettingsPage() {
     useCollectionOnce<RestaurantPaymentConfig>(configsQuery)
 
   const compatibleMethods = React.useMemo(() => {
-    const compatibleCodes = new Set((variants ?? []).map((variant) => variant.methodCode))
-    return (methods ?? []).filter((method) => compatibleCodes.has(method.code))
+    const availableVariants = variants ?? []
+    const availableMethodCodes = new Set(availableVariants.map(v => v.methodCode))
+    return (methods ?? []).filter(method => availableMethodCodes.has(method.code))
   }, [methods, variants])
 
   const selectedVariant = React.useMemo(() => {
     return variants?.find((variant) => variant.methodCode === methodCode) ?? null
   }, [methodCode, variants])
+
+  const isAlreadyConfigured = React.useMemo(() => {
+    if (!configs || !selectedVariant) return false
+    return configs.some(c => c.variantId === selectedVariant.id)
+  }, [configs, selectedVariant])
 
   React.useEffect(() => {
     if (!methodCode && compatibleMethods[0]) {
@@ -115,21 +127,21 @@ export default function RestaurantPaymentsSettingsPage() {
     let cancelled = false
 
     async function loadPreview() {
-      if (!db || !countryCode || !methodCode || !merchantNumber.trim()) {
+      if (!db || !countryCode || !methodCode || !selectedVariant || !merchantNumber.trim()) {
         setPreview("")
         return
       }
 
       try {
+        // ✅ Version sans variantId pour éviter l'erreur TypeScript
         const result = await generatePaymentLinkOrUSSD({
-          db,
           methodCode,
           countryCode,
           merchant: merchantNumber.trim(),
-          amount: 5000,
+          amount: testAmount,
         })
 
-        if (!cancelled) setPreview(result)
+        if (!cancelled) setPreview(result.value)
       } catch {
         if (!cancelled) setPreview("")
       }
@@ -140,12 +152,37 @@ export default function RestaurantPaymentsSettingsPage() {
     return () => {
       cancelled = true
     }
-  }, [countryCode, db, merchantNumber, methodCode])
+  }, [countryCode, db, merchantNumber, methodCode, selectedVariant, testAmount])
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
 
-    if (!db || !restaurantId || !methodCode || !merchantNumber.trim()) return
+    if (!db || !restaurantId || !methodCode || !selectedVariant) {
+      toast({
+        variant: "destructive",
+        title: "Information manquante",
+        description: "Veuillez sélectionner un moyen de paiement.",
+      })
+      return
+    }
+
+    if (!merchantNumber.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Champ requis",
+        description: "Veuillez entrer un numéro marchand.",
+      })
+      return
+    }
+
+    if (isAlreadyConfigured) {
+      toast({
+        variant: "destructive",
+        title: "Configuration déjà existante",
+        description: "Ce moyen de paiement est déjà configuré pour ce restaurant.",
+      })
+      return
+    }
 
     setIsSaving(true)
 
@@ -153,6 +190,7 @@ export default function RestaurantPaymentsSettingsPage() {
       await addDoc(collection(db, COLLECTION_NAMES.RESTAURANT_PAYMENT_CONFIGS), {
         restaurantId: restaurantId,
         methodCode,
+        variantId: selectedVariant.id,
         merchantNumber: merchantNumber.trim(),
         isActive: true,
         createdAt: serverTimestamp(),
@@ -161,13 +199,16 @@ export default function RestaurantPaymentsSettingsPage() {
 
       setMerchantNumber("")
       refetchConfigs()
-      toast({ title: "Paiement ajouté", description: "Le numéro marchand a été enregistré." })
+      toast({ 
+        title: "✅ Paiement configuré", 
+        description: "Le moyen de paiement a été enregistré avec succès." 
+      })
     } catch (error) {
       console.error(error)
       toast({
         variant: "destructive",
-        title: "Erreur",
-        description: "Impossible d'enregistrer ce moyen de paiement.",
+        title: "❌ Erreur",
+        description: "Impossible d'enregistrer ce moyen de paiement. Veuillez réessayer.",
       })
     } finally {
       setIsSaving(false)
@@ -185,11 +226,14 @@ export default function RestaurantPaymentsSettingsPage() {
         updatedAt: serverTimestamp(),
       })
       refetchConfigs()
+      toast({ 
+        title: nextValue ? "✅ Moyen de paiement activé" : "⏸️ Moyen de paiement désactivé",
+      })
     } catch (error) {
       console.error(error)
       toast({
         variant: "destructive",
-        title: "Erreur",
+        title: "❌ Erreur",
         description: "Impossible de modifier le statut.",
       })
     } finally {
@@ -205,12 +249,14 @@ export default function RestaurantPaymentsSettingsPage() {
     try {
       await deleteDoc(doc(db, COLLECTION_NAMES.RESTAURANT_PAYMENT_CONFIGS, configId))
       refetchConfigs()
-      toast({ title: "Configuration supprimée" })
+      toast({ 
+        title: "🗑️ Configuration supprimée",
+      })
     } catch (error) {
       console.error(error)
       toast({
         variant: "destructive",
-        title: "Erreur",
+        title: "❌ Erreur",
         description: "Impossible de supprimer cette configuration.",
       })
     } finally {
@@ -229,138 +275,228 @@ export default function RestaurantPaymentsSettingsPage() {
             Paiements
           </h1>
           <p className="font-medium text-muted-foreground">
-            Renseignez uniquement les informations marchand de l'établissement.
+            Configurez les moyens de paiement acceptés dans votre établissement
           </p>
         </div>
       </div>
 
       <Card className="overflow-hidden rounded-2xl border-none shadow-xl">
-        <CardHeader className="border-b border-primary/10 bg-primary/5 p-8">
-          <CardTitle className="text-2xl font-black italic uppercase">
-            Nouveau moyen de paiement
+        <CardHeader className="border-b border-primary/10 bg-primary/5 p-6">
+          <CardTitle className="text-xl font-black italic uppercase">
+            Configurer un moyen de paiement
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-8">
+        <CardContent className="p-6">
           {!countryCode ? (
-            <p className="rounded-xl bg-secondary/30 p-4 text-sm font-medium text-muted-foreground">
-              Aucun pays n'est défini sur ce restaurant. Configurez d'abord le pays de l'établissement.
-            </p>
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
+              <p className="text-sm font-medium text-amber-800">
+                ⚠️ Aucun pays n'est défini sur ce restaurant. 
+                Configurez d'abord le pays de l'établissement.
+              </p>
+            </div>
           ) : (
-            <form onSubmit={handleSubmit} className="grid gap-5 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Méthode compatible</Label>
-                <select
-                  value={methodCode}
-                  onChange={(event) => setMethodCode(event.target.value)}
-                  className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
-                  disabled={!compatibleMethods.length}
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-3">
+                <Label className="text-sm font-bold">Moyen de paiement</Label>
+                {!compatibleMethods.length ? (
+                  <div className="rounded-xl bg-secondary/30 p-4 text-center text-sm text-muted-foreground">
+                    Aucun moyen de paiement disponible pour {countryCode}
+                  </div>
+                ) : (
+                  <select
+                    value={methodCode}
+                    onChange={(event) => setMethodCode(event.target.value)}
+                    className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm font-medium text-foreground"
+                  >
+                      {compatibleMethods.map((method) => {
+                        const alreadyConfigured = configs?.some(c => {
+                          const variant = variants?.find(v => v.id === c.variantId)
+                          return variant?.methodCode === method.code
+                        })
+                        
+                        return (
+                          <option
+                            key={method.id}
+                            value={method.code}
+                            disabled={alreadyConfigured}
+                          >
+                            {method.name} ({method.code}){alreadyConfigured ? " - configuré" : ""}
+                            {/*
+                              <Badge variant="secondary" className="text-[10px] px-1">
+                                Configuré
+                              </Badge>
+                            */}
+                          </option>
+                        )
+                      })}
+                  </select>
+                )}
+              </div>
+
+              {selectedVariant && !isAlreadyConfigured && (
+                <div className="space-y-3">
+                  <Label className="text-sm font-bold">Numéro marchand</Label>
+                  <Input
+                    value={merchantNumber}
+                    onChange={(event) => setMerchantNumber(event.target.value)}
+                    placeholder="Ex: 123456789"
+                    className="h-11 rounded-lg font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Le numéro fourni par votre opérateur de paiement mobile
+                  </p>
+                </div>
+              )}
+
+              {selectedVariant && merchantNumber.trim() && !isAlreadyConfigured && (
+                <div className="rounded-xl bg-gradient-to-r from-primary/5 to-secondary/5 p-4 border border-primary/10">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Smartphone className="h-4 w-4 text-primary" />
+                      <p className="text-xs font-bold uppercase text-primary">Test de paiement</p>
+                    </div>
+                  </div>
+                  
+                  <div className="mb-3">
+                    <Label className="text-xs font-bold mb-1 block">Montant (FCFA)</Label>
+                    <Input
+                      type="number"
+                      value={testAmount}
+                      onChange={(e) => setTestAmount(Number(e.target.value))}
+                      className="h-9 rounded-lg text-sm"
+                      min="100"
+                      step="100"
+                    />
+                  </div>
+                  
+                  <div className="rounded-lg bg-background p-3">
+                    <p className="text-[10px] text-muted-foreground mb-1">Code à générer :</p>
+                    <p className="break-all font-mono text-sm font-bold text-primary">
+                      {preview || selectedVariant.ussdTemplate || "En attente..."}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {selectedVariant && !isAlreadyConfigured && (
+                <Button
+                  type="submit"
+                  disabled={!merchantNumber.trim() || isSaving}
+                  className="h-11 rounded-lg font-bold uppercase w-full"
                 >
-                  {!compatibleMethods.length && <option value="">Aucune méthode compatible</option>}
-                  {compatibleMethods.map((method) => (
-                    <option key={method.id} value={method.code}>
-                      {method.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Numéro marchand</Label>
-                <Input
-                  value={merchantNumber}
-                  onChange={(event) => setMerchantNumber(event.target.value)}
-                  placeholder="12345"
-                  className="h-12 rounded-xl"
-                />
-              </div>
-
-              <div className="rounded-xl bg-secondary/30 p-4 md:col-span-2">
-                <p className="text-xs font-bold uppercase text-muted-foreground">
-                  Aperçu avec montant 5000
-                </p>
-                <p className="mt-2 break-all font-mono text-lg font-black text-primary">
-                  {preview || selectedVariant?.ussdTemplate || "Aucun aperçu disponible"}
-                </p>
-              </div>
-
-              <Button
-                type="submit"
-                disabled={!methodCode || !merchantNumber.trim() || isSaving}
-                className="h-12 rounded-xl font-black uppercase md:col-span-2"
-              >
-                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-                Ajouter
-              </Button>
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Configuration...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Ajouter
+                    </>
+                  )}
+                </Button>
+              )}
             </form>
           )}
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {(isLoadingVariants || isLoadingConfigs) && (
-          <Card className="border-none shadow-xl md:col-span-2 xl:col-span-3">
-            <CardContent className="flex justify-center p-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </CardContent>
-          </Card>
-        )}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-black italic uppercase">
+            Configurations actives
+          </h2>
+          <Badge variant="outline" className="text-xs">
+            {configs?.length || 0}
+          </Badge>
+        </div>
 
-        {!isLoadingConfigs &&
-          configs?.map((config) => {
-            const method = methods?.find((item) => item.code === config.methodCode)
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {(isLoadingVariants || isLoadingConfigs) && (
+            <Card className="border-none shadow-md col-span-full">
+              <CardContent className="flex justify-center p-8">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </CardContent>
+            </Card>
+          )}
 
-            return (
-              <Card key={config.id} className="border-none shadow-xl">
-                <CardContent className="space-y-5 p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="truncate text-lg font-black text-primary">
-                        {method?.name ?? config.methodCode}
-                      </p>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Marchand: {config.merchantNumber}
-                      </p>
+          {!isLoadingConfigs &&
+            configs?.map((config) => {
+              const variant = variants?.find(v => v.id === config.variantId)
+              const method = methods?.find(m => m.code === (variant?.methodCode || config.methodCode))
+
+              return (
+                <Card key={config.id} className="border-none shadow-md">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {method?.logoUrl && (
+                          <img
+                            src={method.logoUrl}
+                            alt={method?.name}
+                            className="h-8 w-8 object-contain rounded bg-secondary/30 p-1"
+                          />
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-primary truncate">
+                            {method?.name ?? config.methodCode}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Marchand: {config.merchantNumber}
+                          </p>
+                          {variant?.type && (
+                            <p className="text-[10px] text-muted-foreground capitalize mt-0.5">
+                              {variant.type === "ussd" ? "USSD" : "Lien"}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <Badge className={`text-[10px] px-2 py-0 ${config.isActive ? "bg-green-500" : "bg-gray-400"}`}>
+                        {config.isActive ? "Actif" : "Inactif"}
+                      </Badge>
                     </div>
-                    <Badge variant={config.isActive ? "default" : "secondary"}>
-                      {config.isActive ? "Actif" : "Inactif"}
-                    </Badge>
-                  </div>
 
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Label className="text-xs font-bold uppercase text-muted-foreground">
-                        Actif
-                      </Label>
-                      <Switch
-                        checked={config.isActive}
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={config.isActive}
+                          disabled={pendingId === config.id}
+                          onCheckedChange={(checked) => toggleConfig(config.id, checked)}
+                          className="scale-75"
+                        />
+                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">
+                          Actif
+                        </Label>
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
                         disabled={pendingId === config.id}
-                        onCheckedChange={(checked) => toggleConfig(config.id, checked)}
-                      />
+                        onClick={() => deleteConfig(config.id)}
+                        className="h-7 px-2"
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
                     </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
 
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      disabled={pendingId === config.id}
-                      onClick={() => deleteConfig(config.id)}
-                      aria-label="Supprimer la configuration"
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-
-        {!isLoadingConfigs && !configs?.length && (
-          <Card className="border-none shadow-xl md:col-span-2 xl:col-span-3">
-            <CardContent className="p-12 text-center text-muted-foreground">
-              Aucun moyen de paiement configuré pour ce restaurant.
-            </CardContent>
-          </Card>
-        )}
+          {!isLoadingConfigs && !configs?.length && (
+            <Card className="border-none shadow-md col-span-full">
+              <CardContent className="p-8 text-center">
+                <CreditCard className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  Aucune configuration
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </div>
     </div>
   )

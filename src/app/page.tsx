@@ -18,9 +18,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
 import { useUser } from "@/firebase"
+import { usePlatform } from "@/contexts/platform-context"
 
 export default function LandingPage() {
   const { user, isUserLoading } = useUser()
+  const { settings } = usePlatform()
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -35,7 +37,7 @@ export default function LandingPage() {
             
             <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-foreground font-headline leading-tight animate-in fade-in slide-in-from-bottom-4 duration-1000">
               Dominez votre Marché avec <br />
-              <span className="text-primary italic">GastronomeAI</span>
+              <span className="text-primary italic">{settings.name}</span>
             </h1>
             
             <p className="text-xl text-muted-foreground leading-relaxed max-w-2xl animate-in fade-in duration-1000 delay-200">
@@ -140,14 +142,14 @@ export default function LandingPage() {
             
             <div className="relative">
               <div className="bg-primary aspect-square rounded-3xl rotate-3 flex items-center justify-center p-8 shadow-2xl">
-                <div className="bg-white aspect-[9/16] w-full rounded-2xl shadow-inner overflow-hidden border-8 border-border">
+                <div className="bg-background aspect-[9/16] w-full rounded-2xl shadow-inner overflow-hidden border-8 border-border">
                   <div className="bg-primary/10 p-4 h-full flex flex-col gap-4">
                     <div className="h-8 w-1/2 bg-primary/20 rounded-full" />
                     <div className="grid grid-cols-2 gap-2">
-                      <div className="h-20 bg-white rounded-xl" />
-                      <div className="h-20 bg-white rounded-xl" />
+                      <div className="h-20 bg-background rounded-xl" />
+                      <div className="h-20 bg-background rounded-xl" />
                     </div>
-                    <div className="h-40 bg-white rounded-xl" />
+                    <div className="h-40 bg-background rounded-xl" />
                   </div>
                 </div>
               </div>
@@ -179,7 +181,7 @@ export default function LandingPage() {
             </div>
           </div>
           <Link href="/contact" prefetch>
-            <Button size="lg" variant="secondary" className="rounded-full px-12 h-16 text-xl font-black uppercase italic hover:scale-105 transition-transform bg-white text-primary">
+            <Button size="lg" variant="secondary" className="rounded-full px-12 h-16 text-xl font-black uppercase italic hover:scale-105 transition-transform bg-background text-primary">
               Demander mon accès <ArrowRight className="ml-2" />
             </Button>
           </Link>
@@ -190,9 +192,9 @@ export default function LandingPage() {
         <div className="container mx-auto px-4 text-center">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Zap className="h-6 w-6 text-primary" />
-            <span className="text-xl font-black italic uppercase tracking-tighter">GastronomeAI</span>
+            <span className="text-xl font-black italic uppercase tracking-tighter">{settings.name}</span>
           </div>
-          <p className="text-sm text-muted-foreground">© 2025 GastronomeAI - La Solution de Référence en Afrique.</p>
+          <p className="text-sm text-muted-foreground">© 2025 {settings.name} - La Solution de Référence en Afrique.</p>
         </div>
       </footer>
     </div>

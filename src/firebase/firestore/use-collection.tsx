@@ -186,6 +186,10 @@ export function useCollection<T = any>(
   const refetch = () => {};
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     if (!memoizedTargetRefOrQuery) {
       setData(null);
       setIsLoading(false);
@@ -281,6 +285,10 @@ export function useCollectionOnce<T = any>(
   const refetch = () => setRefreshKey((key) => key + 1);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     if (!memoizedTargetRefOrQuery) {
       setData(null);
       setIsLoading(false);

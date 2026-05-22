@@ -5,9 +5,10 @@ import { X, Minus, Plus, Trash2 } from "lucide-react"
 
 import type { CartItem } from "@/modules/restaurant/types"
 import { useCart } from "../cart/CartContext"
-import CheckoutModal from "./CheckoutModal"
+import CheckoutQRModal from "./CheckoutQRModal"
+import CheckoutPublicModal from "./CheckoutPublicModal"
 
-export default function CartDrawer({ open, onClose, restaurantId, tableContext, activeTableSession }: any) {
+export default function CartDrawer({ open, onClose, restaurantId, tableContext, activeTableSession, activeOrderId }: any) {
   const { items, total, updateQty, removeItem } = useCart()
   const [checkoutOpen, setCheckoutOpen] = React.useState(false)
 
@@ -17,37 +18,40 @@ export default function CartDrawer({ open, onClose, restaurantId, tableContext, 
     <div className="fixed inset-0 z-50">
 
       {/* BACKDROP */}
-      <div className="absolute inset-0 bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)]" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose} />
 
       {/* DRAWER */}
-      <div className="absolute bottom-0 left-0 right-0 bg-background text-foreground rounded-t-3xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div className="absolute bottom-0 left-0 right-0 bg-background text-foreground rounded-t-[2rem] max-h-[88vh] flex flex-col overflow-hidden shadow-[0_-20px_40px_rgba(0,0,0,0.15)] ring-1 ring-white/10 animate-in slide-in-from-bottom duration-300 ease-out">
 
         {/* 🔥 HEADER FIXE */}
-        <div className="flex items-center justify-between px-4 py-4 border-b bg-background sticky top-0 z-10">
-          <h2 className="text-lg font-black">
-            Panier ({items.length})
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-background/95 backdrop-blur-md sticky top-0 z-10">
+          <h2 className="text-xl font-black">
+            Commande ({items.length})
           </h2>
 
           <button
             onClick={onClose}
-            className="h-9 w-9 rounded-full bg-muted flex items-center justify-center"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted/50 text-foreground active:scale-95 hover:bg-muted transition-all duration-300"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* 🔥 LISTE PRODUITS */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
 
           {items.length === 0 ? (
-            <p className="text-center text-muted-foreground py-10">
-              Panier vide
-            </p>
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+              <div className="h-16 w-16 mb-4 rounded-full bg-muted flex items-center justify-center">
+                <Trash2 className="h-6 w-6 opacity-50" />
+              </div>
+              <p className="text-sm font-semibold">Votre commande est vide</p>
+            </div>
           ) : (
             items.map((item: CartItem) => (
               <div
                 key={item.id}
-                className="bg-card text-card-foreground rounded-xl p-3 flex flex-col gap-2"
+                className="bg-card text-card-foreground border border-border/50 shadow-sm rounded-2xl p-4 flex flex-col gap-3 group"
               >
                 <div className="flex justify-between items-start gap-2">
                   <div className="flex-1 min-w-0">
@@ -117,22 +121,22 @@ export default function CartDrawer({ open, onClose, restaurantId, tableContext, 
 
         {/* 🔥 FOOTER FIXE */}
         {items.length > 0 && (
-          <div className="border-t p-4 bg-background space-y-3">
+          <div className="border-t border-border/50 px-5 py-6 bg-background/95 backdrop-blur-md space-y-4 shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
 
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-semibold text-muted-foreground">
-                Total
+            <div className="flex justify-between items-end">
+              <span className="text-xs font-black uppercase tracking-widest text-muted-foreground">
+                Total à payer
               </span>
-              <span className="text-xl font-black text-[var(--color-primary)]">
+              <span className="text-2xl font-black text-[var(--color-primary)]">
                 {total.toLocaleString()} FCFA
               </span>
             </div>
 
             <button
               onClick={() => setCheckoutOpen(true)}
-              className="w-full h-12 rounded-xl bg-[var(--color-primary)] text-white font-black shadow-lg active:scale-95"
+              className="w-full h-14 rounded-2xl bg-[var(--color-primary)] text-white text-base font-black uppercase tracking-wide shadow-[0_8px_24px_var(--color-primary)]/30 hover:shadow-[0_12px_32px_var(--color-primary)]/40 hover:brightness-110 active:scale-[0.98] transition-all duration-300"
             >
-              Commander maintenant
+              Continuer
             </button>
 
           </div>
@@ -140,13 +144,22 @@ export default function CartDrawer({ open, onClose, restaurantId, tableContext, 
 
       </div>
 
-      <CheckoutModal
-        open={checkoutOpen}
-        onClose={() => setCheckoutOpen(false)}
-        restaurantId={restaurantId}
-        tableContext={tableContext}
-        activeTableSession={activeTableSession}
-      />
+      {tableContext ? (
+        <CheckoutQRModal
+          open={checkoutOpen}
+          onClose={() => setCheckoutOpen(false)}
+          restaurantId={restaurantId}
+          tableContext={tableContext}
+          activeOrderId={activeOrderId}
+        />
+      ) : (
+        <CheckoutPublicModal
+          open={checkoutOpen}
+          onClose={() => setCheckoutOpen(false)}
+          restaurantId={restaurantId}
+          restaurantFeatures={{ takeaway: true, delivery: true }}
+        />
+      )}
     </div>
   )
 }

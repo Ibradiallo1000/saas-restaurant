@@ -13,11 +13,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { MessageSquare, Send, CheckCircle2, Building2, User, Phone, Mail, MapPin } from "lucide-react"
+import { usePlatform } from "@/contexts/platform-context"
 
 export default function ContactRequestPage() {
   const db = useFirestore()
   const router = useRouter()
   const { toast } = useToast()
+  const { settings } = usePlatform()
   const [loading, setLoading] = React.useState(false)
   const [submitted, setSubmitted] = React.useState(false)
 
@@ -67,7 +69,7 @@ export default function ContactRequestPage() {
         <div className="space-y-2">
           <h1 className="text-3xl font-black italic uppercase tracking-tighter">C'est Reçu !</h1>
           <p className="text-muted-foreground">
-            Votre demande d'accès à la plateforme GastronomeAI a bien été enregistrée. 
+            Votre demande d'accès à la plateforme {settings.name} a bien été enregistrée. 
             Nos équipes vont l'analyser et vous recontacter très prochainement.
           </p>
         </div>
@@ -83,7 +85,7 @@ export default function ContactRequestPage() {
       <Card className="border-none shadow-2xl overflow-hidden rounded-3xl">
         <CardHeader className="bg-primary text-primary-foreground p-10 text-center">
           <div className="flex justify-center mb-6">
-            <div className="p-4 bg-white/20 rounded-2xl backdrop-blur-md">
+            <div className="p-4 bg-background/20 rounded-2xl backdrop-blur-md">
               <MessageSquare className="h-10 w-10" />
             </div>
           </div>
@@ -197,7 +199,7 @@ export default function ContactRequestPage() {
         </form>
       </Card>
       <p className="text-center text-xs text-muted-foreground mt-8 italic">
-        En soumettant ce formulaire, vous acceptez d'être recontacté par un conseiller GastronomeAI.
+        En soumettant ce formulaire, vous acceptez d'être recontacté par un conseiller {settings.name}.
       </p>
     </div>
   )

@@ -12,6 +12,11 @@ import { SidebarProvider } from "@/components/ui/sidebar"
 import { RestaurantProvider, useRestaurant } from "@/design-system/context/RestaurantContext"
 import { TenantProvider, useTenant } from "@/design-system/context/TenantProvider"
 import { RestaurantThemeProvider } from "@/design-system/theme/RestaurantThemeProvider"
+import { getRoleHomePath, isRouteAllowedForRole } from "@/lib/guards"
+import { ROLES } from "@/lib/constants"
+import OperationalBottomNav from "@/components/mobile/OperationalBottomNav"
+import OperationalMobileHeader from "@/components/mobile/OperationalMobileHeader"
+import { RestaurantLiveDataProvider } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 
 type ProtectedAppShellProps = {
   children: React.ReactNode
@@ -31,7 +36,9 @@ export function ProtectedAppShell({ children, mode }: ProtectedAppShellProps) {
     <TenantProvider>
       <RestaurantProvider>
         <RestaurantThemeProvider>
-          <ProtectedAppShellContent mode={mode}>{children}</ProtectedAppShellContent>
+          <RestaurantLiveDataProvider>
+            <ProtectedAppShellContent mode={mode}>{children}</ProtectedAppShellContent>
+          </RestaurantLiveDataProvider>
         </RestaurantThemeProvider>
       </RestaurantProvider>
     </TenantProvider>
@@ -43,20 +50,49 @@ function ProtectedAppShellContent({ children, mode }: ProtectedAppShellProps) {
   const pathname = usePathname()
   const tenant = useTenant()
   const restaurant = useRestaurant()
-  const [isNavigating, setIsNavigating] = React.useState(false)
-  const navigationStartPathRef = React.useRef<string | null>(null)
+  const [loginRedirectReady, setLoginRedirectReady] = React.useState(false)
   const isLoading = tenant.loading || restaurant.loading
   const requiresPlatformRole = mode === "platform"
   const hasPlatformAccess = !requiresPlatformRole || tenant.isSuperAdmin
-  const shouldRedirectToLogin = !isLoading && !tenant.user
+  const shouldRedirectToLogin = !isLoading && !tenant.user && loginRedirectReady
+  const routeRole = tenant.isSuperAdmin ? "super_admin" : tenant.role
+  const isAllowedForRole = isRouteAllowedForRole(pathname ?? "/", routeRole as any)
+  const roleHomePath = getRoleHomePath(routeRole as any)
+  const isFullscreenRoute =
+    (pathname ?? "").startsWith("/pos") || (pathname ?? "").startsWith("/kitchen")
+  const shouldShowOperationalBottomNav =
+    mode === "dashboard" &&
+    (tenant.role === ROLES.OWNER || tenant.role === ROLES.MANAGER) &&
+    !isFullscreenRoute
+  const shouldShowOperationalMobileHeader = shouldShowOperationalBottomNav
   const mainClassName =
     mode === "platform"
       ? "flex-1 overflow-y-auto px-4 py-8 md:px-8"
-      : "flex-1 overflow-y-auto px-4 py-6 md:px-8"
+      : isFullscreenRoute
+        ? "flex-1 overflow-y-auto"
+      : shouldShowOperationalMobileHeader
+        ? "flex-1 overflow-y-auto px-4 pb-[calc(80px+env(safe-area-inset-bottom))] pt-[calc(56px+env(safe-area-inset-top)+16px)] md:px-8 md:pb-8 md:pt-6"
+        : "flex-1 overflow-y-auto px-4 pb-[calc(80px+env(safe-area-inset-bottom))] pt-6 md:px-8 md:pb-8"
   const containerClassName =
     mode === "platform"
       ? "app-background flex min-h-screen w-full"
-      : "flex min-h-screen w-full"
+      : "app-background flex min-h-screen w-full text-foreground"
+  const isRedirectingForRole =
+    !isLoading &&
+    !shouldRedirectToLogin &&
+    mode !== "platform" &&
+    tenant.user &&
+    !isAllowedForRole
+
+  React.useEffect(() => {
+    if (isLoading || tenant.user) {
+      setLoginRedirectReady(false)
+      return
+    }
+
+    const timer = window.setTimeout(() => setLoginRedirectReady(true), 600)
+    return () => window.clearTimeout(timer)
+  }, [isLoading, tenant.user])
 
   React.useEffect(() => {
     if (!shouldRedirectToLogin) return
@@ -66,56 +102,25 @@ function ProtectedAppShellContent({ children, mode }: ProtectedAppShellProps) {
   }, [pathname, router, shouldRedirectToLogin])
 
   React.useEffect(() => {
-    const handleNavigationStart = () => {
-      navigationStartPathRef.current = pathname ?? null
-      setIsNavigating(true)
-    }
+    if (isLoading || shouldRedirectToLogin || mode === "platform") return
+    if (!isAllowedForRole) router.replace(roleHomePath)
+  }, [isAllowedForRole, isLoading, mode, roleHomePath, router, shouldRedirectToLogin])
 
-    window.addEventListener("app:navigation-start", handleNavigationStart)
-
-    return () => {
-      window.removeEventListener("app:navigation-start", handleNavigationStart)
-    }
-  }, [pathname])
-
-  React.useEffect(() => {
-    if (!isNavigating) return
-    if (pathname === navigationStartPathRef.current) return
-
-    const timer = window.setTimeout(() => {
-      navigationStartPathRef.current = null
-      setIsNavigating(false)
-    }, 100)
-
-    return () => {
-      window.clearTimeout(timer)
-    }
-  }, [isNavigating, pathname])
-
-  React.useEffect(() => {
-    if (!isNavigating) return
-
-    const fallbackTimer = window.setTimeout(() => {
-      navigationStartPathRef.current = null
-      setIsNavigating(false)
-    }, 5000)
-
-    return () => {
-      window.clearTimeout(fallbackTimer)
-    }
-  }, [isNavigating])
-
-  const shouldShowPageLoader = isNavigating && !isLoading && !shouldRedirectToLogin
+  const shouldShowPageLoader = isRedirectingForRole && !isLoading && !shouldRedirectToLogin
 
   return (
-    <SidebarProvider defaultOpen>
+    <SidebarProvider
+      defaultOpen
+      style={{ "--sidebar-width-icon": "10rem" } as React.CSSProperties}
+    >
       <div className={containerClassName}>
-        {isLoading || shouldRedirectToLogin ? <SidebarSkeleton /> : <AppSidebar />}
+        {isFullscreenRoute ? null : isLoading || shouldRedirectToLogin ? <SidebarSkeleton /> : <AppSidebar />}
+        {shouldShowOperationalMobileHeader ? <OperationalMobileHeader /> : null}
         <main className={mainClassName}>
           <AppErrorBoundary key={pathname}>
-            {isLoading || shouldRedirectToLogin ? (
+            {isLoading || shouldRedirectToLogin || (!tenant.user && !loginRedirectReady) || isRedirectingForRole ? (
               <AdminRouteSkeleton />
-            ) : hasPlatformAccess ? (
+            ) : hasPlatformAccess && (mode === "platform" || isAllowedForRole) ? (
               <React.Suspense fallback={<PageLoader />}>
                 {shouldShowPageLoader ? <PageLoader /> : children}
               </React.Suspense>
@@ -124,6 +129,7 @@ function ProtectedAppShellContent({ children, mode }: ProtectedAppShellProps) {
             )}
           </AppErrorBoundary>
         </main>
+        {shouldShowOperationalBottomNav ? <OperationalBottomNav /> : null}
       </div>
     </SidebarProvider>
   )

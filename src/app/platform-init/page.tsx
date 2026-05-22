@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { ShieldCheck, Loader2, AlertTriangle, Zap } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { usePlatform } from "@/contexts/platform-context"
 
 /**
  * @fileOverview Page d'initialisation sécurisée.
@@ -20,6 +21,7 @@ export default function PlatformInitPage() {
   const db = useFirestore()
   const router = useRouter()
   const { toast } = useToast()
+  const { settings } = usePlatform()
   const [checking, setChecking] = React.useState(true)
   const [canInit, setCanInit] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
@@ -100,7 +102,7 @@ export default function PlatformInitPage() {
     <div className="flex items-center justify-center min-h-screen p-4 animate-in fade-in duration-700">
       <Card className="max-w-md w-full border-none shadow-2xl overflow-hidden rounded-3xl">
         <CardHeader className="bg-primary text-primary-foreground p-8 text-center">
-          <div className="h-16 w-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-md">
+          <div className="h-16 w-16 bg-background/20 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-md">
             <ShieldCheck className="h-10 w-10" />
           </div>
           <CardTitle className="text-2xl font-black italic uppercase tracking-tighter">Initialisation SaaS</CardTitle>
@@ -114,7 +116,7 @@ export default function PlatformInitPage() {
                 <p className="mt-2 font-bold text-primary">Email actuel : {user.email}</p>
               </div>
               <p className="text-xs text-muted-foreground">
-                En cliquant sur le bouton ci-dessous, vous deviendrez le <strong>Super Admin</strong> de GastronomeAI.
+                En cliquant sur le bouton ci-dessous, vous deviendrez le <strong>Super Admin</strong> de {settings.name}.
               </p>
             </div>
           ) : (

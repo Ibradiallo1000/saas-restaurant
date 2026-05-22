@@ -4,8 +4,8 @@ import * as React from "react"
 
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 
-const DEFAULT_PRIMARY = "#f97316"
-const DEFAULT_SECONDARY = "#122f24"
+const PRODUCT_PRIMARY = "#f59e0b"
+const DEFAULT_SECONDARY = "#111827"
 
 export function RestaurantThemeProvider({
   children,
@@ -15,7 +15,7 @@ export function RestaurantThemeProvider({
   const { restaurant } = useRestaurant()
 
   React.useEffect(() => {
-    const primary = sanitizeHexColor(restaurant?.theme?.primary) ?? DEFAULT_PRIMARY
+    const primary = PRODUCT_PRIMARY
     const secondary =
       sanitizeHexColor(restaurant?.theme?.secondary) ?? DEFAULT_SECONDARY
     const root = document.documentElement
