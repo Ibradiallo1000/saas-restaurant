@@ -15,7 +15,12 @@ export function PaymentBadge({
   paymentVerificationStatus,
   className,
 }: PaymentBadgeProps) {
-  if (paymentStatus === "paid") {
+  if (
+    paymentStatus === "paid" ||
+    paymentStatus === "verified" ||
+    paymentStatus === "paye" ||
+    paymentStatus === "validated"
+  ) {
     return (
       <div className={cn("w-fit rounded-full bg-green-500/10 px-3 py-1 text-sm font-bold text-green-700 dark:text-green-300", className)}>
         Paiement confirmé

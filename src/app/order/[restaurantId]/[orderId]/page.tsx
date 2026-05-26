@@ -291,6 +291,15 @@ function ClientOrderTrackingContent() {
   const sessionTotal = tableSessionOrders.reduce((sum: number, sessionOrder: any) => sum + getOrderTotal(sessionOrder), 0)
   const paymentTargetOrders = tableSessionOrders.filter((sessionOrder: any) => sessionOrder.paymentStatus !== "paid")
   const hasPendingPayment = paymentTargetOrders.length > 0
+  const shouldShowPostServicePayment = allServed && isQrTableOrder
+  const shouldShowPrepaidCompletion = allServed && !isQrTableOrder
+  const prepaidPaymentConfirmed = tableSessionOrders.every((sessionOrder: any) => isPaidPaymentStatus(sessionOrder.paymentStatus))
+  const effectivePaymentStatus =
+    tableSession?.paymentRequest?.status === "validated" ||
+    isPaidPaymentStatus(safeOrder.paymentStatus) ||
+    tableSessionOrders.some((sessionOrder: any) => isPaidPaymentStatus(sessionOrder.paymentStatus))
+      ? "paid"
+      : safeOrder.paymentStatus
   const isProductionComplete = step === 4
   const orderWithPaymentVerification = safeOrder as RestaurantOrder & {
     paymentIntentStatus?: string | null
@@ -429,7 +438,7 @@ function ClientOrderTrackingContent() {
           </section>
         )}
 
-        {allServed ? (
+        {shouldShowPostServicePayment ? (
           <section className="rounded-2xl border-2 border-orange-200 bg-orange-50 p-5 text-orange-950 shadow-lg dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-100">
             <p className="text-xs font-black uppercase tracking-wide text-orange-700 dark:text-orange-300">
               Total à payer
@@ -499,11 +508,26 @@ function ClientOrderTrackingContent() {
                    ))}
                  </div>
                </div>
-            )}
+             )}
+           </section>
+        ) : shouldShowPrepaidCompletion ? (
+          <section className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-5 text-emerald-950 shadow-lg dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+            <p className="text-xs font-black uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+              Commande servie
+            </p>
+            <p className="mt-2 text-2xl font-black text-emerald-900 dark:text-emerald-100">
+              Merci, votre commande est prête.
+            </p>
+            <p className="mt-3 text-sm font-semibold text-emerald-900/80 dark:text-emerald-100/80">
+              {prepaidPaymentConfirmed
+                ? "Paiement confirme. Aucun autre paiement n'est necessaire."
+                : "Paiement deja initie. La caisse finalise la validation si besoin."}
+            </p>
           </section>
         ) : null}
         
         <PaymentBadge
+          paymentStatus={effectivePaymentStatus}
           paymentIntentStatus={orderWithPaymentVerification.paymentIntentStatus}
           paymentVerificationStatus={orderWithPaymentVerification.paymentVerificationStatus}
         />
@@ -583,6 +607,10 @@ function OrderItemImage({ item }: { item: any }) {
 
 function isDeliveryOrderType(type: string | null | undefined) {
   return type === "delivery" || type === "livraison"
+}
+
+function isPaidPaymentStatus(status: string | null | undefined) {
+  return status === "paid" || status === "verified" || status === "paye" || status === PAYMENT_STATUS.VALIDATED
 }
 
 function getItemUnitPrice(item: any) {
