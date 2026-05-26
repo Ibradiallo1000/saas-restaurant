@@ -7,10 +7,8 @@ import { CheckCircle2 } from "lucide-react"
 import { OrderStepper } from "@/components/OrderStepper"
 import { PaymentBadge } from "@/components/PaymentBadge"
 import { useDoc, useFirestore, useMemoFirebase } from "@/firebase"
-import {
-  ORDER_OPERATION_STATUS,
-  getOrderStatus,
-} from "@/lib/order-lifecycle"
+import { getClientOrderStep, getClientStatusLabel } from "@/lib/getClientOrderStep"
+import { getOrderDisplayId } from "@/lib/order-display-id"
 
 export default function OrderTrackingPage({
   orderId,
@@ -44,15 +42,15 @@ export default function OrderTrackingPage({
     )
   }
 
-  const orderStatus = getOrderStatus(order)
   const orderWithPayment = order as typeof order & {
     paymentIntentStatus?: string | null
     paymentVerificationStatus?: string | null
+    type?: string | null
+    timestamps?: any
   }
-  const isServed =
-    orderStatus === ORDER_OPERATION_STATUS.SERVED ||
-    orderStatus === ORDER_OPERATION_STATUS.PICKED_UP ||
-    orderStatus === ORDER_OPERATION_STATUS.COMPLETED
+  const step = getClientOrderStep(order)
+  const label = getClientStatusLabel(order)
+  const isServed = step === 4
 
   return (
     <div className="app-background mx-auto min-h-screen max-w-md space-y-6 p-4 text-foreground">
@@ -72,7 +70,7 @@ export default function OrderTrackingPage({
 
       <div className="space-y-2 rounded-2xl bg-card p-4 text-card-foreground shadow">
         <div className="flex items-center justify-between">
-          <span className="font-semibold">Commande #{order.id?.slice(-6)}</span>
+          <span className="font-semibold">{getOrderDisplayId(order)}</span>
           <span className="font-bold text-green-600">
             {Number(order.total ?? 0).toLocaleString()} FCFA
           </span>
@@ -103,7 +101,15 @@ export default function OrderTrackingPage({
         <div className="space-y-6 rounded-2xl bg-card p-5 text-card-foreground shadow">
           <h3 className="font-semibold">Suivi de la commande</h3>
 
-          <OrderStepper orderType={order.orderType} orderStatus={order.orderStatus} />
+          <OrderStepper
+            orderType={orderWithPayment.type || order.orderType}
+            kitchenStatus={order.kitchenStatus}
+            legacyStatus={order.status}
+            currentStep={step}
+            currentStatusLabel={label}
+            createdAt={order.createdAt}
+            timestamps={orderWithPayment.timestamps}
+          />
         </div>
       )}
     </div>

@@ -1,8 +1,8 @@
-﻿"use client"
+"use client"
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
-import { addDoc, collection, doc, runTransaction, serverTimestamp } from "firebase/firestore"
+import { addDoc, collection, doc, getDocs, query, runTransaction, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore"
 import { AlertTriangle, Banknote, CheckCircle2, Clock, CreditCard, Plus, ReceiptText, Wallet } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -13,27 +13,109 @@ import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
+import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
+import { getDateRange, useTimeFilter } from "@/contexts/time-filter-context"
 import { getFinancialSummary } from "@/lib/finance/financial-summary"
-import { isOrderPaid, isOrderServed } from "@/lib/order-lifecycle"
 import { cn } from "@/lib/utils"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
-import {
-  processOrderPaymentTransaction,
-  releaseOrderTableIfNeeded,
-  updateCashSessionTotals,
-  validateMobilePaymentTransaction,
-} from "@/services/pos-security.service"
 
 export default function ManagerCaissePage() {
   const db = useFirestore()
   const searchParams = useSearchParams()
   const { restaurantId } = useRestaurant()
   const { user, role } = useTenant()
+  const { filter } = useTimeFilter()
+  const range = React.useMemo(() => getDateRange(filter), [filter])
   const expenseFormRef = React.useRef<HTMLElement | null>(null)
   const validationRef = React.useRef<HTMLElement | null>(null)
   const paymentsRef = React.useRef<HTMLElement | null>(null)
-  const { activeOrders, cashSessionRequests, cashSessions, payments, isLoadingOrders, isLoadingSessions } = useRestaurantLiveData()
+  const { toast } = useToast()
+  
+  
+  const tableSessionsQuery = useMemoFirebase(
+    () => {
+      if (!db || !restaurantId) return null
+      return query(
+        collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "tableSessions"),
+        where("status", "==", "active")
+      )
+    },
+    [db, restaurantId]
+  )
+  const { data: tableSessions } = useCollection<any>(tableSessionsQuery)
+
+  const pendingPaymentSessions = React.useMemo(() => {
+    const sessions = tableSessions || []
+    const requests = sessions.filter((session: any) => {
+      return session.paymentRequest?.status === "requested" || session.paymentRequest?.status === "pending_confirmation"
+    })
+    console.log("CAISSE READ:", requests)
+    return requests
+  }, [tableSessions])
+
+  
+
+  const validateTableSessionPayment = async (session: any) => {
+    if (!db || !restaurantId || !user) return
+    setProcessingOrderId(session.id)
+    try {
+      const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "tableSessions", session.id)
+      const ordersRef = collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS)
+      const [tableSessionOrdersSnap, legacySessionOrdersSnap] = await Promise.all([
+        getDocs(query(ordersRef, where("tableSessionId", "==", session.id))),
+        getDocs(query(ordersRef, where("sessionId", "==", session.id))),
+      ])
+      const orderDocs = new Map<string, (typeof tableSessionOrdersSnap.docs)[number]>()
+
+      tableSessionOrdersSnap.docs.forEach((orderDoc) => orderDocs.set(orderDoc.id, orderDoc))
+      legacySessionOrdersSnap.docs.forEach((orderDoc) => orderDocs.set(orderDoc.id, orderDoc))
+
+      const batch = writeBatch(db)
+      batch.update(sessionRef, {
+        "paymentRequest.status": "validated",
+        "paymentRequest.handledAt": serverTimestamp(),
+        "paymentRequest.handledBy": user.uid,
+        status: "closed",
+        closedAt: serverTimestamp(),
+      })
+
+      orderDocs.forEach((orderDoc) => {
+        batch.update(orderDoc.ref, {
+          paymentStatus: "paid",
+          paidAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      })
+
+      await batch.commit()
+      toast({ title: "Paiement validé" })
+    } catch (e) {
+      console.error(e)
+      toast({ title: "Erreur", description: "Impossible de valider", variant: "destructive" })
+    } finally {
+      setProcessingOrderId(null)
+    }
+  }
+
+  const rejectTableSessionPayment = async (session: any) => {
+    if (!db || !restaurantId || !user) return
+    setProcessingOrderId(session.id)
+    try {
+      const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "tableSessions", session.id)
+      await updateDoc(sessionRef, {
+        "paymentRequest.status": "rejected",
+        "paymentRequest.handledAt": serverTimestamp(),
+        "paymentRequest.handledBy": user.uid,
+      })
+      toast({ title: "Paiement refusé" })
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setProcessingOrderId(null)
+    }
+  }
+  const { cashSessionRequests, cashSessions, payments, isLoadingOrders, isLoadingSessions } = useRestaurantLiveData()
   const [processingOrderId, setProcessingOrderId] = React.useState<string | null>(null)
   const [validatingSessionId, setValidatingSessionId] = React.useState<string | null>(null)
   const [activatingRequestId, setActivatingRequestId] = React.useState<string | null>(null)
@@ -63,8 +145,12 @@ export default function ManagerCaissePage() {
 
   const cashMovementsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
-    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_MOVEMENTS)
-  }, [db, restaurantId])
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_MOVEMENTS),
+      where("createdAt", ">=", range.startDate),
+      where("createdAt", "<=", range.endDate)
+    )
+  }, [db, restaurantId, range.endDate, range.startDate])
   const { data: cashMovements } = useCollection<any>(cashMovementsQuery)
 
   const pendingSessions = React.useMemo(() => {
@@ -84,16 +170,17 @@ export default function ManagerCaissePage() {
       .map((session: any) => buildSessionValidationRow(session, depositSessionIds.has(session.id)))
   }, [cashMovements, cashSessions])
 
-  const servedOrders = React.useMemo(() => {
-    return activeOrders.filter((order: any) => isOrderServed(order))
-  }, [activeOrders])
-  const unpaidOrders = React.useMemo(() => {
-    return servedOrders.filter((order: any) => !isPaid(order))
-  }, [servedOrders])
-  const operationalPending = React.useMemo(() => getOperationalPendingSummary(unpaidOrders), [unpaidOrders])
+  const operationalPending = React.useMemo(
+    () => getTableSessionPaymentSummary(pendingPaymentSessions),
+    [pendingPaymentSessions]
+  )
+  const periodPayments = React.useMemo(
+    () => (payments || []).filter((payment: any) => isValueInDateRange(payment.createdAt, range.startDate, range.endDate)),
+    [payments, range.endDate, range.startDate]
+  )
   const globalCash = React.useMemo(
-    () => getFinancialSummary({ movements: cashMovements || [], payments: payments || [] }),
-    [cashMovements, payments]
+    () => getFinancialSummary({ movements: cashMovements || [], payments: periodPayments }),
+    [cashMovements, periodPayments]
   )
   const isPaymentsFilter = searchParams?.get("filter") === "payments"
 
@@ -172,52 +259,6 @@ export default function ManagerCaissePage() {
       })
     } finally {
       setActivatingRequestId(null)
-    }
-  }
-
-  const collectOrder = async (order: any) => {
-    if (!db || !restaurantId || !user || !isOrderServed(order)) return
-    if (!activeSession?.id) return
-
-    setProcessingOrderId(order.id)
-    try {
-      const amount = Number(order.total ?? order.totalAmount ?? 0)
-      const staff = {
-        userId: user.uid,
-        staffId: user.uid,
-        staffName: user.displayName || user.email?.split("@")[0] || "Manager",
-      }
-      const isMobilePayment = order.paymentType === "mobile" || (order.paymentMethod && order.paymentMethod !== "cash")
-
-      const beforeOrder = isMobilePayment
-        ? await validateMobilePaymentTransaction({
-            db,
-            restaurantId,
-            orderId: order.id,
-            cashSessionId: activeSession.id,
-            amount,
-            staff,
-            printedClient: !order.printedClient,
-          })
-        : await processOrderPaymentTransaction({
-            db,
-            restaurantId,
-            orderId: order.id,
-            method: "cash",
-            paymentMethod: "cash",
-            cashSessionId: activeSession.id,
-            amount,
-            staff,
-            printedClient: !order.printedClient,
-          })
-
-      if (activeSession?.id) {
-        await updateCashSessionTotals(db, restaurantId, activeSession.id, isMobilePayment ? "mobile" : "cash", amount)
-      }
-
-      await releaseOrderTableIfNeeded(db, restaurantId, beforeOrder)
-    } finally {
-      setProcessingOrderId(null)
     }
   }
 
@@ -303,7 +344,7 @@ export default function ManagerCaissePage() {
         amount,
         source: "manual",
         sessionId: null,
-        reason: expenseReason.trim() || "Dépense",
+        reason: expenseReason.trim() || "DÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©pense",
         category: expenseCategory.trim() || null,
         createdAt: serverTimestamp(),
         createdBy: user.uid,
@@ -327,7 +368,7 @@ export default function ManagerCaissePage() {
           <div>
             <h1 className="text-3xl font-black uppercase tracking-tight text-primary">Caisse</h1>
             <p className="text-sm text-muted-foreground">
-              Argent vendu, déclaré, vérifié puis validé.
+              Argent vendu, dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©clarÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©, vÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©rifiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© puis validÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©.
             </p>
           </div>
           <div className="rounded-full border bg-background px-3 py-1 text-xs font-black uppercase text-emerald-600">
@@ -341,6 +382,31 @@ export default function ManagerCaissePage() {
           </span>
         </div>
       </section>
+
+
+      {pendingPaymentSessions.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-black uppercase tracking-tight text-orange-600 animate-pulse">
+              DEMANDES DE PAIEMENT TABLE
+            </h2>
+            <span className="rounded-full bg-orange-600 text-white px-3 py-1 text-xs font-black">
+              {pendingPaymentSessions.length}
+            </span>
+          </div>
+          <div className="grid gap-3 xl:grid-cols-2">
+            {pendingPaymentSessions.map((session: any) => (
+              <TableSessionPaymentRequestCard
+                key={session.id}
+                session={session}
+                processing={processingOrderId === session.id}
+                onValidate={() => validateTableSessionPayment(session)}
+                onReject={() => rejectTableSessionPayment(session)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
@@ -369,15 +435,15 @@ export default function ManagerCaissePage() {
 
       <section className="grid gap-4 md:grid-cols-4">
         <KpiCard icon={Wallet} label="Total caisse actuelle" value={globalCash.balance} />
-        <KpiCard icon={ReceiptText} label="Total entrées" value={globalCash.deposits} />
-        <KpiCard icon={Banknote} label="Total dépenses" value={globalCash.expenses} danger={globalCash.expenses > 0} />
-        <KpiCard icon={Wallet} label="Solde réel" value={globalCash.balance} />
+        <KpiCard icon={ReceiptText} label="Total entrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©es" value={globalCash.deposits} />
+        <KpiCard icon={Banknote} label="Total dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©penses" value={globalCash.expenses} danger={globalCash.expenses > 0} />
+        <KpiCard icon={Wallet} label="Solde rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©el" value={globalCash.balance} />
       </section>
 
       <section ref={expenseFormRef} className="rounded-2xl border bg-card p-4 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-black uppercase tracking-tight">Ajouter une dépense</h2>
+            <h2 className="text-lg font-black uppercase tracking-tight">Ajouter une dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©pense</h2>
             <p className="text-sm text-muted-foreground">Toute sortie d'argent passe par un mouvement de caisse.</p>
           </div>
           <Plus className="h-5 w-5 text-primary" />
@@ -392,7 +458,7 @@ export default function ManagerCaissePage() {
             <Input value={expenseReason} onChange={(event) => setExpenseReason(event.target.value)} placeholder="Achat, transport, maintenance..." />
           </div>
           <div className="space-y-2">
-            <Label>Catégorie</Label>
+            <Label>CatÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©gorie</Label>
             <Input value={expenseCategory} onChange={(event) => setExpenseCategory(event.target.value)} placeholder="Optionnel" />
           </div>
           <Button disabled={!canValidateCash || creatingExpense || Number(expenseAmount || 0) <= 0} onClick={createExpense}>
@@ -435,31 +501,6 @@ export default function ManagerCaissePage() {
         <KpiCard icon={Wallet} label="À encaisser" value={operationalPending.pendingTotal} danger={operationalPending.pendingTotal > 0} />
         <KpiCard icon={CreditCard} label="Mobile en attente" value={operationalPending.mobilePending} />
         <KpiCard icon={Banknote} label="Cash en attente" value={operationalPending.cashPending} />
-      </section>
-
-      <section
-        ref={paymentsRef}
-        className={cn(
-          "space-y-3 rounded-2xl border border-transparent p-0 transition",
-          isPaymentsFilter && "border-orange-300 bg-orange-50/50 p-3 dark:border-orange-900 dark:bg-orange-950/20"
-        )}
-      >
-        <h2 className="text-lg font-black uppercase tracking-tight">À encaisser</h2>
-        {unpaidOrders.length === 0 ? (
-          <EmptyFinanceState label="Aucune commande servie en attente de paiement." />
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {unpaidOrders.map((order: any) => (
-              <CashOrderCard
-                key={order.id}
-                order={order}
-                actionLabel="Encaisser"
-                processing={processingOrderId === order.id}
-                onCollect={() => collectOrder(order)}
-              />
-            ))}
-          </div>
-        )}
       </section>
 
       <div className="fixed bottom-20 right-4 z-40 flex flex-col gap-3 md:hidden">
@@ -507,6 +548,53 @@ type SessionValidationRow = {
   depositCreated: boolean
 }
 
+function TableSessionPaymentRequestCard({
+  session,
+  processing,
+  onValidate,
+  onReject,
+}: {
+  session: any
+  processing: boolean
+  onValidate: () => void
+  onReject: () => void
+}) {
+  const requestStatus = session.paymentRequest?.status
+  const requestLabel =
+    requestStatus === "pending_confirmation"
+      ? "Client dit avoir payé"
+      : "Client a choisi paiement"
+
+  return (
+    <article className="rounded-2xl border-2 border-orange-300 bg-orange-50 p-4 shadow-sm relative overflow-hidden dark:bg-orange-950/20">
+      <div className="absolute top-0 left-0 w-1.5 h-full bg-orange-500 animate-pulse" />
+      <div className="flex items-start justify-between gap-3 pl-2">
+        <div>
+          <h3 className="text-xl font-black uppercase text-orange-600">{session.tableName || session.tableId}</h3>
+          <p className="text-sm font-bold text-orange-800/80 dark:text-orange-200/80 mt-1">
+            {requestStatus === "pending_confirmation" && (
+              <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-[10px] mr-2 uppercase animate-pulse">À vérifier</span>
+            )}
+            {requestLabel} : <span className="uppercase text-orange-900 font-black dark:text-orange-100">{session.paymentRequest?.method === "cash" ? "Espèces" : session.paymentRequest?.provider || "Mobile Money"}</span>
+          </p>
+        </div>
+        <p className="text-2xl font-black text-orange-600">{Number(session.totalAmount || 0).toLocaleString()} FCFA</p>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 pl-2">
+        <Button disabled={processing} onClick={onValidate} className="font-black h-12 bg-emerald-600 hover:bg-emerald-700 text-white w-full">
+          <CheckCircle2 className="mr-2 h-5 w-5" />
+          Valider le paiement
+        </Button>
+        <Button disabled={processing} onClick={onReject} variant="outline" className="font-black h-12 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 w-full bg-white dark:bg-transparent">
+          <AlertTriangle className="mr-2 h-5 w-5" />
+          Refuser
+        </Button>
+      </div>
+    </article>
+  )
+}
+
 function CashOpeningRequestCard({
   request,
   canActivate,
@@ -524,7 +612,7 @@ function CashOpeningRequestCard({
         <div>
           <h3 className="text-lg font-black">{request.staffName || request.cashierName || "Caissier"}</h3>
           <p className="text-xs font-bold uppercase text-muted-foreground">
-            Demande #{request.id.slice(-6).toUpperCase()} · {formatSessionStatus(request.status)}
+            Demande #{request.id.slice(-6).toUpperCase()} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {formatSessionStatus(request.status)}
           </p>
           {request.staffPhone ? (
             <p className="text-xs font-semibold text-muted-foreground">{request.staffPhone}</p>
@@ -537,7 +625,7 @@ function CashOpeningRequestCard({
 
       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-xs font-bold text-muted-foreground">
-          Créée : {formatSessionTime(request.createdAt || request.requestedAt)}
+          CrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e : {formatSessionTime(request.createdAt || request.requestedAt)}
         </div>
         <Button disabled={!canActivate || processing} onClick={onActivate} className="min-h-11 font-black">
           {processing ? "Activation..." : "Activer session"}
@@ -573,47 +661,47 @@ function SessionValidationCard({
         <div>
           <h3 className="text-lg font-black">{session.cashierLabel}</h3>
           <p className="text-xs font-bold uppercase text-muted-foreground">
-            Session #{session.id.slice(-6).toUpperCase()} · {formatSessionStatus(session.status)} · {session.totalOrders} commandes
+            Session #{session.id.slice(-6).toUpperCase()} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {formatSessionStatus(session.status)} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {session.totalOrders} commandes
           </p>
           {session.staffPhone ? (
             <p className="text-xs font-semibold text-muted-foreground">{session.staffPhone}</p>
           ) : null}
         </div>
         <div className={cn("rounded-full px-3 py-1 text-xs font-black", hasDifference ? "bg-red-500/10 text-red-600" : "bg-emerald-500/10 text-emerald-600")}>
-          {isAlreadyCounted ? "Comptabilisée" : hasDifference ? "Écart" : "Conforme"}
+          {isAlreadyCounted ? "ComptabilisÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e" : hasDifference ? "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°cart" : "Conforme"}
         </div>
       </div>
 
       {isAlreadyCounted ? (
         <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
-          Session déjà comptabilisée
+          Session dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©jÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  comptabilisÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e
         </div>
       ) : null}
 
       <div className="mt-4 grid gap-2 text-sm md:grid-cols-3">
-        <AmountBlock label="Montant déclaré" value={session.declaredTotal} />
-        <AmountBlock label="Montant calculé" value={session.calculatedTotal} />
-        <AmountBlock label="Écart" value={session.difference} danger={hasDifference} />
+        <AmountBlock label="Montant dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©clarÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©" value={session.declaredTotal} />
+        <AmountBlock label="Montant calculÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©" value={session.calculatedTotal} />
+        <AmountBlock label="ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°cart" value={session.difference} danger={hasDifference} />
       </div>
 
       <div className="mt-3 flex flex-wrap gap-3 text-xs font-bold text-muted-foreground">
-        <span>Cash déclaré: {session.declaredCash.toLocaleString()} FCFA</span>
-        <span>Mobile déclaré: {session.declaredMobile.toLocaleString()} FCFA</span>
+        <span>Cash dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©clarÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©: {session.declaredCash.toLocaleString()} FCFA</span>
+        <span>Mobile dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©clarÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©: {session.declaredMobile.toLocaleString()} FCFA</span>
         <span>Cash: {session.calculatedCash.toLocaleString()} FCFA</span>
         <span>Mobile: {session.calculatedMobile.toLocaleString()} FCFA</span>
-        <span>Écart cash: {session.cashDifference.toLocaleString()} FCFA</span>
-        <span>Écart mobile: {session.mobileDifference.toLocaleString()} FCFA</span>
+        <span>ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°cart cash: {session.cashDifference.toLocaleString()} FCFA</span>
+        <span>ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°cart mobile: {session.mobileDifference.toLocaleString()} FCFA</span>
         <span>Ouverture: {formatSessionTime(session.openedAt)}</span>
         <span>Fermeture: {formatSessionTime(session.closedAt)}</span>
       </div>
 
       {hasDifference ? (
         <div className="mt-4 space-y-2">
-          <Label>Motif écart</Label>
+          <Label>Motif ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©cart</Label>
           <Input
             value={discrepancyReason}
             onChange={(event) => onDiscrepancyReasonChange(event.target.value)}
-            placeholder="Ex: rendu monnaie, erreur déclaration, contrôle à faire..."
+            placeholder="Ex: rendu monnaie, erreur dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©claration, contrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´le ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  faire..."
           />
         </div>
       ) : null}
@@ -625,7 +713,7 @@ function SessionValidationCard({
         </Button>
         <Button disabled={!canValidate || processing} onClick={onDiscrepancy} variant="outline" className="font-black">
           <AlertTriangle className="mr-2 h-4 w-4" />
-          À investiguer
+          ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ investiguer
         </Button>
       </div>
     </article>
@@ -640,53 +728,6 @@ function AmountBlock({ label, value, danger }: { label: string; value: number; d
         {value.toLocaleString()} FCFA
       </p>
     </div>
-  )
-}
-
-function CashOrderCard({
-  order,
-  paid,
-  processing,
-  actionLabel,
-  onCollect,
-}: {
-  order: any
-  paid?: boolean
-  processing?: boolean
-  actionLabel?: string
-  onCollect?: () => void
-}) {
-  return (
-    <article className={cn("rounded-2xl border bg-card p-4 shadow-sm", !paid && "border-orange-300")}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-lg font-black">#{order.id.slice(-6).toUpperCase()}</h3>
-          <p className="text-xs font-bold uppercase text-muted-foreground">{getOrderTypeLabel(order)}</p>
-        </div>
-        <p className="text-lg font-black text-primary">{getOrderAmount(order).toLocaleString()} FCFA</p>
-      </div>
-
-      <div className="mt-3 space-y-1 rounded-xl bg-muted px-3 py-2 text-sm">
-        {(order.items || []).slice(0, 4).map((item: any) => (
-          <p key={`${order.id}-${item.productId}-${item.nameSnapshot || item.name}`} className="truncate">
-            {item.quantity}x {item.name || item.nameSnapshot}
-          </p>
-        ))}
-        <p className="pt-1 text-xs font-black uppercase text-muted-foreground">
-          Paiement : {formatPayment(order)}
-        </p>
-      </div>
-
-      {!paid && onCollect ? (
-        <Button className="mt-4 h-10 w-full font-black uppercase" disabled={processing} onClick={onCollect}>
-          {processing ? "Encaissement..." : actionLabel || "Encaisser"}
-        </Button>
-      ) : (
-        <div className="mt-4 rounded-xl bg-emerald-500/10 px-3 py-2 text-center text-xs font-black uppercase text-emerald-600">
-          Payée
-        </div>
-      )}
-    </article>
   )
 }
 
@@ -753,50 +794,39 @@ function buildSessionValidationRow(session: any, depositAlreadyExists = false): 
   }
 }
 
-function getOperationalPendingSummary(unpaidOrders: any[]) {
-  const pendingTotal = unpaidOrders.reduce((sum, order) => sum + getOrderAmount(order), 0)
-  const cashPending = unpaidOrders
-    .filter((order) => order.paymentStatus === "pending_cash" || (order.paymentType || order.paymentMethod || "cash") === "cash")
-    .reduce((sum, order) => sum + getOrderAmount(order), 0)
-  const mobilePending = unpaidOrders
-    .filter((order) => order.paymentStatus === "pending_mobile" || order.paymentType === "mobile" || order.paymentType === "mobile_money" || (order.paymentMethod && order.paymentMethod !== "cash"))
-    .reduce((sum, order) => sum + getOrderAmount(order), 0)
+function getTableSessionPaymentSummary(sessions: any[]) {
+  const pendingTotal = sessions.reduce((sum, session) => sum + getSessionAmount(session), 0)
+  const cashPending = sessions
+    .filter((session) => session.paymentRequest?.method === "cash")
+    .reduce((sum, session) => sum + getSessionAmount(session), 0)
+  const mobilePending = sessions
+    .filter((session) => session.paymentRequest?.method === "mobile")
+    .reduce((sum, session) => sum + getSessionAmount(session), 0)
 
   return { pendingTotal, cashPending, mobilePending }
 }
 
-function isPaid(order: any) {
-  return isOrderPaid(order)
-}
-
-function getOrderAmount(order: any) {
-  return Number(order.total ?? order.totalAmount ?? 0)
-}
-
-function getOrderTypeLabel(order: any) {
-  const type = order.orderType || (order.type === "table" ? "dine_in" : order.type)
-  if (type === "dine_in") return "Sur place"
-  if (type === "delivery") return "Livraison"
-  return "À emporter"
-}
-
-function formatPayment(order: any) {
-  if (order.paymentMethod === "cash" || order.paymentType === "cash") return "Cash"
-  if (order.paymentType === "mobile" || order.paymentMethod) return order.paymentMethod || "Mobile money"
-  return "Non défini"
+function getSessionAmount(session: any) {
+  return Number(session.totalAmount ?? session.total ?? 0)
 }
 
 function formatSessionTime(value: any) {
   const date = value?.toDate?.()
-  if (!date) return "temps réel"
+  if (!date) return "temps rÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©el"
   return date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+}
+
+function isValueInDateRange(value: any, startDate: Date, endDate: Date) {
+  const date = value?.toDate?.() ?? (value instanceof Date ? value : null)
+  if (!date) return false
+  return date >= startDate && date <= endDate
 }
 
 function formatSessionStatus(status: string) {
   if (isPendingCashSessionOpeningStatus(status)) return "Demande ouverture"
   if (status === "closed" || status === "pending_validation") return "En attente"
-  if (status === "validated") return "Validée"
-  if (status === "rejected") return "Refusée"
+  if (status === "validated") return "ValidÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e"
+  if (status === "rejected") return "RefusÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©e"
   if (isOpenCashSessionStatus(status)) return "Ouverte"
   return status
 }

@@ -1,4 +1,4 @@
-﻿import type { SelectedCartOption } from "@/modules/restaurant/types"
+import type { SelectedCartOption } from "@/modules/restaurant/types"
 
 export function getProductBasePrice(product: any) {
   const price = Number(product?.unitPrice ?? product?.basePrice ?? product?.price ?? 0)

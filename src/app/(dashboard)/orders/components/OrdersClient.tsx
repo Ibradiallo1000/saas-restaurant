@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { printOrder } from '@/lib/order-printing';
+import { getOrderDisplayId } from '@/lib/order-display-id';
 import { normalizePaymentStatus } from '@/lib/order-payment';
 import {
   ORDER_OPERATION_STATUS,
@@ -215,7 +216,7 @@ function OrdersPageContent() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <CardTitle className="truncate text-lg font-black tracking-tight">
-                    #{order.id.slice(-6).toUpperCase()}
+                    {getOrderDisplayId(order)}
                   </CardTitle>
                   <span className="text-[10px] font-bold uppercase text-muted-foreground">
                     {getOrderTypeDisplay(order)} - {getOrderTableLabel(order)}

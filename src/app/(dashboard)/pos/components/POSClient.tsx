@@ -1,7 +1,7 @@
-﻿"use client"
+"use client"
 
 import * as React from "react"
-import { addDoc, collection, doc, limit, query, serverTimestamp, updateDoc, where } from "firebase/firestore"
+import { addDoc, collection, doc, getDocs, limit, query, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore"
 import { useSearchParams } from "next/navigation"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { 
@@ -32,15 +32,14 @@ import {
 import { cn } from "@/lib/utils"
 import { getOptimizedImage } from "@/lib/image"
 import { COLLECTION_NAMES } from "@/lib/constants"
+import { getOrderDisplayId } from "@/lib/order-display-id"
 import {
   ORDER_OPERATION_STATUS,
   ORDER_PAYMENT_STATUS,
-  getOrderStatus,
-  getKitchenStatus,
   isOrderPaid,
   isOrderServed,
   kitchenStatusLabel,
-  normalizeOperationStatus,
+  orderStatusFromKitchenStatus,
   normalizeOrderType,
 } from "@/lib/order-lifecycle"
 import { generatePaymentLinkOrUSSD } from "@/lib/payment-generation"
@@ -77,6 +76,8 @@ const STATUS_LABELS = {
   completed: "Termin\u00e9es",
 } as const
 
+const warnedMissingKitchenStatusOrders = new Set<string>()
+
 export default function POSPage() {
   const { restaurantId } = useRestaurant()
 
@@ -97,6 +98,7 @@ function POSPageContent() {
     activeOrders,
     cashSessionRequests,
     cashSessions,
+    tableSessions,
     tables: liveTables,
   } = useRestaurantLiveData()
   const { toast } = useToast()
@@ -108,6 +110,7 @@ function POSPageContent() {
     [cashSessionRequests]
   )
   const safeCashSessions = React.useMemo(() => Array.isArray(cashSessions) ? cashSessions : [], [cashSessions])
+  const safeTableSessions = React.useMemo(() => Array.isArray(tableSessions) ? tableSessions : [], [tableSessions])
   const safeTables = React.useMemo(() => Array.isArray(liveTables) ? liveTables : [], [liveTables])
   
   const [cart, setCart] = React.useState<any[]>([])
@@ -187,7 +190,7 @@ function POSPageContent() {
     }
 
     safeActiveOrders.forEach((order: any) => {
-      const orderStatus = normalizeOperationStatus(order.orderStatus)
+      const orderStatus = getPOSOperationStatus(order)
       const isTerminalProductionStatus =
         orderStatus === ORDER_OPERATION_STATUS.SERVED ||
         orderStatus === ORDER_OPERATION_STATUS.PICKED_UP
@@ -218,7 +221,7 @@ function POSPageContent() {
 
   const unpaidServedCount = React.useMemo(() => {
     return safeActiveOrders.filter((order: any) => {
-      const orderStatus = normalizeOperationStatus(order.orderStatus)
+      const orderStatus = getPOSOperationStatus(order)
       return (
         orderStatus === ORDER_OPERATION_STATUS.SERVED ||
         orderStatus === ORDER_OPERATION_STATUS.PICKED_UP
@@ -232,7 +235,7 @@ function POSPageContent() {
 
     safeActiveOrders.forEach((order: any) => {
       if (order.id) {
-        currentOrderStatuses.set(order.id, normalizeOperationStatus(order.orderStatus))
+        currentOrderStatuses.set(order.id, getPOSOperationStatus(order))
       }
     })
 
@@ -246,7 +249,7 @@ function POSPageContent() {
     const shouldAlert = safeActiveOrders.some((order: any) => {
       if (!order.id) return false
 
-      const currentStatus = normalizeOperationStatus(order.orderStatus)
+      const currentStatus = getPOSOperationStatus(order)
       const previousStatus = previousOrderStatusRef.current.get(order.id)
       const isNewPendingOrder =
         !previousOrderIdsRef.current.has(order.id) &&
@@ -726,6 +729,7 @@ function POSPageContent() {
         orderData.tableId = tableSession.tableId
         orderData.zoneId = tableSession.zoneId
         orderData.sessionId = tableSession.sessionId
+        orderData.tableSessionId = tableSession.tableSessionId || tableSession.sessionId
         orderData.source = "pos"
       }
 
@@ -737,6 +741,7 @@ function POSPageContent() {
         totalAmount: total,
         paymentMethod: method === "mobile" ? selectedMobileConfig?.code : "cash",
         paymentStatus: method === "mobile" ? ORDER_PAYMENT_STATUS.PENDING_MOBILE : ORDER_PAYMENT_STATUS.PAID,
+        kitchenStatus: ORDER_OPERATION_STATUS.PENDING,
         orderStatus: ORDER_OPERATION_STATUS.PENDING,
         createdAt: new Date(),
       }
@@ -1050,6 +1055,95 @@ function POSPageContent() {
     }
   }
 
+  const validateTableSessionPayment = async (session: any) => {
+    if (!db || !restaurantId || !user || processing) return
+
+    if (!activeCashSession?.id) {
+      toast({
+        variant: "destructive",
+        title: "Caisse fermee",
+        description: "Ouvre une session caisse avant de valider un paiement.",
+      })
+      return
+    }
+
+    const paymentStatus = session?.paymentRequest?.status
+    if (paymentStatus !== "requested" && paymentStatus !== "pending_confirmation") {
+      toast({
+        variant: "destructive",
+        title: "Paiement non initie",
+        description: "Le client doit d'abord initier le paiement.",
+      })
+      return
+    }
+
+    setProcessing(true)
+    setCollectingOrderId(session.id)
+    try {
+      const ordersRef = collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS)
+      const [tableSessionOrdersSnap, legacySessionOrdersSnap] = await Promise.all([
+        getDocs(query(ordersRef, where("tableSessionId", "==", session.id))),
+        getDocs(query(ordersRef, where("sessionId", "==", session.id))),
+      ])
+      const orderDocs = new Map<string, (typeof tableSessionOrdersSnap.docs)[number]>()
+
+      tableSessionOrdersSnap.docs.forEach((orderDoc) => orderDocs.set(orderDoc.id, orderDoc))
+      legacySessionOrdersSnap.docs.forEach((orderDoc) => orderDocs.set(orderDoc.id, orderDoc))
+
+      const batch = writeBatch(db)
+      const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TABLE_SESSIONS, session.id)
+      const method = session.paymentRequest?.method === "mobile" ? "mobile" : "cash"
+      let sessionTotal = 0
+
+      batch.update(sessionRef, {
+        "paymentRequest.status": "validated",
+        "paymentRequest.handledAt": serverTimestamp(),
+        "paymentRequest.handledBy": user.uid,
+        status: "closed",
+        closedAt: serverTimestamp(),
+        lastActivityAt: serverTimestamp(),
+      })
+
+      if (session.tableId) {
+        const tableRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TABLES, session.tableId)
+        batch.update(tableRef, {
+          status: "free",
+          currentSessionId: null,
+          updatedAt: serverTimestamp(),
+          lastActivityAt: serverTimestamp(),
+        })
+      }
+
+      orderDocs.forEach((orderDoc) => {
+        const currentOrder = { id: orderDoc.id, ...orderDoc.data() } as any
+        sessionTotal += getOrderComputedTotal(currentOrder)
+        batch.update(orderDoc.ref, {
+          paymentStatus: "paid",
+          paymentMethod: method === "mobile" ? "mobile_money" : "cash",
+          paymentType: method === "mobile" ? "mobile_money" : "cash",
+          paymentProvider: method === "mobile" ? session.paymentRequest?.provider ?? null : null,
+          cashSessionId: activeCashSession.id,
+          paidAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      })
+
+      await batch.commit()
+      await updateActiveCashSessionTotals(method, sessionTotal)
+      toast({ title: "Paiement valide" })
+    } catch (error: any) {
+      console.error(error)
+      toast({
+        variant: "destructive",
+        title: "Erreur",
+        description: error.message || "Validation impossible.",
+      })
+    } finally {
+      setProcessing(false)
+      setCollectingOrderId(null)
+    }
+  }
+
   const markOrderCompleted = async (order: any) => {
     if (!db || !restaurantId || processing) return
 
@@ -1317,29 +1411,40 @@ function POSPageContent() {
 
                     <div className="flex-1 overflow-y-auto space-y-2">
                       {columnOrders.map((order: any) => {
-                        const isPaid = isOrderPaid(order)
-                        const isMobilePayment = isMobileMoneyOrder(order)
+                        const paymentSession = getPaymentSessionForOrder(order, safeTableSessions)
+                        const paymentRequestStatus = paymentSession?.paymentRequest?.status
+                        const hasSessionPaymentRequest =
+                          paymentRequestStatus === "requested" ||
+                          paymentRequestStatus === "pending_confirmation"
+                        const isPaid = isOrderPaid(order) || paymentRequestStatus === "validated"
+                        const isMobilePayment = isMobileMoneyOrder(order) || paymentSession?.paymentRequest?.method === "mobile"
                         const isPendingMobilePayment = (order.paymentStatus === "pending_mobile" || order.paymentStatus === "pending") && isMobilePayment
                         const isPaymentVisible =
+                          hasSessionPaymentRequest ||
                           order.paymentStatus === "pending_verification" ||
                           isPendingMobilePayment ||
                           order.paymentStatus === "pending_cash" ||
                           isPaid
                         const canVerifyPayment =
+                          hasSessionPaymentRequest ||
                           order.paymentStatus === "pending_verification" ||
                           isPendingMobilePayment ||
                           order.paymentStatus === "pending_cash"
-                        const paymentLabel = order.paymentStatus === "pending_cash"
-                          ? "cash à encaisser"
+                        const paymentLabel = paymentRequestStatus === "requested"
+                          ? "Client veut payer"
+                          : paymentRequestStatus === "pending_confirmation"
+                          ? "Client dit avoir paye"
+                          : order.paymentStatus === "pending_cash"
+                          ? "cash a encaisser"
                           : order.paymentStatus === "unpaid"
-                          ? "non initié"
+                          ? "non initie"
                           : canVerifyPayment
-                            ? "à vérifier"
+                            ? "a verifier"
                             : isPaid
-                              ? "payé"
-                              : "non initié"
+                              ? "paye"
+                              : "non initie"
                         const normalizedType = normalizeOrderType(order.orderType || order.type)
-                        const currentOrderStatus = normalizeOperationStatus(order.orderStatus)
+                        const currentOrderStatus = getPOSOperationStatus(order)
                         const canComplete = false
                         const tableLabel =
                           tables.find((table) => table.id === order.tableId)?.name ||
@@ -1354,7 +1459,7 @@ function POSPageContent() {
                           <div key={order.id} className="rounded-lg border bg-background p-2">
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
-                                <p className="text-xs font-black">#{order.id.slice(-5).toUpperCase()}</p>
+                                <p className="text-xs font-black">{getOrderDisplayId(order)}</p>
                                 <p className="text-[9px] font-bold uppercase text-muted-foreground">
                                   {normalizedType === "dine_in"
                                     ? `SUR PLACE${tableLabel ? ` · TABLE ${tableLabel}` : ""}`
@@ -1386,7 +1491,11 @@ function POSPageContent() {
                                   <div className="flex items-center justify-between">
                                     <span className="text-[10px] font-semibold text-muted-foreground">Mode:</span>
                                     <span className="text-[10px] font-black">
-                                      {isMobilePayment ? "Mobile Money" : "Cash"}
+                                      {paymentSession?.paymentRequest?.method === "cash"
+                                        ? "Espèces"
+                                        : isMobilePayment
+                                          ? paymentSession?.paymentRequest?.provider || "Mobile Money"
+                                          : "Cash"}
                                     </span>
                                   </div>
                                 ) : null}
@@ -1398,9 +1507,9 @@ function POSPageContent() {
                                   <Button
                                     className="mt-2 h-7 w-full bg-primary text-[9px] font-black hover:bg-primary/90"
                                     disabled={processing || !canVerifyPayment}
-                                    onClick={() => markOrderPaid(order)}
+                                    onClick={() => paymentSession ? validateTableSessionPayment(paymentSession) : markOrderPaid(order)}
                                   >
-                                    {isMobilePayment ? "Vérifier paiement" : "Encaisser (cash)"}
+                                    {isMobilePayment ? "Valider paiement" : "Encaisser (cash)"}
                                   </Button>
                                 ) : null}
                               </div>
@@ -1823,6 +1932,13 @@ function isMobileMoneyOrder(order: any) {
   )
 }
 
+function getPaymentSessionForOrder(order: any, tableSessions: any[]) {
+  const sessionId = order?.tableSessionId || order?.sessionId
+  if (!sessionId) return null
+
+  return tableSessions.find((session) => session.id === sessionId) ?? null
+}
+
 function formatSessionDateTime(value: any) {
   const date = value?.toDate?.() ?? (value ? new Date(value) : null)
   if (!date) return "-"
@@ -1849,7 +1965,16 @@ function formatCashierPaymentMethod(method?: string | null) {
 }
 
 function formatCashierOrderStatus(order: any) {
-  return kitchenStatusLabel(getKitchenStatus(order))
+  return kitchenStatusLabel(order.kitchenStatus ?? order.status)
+}
+
+function getPOSOperationStatus(order: any) {
+  if (!order?.kitchenStatus && order?.id && !warnedMissingKitchenStatusOrders.has(order.id)) {
+    warnedMissingKitchenStatusOrders.add(order.id)
+    console.warn("Missing kitchenStatus", order?.id)
+  }
+
+  return orderStatusFromKitchenStatus(order?.kitchenStatus ?? order?.status)
 }
 
 export function getOrderComputedTotal(order: any) {

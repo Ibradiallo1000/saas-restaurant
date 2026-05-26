@@ -120,7 +120,10 @@ export function computeConsumption(orderItem: any, product = orderItem?.product)
   const variantComponent = components.find((component) => component.type === "variant")
   const selectedVariant = orderItem?.variant?.name
     ? String(orderItem.variant.name)
-    : selectedOptions.find((selected) => normalizeName(selected.optionName) === "variante")?.choiceName
+    : selectedOptions.find((selected) => 
+        normalizeName(selected.optionName) === "variante" || 
+        normalizeName(selected.optionName) === "taille"
+      )?.choiceName
   const multiplier =
     variantComponent?.options?.find((option) => normalizeName(option.name) === normalizeName(selectedVariant))?.multiplier ?? 1
 
@@ -240,25 +243,36 @@ function normalizeRecipe(value: unknown): ProductComponentRecipeLine[] {
 }
 
 function normalizeSelectedOptions(orderItem: any): SelectedCartOption[] {
-  if (Array.isArray(orderItem?.selectedOptions)) return orderItem.selectedOptions
-
   const selections: SelectedCartOption[] = []
+
+  if (Array.isArray(orderItem?.selectedOptions)) {
+    selections.push(...orderItem.selectedOptions)
+  }
+
   if (orderItem?.variant?.name) {
-    selections.push({
-      optionName: "Variante",
-      choiceName: orderItem.variant.name,
-      price: normalizeNumber(orderItem.variant.price),
-    })
+    const hasVariant = selections.some(
+      (s) => normalizeName(s.optionName) === "variante" || normalizeName(s.optionName) === "taille"
+    )
+    if (!hasVariant) {
+      selections.push({
+        optionName: "Variante",
+        choiceName: orderItem.variant.name,
+        price: normalizeNumber(orderItem.variant.price),
+      })
+    }
   }
 
   if (Array.isArray(orderItem?.addons)) {
     for (const addon of orderItem.addons) {
       if (!addon?.name) continue
-      selections.push({
-        optionName: "Suppléments",
-        choiceName: addon.name,
-        price: normalizeNumber(addon.price),
-      })
+      const hasAddon = selections.some((s) => normalizeName(s.choiceName) === normalizeName(addon.name))
+      if (!hasAddon) {
+        selections.push({
+          optionName: "Suppléments",
+          choiceName: addon.name,
+          price: normalizeNumber(addon.price),
+        })
+      }
     }
   }
 

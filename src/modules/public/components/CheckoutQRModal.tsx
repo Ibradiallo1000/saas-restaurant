@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { addDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore"
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import { CheckCircle, X } from "lucide-react"
 
@@ -19,7 +19,6 @@ export default function CheckoutQRModal({
   onClose,
   restaurantId,
   tableContext,
-  activeOrderId,
 }: {
   open: boolean
   onClose: () => void
@@ -33,6 +32,7 @@ export default function CheckoutQRModal({
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState("")
   const [customerNote, setCustomerNote] = React.useState("")
+  const submittingRef = React.useRef(false)
 
   React.useEffect(() => {
     if (open) setError("")
@@ -41,6 +41,8 @@ export default function CheckoutQRModal({
   if (!open) return null
 
   const handleSubmit = async () => {
+    if (loading || submittingRef.current) return
+
     if (items.length === 0) {
       setError("Commande vide")
       return
@@ -51,6 +53,7 @@ export default function CheckoutQRModal({
       return
     }
 
+    submittingRef.current = true
     setError("")
     setLoading(true)
 
@@ -60,6 +63,10 @@ export default function CheckoutQRModal({
         restaurantId,
         tableContext.id
       )
+      const tableSessionId = tableSession.tableSessionId || tableSession.sessionId
+      const tableZoneId = tableSession.zoneId || tableContext.zoneId || "main"
+
+      const clientUserId = getOrCreateTableUserId()
 
       const orderItems = await Promise.all(
         items.map(async (item, index) => {
@@ -93,65 +100,19 @@ export default function CheckoutQRModal({
 
       const recalculatedTotal = orderItems.reduce((sum, item) => sum + item.total, 0)
 
-      if (activeOrderId) {
-        const activeOrderRef = doc(
-          db,
-          "restaurants",
-          restaurantId,
-          "orders",
-          activeOrderId
-        )
-        const activeOrderSnap = await getDoc(activeOrderRef)
-
-        if (!activeOrderSnap.exists()) {
-          throw new Error("Commande active introuvable.")
-        }
-
-        const activeOrder = activeOrderSnap.data() as any
-
-        if (activeOrder.sessionActive === false || activeOrder.paymentStatus === "paid") {
-          throw new Error("Session terminee - action impossible")
-        }
-
-        if (activeOrder.orderType !== "dine_in" || activeOrder.sessionId !== tableSession.sessionId) {
-          throw new Error("Contexte de table invalide.")
-        }
-
-        const existingItems = Array.isArray(activeOrder.items) ? activeOrder.items : []
-        const nextItems = [...existingItems, ...orderItems]
-        const nextSubtotal = Number(activeOrder.subtotal ?? activeOrder.total ?? 0) + recalculatedTotal
-        const nextTotal = Number(activeOrder.total ?? 0) + recalculatedTotal
-
-        await updateDoc(activeOrderRef, {
-          items: nextItems,
-          subtotal: nextSubtotal,
-          total: nextTotal,
-          totalAmount: nextTotal,
-          ...(customerNote.trim() ? { customerNote: customerNote.trim() } : {}),
-          updatedAt: serverTimestamp(),
-        })
-
-        clear()
-        onClose()
-        window.localStorage.setItem(
-          `restaurant_latest_order_${restaurantId}`,
-          activeOrderId
-        )
-        router.push(
-          `/order/${restaurantId}/${activeOrderId}?sessionId=${tableSession.sessionId}`
-        )
-        return
-      }
-
       const order = {
         restaurantId,
         orderType: "dine_in",
         source: "qr_table",
+        kitchenStatus: "pending",
         orderStatus: "pending",
         sessionActive: true,
-        sessionId: tableSession.sessionId,
+        sessionId: tableSessionId,
+        tableSessionId,
+        createdBy: clientUserId,
+        createdByLabel: "Toi",
         tableId: tableContext.id,
-        zoneId: tableSession.zoneId || null,
+        zoneId: tableZoneId,
         customer: {
           phone: null,
           name: null,
@@ -176,10 +137,8 @@ export default function CheckoutQRModal({
         updatedAt: serverTimestamp(),
       }
 
-      const orderRef = await addDoc(
-        restaurantOrdersRef(db, restaurantId),
-        order
-      )
+      const orderRef = doc(restaurantOrdersRef(db, restaurantId))
+      await setDoc(orderRef, order)
 
       clear()
       onClose()
@@ -189,16 +148,21 @@ export default function CheckoutQRModal({
           `restaurant_latest_order_${restaurantId}`,
           orderRef.id
         )
+        window.localStorage.setItem(
+          `restaurant_latest_table_session_${restaurantId}`,
+          tableSessionId
+        )
       }
 
       router.push(
-        `/order/${restaurantId}/${orderRef.id}?sessionId=${tableSession.sessionId}`
+        `/order/${restaurantId}/${orderRef.id}?tableSessionId=${tableSessionId}`
       )
     } catch (e) {
       console.error(e)
       setError(e instanceof Error ? e.message : "Erreur lors de la commande")
     } finally {
       setLoading(false)
+      submittingRef.current = false
     }
   }
 
@@ -293,4 +257,19 @@ export default function CheckoutQRModal({
       </div>
     </div>
   )
+}
+
+function getOrCreateTableUserId() {
+  const storageKey = "tableUserId"
+  const existingUserId = window.localStorage.getItem(storageKey)
+
+  if (existingUserId) return existingUserId
+
+  const userId =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `guest-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+
+  window.localStorage.setItem(storageKey, userId)
+  return userId
 }

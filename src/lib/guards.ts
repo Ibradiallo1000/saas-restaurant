@@ -55,11 +55,14 @@ export function isRouteAllowedForRole(pathname: string, role: AppRouteRole | nul
         pathname.startsWith("/manager/cuisine") ||
         pathname.startsWith("/manager/caisse") ||
         pathname.startsWith("/manager/menu") ||
+        pathname.startsWith("/manager/tables") ||
         pathname.startsWith("/manager/images") ||
         pathname.startsWith("/manager/inventory") ||
         pathname.startsWith("/manager/expenses") ||
+        pathname.startsWith("/manager/depenses") ||
         pathname.startsWith("/manager/suppliers") ||
-        pathname.startsWith("/manager/treasury")
+        pathname.startsWith("/manager/treasury") ||
+        pathname.startsWith("/manager/tresorerie")
       )
     case "cashier":
       return pathname.startsWith("/pos")

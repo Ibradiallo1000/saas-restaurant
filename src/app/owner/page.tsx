@@ -2,43 +2,55 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { addDoc, collection, doc, query, serverTimestamp, updateDoc, where } from "firebase/firestore"
+import { useSearchParams } from "next/navigation"
+import { addDoc, collection, doc, query, updateDoc, serverTimestamp, where } from "firebase/firestore"
 import {
-  BarChart3,
-  TrendingUp,
-  DollarSign,
-  Calendar,
   Activity,
-  ChefHat,
   AlertTriangle,
-  Eye,
-  Loader2,
-  Wallet,
+  BarChart3,
   Banknote,
-  ReceiptText,
+  Calendar,
+  ChefHat,
+  DollarSign,
+  Eye,
+  Info,
+  Loader2,
   Package,
+  ReceiptText,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
 } from "lucide-react"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { GlobalTimeFilterBar } from "@/components/time-filter/GlobalTimeFilterBar"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
+import { getDateRange, getPreviousDateRange, useTimeFilter, type TimeFilterType } from "@/contexts/time-filter-context"
 import { COLLECTION_NAMES } from "@/lib/constants"
-import { computeAnalyticsFromOrders } from "@/lib/analytics/computeAnalyticsFromOrders"
 import { getFinancialSummary } from "@/lib/finance/financial-summary"
 import { getOrderStatus } from "@/lib/order-lifecycle"
 import { cn } from "@/lib/utils"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 
-// 🔥 IMPORT TYPE
 import type { Order } from "@/types/index"
+
+type PeriodMode = TimeFilterType
+
+type DateRange = {
+  start: Date
+  end: Date
+}
 
 type OwnerInventoryItem = {
   id: string
   name?: string
   stockEstimated?: number
   avgDailyConsumption?: number
+  costPerUnit?: number
+  lastManualStock?: number
 }
 
 type OwnerInventoryAlert = {
@@ -51,31 +63,69 @@ type OwnerInventoryAlert = {
 }
 
 type OwnerInventoryLog = {
+  id: string
   itemMargins?: Array<{
+    productId?: string
+    productName?: string
     sales?: number
     cost?: number
     margin?: number
     missingCost?: boolean
   }>
   createdDate?: string
+  createdAt?: any
 }
 
-const premiumCardClass =
-  "bg-white dark:bg-white/5 backdrop-blur border border-border dark:border-white/10 rounded-2xl shadow-lg hover:scale-[1.02] transition"
+type Variation = {
+  absolute: number
+  percent: number | null
+  trend: "up" | "stable" | "down" | "none"
+}
 
-const sectionTitleClass = "text-sm font-black uppercase tracking-tight text-foreground md:text-xl md:font-semibold md:normal-case md:tracking-normal"
+type ProductStat = {
+  name: string
+  count: number
+  revenue: number
+}
 
-const statusColors: Record<string, string> = {
-  pending: "text-orange-700 bg-orange-50 border-orange-200 dark:text-orange-300 dark:bg-orange-500/10 dark:border-orange-400/30",
-  preparing: "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-500/10 dark:border-blue-400/30",
-  ready: "text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-300 dark:bg-purple-500/10 dark:border-purple-400/30",
-  served: "text-green-700 bg-green-50 border-green-200 dark:text-green-300 dark:bg-green-500/10 dark:border-green-400/30",
+type BusinessStatus = {
+  label: string
+  tone: "good" | "watch" | "bad"
 }
 
 const KITCHEN_PRODUCTION_STATUSES = ["pending", "preparing", "ready", "served"] as const
 
-function isKitchenServedStatus(status: string | null | undefined) {
-  return status === "served" || status === "picked_up" || status === "completed"
+const sectionTitleClass = "text-base font-black tracking-tight md:text-xl"
+
+const sectionStyles = {
+  performance: {
+    wrapper: "border-blue-200 bg-blue-50/70 dark:border-blue-400/30 dark:bg-blue-500/10",
+    icon: "text-blue-700 dark:text-blue-200",
+  },
+  evolution: {
+    wrapper: "border-sky-200 bg-sky-50/70 dark:border-sky-400/30 dark:bg-sky-500/10",
+    icon: "text-sky-700 dark:text-sky-200",
+  },
+  alerts: {
+    wrapper: "border-orange-300 bg-orange-100/80 dark:border-orange-400/40 dark:bg-orange-500/15",
+    icon: "text-orange-700 dark:text-orange-200",
+  },
+  impact: {
+    wrapper: "border-orange-200 bg-orange-50/70 dark:border-orange-400/30 dark:bg-orange-500/10",
+    icon: "text-orange-700 dark:text-orange-200",
+  },
+  treasury: {
+    wrapper: "border-green-200 bg-green-50/70 dark:border-green-400/30 dark:bg-green-500/10",
+    icon: "text-green-700 dark:text-green-200",
+  },
+  analysis: {
+    wrapper: "border-gray-200 bg-gray-50/80 dark:border-gray-400/30 dark:bg-gray-500/10",
+    icon: "text-gray-700 dark:text-gray-200",
+  },
+  realtime: {
+    wrapper: "border-purple-200 bg-purple-50/70 dark:border-purple-400/30 dark:bg-purple-500/10",
+    icon: "text-purple-700 dark:text-purple-200",
+  },
 }
 
 export default function OwnerPage() {
@@ -85,21 +135,31 @@ export default function OwnerPage() {
 function OwnerPageContent() {
   const db = useFirestore()
   const { restaurantId, loading } = useRestaurant()
+  const { user, role } = useTenant()
   const {
     activeOrders,
     cashMovements,
+    cashSessionRequests,
     cashSessions,
     isLoadingOrders,
     isLoadingSessions,
     payments,
   } = useRestaurantLiveData()
   const orders = React.useMemo(() => activeOrders as Order[], [activeOrders])
+
+  const timeFilter = useTimeFilter()
+  const searchParams = useSearchParams()
+  const periodMode = timeFilter.type
+  const filter = timeFilter.filter
+  const queryRange = React.useMemo(() => getDateRange(filter), [filter])
+  const inventoryHref = React.useMemo(
+    () => getHrefWithCurrentQuery("/manager/inventory", searchParams),
+    [searchParams]
+  )
+
   const inventoryAlertsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
-    return query(
-      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryAlerts"),
-      where("resolved", "==", false)
-    )
+    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryAlerts")
   }, [db, restaurantId])
   const inventoryItemsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
@@ -109,12 +169,35 @@ function OwnerPageContent() {
     if (!db || !restaurantId) return null
     return query(
       collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryLogs"),
-      where("createdDate", "==", getTodayKey())
+      where("createdAt", ">=", queryRange.startDate),
+      where("createdAt", "<=", queryRange.endDate)
     )
-  }, [db, restaurantId])
+  }, [db, restaurantId, queryRange.endDate, queryRange.startDate])
   const { data: inventoryAlerts } = useCollection<OwnerInventoryAlert>(inventoryAlertsQuery)
   const { data: inventoryItems } = useCollection<OwnerInventoryItem>(inventoryItemsQuery)
   const { data: inventoryLogs } = useCollection<OwnerInventoryLog>(inventoryLogsQuery)
+
+  const period = React.useMemo(
+    () => buildPeriodContext(filter),
+    [filter]
+  )
+
+  const business = React.useMemo(
+    () =>
+      buildBusinessDashboardData({
+        orders,
+        payments,
+        cashMovements,
+        cashSessions,
+        inventoryAlerts: inventoryAlerts || [],
+        inventoryItems: inventoryItems || [],
+        inventoryLogs: inventoryLogs || [],
+        period,
+      }),
+    [cashMovements, cashSessions, inventoryAlerts, inventoryItems, inventoryLogs, orders, payments, period]
+  )
+
+  const isLiveLoading = isLoadingOrders || isLoadingSessions
 
   if (loading) {
     return (
@@ -138,434 +221,511 @@ function OwnerPageContent() {
     )
   }
 
-  const analytics = computeAnalyticsFromOrders(orders)
-  const finance = React.useMemo(
-    () => computeOwnerFinancialOverview(payments, cashMovements, cashSessions),
-    [cashMovements, cashSessions, payments]
-  )
-  const live = computeLiveOverview(orders)
-  const isLiveLoading = isLoadingOrders || isLoadingSessions
-  const inventoryOverview = React.useMemo(
-    () => buildOwnerInventoryOverview(inventoryAlerts || [], inventoryItems || [], inventoryLogs || []),
-    [inventoryAlerts, inventoryItems, inventoryLogs]
-  )
-
   return (
-    <main className="space-y-3 pb-20 md:space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <main className="space-y-4 pb-20 md:space-y-6">
+      <header className="flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <BarChart3 className="h-5 w-5 text-primary md:h-6 md:w-6" />
-            <h1 className="text-xl font-black uppercase tracking-tight md:text-3xl">
-              Analytics
-            </h1>
+            <BarChart3 className="h-6 w-6 text-primary" />
+            <h1 className="text-2xl font-black tracking-tight md:text-3xl">Analytics</h1>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground md:text-sm">
-          Production, alertes et finance en temps reel.
-        </p>
-        </div>
-        <div className="inline-flex items-center gap-2 rounded-full border border-green-400/30 bg-green-500/10 px-2.5 py-1 text-xs font-bold text-green-600 dark:text-green-300">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
-          LIVE
-        </div>
-      </div>
-
-      <div className="space-y-3 md:hidden">
-        <section className="space-y-2">
-          <h2 className={sectionTitleClass}>Production cuisine</h2>
-          <div className="grid grid-cols-2 gap-2">
-            {KITCHEN_PRODUCTION_STATUSES.map((status) => (
-              <div key={status} className={cn("rounded-xl border p-3", statusColors[status])}>
-                <p className="text-[10px] font-black uppercase leading-tight">{formatStatus(status)}</p>
-                <p className="mt-1 text-2xl font-black leading-none">{live.statusCounts[status] || 0}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="space-y-2 rounded-xl border bg-card/95 p-3 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className={sectionTitleClass}>Alertes</h2>
-            <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-black">
-              {live.anomalies.length + finance.pendingValidationSessions}
-            </span>
-          </div>
-          {live.anomalies.length + finance.pendingValidationSessions === 0 ? (
-            <div className="rounded-xl border border-dashed p-3 text-xs text-muted-foreground">
-              Aucune alerte critique.
-            </div>
-          ) : (
-            <div className="grid gap-2">
-              <OwnerActionAlert
-                href="/manager/commandes?status=late"
-                title={`${live.anomalies.length} commande(s) en retard`}
-                context={live.anomalies[0] ? `Commande #${live.anomalies[0].id.slice(-6).toUpperCase()}` : "Cuisine a jour"}
-                action="Voir"
-                danger={live.anomalies.length > 0}
-              />
-              <OwnerActionAlert
-                href="/manager/caisse"
-                title={`${finance.pendingValidationSessions} caisse(s) a verifier`}
-                context="Validation et paiement"
-                action="Verifier"
-                danger={finance.pendingValidationSessions > 0}
-              />
-            </div>
-          )}
-        </section>
-
-        <section className="space-y-2">
-          <h2 className={sectionTitleClass}>Resume financier</h2>
-          <div className="grid grid-cols-2 gap-2">
-            <MetricCard title="Solde" value={`${finance.balance.toLocaleString()} FCFA`} icon={Wallet} />
-            <MetricCard title="CA aujourd'hui" value={`${finance.todayRevenue.toLocaleString()} FCFA`} icon={DollarSign} />
-            <MetricCard title="Depenses" value={`${finance.todayExpenses.toLocaleString()} FCFA`} icon={Banknote} />
-          </div>
-        </section>
-
-        <OwnerInventorySnapshot overview={inventoryOverview} />
-
-        <section className="space-y-2">
-          <h2 className={sectionTitleClass}>Analytics secondaire</h2>
-          <div className="grid grid-cols-2 gap-2">
-            <MetricCard title="Commandes" value={analytics.totalOrders} icon={Activity} />
-            <MetricCard title="En cours" value={live.activeOrders} icon={ChefHat} />
-            <MetricCard title="Panier moyen" value={`${finance.averageConfirmedPayment.toLocaleString()} FCFA`} icon={TrendingUp} />
-            <MetricCard title="Ce mois" value={`${finance.thisMonthRevenue.toLocaleString()} FCFA`} icon={Calendar} />
-          </div>
-        </section>
-      </div>
-
-      <div className="hidden space-y-6 md:block">
-
-      <section className="space-y-4">
-        <h2 className={sectionTitleClass}>Vue globale</h2>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          title="Total commandes"
-          value={analytics.totalOrders}
-          icon={Activity}
-        />
-        <MetricCard
-          title="CA confirme"
-          value={`${finance.confirmedRevenue.toLocaleString()} FCFA`}
-          icon={DollarSign}
-        />
-        <MetricCard
-          title="Panier moyen"
-          value={`${finance.averageConfirmedPayment.toLocaleString()} FCFA`}
-          icon={TrendingUp}
-        />
-        <MetricCard
-          title="Ce mois"
-          value={`${finance.thisMonthRevenue.toLocaleString()} FCFA`}
-          icon={Calendar}
-        />
-        </div>
-      </section>
-
-      <OwnerInventorySnapshot overview={inventoryOverview} />
-
-      <section className="space-y-4">
-        <h2 className={sectionTitleClass}>Tresorerie</h2>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard title="Solde reel" value={`${finance.balance.toLocaleString()} FCFA`} icon={Wallet} />
-          <MetricCard title="Depenses" value={`${finance.expenses.toLocaleString()} FCFA`} icon={Banknote} />
-          <MetricCard title="Transfers" value={`${finance.transfers.toLocaleString()} FCFA`} icon={ReceiptText} />
-          <MetricCard title="Sessions ouvertes" value={finance.openSessions} icon={Activity} />
-        </div>
-        {finance.anomalies.length > 0 ? (
-          <Card className={premiumCardClass}>
-            <CardContent className="space-y-2 p-5">
-              {finance.anomalies.map((anomaly) => (
-                <div key={anomaly.type} className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-200">
-                  {anomaly.label}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        ) : null}
-      </section>
-
-      <section className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className={sectionTitleClass}>Temps réel</h2>
-          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1 text-xs font-bold text-muted-foreground dark:border-white/10 dark:bg-white/5">
-            <Eye className="h-3.5 w-3.5" />
-            {isLiveLoading ? "Sync..." : "Read only"}
-          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Centre de pilotage business : performance, stock, trésorerie et actions.
+          </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard title="Ventes live" value={`${live.liveRevenue.toLocaleString()} FCFA`} icon={TrendingUp} />
-          <MetricCard title="Commandes en cours" value={live.activeOrders} icon={Activity} />
-          <MetricCard title="Cuisine active" value={`${live.kitchenActive} commande(s)`} icon={ChefHat} />
-          <MetricCard title="Alertes anomalies" value={live.anomalies.length} icon={AlertTriangle} />
+        <div className="flex flex-col gap-2 md:items-end">
+          <BusinessStatusBadge status={business.status} />
+          <GlobalTimeFilterBar compact />
+          <p className="text-xs font-semibold text-muted-foreground">{period.label}</p>
         </div>
+      </header>
 
-        <OwnerCashSessionRequests restaurantId={restaurantId} />
-      </section>
+      {business.summary.length > 0 ? (
+        <DecisionSummary periodLabel={getPeriodSummaryLabel(periodMode)} lines={business.summary} />
+      ) : null}
 
-      <section className="space-y-4">
-        <h2 className={sectionTitleClass}>Production cuisine</h2>
+      {!business.hasPeriodData ? (
+        <div className="rounded-2xl border border-dashed bg-card p-4 text-sm font-bold text-muted-foreground">
+          Aucune donnée pour cette période
+        </div>
+      ) : null}
+
+      <DashboardSection
+        tone="performance"
+        icon={TrendingUp}
+        title="Performance"
+        description="La santé commerciale de la période sélectionnée."
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            href="/owner"
+            title="Total commandes"
+            value={business.current.orders.toLocaleString("fr-FR")}
+            description="Nombre de commandes sur la période."
+            variation={business.variation.orders}
+          />
+          <KpiCard
+            href="/owner"
+            title="Chiffre d’affaires"
+            value={`${formatMoney(business.current.revenue)} FCFA`}
+            description="CA encaissé ou confirmé sur la période."
+            variation={business.variation.revenue}
+          />
+          <KpiCard
+            href="/owner"
+            title="Panier moyen"
+            value={`${formatMoney(business.current.averageOrder)} FCFA`}
+            description="Montant moyen par commande."
+            variation={business.variation.averageOrder}
+          />
+          <KpiCard
+            href="/manager/commandes"
+            title="Statut global"
+            value={getTrendLabel(business.variation.revenue.trend)}
+            description="Lecture rapide de la progression du CA."
+            variation={business.variation.revenue}
+          />
+        </div>
+      </DashboardSection>
+
+      <DashboardSection
+        tone="evolution"
+        icon={BarChart3}
+        title="Évolution"
+        description="Tendance rapide du chiffre d’affaires et des commandes."
+      >
         <div className="grid gap-4 xl:grid-cols-2">
-          <Card className={premiumCardClass}>
-            <CardHeader>
-              <CardTitle className="text-base text-foreground">Statut cuisine</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-2 sm:grid-cols-4">
-              {KITCHEN_PRODUCTION_STATUSES.map((status) => (
-                <div key={status} className={cn("rounded-xl border p-5", statusColors[status])}>
-                  <p className="text-[10px] font-black uppercase">{formatStatus(status)}</p>
-                  <p className="mt-2 text-2xl font-bold">{live.statusCounts[status] || 0}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card className={premiumCardClass}>
-            <CardHeader>
-              <CardTitle className="text-base text-foreground">Alertes anomalies</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {live.anomalies.map((order) => (
-                <div key={order.id} className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-200">
-                  Commande #{order.id.slice(-6).toUpperCase()} en retard ({getOrderAgeMinutes(order)} min)
-                </div>
-              ))}
-              {live.anomalies.length === 0 ? (
-                <div className="text-sm text-muted-foreground">Aucune anomalie active</div>
-              ) : null}
-            </CardContent>
-          </Card>
+          <TrendChart title={periodMode === "month" || periodMode === "custom" ? "CA sur la période" : "CA sur 7 jours"} points={business.trend} valueKey="revenue" />
+          <TrendChart title={periodMode === "month" || periodMode === "custom" ? "Commandes sur la période" : "Commandes sur 7 jours"} points={business.trend} valueKey="orders" />
         </div>
-      </section>
+      </DashboardSection>
 
-      {/* CHART + TOP */}
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card className={premiumCardClass}>
-          <CardHeader>
-            <CardTitle className="text-base text-foreground">
-              Évolution sur 7 jours
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {analytics.last7Days.map((day) => (
-                <div key={day.date} className="flex items-center gap-3">
-                  <span className="w-24 text-xs text-muted-foreground">
-                    {day.label}
-                  </span>
+      <DashboardSection
+        tone="alerts"
+        icon={AlertTriangle}
+        title="⚠ Attention requise"
+        description="Ce qui mérite une décision immédiate."
+      >
+        <AlertActionList alerts={business.alerts} />
+      </DashboardSection>
 
-                  <div className="flex-1 rounded-full bg-muted">
-                    <div
-                      className="h-2 rounded-full bg-primary"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          (day.count / Math.max(1, analytics.maxDayCount)) * 100
-                        )}%`,
-                      }}
-                    />
-                  </div>
+      <DashboardSection
+        tone="impact"
+        icon={Package}
+        title="Impact business"
+        description="Impact financier du stock sur la période."
+        action={<Button asChild variant="outline" size="sm"><Link href={inventoryHref}>Voir détails inventaire</Link></Button>}
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SimpleMetricCard title="Coût consommé" value={`${formatMoney(business.inventory.consumedCost)} FCFA`} description="Coût estimé des ingrédients utilisés." />
+          <SimpleMetricCard title="Pertes estimées" value={`${formatMoney(business.inventory.estimatedLosses)} FCFA`} description="Écart inventaire valorisé." danger={business.inventory.estimatedLosses > 0} />
+          <SimpleMetricCard title="Valeur totale du stock" value={`${formatMoney(business.inventory.stockValue)} FCFA`} description="Capital immobilisé en stock." />
+          <SimpleMetricCard title="Produits critiques" value={String(business.inventory.criticalProducts)} description="Produits avec impact prioritaire." danger={business.inventory.criticalProducts > 0} />
+        </div>
+      </DashboardSection>
 
-                  <span className="w-8 text-right text-xs font-medium text-muted-foreground">
-                    {day.count}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      <DashboardSection
+        tone="treasury"
+        icon={Wallet}
+        title="Trésorerie"
+        description="Argent disponible, sorties et mouvements."
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SimpleMetricCard href="/manager/caisse" title="Solde réel" value={`${formatMoney(business.treasury.balance)} FCFA`} description="Encaissements moins sorties." />
+          <SimpleMetricCard href="/manager/depenses" title="Dépenses" value={`${formatMoney(business.treasury.expenses)} FCFA`} description="Sorties sur la période." danger={business.treasury.expenses > 0} />
+          <SimpleMetricCard href="/manager/caisse" title="Transferts" value={`${formatMoney(business.treasury.transfers)} FCFA`} description="Mouvements hors dépenses." />
+          <SimpleMetricCard title="Sessions ouvertes" value={String(business.treasury.openSessions)} description="Caisses actuellement actives." />
+        </div>
+      </DashboardSection>
 
-        <Card className={premiumCardClass}>
-          <CardHeader>
-            <CardTitle className="text-base text-foreground">
-              Top produits
-            </CardTitle>
-          </CardHeader>
+      <DashboardSection
+        tone="analysis"
+        icon={Activity}
+        title="Analyse business"
+        description="Produits et jours qui tirent la performance."
+      >
+        <div className="grid gap-4 xl:grid-cols-3">
+          <RankedList title="Top produits vendus" empty="Aucun produit vendu sur cette période." items={business.analysis.topProducts.map((item) => ({
+            key: item.name,
+            label: item.name,
+            value: `${item.count} vendu(s)`,
+          }))} />
+          <RankedList title="Jours les plus performants" empty="Pas assez de jours avec ventes." items={business.analysis.bestDays.map((item) => ({
+            key: item.day,
+            label: item.day,
+            value: `${formatMoney(item.revenue)} FCFA`,
+          }))} />
+          <InsightsPanel insights={business.insights} />
+        </div>
+      </DashboardSection>
 
-          <CardContent className="space-y-2">
-            {analytics.topProducts.slice(0, 5).map((product, idx) => (
-              <div
-                key={idx}
-                className="flex items-center justify-between rounded-xl border border-border bg-background p-5 dark:border-white/10 dark:bg-white/5"
-              >
-                <span className="text-sm font-medium text-foreground">
-                  {product.name}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {product.count} vendus
-                </span>
-              </div>
-            ))}
-
-            {analytics.topProducts.length === 0 && (
-              <div className="text-sm text-muted-foreground">
-                Pas assez de données
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-      </div>
+      <DashboardSection
+        tone="realtime"
+        icon={Eye}
+        title="Temps réel"
+        description="Ce qui se passe maintenant dans le restaurant."
+        action={<span className="rounded-full border bg-background px-3 py-1 text-xs font-bold text-muted-foreground">{isLiveLoading ? "Synchronisation..." : "Live"}</span>}
+      >
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SimpleMetricCard href="/manager/commandes" title="Commandes en cours" value={String(business.live.activeOrders)} description={getLiveActivityMessage(business.live.activeOrders)} danger={business.live.activeOrders === 0} />
+          <SimpleMetricCard href="/kitchen" title="Cuisine active" value={String(business.live.kitchenActive)} description="Commandes à préparer ou servir." />
+          <SimpleMetricCard href="/manager/commandes?status=late" title="Anomalies" value={String(business.live.anomalies.length)} description="Commandes en retard." danger={business.live.anomalies.length > 0} />
+          <SimpleMetricCard title="Ventes live" value={`${formatMoney(business.live.liveRevenue)} FCFA`} description="Valeur des commandes actives." />
+        </div>
+        <OwnerCashSessionRequests restaurantId={restaurantId} user={user} role={role} />
+      </DashboardSection>
     </main>
   )
 }
 
-//
-// 🔥 COMPONENT METRIC
-//
-function MetricCard({
+function BusinessStatusBadge({ status }: { status: BusinessStatus }) {
+  const tone =
+    status.tone === "good"
+      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+      : status.tone === "bad"
+        ? "border-red-300 bg-red-50 text-red-700"
+        : "border-orange-300 bg-orange-50 text-orange-700"
+
+  return (
+    <div className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-black", tone)}>
+      <span className={cn(
+        "h-2 w-2 rounded-full",
+        status.tone === "good" && "bg-emerald-500",
+        status.tone === "watch" && "bg-orange-500",
+        status.tone === "bad" && "bg-red-500"
+      )} />
+      {status.label}
+    </div>
+  )
+}
+
+function DecisionSummary({ periodLabel, lines }: { periodLabel: string; lines: string[] }) {
+  if (lines.length === 0) return null
+
+  return (
+    <section className="rounded-2xl border border-blue-200 bg-blue-50/80 p-4 shadow-sm dark:border-blue-400/30 dark:bg-blue-500/10">
+      <div className="flex items-start gap-3">
+        <div className="rounded-xl bg-background/80 p-2 shadow-sm">
+          <Info className="h-5 w-5 text-blue-700 dark:text-blue-200" />
+        </div>
+        <div>
+          <h2 className="text-base font-black">Résumé {periodLabel}</h2>
+          <div className="mt-2 grid gap-1 text-sm font-semibold text-foreground">
+            {lines.slice(0, 4).map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function DashboardSection({
+  tone,
+  icon: Icon,
+  title,
+  description,
+  action,
+  children,
+}: {
+  tone: keyof typeof sectionStyles
+  icon: React.ComponentType<{ className?: string }>
+  title: string
+  description: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  const style = sectionStyles[tone]
+  return (
+    <section className={cn("space-y-4 rounded-2xl border p-4 shadow-sm", style.wrapper)}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-background/80 p-2 shadow-sm">
+            <Icon className={cn("h-5 w-5", style.icon)} />
+          </div>
+          <div>
+            <h2 className={sectionTitleClass}>{title}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+          </div>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function MetricTooltip({ text }: { text: string }) {
+  const [open, setOpen] = React.useState(false)
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        aria-label="Explication"
+        onClick={(event) => {
+          event.preventDefault()
+          setOpen((value) => !value)
+        }}
+        onBlur={() => setOpen(false)}
+        className="group inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+      >
+        <Info className="h-3.5 w-3.5" />
+        <span className={cn(
+          "pointer-events-none absolute right-0 top-6 z-50 w-60 rounded-lg bg-gray-950 p-3 text-left text-xs font-semibold leading-relaxed text-white opacity-0 shadow-xl transition group-hover:opacity-100",
+          open && "opacity-100"
+        )}>
+          {text}
+        </span>
+      </button>
+    </span>
+  )
+}
+
+function KpiCard({
+  href,
   title,
   value,
-  icon: Icon,
+  description,
+  variation,
+}: {
+  href: string
+  title: string
+  value: string
+  description: string
+  variation: Variation
+}) {
+  const searchParams = useSearchParams()
+  const targetHref = getHrefWithCurrentQuery(href, searchParams)
+
+  return (
+    <Link href={targetHref} className="rounded-xl border bg-background p-4 shadow-sm transition hover:border-primary/40 hover:shadow-md">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-black uppercase text-muted-foreground">{title}</p>
+        <MetricTooltip text={description} />
+      </div>
+      <p className="mt-2 text-2xl font-black">{value}</p>
+      <VariationBadge variation={variation} />
+      <p className={cn("mt-2 text-xs font-black", getVariationInterpretation(variation).className)}>
+        {getVariationInterpretation(variation).label}
+      </p>
+    </Link>
+  )
+}
+
+function SimpleMetricCard({
+  href,
+  title,
+  value,
+  description,
+  danger = false,
+}: {
+  href?: string
+  title: string
+  value: string
+  description: string
+  danger?: boolean
+}) {
+  const searchParams = useSearchParams()
+  const targetHref = href ? getHrefWithCurrentQuery(href, searchParams) : null
+  const content = (
+    <div className={cn(
+      "h-full rounded-xl border bg-background p-4 shadow-sm transition",
+      href && "hover:border-primary/40 hover:shadow-md",
+      danger && "border-red-200 bg-red-50/80 text-red-700 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-200"
+    )}>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-black uppercase text-muted-foreground">{title}</p>
+        <MetricTooltip text={description} />
+      </div>
+      <p className="mt-2 text-2xl font-black">{value}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+    </div>
+  )
+  return targetHref ? <Link href={targetHref}>{content}</Link> : content
+}
+
+function VariationBadge({ variation }: { variation: Variation }) {
+  if (variation.trend === "none" || variation.percent === null) {
+    return <p className="mt-2 text-xs font-bold text-muted-foreground">Comparaison indisponible</p>
+  }
+
+  const tone =
+    variation.trend === "up"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : variation.trend === "down"
+        ? "border-red-200 bg-red-50 text-red-700"
+        : "border-orange-200 bg-orange-50 text-orange-700"
+  const sign = variation.absolute > 0 ? "+" : ""
+  const dot =
+    variation.trend === "up"
+      ? "bg-emerald-500"
+      : variation.trend === "down"
+        ? "bg-red-500"
+        : "bg-orange-500"
+
+  return (
+    <div className={cn("mt-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-black", tone)}>
+      <span className={cn("h-2 w-2 rounded-full", dot)} />
+      <span>{sign}{formatMoney(variation.absolute)} ({variation.percent.toFixed(1)}%)</span>
+    </div>
+  )
+}
+
+function TrendChart({
+  title,
+  points,
+  valueKey,
 }: {
   title: string
-  value: string | number
-  icon: React.ComponentType<{ className?: string }>
+  points: Array<{ date: string; label: string; revenue: number; orders: number }>
+  valueKey: "revenue" | "orders"
 }) {
-  return (
-    <Card className={premiumCardClass}>
-      <CardHeader className="flex flex-row items-center justify-between p-3 pb-1 md:p-5 md:pb-2">
-        <CardTitle className="text-xs font-bold text-muted-foreground md:text-sm md:font-medium">
-          {title}
-        </CardTitle>
-        <Icon className="h-4 w-4 text-[var(--color-primary)]" />
-      </CardHeader>
+  const validPoints = points.filter((point) => point[valueKey] > 0)
+  const maxValue = Math.max(1, ...points.map((point) => point[valueKey]))
 
-      <CardContent className="p-3 pt-0 md:p-5 md:pt-0">
-        <div className="text-lg font-black leading-tight text-foreground md:text-2xl md:font-bold">
-          {value}
-        </div>
+  return (
+    <Card className="border bg-background">
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {validPoints.length < 2 ? (
+          <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
+            Graphique disponible après au moins 2 points de données.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {points.map((point) => (
+              <div key={point.date} className="grid grid-cols-[88px_1fr_90px] items-center gap-3">
+                <span className="truncate text-xs font-bold text-muted-foreground">{point.label}</span>
+                <div className="h-3 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary"
+                    style={{ width: `${Math.max(4, (point[valueKey] / maxValue) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-right text-xs font-black">
+                  {valueKey === "revenue" ? `${formatMoney(point.revenue)} F` : point.orders}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   )
 }
 
-function OwnerActionAlert({
-  href,
-  title,
-  context,
-  action,
-  danger,
-}: {
-  href: string
-  title: string
-  context: string
-  action: string
-  danger?: boolean
-}) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "flex items-center justify-between gap-3 rounded-xl border bg-background px-3 py-2 transition hover:border-primary/40 hover:bg-muted/30",
-        danger && "border-red-200 bg-red-50/80 text-red-700 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-200"
-      )}
-    >
-      <span className="min-w-0">
-        <span className="block truncate text-xs font-black">{title}</span>
-        <span className="block truncate text-[11px] text-muted-foreground">{context}</span>
-      </span>
-      <span className="shrink-0 rounded-full bg-primary px-3 py-1 text-xs font-black text-primary-foreground">
-        {action}
-      </span>
-    </Link>
-  )
-}
+function AlertActionList({ alerts }: { alerts: Array<{ title: string; description: string; href: string; severity: "high" | "medium" }> }) {
+  const searchParams = useSearchParams()
 
-function OwnerInventorySnapshot({
-  overview,
-}: {
-  overview: ReturnType<typeof buildOwnerInventoryOverview>
-}) {
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className={sectionTitleClass}>Stock & alertes</h2>
+  if (alerts.length === 0) {
+    return (
+      <div className="rounded-xl border border-orange-200 bg-orange-50/80 p-4 text-sm font-semibold text-orange-800 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-200">
+        Aucune action prioritaire détectée avec les données actuelles.
       </div>
+    )
+  }
 
-      <Card className={premiumCardClass}>
-        <CardContent className="grid gap-4 p-4 md:grid-cols-3 md:p-5">
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-              <p className="text-xs font-black uppercase text-muted-foreground">Alertes critiques</p>
-            </div>
-            {overview.alerts.length > 0 ? (
-              <div className="space-y-2">
-                {overview.alerts.map((alert) => (
-                  <p key={alert.id} className="rounded-lg border border-orange-200 bg-orange-50 p-2 text-xs font-bold text-orange-800">
-                    ⚠️ {formatOwnerAlert(alert)}
-                  </p>
-                ))}
-              </div>
-            ) : (
-              <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-xs font-bold text-emerald-800">
-                Aucun problème critique.
-              </p>
-            )}
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <Package className="h-4 w-4 text-primary" />
-              <p className="text-xs font-black uppercase text-muted-foreground">Jours restants</p>
-            </div>
-            {overview.daysLeft.length > 0 ? (
-              <div className="space-y-2">
-                {overview.daysLeft.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background p-2 text-xs">
-                    <span className="truncate font-bold">{item.name}</span>
-                    <span className={cn("shrink-0 font-black", item.daysLeft < 2 ? "text-red-700" : "text-muted-foreground")}>
-                      {item.daysLeft.toFixed(1)} jours
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="rounded-lg border border-dashed p-2 text-xs text-muted-foreground">
-                Pas assez de données de consommation.
-              </p>
-            )}
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-emerald-600" />
-              <p className="text-xs font-black uppercase text-muted-foreground">Résumé simple</p>
-            </div>
-            <div className="grid gap-2">
-              <div className="rounded-lg border bg-background p-2">
-                <p className="text-[10px] font-black uppercase text-muted-foreground">Aujourd'hui - ventes</p>
-                <p className="text-lg font-black">{overview.totalSales.toLocaleString()} FCFA</p>
-              </div>
-              <div className="rounded-lg border bg-background p-2">
-                <p className="text-[10px] font-black uppercase text-muted-foreground">Aujourd'hui - marge</p>
-                <p className={cn("text-lg font-black", overview.margin >= 0 ? "text-emerald-700" : "text-red-700")}>
-                  {overview.margin.toLocaleString()} FCFA
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </section>
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {alerts.map((alert) => (
+        <Link
+          key={`${alert.title}-${alert.href}`}
+          href={getHrefWithCurrentQuery(alert.href, searchParams)}
+          className={cn(
+            "flex items-start gap-3 rounded-xl border bg-orange-50 p-4 text-orange-800 transition hover:border-primary/40 hover:shadow-md dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-200",
+            alert.severity === "high" && "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-500/15 dark:text-red-200"
+          )}
+        >
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <span>
+            <span className="block font-black">⚠ {alert.title}</span>
+            <span className="mt-1 block text-sm text-muted-foreground">{alert.description}</span>
+          </span>
+        </Link>
+      ))}
+    </div>
   )
 }
 
-function OwnerCashSessionRequests({ restaurantId }: { restaurantId: string }) {
+function getHrefWithCurrentQuery(href: string, searchParams: { toString(): string } | null) {
+  const queryString = searchParams?.toString()
+  if (!queryString) return href
+  return href.includes("?") ? `${href}&${queryString}` : `${href}?${queryString}`
+}
+
+function RankedList({
+  title,
+  items,
+  empty,
+}: {
+  title: string
+  items: Array<{ key: string; label: string; value: string }>
+  empty: string
+}) {
+  return (
+    <Card className="border bg-background">
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {items.length === 0 ? (
+          <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">{empty}</p>
+        ) : (
+          items.map((item, index) => (
+            <div key={item.key} className="flex items-center justify-between gap-3 rounded-xl border p-3">
+              <span className="min-w-0 truncate text-sm font-black">{index + 1}. {item.label}</span>
+              <span className="shrink-0 text-xs font-bold text-muted-foreground">{item.value}</span>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function InsightsPanel({ insights }: { insights: string[] }) {
+  return (
+    <Card className="border bg-background">
+      <CardHeader>
+        <CardTitle className="text-base">Insights automatiques</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {insights.length === 0 ? (
+          <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+            Insights disponibles dès que la période contient assez de données.
+          </p>
+        ) : (
+          insights.map((insight) => (
+            <p key={insight} className="rounded-xl border bg-muted/30 p-3 text-sm font-semibold">
+              {insight}
+            </p>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function OwnerCashSessionRequests({
+  restaurantId,
+  user,
+  role,
+}: {
+  restaurantId: string
+  user: any
+  role: string | null | undefined
+}) {
   const db = useFirestore()
-  const { user, role } = useTenant()
   const { cashSessionRequests, cashSessions } = useRestaurantLiveData()
   const pendingRequests = cashSessionRequests
 
   const approve = async (request: any) => {
     if (!db || !user) return
-
     const existingSession = cashSessions.find((session: any) => session.cashierId === request.cashierId)
-
     const sessionId = !existingSession
       ? (
           await addDoc(collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS), {
@@ -613,36 +773,175 @@ function OwnerCashSessionRequests({ restaurantId }: { restaurantId: string }) {
     })
   }
 
+  if (pendingRequests.length === 0) return null
+
   return (
-    <Card className={premiumCardClass}>
+    <Card className="border bg-background">
       <CardHeader>
-        <CardTitle className="text-base text-foreground">Demandes caisse</CardTitle>
+        <CardTitle className="text-base">Demandes caisse</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {pendingRequests.length === 0 ? (
-          <div className="text-sm text-muted-foreground">Aucune demande en attente</div>
-        ) : (
-          pendingRequests.map((request: any) => (
-            <div key={request.id} className="flex flex-col gap-3 rounded-xl border border-border bg-background p-5 dark:border-white/10 dark:bg-white/5 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-black text-foreground">{request.cashierName || request.cashierId}</p>
-                <p className="text-xs text-muted-foreground">Ouverture de caisse</p>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Button size="sm" onClick={() => approve(request)}>Valider</Button>
-                <Button size="sm" variant="outline" onClick={() => reject(request)}>Refuser</Button>
-              </div>
+        {pendingRequests.map((request: any) => (
+          <div key={request.id} className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-black">{request.cashierName || request.cashierId}</p>
+              <p className="text-xs text-muted-foreground">Ouverture de caisse</p>
             </div>
-          ))
-        )}
+            <div className="grid grid-cols-2 gap-2">
+              <Button size="sm" onClick={() => approve(request)}>Valider</Button>
+              <Button size="sm" variant="outline" onClick={() => reject(request)}>Refuser</Button>
+            </div>
+          </div>
+        ))}
       </CardContent>
     </Card>
   )
 }
 
-//
-// 🔥 ANALYTICS ENGINE (FIX TIMESTAMP)
-//
+function buildBusinessDashboardData({
+  orders,
+  payments,
+  cashMovements,
+  cashSessions,
+  inventoryAlerts,
+  inventoryItems,
+  inventoryLogs,
+  period,
+}: {
+  orders: Order[]
+  payments: any[]
+  cashMovements: any[]
+  cashSessions: any[]
+  inventoryAlerts: OwnerInventoryAlert[]
+  inventoryItems: OwnerInventoryItem[]
+  inventoryLogs: OwnerInventoryLog[]
+  period: ReturnType<typeof buildPeriodContext>
+}) {
+  const currentOrders = orders.filter((order) => isDateInRange(toDate(order.createdAt), period.current))
+  const previousOrders = orders.filter((order) => isDateInRange(toDate(order.createdAt), period.previous))
+  const currentPayments = payments.filter((payment) => isConfirmedPayment(payment) && isDateInRange(toDate(payment.createdAt), period.current))
+  const previousPayments = payments.filter((payment) => isConfirmedPayment(payment) && isDateInRange(toDate(payment.createdAt), period.previous))
+  const currentMovements = cashMovements.filter((movement) => isDateInRange(toDate(movement.createdAt), period.current))
+
+  const currentRevenue = sumBy(currentPayments, (payment) => getAmount(payment.amount))
+  const previousRevenue = sumBy(previousPayments, (payment) => getAmount(payment.amount))
+  const currentOrderRevenueFallback = sumBy(currentOrders, (order) => getAmount((order as any).total ?? (order as any).totalAmount))
+  const previousOrderRevenueFallback = sumBy(previousOrders, (order) => getAmount((order as any).total ?? (order as any).totalAmount))
+  const revenue = currentRevenue || currentOrderRevenueFallback
+  const previousRevenueValue = previousRevenue || previousOrderRevenueFallback
+  const averageOrder = currentOrders.length > 0 ? Math.round(revenue / currentOrders.length) : 0
+  const previousAverageOrder = previousOrders.length > 0 ? Math.round(previousRevenueValue / previousOrders.length) : 0
+
+  const inventory = buildOwnerInventoryOverview(inventoryAlerts, inventoryItems, inventoryLogs, period.current)
+  const live = computeLiveOverview(orders)
+  const treasury = buildTreasuryOverview(payments, cashMovements, cashSessions, currentMovements)
+  const trend = buildTrendPoints(orders, payments, period.current)
+  const analysis = buildAnalysisOverview(currentOrders)
+  const variation = {
+    orders: buildVariation(currentOrders.length, previousOrders.length),
+    revenue: buildVariation(revenue, previousRevenueValue),
+    averageOrder: buildVariation(averageOrder, previousAverageOrder),
+  }
+  const alerts = buildActionAlerts({ variation, inventory, live, treasury, analysis })
+  const insights = buildInsights({ variation, analysis, inventory, trend })
+  const status = buildBusinessStatus({ variation, alerts, live, currentOrders: currentOrders.length })
+  const summary = buildDecisionSummary({ variation, inventory, live, currentOrders: currentOrders.length })
+  const hasPeriodData = currentOrders.length > 0 || currentPayments.length > 0 || currentMovements.length > 0 || inventoryLogs.length > 0
+
+  return {
+    current: {
+      orders: currentOrders.length,
+      revenue,
+      averageOrder,
+    },
+    variation,
+    trend,
+    inventory,
+    treasury,
+    analysis,
+    alerts,
+    insights,
+    status,
+    summary,
+    hasPeriodData,
+    live,
+  }
+}
+
+function buildTreasuryOverview(payments: any[], cashMovements: any[], cashSessions: any[], currentMovements: any[]) {
+  const summary = getFinancialSummary({
+    movements: cashMovements,
+    payments,
+    scope: { mode: "global", sessionId: null },
+  })
+  const expenses = sumBy(currentMovements.filter((movement) => movement.type === "expense"), (movement) => getAmount(movement.amount))
+  const transfers = sumBy(currentMovements.filter((movement) => movement.type === "transfer"), (movement) => getAmount(movement.amount))
+  const openSessions = (cashSessions || []).filter((session) => isOpenCashSession(session.status)).length
+
+  return {
+    balance: summary.balance,
+    expenses,
+    transfers,
+    openSessions,
+    anomalies: summary.anomalies,
+  }
+}
+
+function buildOwnerInventoryOverview(
+  alerts: OwnerInventoryAlert[],
+  items: OwnerInventoryItem[],
+  logs: OwnerInventoryLog[],
+  range: DateRange
+) {
+  const filteredAlerts = alerts
+    .filter((alert) => alert.resolved !== true && ["high", "medium"].includes(String(alert.severity)))
+    .sort((a, b) => getOwnerAlertRank(b.severity) - getOwnerAlertRank(a.severity))
+
+  const relevantLogs = logs.filter((log) => isInventoryLogInRange(log, range))
+  let consumedCost = 0
+  for (const log of relevantLogs) {
+    for (const item of log.itemMargins || []) {
+      if (item.missingCost || Number(item.cost || 0) <= 0) continue
+      consumedCost += Number(item.cost || 0)
+    }
+  }
+
+  const stockValue = items.reduce((total, item) => {
+    const stock = Math.max(0, Number(item.stockEstimated || 0))
+    const cost = Math.max(0, Number(item.costPerUnit || 0))
+    return total + stock * cost
+  }, 0)
+
+  const estimatedLosses = items.reduce((total, item) => {
+    const expected = Number(item.stockEstimated || 0)
+    const real = Number(item.lastManualStock ?? expected)
+    const cost = Math.max(0, Number(item.costPerUnit || 0))
+    return total + Math.max(0, expected - real) * cost
+  }, 0)
+
+  const criticalItemIds = new Set<string>()
+  for (const alert of filteredAlerts) {
+    if (alert.itemId && (alert.type === "low_stock" || alert.type === "incoherent_stock")) {
+      criticalItemIds.add(alert.itemId)
+    }
+  }
+  for (const item of items) {
+    const avgDailyConsumption = Number(item.avgDailyConsumption || 0)
+    const stockEstimated = Number(item.stockEstimated || 0)
+    if (avgDailyConsumption > 0 && stockEstimated >= 0 && stockEstimated / avgDailyConsumption < 2) {
+      criticalItemIds.add(item.id)
+    }
+  }
+
+  return {
+    alerts: filteredAlerts,
+    consumedCost: Math.round(consumedCost),
+    estimatedLosses: Math.round(estimatedLosses),
+    stockValue: Math.round(stockValue),
+    criticalProducts: criticalItemIds.size,
+  }
+}
+
 function computeLiveOverview(orders: Order[]) {
   const activeStatuses = new Set(["pending", "preparing", "ready", "served"])
   const inPreparation = orders.filter((order) => getOrderStatus(order) === "preparing").length
@@ -654,16 +953,14 @@ function computeLiveOverview(orders: Order[]) {
     ready: orders.filter((order) => getOrderStatus(order) === "ready").length,
     served: orders.filter((order) => isKitchenServedStatus(getOrderStatus(order))).length,
   }
-
   let liveRevenue = 0
   let activeOrders = 0
 
   orders.forEach((order) => {
     const status = getOrderStatus(order)
-
     if (activeStatuses.has(status)) {
       activeOrders += 1
-      liveRevenue += Number(order.total || 0)
+      liveRevenue += Number((order as any).total || 0)
     }
   })
 
@@ -673,96 +970,356 @@ function computeLiveOverview(orders: Order[]) {
     return ["pending", "preparing"].includes(status) && getOrderAgeMinutes(order) > 15
   })
 
-  return {
-    activeOrders,
-    anomalies,
-    kitchenActive,
-    liveRevenue,
-    statusCounts: stats,
-  }
+  return { activeOrders, anomalies, kitchenActive, liveRevenue, statusCounts: stats }
 }
 
-function computeOwnerFinancialOverview(payments: any[], cashMovements: any[], cashSessions: any[]) {
-  const summary = getFinancialSummary({
-    movements: cashMovements,
-    payments,
-    scope: { mode: "global", sessionId: null },
+function buildTrendPoints(orders: Order[], payments: any[], range: DateRange) {
+  const days = enumerateDays(range)
+  const points = days.map((day) => {
+    const dayRange = { start: startOfDay(day), end: endOfDay(day) }
+    const dayOrders = orders.filter((order) => isDateInRange(toDate(order.createdAt), dayRange))
+    const dayPayments = payments.filter((payment) => isConfirmedPayment(payment) && isDateInRange(toDate(payment.createdAt), dayRange))
+    const revenue = sumBy(dayPayments, (payment) => getAmount(payment.amount)) ||
+      sumBy(dayOrders, (order) => getAmount((order as any).total ?? (order as any).totalAmount))
+    return {
+      date: getInputDateValue(day),
+      label: day.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }),
+      orders: dayOrders.length,
+      revenue,
+    }
   })
-  const openSessions = (cashSessions || []).filter((session) => isOpenCashSession(session.status)).length
-  const pendingValidationSessions = (cashSessions || []).filter((session) => {
-    return isClosedCashSession(session.status) && session.validatedByManager !== true
-  }).length
-
-  const anomalies: Array<{ type: string; label: string }> = summary.anomalies.map((anomaly) => ({
-    type: anomaly.type,
-    label: anomaly.label,
-  }))
-  if (pendingValidationSessions > 0) {
-    anomalies.push({
-      type: "pending_cash_validation",
-      label: `${pendingValidationSessions} session(s) caisse cloturee(s) en attente de validation`,
-    })
-  }
-
-  return {
-    averageConfirmedPayment: summary.averageDeposit,
-    balance: summary.balance,
-    confirmedRevenue: summary.deposits,
-    expenses: summary.expenses,
-    openSessions,
-    pendingValidationSessions,
-    todayExpenses: summary.todayExpenses,
-    todayRevenue: summary.todayDeposits,
-    thisMonthRevenue: summary.thisMonthDeposits,
-    transfers: summary.transfers,
-    anomalies,
-  }
+  return points.length > 30 ? points.slice(-30) : points
 }
 
-function buildOwnerInventoryOverview(
-  alerts: OwnerInventoryAlert[],
-  items: OwnerInventoryItem[],
-  logs: OwnerInventoryLog[]
-) {
-  const filteredAlerts = alerts
-    .filter((alert) => alert.resolved !== true && ["high", "medium"].includes(String(alert.severity)))
-    .sort((a, b) => getOwnerAlertRank(b.severity) - getOwnerAlertRank(a.severity))
-    .slice(0, 3)
+function buildAnalysisOverview(orders: Order[]) {
+  const productMap = new Map<string, ProductStat>()
+  const dayMap = new Map<string, { day: string; revenue: number }>()
 
-  const daysLeft = items
-    .map((item) => {
-      const avgDailyConsumption = Number(item.avgDailyConsumption || 0)
-      const stockEstimated = Number(item.stockEstimated || 0)
-      if (!Number.isFinite(avgDailyConsumption) || avgDailyConsumption <= 0) return null
-      if (!Number.isFinite(stockEstimated) || stockEstimated < 0) return null
+  for (const order of orders) {
+    const orderDate = toDate(order.createdAt)
+    if (orderDate) {
+      const day = orderDate.toLocaleDateString("fr-FR", { weekday: "long" })
+      const current = dayMap.get(day) || { day: capitalize(day), revenue: 0 }
+      current.revenue += getAmount((order as any).total ?? (order as any).totalAmount)
+      dayMap.set(day, current)
+    }
 
-      return {
-        id: item.id,
-        name: getOwnerInventoryItemName(item),
-        daysLeft: stockEstimated / avgDailyConsumption,
-      }
-    })
-    .filter((item): item is { id: string; name: string; daysLeft: number } => Boolean(item))
-    .sort((a, b) => a.daysLeft - b.daysLeft)
-    .slice(0, 3)
-
-  let totalSales = 0
-  let totalCost = 0
-
-  for (const log of logs) {
-    for (const item of log.itemMargins || []) {
-      if (item.missingCost || Number(item.cost || 0) <= 0) continue
-      totalSales += Number(item.sales || 0)
-      totalCost += Number(item.cost || 0)
+    for (const item of order.items || []) {
+      const name = item.name || "Produit"
+      const current = productMap.get(name) || { name, count: 0, revenue: 0 }
+      const quantity = Number(item.quantity || 0)
+      current.count += quantity
+      current.revenue += getAmount((item as any).total ?? item.price * quantity)
+      productMap.set(name, current)
     }
   }
 
   return {
-    alerts: filteredAlerts,
-    daysLeft,
-    totalSales: Math.round(totalSales),
-    margin: Math.round(totalSales - totalCost),
+    topProducts: Array.from(productMap.values()).sort((a, b) => b.count - a.count).slice(0, 5),
+    bestDays: Array.from(dayMap.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 3),
   }
+}
+
+function buildActionAlerts({
+  variation,
+  inventory,
+  live,
+  treasury,
+}: {
+  variation: { revenue: Variation; orders: Variation; averageOrder: Variation }
+  inventory: ReturnType<typeof buildOwnerInventoryOverview>
+  live: ReturnType<typeof computeLiveOverview>
+  treasury: ReturnType<typeof buildTreasuryOverview>
+  analysis: ReturnType<typeof buildAnalysisOverview>
+}) {
+  const alerts: Array<{ title: string; description: string; href: string; severity: "high" | "medium" }> = []
+  if (variation.revenue.trend === "down" && variation.revenue.percent !== null && variation.revenue.percent <= -10) {
+    alerts.push({
+      title: "Baisse de performance",
+      description: `Le chiffre d’affaires recule de ${Math.abs(variation.revenue.percent).toFixed(1)}% vs période précédente.`,
+      href: "/owner",
+      severity: "high",
+    })
+  }
+  if (inventory.criticalProducts > 0) {
+    alerts.push({
+      title: "Stock critique",
+      description: `${inventory.criticalProducts} produit(s) peuvent impacter les ventes.`,
+      href: "/manager/inventory",
+      severity: "high",
+    })
+  }
+  if (inventory.estimatedLosses > 0) {
+    alerts.push({
+      title: "Pertes inventaire",
+      description: `${formatMoney(inventory.estimatedLosses)} FCFA d’écart estimé.`,
+      href: "/manager/inventory",
+      severity: "medium",
+    })
+  }
+  if (live.anomalies.length > 0) {
+    alerts.push({
+      title: "Retards cuisine",
+      description: `${live.anomalies.length} commande(s) en retard.`,
+      href: "/manager/commandes?status=late",
+      severity: "high",
+    })
+  }
+  if (treasury.anomalies.length > 0) {
+    alerts.push({
+      title: "Trésorerie à vérifier",
+      description: treasury.anomalies[0]?.label || "Anomalie de caisse détectée.",
+      href: "/manager/caisse",
+      severity: "medium",
+    })
+  }
+  return alerts.slice(0, 5)
+}
+
+function buildInsights({
+  variation,
+  analysis,
+  inventory,
+  trend,
+}: {
+  variation: { revenue: Variation; orders: Variation; averageOrder: Variation }
+  analysis: ReturnType<typeof buildAnalysisOverview>
+  inventory: ReturnType<typeof buildOwnerInventoryOverview>
+  trend: Array<{ revenue: number; orders: number }>
+}) {
+  const insights: string[] = []
+  if (variation.revenue.percent !== null && variation.revenue.trend !== "stable") {
+    const direction = variation.revenue.trend === "up" ? "augmenté" : "baissé"
+    insights.push(`Vos ventes ont ${direction} de ${Math.abs(variation.revenue.percent).toFixed(1)}% sur la période.`)
+  }
+  if (analysis.bestDays.length > 0) {
+    insights.push(`${analysis.bestDays[0].day} est votre jour le plus performant sur cette période.`)
+  }
+  if (variation.averageOrder.percent !== null && variation.averageOrder.trend === "down") {
+    insights.push(`Le panier moyen baisse de ${Math.abs(variation.averageOrder.percent).toFixed(1)}%. Vérifiez les offres ou les produits vendus.`)
+  }
+  if (analysis.topProducts.length > 0) {
+    insights.push(`${analysis.topProducts[0].name} est le produit le plus vendu.`)
+  }
+  if (inventory.criticalProducts > 0) {
+    insights.push(`${inventory.criticalProducts} produit(s) critiques peuvent limiter les ventes.`)
+  }
+  const activeTrendPoints = trend.filter((point) => point.revenue > 0)
+  if (activeTrendPoints.length >= 3) {
+    const last = activeTrendPoints[activeTrendPoints.length - 1]
+    const before = activeTrendPoints[activeTrendPoints.length - 2]
+    if (last.revenue < before.revenue) {
+      insights.push("Le chiffre d’affaires du dernier jour actif est en baisse.")
+    }
+  }
+  return insights.slice(0, 4)
+}
+
+function buildBusinessStatus({
+  variation,
+  alerts,
+  live,
+  currentOrders,
+}: {
+  variation: { revenue: Variation; orders: Variation; averageOrder: Variation }
+  alerts: Array<{ severity: "high" | "medium" }>
+  live: ReturnType<typeof computeLiveOverview>
+  currentOrders: number
+}): BusinessStatus {
+  const hasHighAlert = alerts.some((alert) => alert.severity === "high")
+  const revenueDown = variation.revenue.trend === "down" && variation.revenue.percent !== null && variation.revenue.percent <= -5
+  const revenueUp = variation.revenue.trend === "up" && variation.revenue.percent !== null && variation.revenue.percent >= 5
+
+  if (hasHighAlert || revenueDown) {
+    return { label: "Problème", tone: "bad" }
+  }
+  if (alerts.length > 0 || currentOrders === 0 || live.activeOrders === 0 || variation.revenue.trend === "stable") {
+    return { label: "À surveiller", tone: "watch" }
+  }
+  if (revenueUp) {
+    return { label: "Bonne performance", tone: "good" }
+  }
+  return { label: "À surveiller", tone: "watch" }
+}
+
+function buildDecisionSummary({
+  variation,
+  inventory,
+  live,
+  currentOrders,
+}: {
+  variation: { revenue: Variation; orders: Variation; averageOrder: Variation }
+  inventory: ReturnType<typeof buildOwnerInventoryOverview>
+  live: ReturnType<typeof computeLiveOverview>
+  currentOrders: number
+}) {
+  const lines: string[] = []
+
+  if (variation.revenue.percent !== null) {
+    if (variation.revenue.percent > 5) {
+      lines.push(`✓ Ventes en hausse (+${variation.revenue.percent.toFixed(1)}%)`)
+    } else if (variation.revenue.percent < -5) {
+      lines.push(`⚠ Ventes en baisse (${variation.revenue.percent.toFixed(1)}%)`)
+    } else {
+      lines.push("✓ Ventes stables")
+    }
+  }
+
+  if (variation.orders.percent !== null) {
+    if (variation.orders.percent < -5) lines.push("⚠ Activité en baisse")
+    else if (variation.orders.percent > 5) lines.push("✓ Activité en progression")
+    else lines.push("✓ Activité stable")
+  }
+
+  if (variation.averageOrder.percent !== null) {
+    if (variation.averageOrder.percent < -5) lines.push("⚠ Panier moyen en baisse")
+    else if (variation.averageOrder.percent > 5) lines.push("✓ Panier moyen en amélioration")
+  }
+
+  if (inventory.criticalProducts > 0) {
+    lines.push(`⚠ Attention sur ${inventory.criticalProducts} produit(s) critiques`)
+  } else if (currentOrders > 0 || live.activeOrders > 0) {
+    lines.push("✓ Aucun blocage stock critique détecté")
+  }
+
+  return lines.slice(0, 4)
+}
+
+function buildVariation(current: number, previous: number): Variation {
+  const absolute = Math.round(current - previous)
+  if (!Number.isFinite(previous) || previous <= 0) {
+    return { absolute, percent: null, trend: "none" }
+  }
+  const percent = (absolute / previous) * 100
+  const trend = Math.abs(percent) < 3 ? "stable" : percent > 0 ? "up" : "down"
+  return { absolute, percent, trend }
+}
+
+function getVariationInterpretation(variation: Variation) {
+  if (variation.percent === null) {
+    return { label: "Analyse disponible après comparaison", className: "text-muted-foreground" }
+  }
+  if (variation.percent > 5) {
+    return { label: "Bonne progression", className: "text-emerald-700" }
+  }
+  if (variation.percent < -5) {
+    return { label: "Activité en baisse", className: "text-red-700" }
+  }
+  return { label: "Niveau stable", className: "text-orange-700" }
+}
+
+function getLiveActivityMessage(activeOrders: number) {
+  if (activeOrders === 0) return "0 commande → activité faible"
+  if (activeOrders <= 5) return `${activeOrders} commande(s) en cours → activité normale`
+  return `${activeOrders} commandes en cours → forte activité`
+}
+
+function getPeriodSummaryLabel(mode: PeriodMode) {
+  if (mode === "today") return "du jour"
+  if (mode === "week") return "de la semaine"
+  if (mode === "month") return "du mois"
+  return "de la période"
+}
+
+function buildPeriodContext(filter: ReturnType<typeof useTimeFilter>["filter"]) {
+  const currentRange = getDateRange(filter)
+  const previousRange = getPreviousDateRange(filter)
+  const current = { start: currentRange.startDate, end: currentRange.endDate }
+  const previous = { start: previousRange.startDate, end: previousRange.endDate }
+
+  return {
+    mode: filter.type,
+    current,
+    previous,
+    label: `${formatShortDate(current.start)} → ${formatShortDate(current.end)}`,
+  }
+}
+
+function enumerateDays(range: DateRange) {
+  const days: Date[] = []
+  const cursor = startOfDay(range.start)
+  const maxDays = 60
+  while (cursor <= range.end && days.length < maxDays) {
+    days.push(new Date(cursor))
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return days
+}
+
+function isInventoryLogInRange(log: OwnerInventoryLog, range: DateRange) {
+  if (log.createdDate) {
+    const date = parseInputDate(log.createdDate)
+    return isDateInRange(date, range)
+  }
+  return isDateInRange(toDate(log.createdAt), range)
+}
+
+function isDateInRange(date: Date | null, range: DateRange) {
+  if (!date) return false
+  return date >= range.start && date <= range.end
+}
+
+function toDate(value: any): Date | null {
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (typeof value === "number") return new Date(value)
+  if (typeof value === "string") {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+  if (typeof value.toDate === "function") return value.toDate()
+  if (typeof value.toMillis === "function") return new Date(value.toMillis())
+  return null
+}
+
+function startOfDay(date: Date) {
+  const next = new Date(date)
+  next.setHours(0, 0, 0, 0)
+  return next
+}
+
+function endOfDay(date: Date) {
+  const next = new Date(date)
+  next.setHours(23, 59, 59, 999)
+  return next
+}
+
+function parseInputDate(value: string) {
+  if (!value) return null
+  const date = new Date(`${value}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function getInputDateValue(date: Date) {
+  return date.toISOString().slice(0, 10)
+}
+
+function formatShortDate(date: Date) {
+  return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })
+}
+
+function formatMoney(value: unknown) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount)) return "0"
+  return Math.round(amount).toLocaleString("fr-FR")
+}
+
+function getAmount(value: unknown) {
+  const amount = Number(value || 0)
+  return Number.isFinite(amount) && amount > 0 ? amount : 0
+}
+
+function sumBy<T>(items: T[], selector: (item: T) => number) {
+  return items.reduce((total, item) => total + selector(item), 0)
+}
+
+function isConfirmedPayment(payment: any) {
+  if (payment.status && payment.status !== "confirmed") return false
+  const invalidStatus = payment.refundStatus || payment.voidStatus || payment.cancellationStatus
+  if (["refunded", "voided", "cancelled", "canceled"].includes(String(invalidStatus || "").toLowerCase())) {
+    return false
+  }
+  return !(payment.refunded === true || payment.voided === true || payment.cancelled === true || payment.canceled === true)
 }
 
 function getOwnerAlertRank(severity: OwnerInventoryAlert["severity"]) {
@@ -771,39 +1328,26 @@ function getOwnerAlertRank(severity: OwnerInventoryAlert["severity"]) {
   return 1
 }
 
-function formatOwnerAlert(alert: OwnerInventoryAlert) {
-  if (alert.message?.trim()) return alert.message.trim()
-  if (alert.type === "missing_cost") return "Coût non défini"
-  if (alert.type === "incoherent_stock") return "Stock incohérent"
-  if (alert.type === "low_stock") return "Stock critique"
-  return "Alerte stock"
-}
-
-function getOwnerInventoryItemName(item: OwnerInventoryItem) {
-  return typeof item.name === "string" && item.name.trim() ? item.name.trim() : "Produit"
-}
-
-function getTodayKey() {
-  return new Date().toISOString().slice(0, 10)
-}
-
 function isOpenCashSession(status: unknown) {
   return status === "open" || status === "active"
 }
 
-function isClosedCashSession(status: unknown) {
-  return status === "closed" || status === "validated" || status === "ended"
+function isKitchenServedStatus(status: string | null | undefined) {
+  return status === "served" || status === "picked_up" || status === "completed"
 }
 
 function getOrderAgeMinutes(order: Order) {
-  const createdAt = order.createdAt?.toDate?.().getTime?.() ?? Date.now()
+  const createdAt = toDate(order.createdAt)?.getTime() ?? Date.now()
   return Math.max(0, Math.floor((Date.now() - createdAt) / 60000))
 }
 
-function formatStatus(status: string) {
-  if (status === "pending") return "En attente"
-  if (status === "preparing" || status === "in_progress") return "Preparation"
-  if (status === "ready") return "Pret"
-  if (status === "served") return "Servi"
-  return status
+function getTrendLabel(trend: Variation["trend"]) {
+  if (trend === "up") return "En croissance"
+  if (trend === "down") return "En baisse"
+  if (trend === "stable") return "Stable"
+  return "À comparer"
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }

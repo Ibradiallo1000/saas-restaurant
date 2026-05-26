@@ -40,7 +40,7 @@ export const roleConfig: Record<
   },
   manager: {
     bottomNav: ["analytics", "commandes", "caisse", "cuisine", "plus"],
-    drawer: ["profil", "menu", "images", "inventaire", "tresorerie", "depenses", "deconnexion"],
+    drawer: ["profil", "menu", "tables", "images", "inventaire", "tresorerie", "depenses", "deconnexion"],
   },
   cuisine: {
     bottomNav: ["cuisine"],

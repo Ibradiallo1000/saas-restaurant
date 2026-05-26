@@ -42,47 +42,88 @@ export async function POST(request: Request, context: RouteContext) {
       const table = tableSnap.data() || {}
       const tableName = typeof table.name === "string" ? table.name : tableId
       const zoneId = typeof table.zoneId === "string" && table.zoneId ? table.zoneId : "main"
+      const activeSessionsQuery = sessionsRef
+        .where("tableId", "==", tableId)
+        .where("status", "==", "active")
+      const activeSessionsSnap = await transaction.get(activeSessionsQuery)
+      const reusableSessions = activeSessionsSnap.docs.filter((sessionDoc) => {
+        const session = sessionDoc.data() || {}
+        return !isSessionExpired(session.lastActivityAt || session.startedAt || session.createdAt)
+      })
+
+      if (reusableSessions.length > 0) {
+        const selectedSessionDoc = reusableSessions[0]
+        const selectedSession = selectedSessionDoc.data() || {}
+
+        reusableSessions.slice(1).forEach((duplicateSessionDoc) => {
+          transaction.update(duplicateSessionDoc.ref, {
+            status: "closed",
+            closedAt: FieldValue.serverTimestamp(),
+            lastActivityAt: FieldValue.serverTimestamp(),
+            closedReason: "duplicate_active_session",
+          })
+        })
+
+        activeSessionsSnap.docs
+          .filter((sessionDoc) => !reusableSessions.some((reusable) => reusable.id === sessionDoc.id))
+          .forEach((expiredSessionDoc) => {
+            transaction.update(expiredSessionDoc.ref, {
+              status: "closed",
+              closedAt: FieldValue.serverTimestamp(),
+              lastActivityAt: FieldValue.serverTimestamp(),
+              closedReason: "expired_active_session",
+            })
+          })
+
+        transaction.update(selectedSessionDoc.ref, {
+          lastActivityAt: FieldValue.serverTimestamp(),
+        })
+        transaction.update(tableRef, {
+          status: "occupied",
+          currentSessionId: selectedSessionDoc.id,
+          updatedAt: FieldValue.serverTimestamp(),
+          lastActivityAt: FieldValue.serverTimestamp(),
+        })
+        transaction.create(visitsRef.doc(), {
+          tableId,
+          sessionId: selectedSessionDoc.id,
+          tableSessionId: selectedSessionDoc.id,
+          createdAt: FieldValue.serverTimestamp(),
+        })
+
+        return {
+          tableId,
+          tableName,
+          zoneId,
+          sessionId: selectedSessionDoc.id,
+          tableSessionId: selectedSessionDoc.id,
+          totalAmount: Number(selectedSession.totalAmount || 0),
+          status: "active",
+        }
+      }
+
+      activeSessionsSnap.docs.forEach((expiredSessionDoc) => {
+        transaction.update(expiredSessionDoc.ref, {
+          status: "closed",
+          closedAt: FieldValue.serverTimestamp(),
+          lastActivityAt: FieldValue.serverTimestamp(),
+          closedReason: "expired_active_session",
+        })
+      })
+
       const currentSessionId =
         typeof table.currentSessionId === "string" ? table.currentSessionId : ""
-
       if (currentSessionId) {
         const existingSessionRef = sessionsRef.doc(currentSessionId)
         const existingSessionSnap = await transaction.get(existingSessionRef)
         const existingSession = existingSessionSnap.data() || {}
-
-        if (
-          existingSessionSnap.exists &&
-          existingSession.status === "active" &&
-          !isSessionExpired(existingSession.lastActivityAt || existingSession.startedAt)
-        ) {
-          transaction.update(existingSessionRef, {
-            lastActivityAt: FieldValue.serverTimestamp(),
-          })
-          transaction.update(tableRef, {
-            status: "occupied",
-            updatedAt: FieldValue.serverTimestamp(),
-            lastActivityAt: FieldValue.serverTimestamp(),
-          })
-          transaction.create(visitsRef.doc(), {
-            tableId,
-            sessionId: currentSessionId,
-            createdAt: FieldValue.serverTimestamp(),
-          })
-
-          return {
-            tableId,
-            tableName,
-            zoneId,
-            sessionId: currentSessionId,
-            status: "active",
-          }
-        }
 
         if (existingSessionSnap.exists && existingSession.status === "active") {
           transaction.update(existingSessionRef, {
             status: "closed",
             closedAt: FieldValue.serverTimestamp(),
             lastActivityAt: FieldValue.serverTimestamp(),
+            closedReason: "stale_table_pointer",
           })
         }
       }
@@ -91,10 +132,13 @@ export async function POST(request: Request, context: RouteContext) {
       transaction.create(sessionRef, {
         tableId,
         zoneId,
+        createdAt: FieldValue.serverTimestamp(),
         startedAt: FieldValue.serverTimestamp(),
         lastActivityAt: FieldValue.serverTimestamp(),
         closedAt: null,
+        totalAmount: 0,
         status: "active",
+        paymentRequest: { status: "none" },
       })
       transaction.update(tableRef, {
         status: "occupied",
@@ -105,6 +149,7 @@ export async function POST(request: Request, context: RouteContext) {
       transaction.create(visitsRef.doc(), {
         tableId,
         sessionId: sessionRef.id,
+        tableSessionId: sessionRef.id,
         createdAt: FieldValue.serverTimestamp(),
       })
 
@@ -113,6 +158,8 @@ export async function POST(request: Request, context: RouteContext) {
         tableName,
         zoneId,
         sessionId: sessionRef.id,
+        tableSessionId: sessionRef.id,
+        totalAmount: 0,
         status: "active",
       }
     })

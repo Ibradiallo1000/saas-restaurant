@@ -116,3 +116,12 @@ export type CartItem = {
 
 // types.ts - AJOUTE À LA FIN
 export type KitchenStatus = OrderStatus
+
+export type TableSessionPaymentRequest = {
+  status: "none" | "requested" | "processing" | "pending_confirmation" | "validated" | "rejected"
+  method?: "cash" | "mobile"
+  provider?: string
+  requestedAt?: any
+  handledAt?: any
+  handledBy?: string
+}

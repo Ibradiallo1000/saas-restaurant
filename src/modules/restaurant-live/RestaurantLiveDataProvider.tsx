@@ -1,10 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { collection } from "firebase/firestore"
+import { collection, doc, updateDoc } from "firebase/firestore"
 import { usePathname } from "next/navigation"
 
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
+import { useToast } from "@/hooks/use-toast"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { isOrderServed, isOrderPaid } from "@/lib/order-lifecycle"
@@ -59,6 +60,21 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
   }, [db, enabled, restaurantId])
   const { data: activeOrders, isLoading: isLoadingOrders } = useCollection<any>(ordersQuery)
 
+  React.useEffect(() => {
+    if (!db || !restaurantId || !activeOrders?.length) return
+
+    activeOrders.forEach((order: any) => {
+      if (!order?.id || order.kitchenStatus) return
+
+      console.warn("Missing kitchenStatus", order.id)
+      updateDoc(doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS, order.id), {
+        kitchenStatus: mapLegacyStatus(order.status ?? order.orderStatus),
+      }).catch((error) => {
+        console.warn("Failed to migrate kitchenStatus", order.id, error)
+      })
+    })
+  }, [activeOrders, db, restaurantId])
+
   const tablesQuery = useMemoFirebase(() => {
     if (!enabled || !db || !restaurantId) return null
     return restaurantTablesRef(db, restaurantId)
@@ -70,6 +86,50 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
     return restaurantTableSessionsRef(db, restaurantId)
   }, [db, enabled, restaurantId])
   const { data: tableSessions } = useCollection<any>(tableSessionsQuery)
+
+  const { toast } = useToast()
+  const lastPaymentAlertsRef = React.useRef<Set<string>>(new Set())
+  const hasInteractedRef = React.useRef(false)
+
+  React.useEffect(() => {
+    const handleInteraction = () => {
+      hasInteractedRef.current = true
+      document.removeEventListener("click", handleInteraction)
+      document.removeEventListener("keydown", handleInteraction)
+      document.removeEventListener("touchstart", handleInteraction)
+    }
+    document.addEventListener("click", handleInteraction)
+    document.addEventListener("keydown", handleInteraction)
+    document.addEventListener("touchstart", handleInteraction)
+    return () => {
+      document.removeEventListener("click", handleInteraction)
+      document.removeEventListener("keydown", handleInteraction)
+      document.removeEventListener("touchstart", handleInteraction)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    if (!tableSessions) return
+    const pendingRequests = tableSessions.filter((s: any) => s.paymentRequest?.status === "requested")
+    pendingRequests.forEach((session: any) => {
+      const alertKey = `${session.id}-${session.paymentRequest?.status}`
+      if (!lastPaymentAlertsRef.current.has(alertKey)) {
+        lastPaymentAlertsRef.current.add(alertKey)
+        if (hasInteractedRef.current && typeof window !== 'undefined' && window.navigator?.vibrate) {
+          window.navigator.vibrate([100, 50, 100])
+        }
+        try {
+          const audio = new Audio('/notification.mp3')
+          audio.play().catch(() => {})
+        } catch(e) {}
+
+        toast({
+          title: "Demande de paiement",
+          description: `Table ${session.tableName || session.tableId} demande paiement (${session.paymentRequest?.method === "cash" ? "Espèces" : session.paymentRequest?.provider || "Mobile Money"})`,
+        })
+      }
+    })
+  }, [tableSessions, toast])
 
   const cashSessionsQuery = useMemoFirebase(() => {
     if (!enabled || !db || !restaurantId) return null
@@ -145,6 +205,14 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
 
 function isPendingCashSessionRequestStatus(status: unknown) {
   return status === "pending" || status === "requested" || status === "request"
+}
+
+function mapLegacyStatus(status: string | null | undefined) {
+  if (status === "preparing" || status === "preparation" || status === "en_preparation") return "preparing"
+  if (status === "ready" || status === "prete" || status === "pretes") return "ready"
+  if (status === "served" || status === "servie" || status === "servies" || status === "completed" || status === "terminee") return "served"
+  if (status === "picked_up" || status === "recuperee") return "served"
+  return "pending"
 }
 
 export function useRestaurantLiveData() {

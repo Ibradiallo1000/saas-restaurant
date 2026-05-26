@@ -1,8 +1,7 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { signOut } from "firebase/auth"
 import {
   Banknote,
@@ -39,6 +38,8 @@ import { useAuth } from "@/firebase"
 import { RestaurantProvider, useRestaurant } from "@/design-system/context/RestaurantContext"
 import { TenantProvider, useTenant } from "@/design-system/context/TenantProvider"
 import { RestaurantThemeProvider } from "@/design-system/theme/RestaurantThemeProvider"
+import { TimeFilterProvider } from "@/contexts/time-filter-context"
+import { GlobalTimeFilterBar } from "@/components/time-filter/GlobalTimeFilterBar"
 import { getOptimizedImage } from "@/lib/image"
 import { canAccessManager, getRoleHomePath, isRouteAllowedForRole } from "@/lib/guards"
 import { ROLES } from "@/lib/constants"
@@ -51,11 +52,12 @@ const MANAGER_NAV = [
   { label: "Commandes", href: "/manager/commandes", icon: ClipboardList, withBadge: true },
   { label: "Caisse", href: "/manager/caisse", icon: Wallet },
   { label: "Menu", href: "/manager/menu", icon: MenuSquare },
+  { label: "Tables", href: "/manager/tables", icon: Table2 },
   { label: "Images", href: "/manager/images", icon: ImageIcon },
   { label: "Inventaire", href: "/manager/inventory", icon: Package },
-  { label: "Dépenses", href: "/manager/expenses", icon: ReceiptText },
+  { label: "Dépenses", href: "/manager/depenses", icon: ReceiptText },
   { label: "Fournisseurs", href: "/manager/suppliers", icon: UserRound },
-  { label: "Trésorerie", href: "/manager/treasury", icon: Banknote },
+  { label: "Trésorerie", href: "/manager/tresorerie", icon: Banknote },
   { label: "Cuisine", href: "/manager/cuisine", icon: ChefHat },
 ]
 
@@ -66,9 +68,11 @@ export default function ManagerLayout({ children }: { children: React.ReactNode 
     <TenantProvider>
       <RestaurantProvider>
         <RestaurantThemeProvider>
-          <RestaurantLiveDataProvider>
-            <ManagerLayoutContent>{children}</ManagerLayoutContent>
-          </RestaurantLiveDataProvider>
+          <TimeFilterProvider>
+            <RestaurantLiveDataProvider>
+              <ManagerLayoutContent>{children}</ManagerLayoutContent>
+            </RestaurantLiveDataProvider>
+          </TimeFilterProvider>
         </RestaurantThemeProvider>
       </RestaurantProvider>
     </TenantProvider>
@@ -108,7 +112,10 @@ function ManagerLayoutContent({ children }: { children: React.ReactNode }) {
     return (
       <div className="min-h-screen bg-background">
         <OperationalMobileHeader />
-        <main className="flex flex-col gap-4 px-3 pb-[calc(80px+env(safe-area-inset-bottom))] pt-[calc(56px+env(safe-area-inset-top)+8px)]">{children}</main>
+        <main className="flex flex-col gap-4 px-3 pb-[calc(80px+env(safe-area-inset-bottom))] pt-[calc(56px+env(safe-area-inset-top)+8px)]">
+          <GlobalTimeFilterBar />
+          {children}
+        </main>
         <OperationalBottomNav />
       </div>
     )
@@ -120,6 +127,7 @@ function ManagerLayoutContent({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <ManagerHeader />
         <main className="flex-1 overflow-y-auto px-6 py-4">
+          <GlobalTimeFilterBar />
           {children}
         </main>
       </div>
@@ -130,6 +138,7 @@ function ManagerLayoutContent({ children }: { children: React.ReactNode }) {
 function ManagerSidebar() {
   const pathname = usePathname() ?? ""
   const router = useRouter()
+  const searchParams = useSearchParams()
   const auth = useAuth()
   const { restaurant } = useRestaurant()
   const { user, role } = useTenant()
@@ -195,12 +204,13 @@ function ManagerSidebar() {
                 : 0
 
           return (
-            <Link
+            <button
+              type="button"
               key={item.href}
-              href={item.href}
               title={collapsed ? item.label : undefined}
+              onClick={() => router.push(getManagerTargetHref(item.href, searchParams))}
               className={cn(
-                "flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-bold transition",
+                "flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-bold transition",
                 collapsed && "justify-center px-0",
                 active
                   ? "bg-[var(--color-primary)] text-white"
@@ -214,7 +224,7 @@ function ManagerSidebar() {
                   {badgeCount}
                 </span>
               ) : null}
-            </Link>
+            </button>
           )
         })}
       </nav>
@@ -260,6 +270,7 @@ function ManagerMobileDrawer({
 }) {
   const pathname = usePathname() ?? ""
   const router = useRouter()
+  const searchParams = useSearchParams()
   const auth = useAuth()
   const { restaurant } = useRestaurant()
   const { user, role } = useTenant()
@@ -311,10 +322,11 @@ function ManagerMobileDrawer({
 
             return (
               <SheetClose key={item.href} asChild>
-                <Link
-                  href={item.href}
+                <button
+                  type="button"
+                  onClick={() => router.push(getManagerTargetHref(item.href, searchParams))}
                   className={cn(
-                    "flex min-h-14 items-center gap-3 rounded-lg px-4 text-base font-black transition",
+                    "flex min-h-14 w-full items-center gap-3 rounded-lg px-4 text-left text-base font-black transition",
                     active
                       ? "bg-[var(--color-primary)] text-white"
                       : "text-card-foreground hover:bg-muted"
@@ -327,7 +339,7 @@ function ManagerMobileDrawer({
                       {badgeCount}
                     </span>
                   ) : null}
-                </Link>
+                </button>
               </SheetClose>
             )
           })}
@@ -397,4 +409,9 @@ function useManagerPendingCashOpeningCount() {
 
 function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`)
+}
+
+function getManagerTargetHref(href: string, searchParams: URLSearchParams | null) {
+  const params = new URLSearchParams(searchParams?.toString() ?? "")
+  return params.size > 0 ? `${href}?${params.toString()}` : href
 }

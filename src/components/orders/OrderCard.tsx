@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { normalizePaymentMethod, normalizePaymentStatus } from "@/lib/order-payment"
+import { getOrderDisplayId } from "@/lib/order-display-id"
 import { ORDER_OPERATION_STATUS, getOrderStatus } from "@/lib/order-lifecycle"
 import {
   getOrderItemName,
@@ -43,7 +44,7 @@ export function OrderCard({
   const paymentStatus = normalizePaymentStatus(order.paymentStatus)
   const paymentMethod = normalizePaymentMethod(order.paymentMethod)
   const isKitchen = mode === "kitchen"
-  const orderCode = `#${order.id.slice(-5).toUpperCase()}`
+  const orderCode = getOrderDisplayId(order)
   const tableLabel = order.tableNumber ?? order.tableId ?? (order as any).table ?? null
 
   return (

@@ -96,6 +96,7 @@ function CheckoutPage() {
       table: formData.table || undefined,
 
       // ✅ ALIGNÉ AVEC TON TYPE
+      kitchenStatus: "pending",
       orderStatus: "pending",
       paymentStatus: ORDER_PAYMENT_STATUS.UNPAID,
 

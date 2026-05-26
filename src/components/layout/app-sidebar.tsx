@@ -26,7 +26,7 @@ import {
   WalletCards,
 } from "lucide-react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { signOut } from "firebase/auth"
 
 import { ThemeToggle } from "@/components/ui/theme-toggle"
@@ -65,6 +65,7 @@ type NavSection = {
 const AppSidebarComponent = () => {
   const pathname = usePathname()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const currentPathname = pathname ?? ""
   const auth = useAuth()
   const { isMobile, setOpenMobile, state, toggleSidebar } = useSidebar()
@@ -107,10 +108,10 @@ const AppSidebarComponent = () => {
 
     if (role === ROLES.OWNER) {
       items.push({ name: "Analytics", href: "/owner", icon: LayoutDashboard })
-      items.push({ name: "Commandes", href: "/manager/commandes", icon: ListOrdered })
-      items.push({ name: "Caisse", href: "/manager/caisse", icon: Wallet })
-      items.push({ name: "Dépenses", href: "/manager/expenses", icon: ReceiptText })
-      items.push({ name: "Trésorerie", href: "/manager/treasury", icon: Banknote })
+      items.push({ name: "Commandes", href: "/owner/commandes", icon: ListOrdered })
+      items.push({ name: "Caisse", href: "/owner/caisse", icon: Wallet })
+      items.push({ name: "Dépenses", href: "/owner/depenses", icon: ReceiptText })
+      items.push({ name: "Trésorerie", href: "/owner/tresorerie", icon: Banknote })
       if (isMobile) return [{ label: "Terrain", items }]
       items.push({ name: "Menu", href: "/menu", icon: Store })
       items.push({ name: "Tables", href: "/tables", icon: Table2 })
@@ -125,9 +126,10 @@ const AppSidebarComponent = () => {
       items.push({ name: "Caisse", href: "/manager/caisse", icon: Wallet })
       items.push({ name: "Cuisine", href: "/manager/cuisine", icon: ChefHat })
       items.push({ name: "Menu", href: "/manager/menu", icon: Store })
+      items.push({ name: "Tables", href: "/manager/tables", icon: Table2 })
       items.push({ name: "Images", href: "/manager/images", icon: ImageIcon })
-      items.push({ name: "Dépenses", href: "/manager/expenses", icon: ReceiptText })
-      items.push({ name: "Trésorerie", href: "/manager/treasury", icon: Banknote })
+      items.push({ name: "Dépenses", href: "/manager/depenses", icon: ReceiptText })
+      items.push({ name: "Trésorerie", href: "/manager/tresorerie", icon: Banknote })
     }
 
     if (role === ROLES.CASHIER) {
@@ -222,13 +224,15 @@ const AppSidebarComponent = () => {
 
                   return (
                     <SidebarMenuItem key={item.href}>
-                      <Link
-                        href={item.href}
-                        prefetch
-                        onClick={() => setOpenMobile(false)}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenMobile(false)
+                          router.push(getSidebarTargetHref(item.href, searchParams))
+                        }}
                         title={isCollapsed ? item.name : undefined}
                         className={cn(
-                          "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                          "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors",
                           isCollapsed && "justify-center px-0",
                           isActive
                             ? "bg-primary text-white [&>svg]:text-white"
@@ -239,7 +243,7 @@ const AppSidebarComponent = () => {
                         <item.icon className="h-5 w-5" />
                         {!isCollapsed ? <span>{item.name}</span> : null}
                         {!isCollapsed && item.href === "/orders" && <OrdersBadge />}
-                      </Link>
+                      </button>
                     </SidebarMenuItem>
                   )
                 })}
@@ -318,6 +322,12 @@ function normalizePath(path: string) {
   }
 
   return path || "/"
+}
+
+function getSidebarTargetHref(href: string, searchParams: URLSearchParams | null) {
+  if (!href.startsWith("/owner")) return href
+  const params = new URLSearchParams(searchParams?.toString() ?? "")
+  return params.size > 0 ? `${href}?${params.toString()}` : href
 }
 
 function ButtonLink({ href, children }: { href: string; children: React.ReactNode }) {

@@ -172,16 +172,21 @@ service cloud.firestore {
     }
 
     function hasLegacyOrderStatusFields(data) {
-      return data.keys().hasAny(["status", "kitchenStatus"]);
+      return data.keys().hasAny(["status"]);
     }
 
     function changesLegacyOrderStatusFields() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasAny(["status", "kitchenStatus"]);
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(["status"]);
     }
 
     function hasValidOrderStatusIfPresent() {
       return !request.resource.data.keys().hasAny(["orderStatus"])
         || isValidOrderStatus(request.resource.data.orderStatus);
+    }
+
+    function hasValidKitchenStatusIfPresent() {
+      return !request.resource.data.keys().hasAny(["kitchenStatus"])
+        || isValidOrderStatus(request.resource.data.kitchenStatus);
     }
 
     function hasCashSessionForVerifiedPayment() {
@@ -205,11 +210,14 @@ service cloud.firestore {
         && request.resource.data.restaurantId == resource.data.restaurantId
         && !changesLegacyOrderStatusFields()
         && hasValidOrderStatusIfPresent()
+        && hasValidKitchenStatusIfPresent()
         && request.resource.data.paymentStatus == resource.data.paymentStatus
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "orderStatus",
+          "kitchenStatus",
           "statusHistory",
           "items",
+          "timestamps",
           "updatedAt"
         ]);
     }
@@ -241,6 +249,7 @@ service cloud.firestore {
         && request.resource.data.restaurantId == restaurantId
         && !changesLegacyOrderStatusFields()
         && hasValidOrderStatusIfPresent()
+        && hasValidKitchenStatusIfPresent()
         && (hasCashSessionForVerifiedPayment() || isKitchenProductionUpdate())
         && (!isCriticalOrderDataChange() || isKitchenProductionUpdate())
         && (
@@ -265,6 +274,66 @@ service cloud.firestore {
             && isRefundMarkerUpdate()
           )
         );
+    }
+
+    function canUpdatePublicTablePaymentRequest() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(["paymentRequest", "updatedAt"])
+        && (request.resource.data.paymentRequest.status in ["requested", "pending_confirmation"]);
+    }
+
+    function canCreatePublicTableSession(restaurantId) {
+      return request.resource.data.tableId is string
+        && request.resource.data.zoneId is string
+        && request.resource.data.status == "active"
+        && request.resource.data.closedAt == null
+        && request.resource.data.totalAmount == 0
+        && request.resource.data.paymentRequest.status == "none"
+        && exists(/databases/$(database)/documents/restaurants/$(restaurantId)/tables/$(request.resource.data.tableId))
+        && (
+          get(/databases/$(database)/documents/restaurants/$(restaurantId)/tables/$(request.resource.data.tableId)).data.zoneId == request.resource.data.zoneId
+          || (
+            !get(/databases/$(database)/documents/restaurants/$(restaurantId)/tables/$(request.resource.data.tableId)).data.keys().hasAny(["zoneId"])
+            && request.resource.data.zoneId == "main"
+          )
+        );
+    }
+
+    function canTouchPublicTableSession() {
+      return resource.data.status == "active"
+        && request.resource.data.tableId == resource.data.tableId
+        && request.resource.data.zoneId == resource.data.zoneId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["lastActivityAt"]);
+    }
+
+    function canClosePublicTableSession() {
+      return resource.data.status == "active"
+        && request.resource.data.status == "closed"
+        && request.resource.data.tableId == resource.data.tableId
+        && request.resource.data.zoneId == resource.data.zoneId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "closedAt", "lastActivityAt"]);
+    }
+
+    function canUpdatePublicTableSessionPointer(restaurantId, tableId) {
+      return request.resource.data.zoneId is string
+        && (
+          request.resource.data.zoneId == resource.data.zoneId
+          || (
+            !resource.data.keys().hasAny(["zoneId"])
+            && request.resource.data.zoneId == "main"
+          )
+        )
+        && request.resource.data.status == "occupied"
+        && request.resource.data.currentSessionId is string
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "currentSessionId",
+          "zoneId",
+          "updatedAt",
+          "lastActivityAt"
+        ])
+        && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.currentSessionId)).data.status == "active"
+        && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.currentSessionId)).data.tableId == tableId
+        && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/tableSessions/$(request.resource.data.currentSessionId)).data.zoneId == request.resource.data.zoneId;
     }
 
     function canUpdatePublicPaymentIntent(restaurantId) {
@@ -706,19 +775,25 @@ service cloud.firestore {
           && request.resource.data.zoneId is string
           && request.resource.data.status == "free"
           && request.resource.data.currentSessionId == null;
-        allow update: if canUseRestaurant(restaurantId);
+        allow update: if canUseRestaurant(restaurantId)
+          || canUpdatePublicTableSessionPointer(restaurantId, tableId);
         allow delete: if isSuperAdmin();
       }
 
       match /tableSessions/{sessionId} {
-        allow get: if canUseRestaurant(restaurantId);
+        allow get: if canUseRestaurant(restaurantId) || resource.data.status == "active";
         allow list: if canUseRestaurant(restaurantId);
-        allow create: if canUseRestaurant(restaurantId)
+        allow create: if (
+          canUseRestaurant(restaurantId)
           && request.resource.data.tableId is string
           && request.resource.data.zoneId is string
           && request.resource.data.status == "active"
-          && request.resource.data.closedAt == null;
-        allow update: if canUseRestaurant(restaurantId);
+          && request.resource.data.closedAt == null
+        ) || canCreatePublicTableSession(restaurantId);
+        allow update: if canUseRestaurant(restaurantId)
+          || canUpdatePublicTablePaymentRequest()
+          || canTouchPublicTableSession()
+          || canClosePublicTableSession();
         allow delete: if isSuperAdmin();
       }
 
@@ -746,6 +821,7 @@ service cloud.firestore {
           && !hasLegacyOrderStatusFields(request.resource.data)
           && request.resource.data.orderStatus is string
           && isValidOrderStatus(request.resource.data.orderStatus)
+          && hasValidKitchenStatusIfPresent()
           && hasCashSessionForVerifiedPayment()
           && (
             (
@@ -792,10 +868,15 @@ service cloud.firestore {
           || (
             resource.data.restaurantId == restaurantId
             && resource.data.source in ["client", "qr", "qr_table", "manual"]
-            && resource.data.sessionId is string
+            && (resource.data.sessionId is string || resource.data.tableSessionId is string)
           );
 
-        allow list: if canUseRestaurant(restaurantId);
+        allow list: if canUseRestaurant(restaurantId)
+          || (
+            resource.data.restaurantId == restaurantId
+            && resource.data.source in ["client", "qr", "qr_table", "manual"]
+            && (resource.data.sessionId is string || resource.data.tableSessionId is string)
+          );
         allow update: if canUpdateOrder(restaurantId)
           || canUpdatePublicPaymentIntent(restaurantId)
           || canAppendActiveDineInOrder(restaurantId);

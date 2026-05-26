@@ -1,48 +1,33 @@
 "use client"
 
 import * as React from "react"
-import { onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore"
-import { doc } from "firebase/firestore"
-import { useParams, useRouter } from "next/navigation"
+import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore"
+import { Banknote, CheckCircle, CreditCard, Utensils } from "lucide-react"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 
 import { OrderStepper } from "@/components/OrderStepper"
 import { PaymentBadge } from "@/components/PaymentBadge"
-import { useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
+import { useCollection, useDoc, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
+import { useToast } from "@/hooks/use-toast"
 import { PAYMENT_STATUS } from "@/lib/constants"
-import {
-  ORDER_OPERATION_STATUS,
-  getOrderStatus,
-  normalizeOrderType,
-} from "@/lib/order-lifecycle"
+import { getClientOrderStep, getClientStatusLabel } from "@/lib/getClientOrderStep"
+import { getOrderDisplayId } from "@/lib/order-display-id"
+import { normalizeOrderType } from "@/lib/order-lifecycle"
 import { CartProvider, useCart } from "@/modules/public/cart/CartContext"
 import CartDrawer from "@/modules/public/components/CartDrawer"
 import Header from "@/modules/public/components/Header"
 import PaymentModal from "@/modules/public/components/PaymentModal"
-import QRPaymentModal from "@/modules/public/components/QRPaymentModal"
 import { PublicBottomNavigation } from "@/modules/public/PublicPage"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
+import {
+  getAvailablePaymentMethods,
+  type AvailablePaymentMethod,
+} from "@/services/payment-methods.service"
 
 const TRACKING_CARD_CLASS =
-  "rounded-2xl bg-white p-5 text-slate-950 shadow ring-1 ring-slate-200/80"
+  "rounded-2xl border bg-card p-5 text-card-foreground shadow-sm"
 
 type ClientOrderType = "dine_in" | "pickup" | "delivery"
-type ClientStepKey = "pending" | "preparing" | "ready" | "served" | "picked_up"
-
-function getCurrentStepKey(order: RestaurantOrder, orderType: ClientOrderType): ClientStepKey {
-  const rawStatus = order.orderStatus
-
-  const orderStatus = getOrderStatus(order)
-  if (orderStatus === ORDER_OPERATION_STATUS.IN_PREPARATION) return "preparing"
-  if (orderStatus === ORDER_OPERATION_STATUS.READY) return "ready"
-
-  if (orderStatus === ORDER_OPERATION_STATUS.PICKED_UP) return "picked_up"
-
-  if (orderStatus === ORDER_OPERATION_STATUS.SERVED || orderStatus === ORDER_OPERATION_STATUS.COMPLETED) {
-    return orderType === "dine_in" ? "served" : "picked_up"
-  }
-
-  return "pending"
-}
 
 export default function ClientOrderTrackingPage() {
   return (
@@ -56,8 +41,10 @@ function ClientOrderTrackingContent() {
   const db = useFirestore()
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const routeParams = params ?? {}
   const { count } = useCart()
+  const { toast } = useToast()
   const restaurantId = routeParams.restaurantId as string | undefined
   const orderId = routeParams.orderId as string | undefined
 
@@ -67,7 +54,14 @@ function ClientOrderTrackingContent() {
   const [cartOpen, setCartOpen] = React.useState(false)
   const [isCashPaying, setIsCashPaying] = React.useState(false)
   const [isMobilePaying, setIsMobilePaying] = React.useState(false)
+  const [isConfirming, setIsConfirming] = React.useState(false)
   const [mobilePaymentOpen, setMobilePaymentOpen] = React.useState(false)
+  const [paymentMethods, setPaymentMethods] = React.useState<AvailablePaymentMethod[]>([])
+  const [paymentMethodsLoading, setPaymentMethodsLoading] = React.useState(false)
+  const [highlightedOrderIds, setHighlightedOrderIds] = React.useState<Set<string>>(new Set())
+  const feedbackInitializedRef = React.useRef(false)
+  const lastFeedbackAtRef = React.useRef(0)
+  const ordersEndRef = React.useRef<HTMLDivElement | null>(null)
 
   const restaurantRef = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
@@ -75,6 +69,26 @@ function ClientOrderTrackingContent() {
   }, [db, restaurantId])
 
   const { data: restaurant } = useDocOnce(restaurantRef)
+  const activeTableSessionId = ((order as any)?.tableSessionId as string | undefined) || null
+
+  const tableSessionOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId || !activeTableSessionId) return null
+    return query(
+      collection(db, "restaurants", restaurantId, "orders"),
+      where("tableSessionId", "==", activeTableSessionId),
+      orderBy("createdAt", "desc")
+    )
+  }, [activeTableSessionId, db, restaurantId])
+
+  const { data: tableSessionOrdersData } = useCollection(tableSessionOrdersQuery)
+
+  const tableSessionQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId || !activeTableSessionId) return null
+    return doc(db, "restaurants", restaurantId, "tableSessions", activeTableSessionId)
+  }, [activeTableSessionId, db, restaurantId])
+  const { data: tableSession } = useDoc(tableSessionQuery)
+
+  const localTableUserId = getLocalTableUserId()
 
   React.useEffect(() => {
     const primary = restaurant?.theme?.primary || "#f97316"
@@ -116,6 +130,105 @@ function ClientOrderTrackingContent() {
 
     return () => unsubscribe()
   }, [db, restaurantId, orderId])
+  React.useEffect(() => {
+    if (!db || !restaurantId || !order?.id) return
+
+    let cancelled = false
+
+    async function loadPaymentMethods() {
+      setPaymentMethodsLoading(true)
+      try {
+        const availableMethods = await getAvailablePaymentMethods(db, restaurantId as string, "qr", {
+          amount: getOrderTotal(order),
+        })
+        if (!cancelled) {
+          setPaymentMethods(availableMethods.filter((method) => method.type !== "cash"))
+        }
+      } catch (paymentError) {
+        console.error(paymentError)
+        if (!cancelled) setPaymentMethods([])
+      } finally {
+        if (!cancelled) setPaymentMethodsLoading(false)
+      }
+    }
+
+    loadPaymentMethods()
+
+    return () => {
+      cancelled = true
+    }
+  }, [db, order, restaurantId])
+
+  React.useEffect(() => {
+    feedbackInitializedRef.current = false
+    setHighlightedOrderIds(new Set())
+  }, [activeTableSessionId])
+
+  React.useEffect(() => {
+    if (!tableSessionOrdersQuery || !localTableUserId) return
+
+    const unsubscribe = onSnapshot(tableSessionOrdersQuery, (snapshot) => {
+      if (!feedbackInitializedRef.current) {
+        feedbackInitializedRef.current = true
+        return
+      }
+
+      snapshot.docChanges().forEach((change) => {
+        const changedOrder = { id: change.doc.id, ...change.doc.data() } as any
+        if (changedOrder.createdBy === localTableUserId) return
+
+        if (change.type === "added") {
+          triggerOrderFeedback({
+            orderId: changedOrder.id,
+            title: "Nouvelle commande ajoutÃ©e",
+            description: "Une personne de la table vient de commander.",
+          })
+          return
+        }
+
+        if (change.type === "modified") {
+          triggerOrderFeedback({
+            orderId: changedOrder.id,
+            title: "Commande mise Ã  jour",
+            description: getClientStatusLabel(changedOrder),
+          })
+        }
+      })
+    })
+
+    return () => unsubscribe()
+  }, [localTableUserId, tableSessionOrdersQuery])
+
+  function triggerOrderFeedback(input: { orderId: string; title: string; description: string }) {
+    const now = Date.now()
+    if (now - lastFeedbackAtRef.current < 2500) return
+    lastFeedbackAtRef.current = now
+
+    toast({
+      title: input.title,
+      description: input.description,
+    })
+
+    setHighlightedOrderIds((previous) => {
+      const next = new Set(previous)
+      next.add(input.orderId)
+      return next
+    })
+
+    window.setTimeout(() => {
+      setHighlightedOrderIds((previous) => {
+        const next = new Set(previous)
+        next.delete(input.orderId)
+        return next
+      })
+    }, 5000)
+
+    ordersEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+
+    if (window.navigator?.vibrate) {
+      window.navigator.vibrate(80)
+    }
+  }
 
   const slug = restaurant?.slug
   const homePath = slug ? `/${slug}` : "/"
@@ -138,7 +251,14 @@ function ClientOrderTrackingContent() {
     )
   }
 
-  if (error || !order) {
+  const tableSessionOrders = mergeOrdersById(tableSessionOrdersData, order)
+  const orders = tableSessionOrders
+  const mainOrder = orders[0] || (order as any)
+  
+  console.log("ORDERS:", orders)
+  console.log("MAIN ORDER:", mainOrder)
+
+  if (error || !mainOrder) {
     return (
       <PublicTrackingLayout
         restaurant={restaurant}
@@ -158,44 +278,42 @@ function ClientOrderTrackingContent() {
     )
   }
 
-  const orderType = normalizeOrderType(order.orderType) as ClientOrderType
-  const isQrTableOrder = orderType === "dine_in" && (order.source === "qr_table" || order.source === "qr")
-  const currentStepKey = getCurrentStepKey(order, orderType)
-  const isProductionComplete =
-    currentStepKey === "served" ||
-    currentStepKey === "picked_up"
-  const showPaymentSection = !isQrTableOrder && isProductionComplete && order.paymentMethod !== "cash"
-  const showQrPaymentSection =
-    isQrTableOrder &&
-    currentStepKey === "served" &&
-    order.paymentStatus === "unpaid"
-  const showCashMessage =
-    isProductionComplete &&
-    order.paymentMethod === "cash" &&
-    order.paymentStatus !== "paid"
-  const orderWithPaymentVerification = order as RestaurantOrder & {
+  const safeOrder = order || mainOrder
+  const rawOrderType = (safeOrder as any).type || safeOrder.orderType
+  const orderType = normalizeOrderType(safeOrder.orderType) as ClientOrderType
+  const isQrTableOrder = orderType === "dine_in" && (safeOrder.source === "qr_table" || safeOrder.source === "qr")
+  const step = getClientOrderStep(mainOrder)
+  const label = getClientStatusLabel(mainOrder)
+  const visibleTableSessionOrders = buildVisibleSessionOrders(tableSessionOrders, localTableUserId)
+  const activeOrders = tableSessionOrders.filter((sessionOrder: any) => getClientOrderStep(sessionOrder) !== 4)
+  const servedOrders = tableSessionOrders.filter((sessionOrder: any) => getClientOrderStep(sessionOrder) === 4)
+  const allServed = tableSessionOrders.length > 0 && activeOrders.length === 0
+  const sessionTotal = tableSessionOrders.reduce((sum: number, sessionOrder: any) => sum + getOrderTotal(sessionOrder), 0)
+  const paymentTargetOrders = tableSessionOrders.filter((sessionOrder: any) => sessionOrder.paymentStatus !== "paid")
+  const hasPendingPayment = paymentTargetOrders.length > 0
+  const isProductionComplete = step === 4
+  const orderWithPaymentVerification = safeOrder as RestaurantOrder & {
     paymentIntentStatus?: string | null
     paymentVerificationStatus?: string | null
   }
-  const paymentMethods = Array.isArray(restaurant?.settings?.paymentMethods)
-    ? restaurant.settings.paymentMethods.filter((method: any) => method?.name && method?.code)
-    : []
+  const orderDisplayId = getOrderDisplayId(safeOrder)
+  const orderPhone = safeOrder.customer?.phone?.trim()
+  const shouldShowPhone = isDeliveryOrderType(rawOrderType) || Boolean(orderPhone)
 
-  const handleCashPayment = async () => {
-    if (!db || !restaurantId || !order?.id || isCashPaying) return
+  const handleCashPaymentSession = async () => {
+    if (!safeOrder.tableSessionId) {
+      console.error("NO TABLE SESSION ID – BLOCK PAYMENT")
+      return
+    }
+    if (!db || !restaurantId || isCashPaying) return
 
     setIsCashPaying(true)
     try {
-      await updateDoc(doc(db, "restaurants", restaurantId, "orders", order.id), {
-        paymentMethod: "cash",
-        paymentMethodCode: null,
-        paymentType: "cash",
-        paymentStatus: "pending_cash",
-        paymentIntentStatus: "pending",
-        needsCashCollection: true,
-        source: "qr_table",
-        // Ne change pas le statut de production.
-        updatedAt: serverTimestamp(),
+      console.log("SESSION USED:", safeOrder.tableSessionId)
+      await updateDoc(doc(db, "restaurants", restaurantId, "tableSessions", safeOrder.tableSessionId), {
+        "paymentRequest.status": "requested",
+        "paymentRequest.method": "cash",
+        "paymentRequest.requestedAt": serverTimestamp(),
       })
     } catch (paymentError) {
       console.error(paymentError)
@@ -205,22 +323,65 @@ function ClientOrderTrackingContent() {
     }
   }
 
-  const handleMobilePayment = async () => {
-    if (!db || !restaurantId || !order?.id || isMobilePaying) return
+  const handleMobilePaymentSession = (method: AvailablePaymentMethod) => {
+    if (!safeOrder.tableSessionId) {
+      console.error("NO TABLE SESSION ID – BLOCK PAYMENT")
+      return
+    }
+    if (!db || !restaurantId || isMobilePaying) return
+
+    const sessionRef = doc(db, "restaurants", restaurantId, "tableSessions", safeOrder.tableSessionId)
+    const paymentRequest = {
+      status: "requested",
+      method: "mobile",
+      provider: method.name || method.code,
+      requestedAt: serverTimestamp(),
+    }
+
+    if (method.paymentCode && typeof window !== "undefined") {
+      window.location.href =
+        method.paymentCodeType === "ussd"
+          ? `tel:${encodeURIComponent(method.paymentCode)}`
+          : method.paymentCode
+    }
+
+    console.log("SESSION USED:", safeOrder.tableSessionId)
+    console.log("SESSION WRITE:", safeOrder.tableSessionId)
+    console.log("PAYMENT REQUEST:", paymentRequest)
 
     setIsMobilePaying(true)
-    try {
-      await updateDoc(doc(db, "restaurants", restaurantId, "orders", order.id), {
-        paymentMethod: "mobile",
-        paymentStatus: "pending_mobile",
-        updatedAt: serverTimestamp(),
+    updateDoc(sessionRef, { paymentRequest })
+      .catch(console.error)
+      .finally(() => {
+        setIsMobilePaying(false)
+        setMobilePaymentOpen(false)
       })
-      setMobilePaymentOpen(false)
-    } catch (paymentError) {
-      console.error(paymentError)
-      setError("Impossible d'enregistrer le paiement mobile.")
+  }
+
+  const handleConfirmMobilePayment = async () => {
+    if (!safeOrder.tableSessionId) {
+      console.error("NO TABLE SESSION ID – BLOCK PAYMENT")
+      return
+    }
+    if (!db || !restaurantId || isConfirming) return
+    setIsConfirming(true)
+    try {
+      const paymentRequest = {
+        status: "pending_confirmation",
+        method: "mobile",
+        provider: tableSession?.paymentRequest?.provider || "Mobile Money",
+        confirmedByClientAt: serverTimestamp(),
+      }
+      console.log("SESSION USED:", safeOrder.tableSessionId)
+      console.log("SESSION WRITE:", safeOrder.tableSessionId)
+      console.log("PAYMENT REQUEST:", paymentRequest)
+      await updateDoc(doc(db, "restaurants", restaurantId, "tableSessions", safeOrder.tableSessionId), {
+        paymentRequest,
+      })
+    } catch (e) {
+      console.error(e)
     } finally {
-      setIsMobilePaying(false)
+      setIsConfirming(false)
     }
   }
 
@@ -228,6 +389,7 @@ function ClientOrderTrackingContent() {
     <PublicTrackingLayout
       restaurant={restaurant}
       restaurantId={restaurantId}
+      tableContext={buildTableContextFromOrder(order)}
       count={count}
       cartOpen={cartOpen}
       setCartOpen={setCartOpen}
@@ -247,116 +409,103 @@ function ClientOrderTrackingContent() {
             Suivi commande
           </p>
           <h1 className="mt-1 text-2xl font-bold">
-            Suivi de la commande
+            Suivi de commande
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">Commande #{order.id.slice(-6)}</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Client: {order.customer?.name || "Client"}
-          </p>
+          <p className="mt-2 text-sm font-black text-muted-foreground">{orderDisplayId}</p>
+          {shouldShowPhone && orderPhone ? (
+            <p className="mt-1 text-sm text-muted-foreground">Télé phone : {orderPhone}</p>
+          ) : null}
         </section>
 
-        <section className={TRACKING_CARD_CLASS}>
-          <OrderStepper orderType={order.orderType} orderStatus={order.orderStatus} />
-        </section>
-
-        <section className={TRACKING_CARD_CLASS}>
-          <h2 className="font-semibold">Articles</h2>
-          <div className="mt-3 space-y-3">
-            {order.items.map((item) => (
-              <div key={`${item.productId}-${item.name}`} className="flex justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium">{item.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {item.quantity} x {item.unitPrice.toLocaleString()} FCFA
-                  </p>
-                </div>
-                <p className="text-sm font-semibold">
-                  {item.total.toLocaleString()} FCFA
-                </p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4 flex justify-between border-t pt-4 text-lg font-bold">
-            <span>Total</span>
-            <span>{order.total.toLocaleString()} FCFA</span>
-          </div>
-        </section>
-
-        {showPaymentSection && (
+        {mainOrder && (
           <section className={TRACKING_CARD_CLASS}>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-primary)]">
-                Paiement
-              </p>
-              <h2 className="text-xl font-black">Choisissez votre mode de paiement</h2>
-              <p className="text-sm text-muted-foreground">
-                Validez le règlement pour finaliser votre commande.
-              </p>
-            </div>
-
-            <div className="mt-4 grid gap-3">
-              <button
-                type="button"
-                onClick={handleCashPayment}
-                disabled={isCashPaying}
-                className="h-12 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-black text-white shadow-sm transition active:scale-[0.98] disabled:opacity-60"
-              >
-                {isCashPaying ? "Validation..." : "Payer à la caisse"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMobilePaymentOpen(true)}
-                className="h-12 rounded-xl border bg-background px-4 text-sm font-black text-foreground transition hover:bg-muted active:scale-[0.98]"
-              >
-                Payer avec Mobile Money
-              </button>
-            </div>
-          </section>
-        )}
-
-        {showQrPaymentSection ? (
-          <section className={TRACKING_CARD_CLASS}>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-primary)]">
-                Paiement
-              </p>
-              <h2 className="text-xl font-black">Votre commande est servie</h2>
-              <p className="text-sm text-muted-foreground">
-                Vous pouvez maintenant choisir le mode de règlement.
-              </p>
-            </div>
-
-            <QRPaymentModal
-              open={showQrPaymentSection}
-              restaurantId={restaurantId || ""}
-              order={order}
-              onClose={() => {}}
+            <OrderStepper 
+              orderType={mainOrder.orderType} 
+              kitchenStatus={mainOrder.kitchenStatus} 
+              legacyStatus={mainOrder.status}
+              createdAt={mainOrder.createdAt}
+              timestamps={mainOrder.timestamps}
             />
           </section>
-        ) : null}
-
-        {showCashMessage && (
-          <section className="rounded-2xl border-2 border-orange-200 bg-orange-50 p-5 text-slate-950 shadow">
-            <h2 className="text-lg font-black text-orange-600 dark:text-orange-400">Règlement à la caisse</h2>
-            <p className="mt-2 text-sm text-orange-700/80 dark:text-orange-300/80">
-              Un serveur viendra à votre table pour encaisser votre commande de {order.total.toLocaleString()} FCFA.
-            </p>
-          </section>
         )}
 
+        {allServed ? (
+          <section className="rounded-2xl border-2 border-orange-200 bg-orange-50 p-5 text-orange-950 shadow-lg dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-100">
+            <p className="text-xs font-black uppercase tracking-wide text-orange-700 dark:text-orange-300">
+              Total à payer
+            </p>
+            <p className="mt-2 text-4xl font-black text-orange-900 dark:text-orange-100">
+              {formatMoney(sessionTotal)} FCFA
+            </p>
+            
+            {tableSession?.paymentRequest?.status === "validated" ? (
+               <div className="mt-5 flex items-center gap-2 rounded-xl bg-green-500/10 p-3 text-sm font-black text-green-700 dark:text-green-300">
+                 <CheckCircle className="h-5 w-5" />
+                 Paiement confirmé
+               </div>
+            ) : tableSession?.paymentRequest?.status === "requested" && tableSession?.paymentRequest?.method === "cash" ? (
+               <div className="mt-5 rounded-xl border border-orange-300 bg-orange-100 p-4 text-center text-orange-800 dark:bg-orange-950/30 dark:text-orange-300">
+                 <p className="font-black text-lg animate-pulse">Un serveur arrive pour encaisser</p>
+               </div>
+            ) : tableSession?.paymentRequest?.status === "requested" && tableSession?.paymentRequest?.method === "mobile" ? (
+               <div className="mt-5">
+                 <button
+                   onClick={handleConfirmMobilePayment}
+                   disabled={isConfirming}
+                   className="w-full flex items-center justify-center h-14 rounded-xl bg-[var(--color-primary)] text-white text-sm font-black shadow-sm transition active:scale-[0.98] disabled:opacity-60 uppercase"
+                 >
+                   {isConfirming ? "..." : "J’ai payé"}
+                 </button>
+               </div>
+            ) : tableSession?.paymentRequest?.status === "pending_confirmation" ? (
+               <div className="mt-5 rounded-xl border border-orange-300 bg-orange-100 p-4 text-center text-orange-800 dark:bg-orange-950/30 dark:text-orange-300">
+                 <p className="font-black text-lg animate-pulse">Paiement effectué, en attente de validation</p>
+               </div>
+            ) : (
+               <div className="mt-5 space-y-3">
+                 {tableSession?.paymentRequest?.status === "rejected" ? (
+                    <div className="mb-3 rounded-xl bg-red-500/10 p-3 text-sm font-black text-red-700 dark:text-red-300">
+                      Paiement refusé, veuillez ré essayer.
+                    </div>
+                 ) : null}
+                 <p className="text-sm font-semibold text-orange-900 dark:text-orange-100">Comment souhaitez-vous payer ?</p>
+                 
+                 <div className="flex gap-3 overflow-x-auto pb-2">
+                   <button
+                     type="button"
+                     onClick={handleCashPaymentSession}
+                     disabled={isCashPaying}
+                     className="flex h-14 min-w-[120px] flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-black text-white shadow-sm transition active:scale-[0.98] disabled:opacity-60 whitespace-nowrap"
+                   >
+                     <Banknote className="h-5 w-5" />
+                     {isCashPaying ? "..." : "Espèces"}
+                   </button>
+                   
+                   {paymentMethods.map(method => (
+                     <button
+                       key={method.code}
+                       type="button"
+                       onClick={() => handleMobilePaymentSession(method)}
+                       disabled={isMobilePaying || paymentMethodsLoading}
+                       className="flex h-14 min-w-[120px] flex-1 items-center justify-center gap-2 rounded-xl border border-orange-300 bg-background px-4 text-sm font-black text-foreground transition hover:bg-muted active:scale-[0.98] disabled:opacity-60 whitespace-nowrap"
+                     >
+                       {method.logoUrl ? (
+                         <img src={method.logoUrl} alt={method.name} className="h-6 object-contain" />
+                       ) : (
+                         <CreditCard className="h-5 w-5 text-orange-600" />
+                       )}
+                       <span>{method.name}</span>
+                     </button>
+                   ))}
+                 </div>
+               </div>
+            )}
+          </section>
+        ) : null}
+        
         <PaymentBadge
           paymentIntentStatus={orderWithPaymentVerification.paymentIntentStatus}
           paymentVerificationStatus={orderWithPaymentVerification.paymentVerificationStatus}
-        />
-
-        <PaymentModal
-          open={mobilePaymentOpen}
-          methods={paymentMethods}
-          loading={isMobilePaying}
-          onClose={() => setMobilePaymentOpen(false)}
-          onConfirm={handleMobilePayment}
         />
 
       </div>
@@ -364,10 +513,99 @@ function ClientOrderTrackingContent() {
   )
 }
 
+function getOrderTotal(order: any) {
+  const explicit = Number(order?.total ?? order?.totalAmount)
+  if (Number.isFinite(explicit) && explicit > 0) return explicit
+
+  return (order?.items || []).reduce((sum: number, item: any) => sum + getItemTotal(item), 0)
+}
+
+function buildTableContextFromOrder(order: any) {
+  if (!order?.tableId) return undefined
+
+  return {
+    id: order.tableId,
+    name: order.table || order.tableName || order.tableId,
+    zoneId: order.zoneId || "main",
+    status: "occupied",
+    currentSessionId: order.tableSessionId || null,
+  }
+}
+
+function getLocalTableUserId() {
+  if (typeof window === "undefined") return null
+  return window.localStorage.getItem("tableUserId")
+}
+
+function buildVisibleSessionOrders(orders: any[], localTableUserId: string | null) {
+  const guestMap = new Map<string, string>()
+  let guestCount = 1
+
+  orders.forEach((order) => {
+    if (!order?.createdBy || order.createdBy === localTableUserId) return
+    if (!guestMap.has(order.createdBy)) {
+      guestMap.set(order.createdBy, `InvitÃ© ${guestCount}`)
+      guestCount += 1
+    }
+  })
+
+  return orders.map((order) => {
+    if (order?.createdBy && order.createdBy === localTableUserId) {
+      return { ...order, createdByLabel: "Toi" }
+    }
+
+    return {
+      ...order,
+      createdByLabel: order?.createdBy ? guestMap.get(order.createdBy) || "InvitÃ©" : "InvitÃ©",
+    }
+  })
+}
+
+function OrderItemImage({ item }: { item: any }) {
+  const imageUrl = item.imageUrl || item.image || item.productImageUrl || item.imageSnapshot
+
+  if (imageUrl) {
+    return (
+      <img
+        src={imageUrl}
+        alt={item.name || "Article"}
+        className="h-10 w-10 shrink-0 rounded-md object-cover"
+      />
+    )
+  }
+
+  return (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+      <Utensils className="h-4 w-4" />
+    </div>
+  )
+}
+
+function isDeliveryOrderType(type: string | null | undefined) {
+  return type === "delivery" || type === "livraison"
+}
+
+function getItemUnitPrice(item: any) {
+  return Number(item.unitPrice ?? item.price ?? item.priceSnapshot ?? 0)
+}
+
+function getItemTotal(item: any) {
+  const explicitTotal = Number(item.total)
+  if (Number.isFinite(explicitTotal) && explicitTotal > 0) return explicitTotal
+  return getItemUnitPrice(item) * Number(item.quantity || 0)
+}
+
+function formatMoney(value: unknown) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount)) return "0"
+  return Math.round(amount).toLocaleString("fr-FR")
+}
+
 function PublicTrackingLayout({
   children,
   restaurant,
   restaurantId,
+  tableContext,
   count,
   cartOpen,
   setCartOpen,
@@ -376,6 +614,7 @@ function PublicTrackingLayout({
   children: React.ReactNode
   restaurant: any
   restaurantId?: string
+  tableContext?: any
   count: number
   cartOpen: boolean
   setCartOpen: React.Dispatch<React.SetStateAction<boolean>>
@@ -389,7 +628,7 @@ function PublicTrackingLayout({
         onCartClick={() => setCartOpen(true)}
       />
 
-      <main className="px-4 py-5">{children}</main>
+      <main className="px-4 pb-5 pt-20">{children}</main>
 
       <PublicBottomNavigation
         active="tracking"
@@ -406,8 +645,25 @@ function PublicTrackingLayout({
         open={cartOpen}
         onClose={() => setCartOpen(false)}
         restaurantId={restaurantId}
+        tableContext={tableContext}
       />
     </div>
   )
 }
 
+
+
+function mergeOrdersById(...arrays: any[]) {
+  const map = new Map<string, any>()
+  for (const item of arrays) {
+    if (!item) continue
+    if (Array.isArray(item)) {
+      item.forEach((order) => {
+        if (order?.id) map.set(order.id, order)
+      })
+    } else if (item?.id) {
+      map.set(item.id, item)
+    }
+  }
+  return Array.from(map.values())
+}

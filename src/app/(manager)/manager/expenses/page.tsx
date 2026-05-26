@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { collection } from "firebase/firestore"
+import { collection, query, where } from "firebase/firestore"
 import { Banknote, Plus, ReceiptText, Trash2 } from "lucide-react"
 
 import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
@@ -15,6 +15,7 @@ import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { COLLECTION_NAMES } from "@/lib/constants"
+import { getDateRange, useTimeFilter } from "@/contexts/time-filter-context"
 import { cn } from "@/lib/utils"
 import {
   ExpensePaymentStatus,
@@ -53,6 +54,8 @@ export default function ManagerExpensesPage() {
   const db = useFirestore()
   const { restaurantId } = useRestaurant()
   const { user } = useTenant()
+  const { filter } = useTimeFilter()
+  const range = React.useMemo(() => getDateRange(filter), [filter])
   const [type, setType] = React.useState<ExpenseType>("other")
   const [paymentStatus, setPaymentStatus] = React.useState<ExpensePaymentStatus>("paid")
   const [amount, setAmount] = React.useState("")
@@ -81,8 +84,12 @@ export default function ManagerExpensesPage() {
 
   const expensesQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
-    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.EXPENSES)
-  }, [db, restaurantId])
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.EXPENSES),
+      where("createdAt", ">=", range.startDate),
+      where("createdAt", "<=", range.endDate)
+    )
+  }, [db, restaurantId, range.endDate, range.startDate])
   const { data: expenses, isLoading: expensesLoading } = useCollection<any>(expensesQuery)
 
   const service = React.useMemo(() => (db ? new SupplyExpenseService(db) : null), [db])
@@ -337,7 +344,7 @@ export default function ManagerExpensesPage() {
         <h2 className="text-lg font-black uppercase tracking-tight">Historique métier</h2>
         {safeExpenses.length === 0 ? (
           <div className="rounded-xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
-            Aucune dépense enregistrée.
+            Aucune donnée pour cette période
           </div>
         ) : (
           <div className="grid gap-3 xl:grid-cols-2">

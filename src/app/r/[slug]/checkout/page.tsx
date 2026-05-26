@@ -74,6 +74,7 @@ function CheckoutPage() {
         })),
         totalAmount: totalPrice,
         total: totalPrice,
+        kitchenStatus: "pending",
         orderStatus: "pending",
         paymentMethod: null,
         paymentStatus: null,

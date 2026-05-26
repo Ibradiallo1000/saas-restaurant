@@ -261,7 +261,10 @@ function PublicPageContent({
     const latestOrderId = window.localStorage.getItem(`restaurant_latest_order_${restaurantId}`)
 
     if (latestOrderId) {
-      router.push(`/order/${restaurantId}/${latestOrderId}`)
+      const latestTableSessionId = window.localStorage.getItem(`restaurant_latest_table_session_${restaurantId}`)
+      router.push(
+        `/order/${restaurantId}/${latestOrderId}${latestTableSessionId ? `?tableSessionId=${latestTableSessionId}` : ""}`
+      )
       return
     }
 

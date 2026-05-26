@@ -1,10 +1,13 @@
 import {
   collection,
   doc,
+  getDocs,
+  query,
   serverTimestamp,
   updateDoc,
   runTransaction,
   type Firestore,
+  where,
 } from "firebase/firestore"
 
 import { COLLECTION_NAMES } from "@/lib/constants"
@@ -17,7 +20,7 @@ import {
   normalizeOrderType,
 } from "@/lib/order-lifecycle"
 import { closeActiveTableSession } from "@/services/table-session.service"
-import { InventoryService } from "@/services/inventory.service"
+
 import {
   buildPaymentIdempotencyKey,
   normalizePaymentProvider,
@@ -209,20 +212,6 @@ export async function processOrderPaymentTransaction({
     return before
   })
 
-  if (method === "cash") {
-    const inventoryPaymentId = buildPaymentIdempotencyKey([
-      "order-payment",
-      restaurantId,
-      orderId,
-      cashSessionId,
-      "cash",
-    ])
-    await new InventoryService(db).handleOrderPaid({
-      ...result,
-      restaurantId,
-      paymentId: inventoryPaymentId,
-    })
-  }
 
   return result
 }
@@ -363,19 +352,6 @@ export async function validateMobilePaymentTransaction({
     return before
   })
 
-  const inventoryPaymentId = buildPaymentIdempotencyKey([
-    "order-payment",
-    restaurantId,
-    orderId,
-    cashSessionId,
-    "mobile_money",
-    normalizePaymentProvider(result.paymentMethod || "mobile_money"),
-  ])
-  await new InventoryService(db).handleOrderPaid({
-    ...result,
-    restaurantId,
-    paymentId: inventoryPaymentId,
-  })
 
   return result
 }
@@ -506,6 +482,16 @@ export async function releaseOrderTableIfNeeded(
   order: any
 ) {
   if (!isOrderServed(order) || !order.tableId) return
+  const tableSessionId = order.tableSessionId || order.sessionId
+
+  if (tableSessionId) {
+    const sessionOrders = await getOrdersForTableSession(db, restaurantId, tableSessionId)
+    const hasOpenOrder = sessionOrders.some((sessionOrder) => {
+      return !isOrderServed(sessionOrder) || !isOrderPaid(sessionOrder)
+    })
+
+    if (hasOpenOrder) return
+  }
 
   await closeActiveTableSession(db, restaurantId, order.tableId)
   await updateDoc(doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TABLES, order.tableId), {
@@ -514,6 +500,26 @@ export async function releaseOrderTableIfNeeded(
     currentOrderId: null,
     updatedAt: serverTimestamp(),
   })
+}
+
+async function getOrdersForTableSession(
+  db: Firestore,
+  restaurantId: string,
+  tableSessionId: string
+) {
+  const ordersRef = collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS)
+  const byTableSession = await getDocs(query(ordersRef, where("tableSessionId", "==", tableSessionId)))
+  const byLegacySession = await getDocs(query(ordersRef, where("sessionId", "==", tableSessionId)))
+  const ordersById = new Map<string, any>()
+
+  byTableSession.docs.forEach((orderDoc) => {
+    ordersById.set(orderDoc.id, { id: orderDoc.id, ...orderDoc.data() })
+  })
+  byLegacySession.docs.forEach((orderDoc) => {
+    ordersById.set(orderDoc.id, { id: orderDoc.id, ...orderDoc.data() })
+  })
+
+  return Array.from(ordersById.values())
 }
 
 function sanitizeAuditPayload(value: Record<string, any>) {

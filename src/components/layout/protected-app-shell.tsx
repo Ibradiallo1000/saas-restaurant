@@ -17,6 +17,7 @@ import { ROLES } from "@/lib/constants"
 import OperationalBottomNav from "@/components/mobile/OperationalBottomNav"
 import OperationalMobileHeader from "@/components/mobile/OperationalMobileHeader"
 import { RestaurantLiveDataProvider } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
+import { TimeFilterProvider } from "@/contexts/time-filter-context"
 
 type ProtectedAppShellProps = {
   children: React.ReactNode
@@ -36,9 +37,11 @@ export function ProtectedAppShell({ children, mode }: ProtectedAppShellProps) {
     <TenantProvider>
       <RestaurantProvider>
         <RestaurantThemeProvider>
-          <RestaurantLiveDataProvider>
-            <ProtectedAppShellContent mode={mode}>{children}</ProtectedAppShellContent>
-          </RestaurantLiveDataProvider>
+          <TimeFilterProvider>
+            <RestaurantLiveDataProvider>
+              <ProtectedAppShellContent mode={mode}>{children}</ProtectedAppShellContent>
+            </RestaurantLiveDataProvider>
+          </TimeFilterProvider>
         </RestaurantThemeProvider>
       </RestaurantProvider>
     </TenantProvider>

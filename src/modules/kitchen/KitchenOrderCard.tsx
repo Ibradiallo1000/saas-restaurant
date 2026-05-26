@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -17,10 +18,11 @@ import {
   type OrderOperationStatus,
   nextOrderStatus,
   normalizeOrderItemStatus,
-  normalizeOperationStatus,
   normalizeOrderType,
+  orderStatusFromKitchenStatus,
   isOrderPaid,
 } from "@/lib/order-lifecycle"
+import { getOrderDisplayId } from "@/lib/order-display-id"
 import { cn } from "@/lib/utils"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
 
@@ -172,7 +174,8 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
   const [nowMs, setNowMs] = React.useState(() => Date.now())
   const [isPaymentJustVerified, setIsPaymentJustVerified] = React.useState(false)
 
-  const orderStatus = normalizeOperationStatus(order.orderStatus)
+  if (!order.kitchenStatus) console.warn("Missing kitchenStatus", order.id)
+  const orderStatus = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
   const status = orderStatus
   const followingStatus = nextOrderStatus(orderStatus, order.orderType)
   const nextAction = followingStatus
@@ -185,7 +188,7 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
   const totalItems = order.items?.reduce((acc, item) => acc + item.quantity, 0) ?? 0
   const displayOrderType = getKitchenDisplayOrderType(order)
   const isTableOrder = displayOrderType === "dine_in"
-  const orderCode = `#${order.id.slice(-6).toUpperCase()}`
+  const orderCode = getOrderDisplayId(order)
   const orderTypeLabel = orderTypeLabels[displayOrderType]
   const contextLines = getKitchenContextLines(order, displayOrderType)
   const isPaymentLocked = isPaymentLockedForKitchen(order)
@@ -266,6 +269,13 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
       toast({
         title: "Statut mis a jour",
         description: `${orderCode} -> ${nextAction.label}`,
+      })
+    } catch (error) {
+      console.error(error)
+      toast({
+        title: "Mise à jour refusée",
+        description: "Impossible de synchroniser la commande avec la cuisine.",
+        variant: "destructive",
       })
     } finally {
       setIsUpdating(false)
@@ -363,7 +373,7 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
 
         <ul className="mt-3 space-y-2">
           {(order.items || []).slice(0, 5).map((item, index) => {
-            const itemStatus = normalizeOrderItemStatus((item as any).status ?? order.orderStatus)
+            const itemStatus = normalizeOrderItemStatus((item as any).status ?? order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
             const { options, extras, note } = parseItemDetails(item)
             
             return (
@@ -442,6 +452,9 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
                 {statusLabels[status] || status}
               </Badge>
             </DialogTitle>
+            <DialogDescription>
+              Détails opérationnels de la commande, produits, statut cuisine et informations client.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">

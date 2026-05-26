@@ -227,6 +227,7 @@ export default function CheckoutPublicModal({
         orderType: normalizedOrderType,
         publicOrderType: flow.orderType,
         source: "manual",
+        kitchenStatus: "pending",
         orderStatus: "pending",
         sessionId: null,
         tableId: null,

@@ -28,6 +28,7 @@ import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { getOptimizedImage } from "@/lib/image"
 import { COLLECTION_NAMES } from "@/lib/constants"
+import { getOrderDisplayId } from "@/lib/order-display-id"
 import { getFinancialSummary, getSupportedBusinessTimeZone } from "@/lib/finance/financial-summary"
 import {
   assertValidComponentMultiplier,
@@ -51,6 +52,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -1296,6 +1298,9 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
             <>
               <DialogHeader>
                 <DialogTitle className="text-2xl font-bold">Aperçu produit</DialogTitle>
+                <DialogDescription>
+                  Prévisualisation du produit tel qu'il apparaît dans le menu client.
+                </DialogDescription>
               </DialogHeader>
 
               <div className="space-y-6">
@@ -1525,7 +1530,7 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
             <AlertRow
               href="/manager/commandes?status=late"
               label={`${lateOrders.length} commande(s) en retard`}
-              context={lateOrders[0] ? `Commande #${String(lateOrders[0].id).slice(-6).toUpperCase()}` : "Cuisine a jour"}
+              context={lateOrders[0] ? getOrderDisplayId(lateOrders[0]) : "Cuisine a jour"}
               action="Voir"
               value={lateOrders.length}
               danger={lateOrders.length > 0}
@@ -1533,7 +1538,7 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
             <AlertRow
               href="/manager/caisse?filter=payments"
               label={`${unpaidServedOrders.length} paiement(s) a verifier`}
-              context={unpaidServedOrders[0] ? `Commande #${String(unpaidServedOrders[0].id).slice(-6).toUpperCase()}` : "Paiements a jour"}
+              context={unpaidServedOrders[0] ? getOrderDisplayId(unpaidServedOrders[0]) : "Paiements a jour"}
               action="Verifier"
               value={unpaidServedOrders.length}
               danger={unpaidServedOrders.length > 0}
@@ -1908,7 +1913,7 @@ function ManagerOrderCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <h2 className="truncate text-base font-black leading-tight">#{order.id.slice(-6).toUpperCase()}</h2>
+            <h2 className="truncate text-base font-black leading-tight">{getOrderDisplayId(order)}</h2>
             <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-black leading-none">
               {formatManagerStatus(status)}
             </Badge>

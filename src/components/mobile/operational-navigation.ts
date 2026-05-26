@@ -80,9 +80,9 @@ const bottomNavItemMap: Record<NavigationItemId, OperationalNavItem | null> = {
 
 const drawerItemMap: Record<NavigationItemId, OperationalDrawerItem | null> = {
   profil: { type: "profile", id: "profile", label: "Profil", icon: User },
-  parametres: { type: "link", id: "settings", label: "Parametres", href: "/settings", icon: Settings },
-  tresorerie: { type: "link", id: "treasury", label: "Tresorerie", href: "/manager/treasury", icon: Banknote },
-  depenses: { type: "link", id: "expenses", label: "Depenses", href: "/manager/expenses", icon: ReceiptText },
+  parametres: { type: "link", id: "settings", label: "Paramètres", href: "/settings", icon: Settings },
+  tresorerie: { type: "link", id: "treasury", label: "Trésorerie", href: "/manager/tresorerie", icon: Banknote },
+  depenses: { type: "link", id: "expenses", label: "Dépenses", href: "/manager/depenses", icon: ReceiptText },
   menu: { type: "link", id: "menu", label: "Menu", href: "/menu", icon: MenuSquare },
   tables: { type: "link", id: "tables", label: "Tables", href: "/tables", icon: Table2 },
   images: { type: "link", id: "images", label: "Images", href: "/images", icon: ImageIcon },
@@ -110,6 +110,7 @@ export function getNavigationByRole(role: string | null | undefined): Operationa
     .map((item) => {
       if (item.type === "link" && !isOwner) {
         if (item.id === "menu") return { ...item, href: "/manager/menu" }
+        if (item.id === "tables") return { ...item, href: "/manager/tables" }
         if (item.id === "images") return { ...item, href: "/manager/images" }
       }
       return item

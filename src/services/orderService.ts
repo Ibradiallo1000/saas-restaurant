@@ -18,7 +18,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import type { Order, OrderStatus } from "@/types/index";
-import { getOrderStatus, normalizeOperationStatus, toKitchenServedEventStatus } from "@/lib/order-lifecycle";
+import { getOrderStatus, normalizeOperationStatus, orderStatusFromKitchenStatus, toKitchenServedEventStatus } from "@/lib/order-lifecycle";
 
 const ORDERS_SUBCOLLECTION = (restaurantId: string) =>
   collection(db, "restaurants", restaurantId, "orders");
@@ -30,14 +30,16 @@ export const createOrder = async (
   companyId: string,
   order: Omit<Order, "id" | "createdAt">
 ) => {
-  const { status: _legacyStatus, kitchenStatus: _legacyKitchenStatus, ...safeOrder } = order as any;
+  const { status: legacyStatus, kitchenStatus, ...safeOrder } = order as any;
+  const initialKitchenStatus = orderStatusFromKitchenStatus(kitchenStatus ?? legacyStatus ?? safeOrder.orderStatus);
 
   return await addDoc(ORDERS_SUBCOLLECTION(companyId), {
     ...safeOrder,
-    orderStatus: normalizeOperationStatus(safeOrder.orderStatus),
+    kitchenStatus: initialKitchenStatus,
+    orderStatus: initialKitchenStatus,
     statusHistory: [
       {
-        status: normalizeOperationStatus(safeOrder.orderStatus),
+        status: initialKitchenStatus,
         at: new Date(),
         source: "order",
       },
@@ -59,7 +61,7 @@ export const listenOrders = (
   const constraints: QueryConstraint[] = [];
 
   if (statuses && statuses.length > 0) {
-    constraints.push(where("orderStatus", "in", statuses.map((status) => normalizeOperationStatus(status))));
+    constraints.push(where("kitchenStatus", "in", statuses.map((status) => orderStatusFromKitchenStatus(status))));
   }
 
   constraints.push(orderBy("createdAt", "desc"));
@@ -90,7 +92,7 @@ export const updateOrderStatus = async (
   const ref = doc(db, "restaurants", restaurantId, "orders", id);
   const normalizedStatus = normalizeOperationStatus(status);
   await updateDoc(ref, {
-    orderStatus: normalizedStatus,
+    kitchenStatus: normalizedStatus,
     statusHistory: arrayUnion({
       status: toKitchenServedEventStatus(normalizedStatus),
       at: new Date(),

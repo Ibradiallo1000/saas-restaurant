@@ -31,6 +31,7 @@ import {
 import { normalizePaymentMethod, paymentStatusForMethod, type PaymentMethod } from '@/lib/order-payment';
 import type { SelectedCartOption } from '@/modules/restaurant/types';
 import { LoyaltyService } from './loyalty.service';
+import { InventoryService } from './inventory.service';
 
 export interface OrderItemInput {
   id?: string;
@@ -51,6 +52,7 @@ export interface OrderInput {
   tableId?: string;
   zoneId?: string;
   sessionId?: string;
+  tableSessionId?: string;
   cashierId?: string;
   cashSessionId?: string;
   source?: 'qr' | 'pos';
@@ -92,11 +94,16 @@ export class OrderService {
       table: input.tableId || null,
       zoneId: input.zoneId || null,
       sessionId: input.sessionId || null,
+      tableSessionId:
+        normalizedOrderType === "dine_in"
+          ? input.tableSessionId || input.sessionId || null
+          : null,
       cashierId: input.cashierId || null,
       cashSessionId: input.cashSessionId || null,
       roomId: input.roomId || null,
       customerName: input.customerName || 'Client Anonyme',
       customerPhone: input.customerPhone || null,
+      kitchenStatus: ORDER_OPERATION_STATUS.PENDING,
       orderStatus: ORDER_OPERATION_STATUS.PENDING,
       statusHistory: [
         {
@@ -129,6 +136,8 @@ export class OrderService {
         quantity: item.quantity,
         total: item.priceSnapshot * item.quantity,
         selectedOptions: item.selectedOptions || [],
+        variant: (item as any).variant || null,
+        addons: (item as any).addons || [],
       })),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -193,7 +202,7 @@ export class OrderService {
     const normalizedStatus = normalizeOperationStatus(status);
 
     await updateDoc(orderRef, {
-      orderStatus: normalizedStatus,
+      kitchenStatus: normalizedStatus,
       statusHistory: arrayUnion({
         status: toKitchenServedEventStatus(normalizedStatus),
         at: new Date(),
@@ -201,6 +210,15 @@ export class OrderService {
       }),
       updatedAt: serverTimestamp(),
     });
+
+    if (normalizedStatus === 'preparing' && !orderData?.inventoryProcessed) {
+      try {
+        const order = { id: orderSnap.id, ...orderData } as any;
+        await new InventoryService(this.db).handleOrderSentToKitchen(order);
+      } catch (e) {
+        console.error('[inventory] failed to process order on preparing', e);
+      }
+    }
   }
 
   /**

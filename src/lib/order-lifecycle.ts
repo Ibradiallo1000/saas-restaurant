@@ -46,6 +46,8 @@ export type OrderItemStatus =
   (typeof ORDER_ITEM_STATUS)[keyof typeof ORDER_ITEM_STATUS]
 
 export type OrderLike = {
+  kitchenStatus?: string | null
+  status?: string | null
   orderStatus?: string | null
   paymentStatus?: string | null
   orderType?: string | null
@@ -71,7 +73,7 @@ export function normalizeOrderType(type: string | null | undefined) {
 }
 
 export function getKitchenStatus(order: OrderLike): KitchenLifecycleStatus {
-  return kitchenStatusFromOrderStatus(getOrderStatus(order))
+  return normalizeKitchenStatus(order.kitchenStatus ?? order.status ?? order.orderStatus)
 }
 
 export function getPaymentStatus(order: OrderLike): OrderPaymentLifecycleStatus {
@@ -169,7 +171,9 @@ export function normalizeKitchenStatus(
     case KITCHEN_STATUS.SERVIE:
     case "servie":
     case "served":
+    case "picked_up":
     case "terminee":
+    case "completed":
       return KITCHEN_STATUS.SERVIE
     default:
       return KITCHEN_STATUS.EN_ATTENTE
@@ -177,17 +181,17 @@ export function normalizeKitchenStatus(
 }
 
 export function getOrderStatus(order: OrderLike): OrderOperationStatus {
-  return normalizeOperationStatus(order.orderStatus)
+  return orderStatusFromKitchenStatus(order.kitchenStatus ?? order.status ?? order.orderStatus)
 }
 
 export function getOrderItemStatuses(order: OrderLike): OrderItemStatus[] {
   return (order.items || [])
-    .map((item) => normalizeOrderItemStatus(item.status ?? item.itemStatus ?? order.orderStatus))
+    .map((item) => normalizeOrderItemStatus(item.status ?? item.itemStatus ?? order.kitchenStatus ?? order.status ?? order.orderStatus))
     .filter((status): status is OrderItemStatus => Boolean(status))
 }
 
 export function normalizeOrderItemStatus(status: string | null | undefined): OrderItemStatus {
-  if (status === ORDER_OPERATION_STATUS.IN_PREPARATION || status === "in_preparation" || status === "preparation") {
+  if (status === ORDER_OPERATION_STATUS.IN_PREPARATION || status === "in_preparation" || status === "preparation" || status === "en_preparation") {
     return ORDER_ITEM_STATUS.PREPARING
   }
 

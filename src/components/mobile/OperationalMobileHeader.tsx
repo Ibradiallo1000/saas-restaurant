@@ -135,7 +135,7 @@ export default function OperationalMobileHeader() {
 }
 
 function isLateKitchenOrder(order: any) {
-  const status = order?.status || order?.orderStatus
+  const status = order?.kitchenStatus ?? order?.status
   if (status !== "pending" && status !== "preparing") return false
   const createdAt =
     order?.createdAt?.toDate?.().getTime?.() ??

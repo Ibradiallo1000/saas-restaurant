@@ -15,11 +15,12 @@ import {
   ORDER_OPERATION_STATUS,
   type OrderOperationStatus,
   itemStatusFromOperationStatus,
-  normalizeOperationStatus,
   normalizeOrderItemStatus,
   normalizeOrderType,
+  orderStatusFromKitchenStatus,
   toKitchenServedEventStatus,
 } from "@/lib/order-lifecycle"
+import { getOrderDisplayId } from "@/lib/order-display-id"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
 import { cn } from "@/lib/utils"
 import { KitchenOrderCard } from "@/modules/kitchen/KitchenOrderCard"
@@ -86,7 +87,8 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
       }
 
     kitchenOrders.forEach((order) => {
-      const kitchenStatus = normalizeOperationStatus(order.orderStatus)
+      if (!order.kitchenStatus) console.warn("Missing kitchenStatus", order.id)
+      const kitchenStatus = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
 
       if (kitchenStatus !== ORDER_OPERATION_STATUS.COMPLETED) {
         const columnStatus =
@@ -139,10 +141,10 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     const order = orders.find((currentOrder) => currentOrder.id === orderId)
     if (!order) return
 
-    const currentStatus = normalizeOperationStatus(order.orderStatus)
+    const currentStatus = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
     const nextItemStatus = itemStatusFromOperationStatus(newOrderStatus)
     const nextItems = (order.items || []).map((item) => {
-      const itemStatus = normalizeOrderItemStatus((item as any).status ?? order.orderStatus)
+      const itemStatus = normalizeOrderItemStatus((item as any).status ?? order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
 
       if (itemStatus !== itemStatusFromOperationStatus(currentStatus)) {
         return item
@@ -157,8 +159,10 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
 
     const orderRef = doc(restaurantOrdersRef(db, restaurantId), orderId)
     const historyStatus = toKitchenServedEventStatus(newOrderStatus)
+    const timestampField = getKitchenTimestampField(newOrderStatus)
     await updateDoc(orderRef, {
-      orderStatus: newOrderStatus,
+      kitchenStatus: newOrderStatus,
+      ...(timestampField ? { [`timestamps.${timestampField}`]: serverTimestamp() } : {}),
       statusHistory: arrayUnion({
         status: historyStatus,
         at: new Date(),
@@ -290,6 +294,14 @@ function getKitchenQueuePriority(order: RestaurantOrder) {
   return 2
 }
 
+function getKitchenTimestampField(status: OrderOperationStatus) {
+  if (status === ORDER_OPERATION_STATUS.IN_PREPARATION) return "preparingAt"
+  if (status === ORDER_OPERATION_STATUS.READY) return "readyAt"
+  if (status === ORDER_OPERATION_STATUS.SERVED) return "servedAt"
+  if (status === ORDER_OPERATION_STATUS.PICKED_UP) return "pickedUpAt"
+  return null
+}
+
 function getOrderPaymentStatus(order: RestaurantOrder) {
   return (order as { paymentStatus?: string | null }).paymentStatus ?? null
 }
@@ -300,7 +312,7 @@ function triggerKitchenAlert(
   order: RestaurantOrder,
   toast: ReturnType<typeof useToast>["toast"],
   title = "Commande prete pour preparation",
-  description = `#${order.id.slice(-6).toUpperCase()} est payee et debloquee.`
+  description = `${getOrderDisplayId(order)} est payee et debloquee.`
 ) {
   playNewOrderNotificationSound()
   toast({

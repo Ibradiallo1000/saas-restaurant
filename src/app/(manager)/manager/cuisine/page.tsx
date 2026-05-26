@@ -6,7 +6,8 @@ import { AlertTriangle, ChefHat, Clock } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { ORDER_OPERATION_STATUS, getOrderStatus } from "@/lib/order-lifecycle"
+import { getOrderDisplayId } from "@/lib/order-display-id"
+import { ORDER_OPERATION_STATUS, orderStatusFromKitchenStatus } from "@/lib/order-lifecycle"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 
 const KITCHEN_COLUMNS = [
@@ -19,7 +20,8 @@ const KITCHEN_COLUMNS = [
 const LATE_ORDER_THRESHOLD_MINUTES = 20
 
 function getManagerKitchenColumnStatus(order: any) {
-  const status = getOrderStatus(order)
+  if (!order.kitchenStatus) console.warn("Missing kitchenStatus", order.id)
+  const status = orderStatusFromKitchenStatus(order.kitchenStatus ?? order.status ?? order.orderStatus)
   if (status === ORDER_OPERATION_STATUS.PICKED_UP || status === ORDER_OPERATION_STATUS.COMPLETED) {
     return ORDER_OPERATION_STATUS.SERVED
   }
@@ -121,7 +123,7 @@ function ReadOnlyKitchenOrderCard({ order, now }: { order: any; now: number }) {
     <article className={`rounded-xl border bg-background p-3 shadow-sm ${late ? "border-red-300 bg-red-50/70 dark:border-red-900 dark:bg-red-950/20" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate text-base font-black">#{order.id.slice(-6).toUpperCase()}</h3>
+          <h3 className="truncate text-base font-black">{getOrderDisplayId(order)}</h3>
           <p className="text-xs font-bold uppercase text-muted-foreground">{getOrderTypeLabel(order)}</p>
         </div>
         <p className={`flex items-center gap-1 text-xs font-black ${late ? "text-red-600" : "text-muted-foreground"}`}>
@@ -168,7 +170,7 @@ function getOrderAgeMinutes(order: any, now: number) {
 }
 
 function isLateOrder(order: any, now: number) {
-  const status = getOrderStatus(order)
+  const status = orderStatusFromKitchenStatus(order.kitchenStatus ?? order.status ?? order.orderStatus)
   const isActionableStatus =
     status === ORDER_OPERATION_STATUS.PENDING ||
     status === ORDER_OPERATION_STATUS.IN_PREPARATION

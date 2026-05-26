@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { printCustomerReceipt, printKitchenTicket } from "@/lib/order-printing"
+import { getOrderDisplayId } from "@/lib/order-display-id"
 import { getOrderStatus } from "@/lib/order-lifecycle"
 import {
   getOrderItemName,
@@ -20,7 +21,7 @@ export function OrderDetails({ order }: { order: RestaurantOrder }) {
       <CardHeader className="space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <CardTitle>Commande #{order.id.slice(-6)}</CardTitle>
+            <CardTitle>{getOrderDisplayId(order)}</CardTitle>
             <p className="text-sm text-muted-foreground">
               {getOrderTypeLabel(order.type)} - {getOrderLocationLabel(order)}
             </p>

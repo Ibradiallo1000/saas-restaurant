@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore"
 
 import { COLLECTION_NAMES } from "@/lib/constants"
+import type { TableSessionPaymentRequest } from "@/modules/restaurant/types"
 
 export type TableStatus = "free" | "occupied"
 export type TableSessionStatus = "active" | "closed"
@@ -32,10 +33,13 @@ export type TableSessionRecord = {
   id: string
   tableId: string
   zoneId: string
+  createdAt?: unknown
   startedAt?: unknown
   lastActivityAt?: unknown
   closedAt: unknown | null
   status: TableSessionStatus
+  totalAmount?: number
+  paymentRequest?: TableSessionPaymentRequest
 }
 
 export type ActiveTableSession = {
@@ -43,7 +47,10 @@ export type ActiveTableSession = {
   tableName: string
   zoneId: string
   sessionId: string
+  tableSessionId: string
   status?: "active"
+  totalAmount?: number
+  createdAt?: unknown
   startedAt?: unknown
   lastActivityAt?: unknown
 }
@@ -168,6 +175,7 @@ export async function getOrCreateActiveTableSession(
         })
         transaction.update(tableRef, {
           status: "occupied",
+          zoneId,
           updatedAt: serverTimestamp(),
           lastActivityAt: serverTimestamp(),
         })
@@ -177,6 +185,9 @@ export async function getOrCreateActiveTableSession(
           tableName,
           zoneId,
           sessionId: table.currentSessionId,
+          tableSessionId: table.currentSessionId,
+          totalAmount: Number(existingSession.totalAmount ?? 0),
+          createdAt: existingSession.createdAt ?? existingSession.startedAt,
           startedAt: existingSession.startedAt,
           lastActivityAt: existingSession.lastActivityAt,
         }
@@ -195,14 +206,18 @@ export async function getOrCreateActiveTableSession(
     transaction.set(sessionRef, {
       tableId,
       zoneId,
+      createdAt: serverTimestamp(),
       startedAt: serverTimestamp(),
       lastActivityAt: serverTimestamp(),
       closedAt: null,
+      totalAmount: 0,
       status: "active",
+      paymentRequest: { status: "none" },
     })
     transaction.update(tableRef, {
       status: "occupied",
       currentSessionId: sessionRef.id,
+      zoneId,
       updatedAt: serverTimestamp(),
       lastActivityAt: serverTimestamp(),
     })
@@ -212,6 +227,8 @@ export async function getOrCreateActiveTableSession(
       tableName,
       zoneId,
       sessionId: sessionRef.id,
+      tableSessionId: sessionRef.id,
+      totalAmount: 0,
     }
   })
 }
@@ -234,6 +251,7 @@ export async function getTableSessionSnapshot(
       tableName: table.name || tableId,
       zoneId: table.zoneId || "main",
       sessionId: "",
+      tableSessionId: "",
     }
   }
 
@@ -242,6 +260,7 @@ export async function getTableSessionSnapshot(
     tableName: table.name || tableId,
     zoneId: table.zoneId || "main",
     sessionId: table.currentSessionId,
+    tableSessionId: table.currentSessionId,
   }
 }
 

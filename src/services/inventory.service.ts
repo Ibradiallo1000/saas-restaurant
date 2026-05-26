@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 /**
  * Minimal restaurant-scoped inventory service.
@@ -30,6 +30,7 @@ export type InventoryItemInput = {
   costPerUnit?: number;
   minThreshold?: number;
   lossRate?: number;
+  trackingMode?: 'manual' | 'auto';
 };
 
 type OrderLike = {
@@ -93,13 +94,16 @@ export class InventoryService {
       unit: input.unit,
       stockEstimated: normalizeStockValue(input.stockEstimated),
       lastCountedStock: normalizeStockValue(input.stockEstimated),
+      lastManualStock: normalizeStockValue(input.stockEstimated),
       avgDailyConsumption: 0,
       costPerUnit: normalizePositiveNumber(input.costPerUnit),
       minThreshold: normalizePositiveNumber(input.minThreshold),
       lossRate: normalizeLossRate(input.lossRate),
+      trackingMode: input.trackingMode || 'auto',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       lastCountedAt: serverTimestamp(),
+      lastManualCheckAt: serverTimestamp(),
     });
     await this.evaluateInventoryItemAlerts(restaurantId, itemRef.id);
     return itemRef.id;
@@ -140,6 +144,63 @@ export class InventoryService {
       updatedAt: serverTimestamp(),
     });
     await this.evaluateInventoryItemAlerts(restaurantId, itemId);
+  }
+
+  async updateTrackingMode(restaurantId: string, itemId: string, trackingMode: 'manual' | 'auto') {
+    if (!restaurantId || !itemId || !['manual', 'auto'].includes(trackingMode)) return;
+
+    const itemRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, 'inventoryItems', itemId);
+    await updateDoc(itemRef, {
+      trackingMode,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  async verifyInventoryStock(restaurantId: string, itemId: string, newStock: number) {
+    if (!restaurantId || !itemId || !Number.isFinite(newStock) || newStock < 0) return;
+
+    const itemRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, 'inventoryItems', itemId);
+    const movementRef = doc(collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.INVENTORY_MOVEMENTS));
+
+    await runTransaction(this.db, async (transaction) => {
+      const snap = await transaction.get(itemRef);
+      if (!snap.exists()) return;
+      const data = snap.data();
+
+      // Protection: double validation < 10 seconds
+      if (data.lastManualCheckAt) {
+        const lastCheck = data.lastManualCheckAt.toDate ? data.lastManualCheckAt.toDate() : new Date(data.lastManualCheckAt);
+        const now = new Date();
+        if (now.getTime() - lastCheck.getTime() < 10000) {
+          throw new Error("Vérification trop rapprochée, veuillez patienter 10 secondes.");
+        }
+      }
+
+      const previousStock = Number(data.stockEstimated || 0);
+      const difference = newStock - previousStock;
+
+      transaction.update(itemRef, {
+        stockEstimated: newStock,
+        lastManualStock: newStock,
+        lastCountedStock: newStock, // kept for retrocompatibility
+        lastCountedAt: serverTimestamp(),
+        lastManualCheckAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      if (difference !== 0) {
+        transaction.set(movementRef, {
+          restaurantId,
+          inventoryItemId: itemId,
+          type: 'manual_adjustment',
+          quantity: difference,
+          previousStock,
+          newStock,
+          source: 'manual',
+          createdAt: serverTimestamp(),
+        });
+      }
+    });
   }
 
   async reconcileStock(restaurantId: string, itemId: string, realValue: number) {
@@ -205,6 +266,112 @@ export class InventoryService {
 
     const details = await this.calculateOrderCostDetails(restaurantId, order);
     return details.totalCost;
+  }
+
+  async handleOrderSentToKitchen(order: OrderLike) {
+    try {
+      const restaurantId = order.restaurantId;
+      const orderId = order.id;
+      const items = Array.isArray(order.items) ? order.items : [];
+
+      if (!restaurantId || !orderId || items.length === 0) return;
+
+      const orderRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS, orderId);
+
+      await runTransaction(this.db, async (transaction) => {
+        const orderSnap = await transaction.get(orderRef);
+        if (!orderSnap.exists()) return;
+
+        const currentOrder = orderSnap.data();
+        if (currentOrder.inventoryProcessed) {
+          return;
+        }
+
+        // Calculer la consommation pour chaque item
+        const updates = new Map<string, number>();
+        for (const orderItem of items) {
+          const productId = orderItem.productId;
+          const orderQuantity = Number(orderItem.quantity || 0);
+          if (!productId || orderQuantity <= 0) continue;
+
+          const productRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.PRODUCTS, productId);
+          const productSnap = await transaction.get(productRef);
+          if (!productSnap.exists()) continue;
+
+          const product: any = { id: productSnap.id, ...productSnap.data() };
+          const consumption = computeConsumption(orderItem, product);
+
+          if (consumption.length === 0 && Array.isArray(product.components) && product.components.length > 0) {
+            console.error("[inventory] Aucune consommation calculée pour l'item", orderItem);
+          }
+
+          for (const line of consumption) {
+            const decrement = line.quantity * orderQuantity;
+            updates.set(line.inventoryItemId, (updates.get(line.inventoryItemId) || 0) + decrement);
+          }
+        }
+
+        const updatesArray = Array.from(updates.entries()).map(([itemId, quantity]) => ({ itemId, quantity }));
+
+        if (updatesArray.length === 0) {
+          transaction.update(orderRef, { inventoryProcessed: true });
+          return;
+        }
+
+        const inventoryUpdates = await Promise.all(
+          updatesArray.map(async (update) => {
+            const inventoryRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, 'inventoryItems', update.itemId);
+            const inventorySnap = await transaction.get(inventoryRef);
+            return { update, inventoryRef, inventorySnap };
+          })
+        );
+
+        for (const { update, inventoryRef, inventorySnap } of inventoryUpdates) {
+          if (!inventorySnap.exists()) continue;
+
+          const itemData = inventorySnap.data();
+          if (itemData.trackingMode === 'manual') continue;
+
+          const currentStock = Number(itemData.stockEstimated || 0);
+          const nextStock = currentStock - update.quantity;
+          
+          if (update.quantity > 50 || nextStock < -10) {
+            console.warn('[inventory] Variation de stock anormale ou critique', {
+              restaurantId,
+              inventoryItemId: update.itemId,
+              currentStock,
+              nextStock,
+              quantity: update.quantity,
+              orderId,
+            });
+          }
+
+          transaction.update(inventoryRef, {
+            stockEstimated: increment(-update.quantity),
+            updatedAt: serverTimestamp(),
+          });
+
+          const movementRef = doc(collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.INVENTORY_MOVEMENTS));
+          transaction.set(movementRef, {
+            restaurantId,
+            inventoryItemId: update.itemId,
+            type: 'sale',
+            quantity: -update.quantity,
+            source: 'system',
+            referenceId: orderId,
+            createdAt: serverTimestamp(),
+          });
+        }
+
+        transaction.update(orderRef, {
+          inventoryProcessed: true,
+          updatedAt: serverTimestamp(),
+        });
+      });
+
+    } catch (error) {
+      console.error('[inventory] handleOrderSentToKitchen failed', error);
+    }
   }
 
   async handleOrderPaid(order: OrderLike) {
