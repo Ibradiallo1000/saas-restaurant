@@ -32,6 +32,7 @@ export type CreateExpenseInput = {
   paymentStatus: ExpensePaymentStatus
   paidAmount?: number
   amount?: number
+  paymentAccountId?: string | null
   supplierId?: string | null
   supplierName?: string | null
   items?: SupplyExpenseItemInput[]
@@ -115,8 +116,23 @@ export class SupplyExpenseService {
       }
 
       const debtAmount = Math.max(0, amount - normalized.paidAmount)
+      const paidAccountId = normalized.paymentAccountId || "cash"
+      const paymentAccountRef = normalized.paidAmount > 0
+        ? doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TREASURY_ACCOUNTS, paidAccountId)
+        : null
+      const paymentAccountSnap = paymentAccountRef ? await transaction.get(paymentAccountRef) : null
+      if (paymentAccountRef && !paymentAccountSnap?.exists()) {
+        throw new Error("Source de paiement introuvable.")
+      }
+      if (paymentAccountSnap?.exists()) {
+        const balance = normalizePositiveNumber(paymentAccountSnap.data().balance)
+        if (balance < normalized.paidAmount) {
+          throw new Error("Solde insuffisant sur la source de paiement.")
+        }
+      }
+
       const cashMovementRef = normalized.paidAmount > 0
-        ? doc(collection(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_MOVEMENTS))
+        ? doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_MOVEMENTS, `expense-${expenseRef.id}`)
         : null
 
       transaction.set(expenseRef, {
@@ -126,6 +142,8 @@ export class SupplyExpenseService {
         paidAmount: normalized.paidAmount,
         debtAmount,
         paymentStatus: normalized.paymentStatus,
+        paymentAccountId: normalized.paidAmount > 0 ? paidAccountId : null,
+        paymentAccountName: paymentAccountSnap?.data()?.name || null,
         supplierId: normalized.supplierId,
         supplierName: normalized.supplierName || supplierSnap?.data()?.name || null,
         category: normalized.category,
@@ -174,14 +192,27 @@ export class SupplyExpenseService {
         transaction.set(cashMovementRef, {
           restaurantId,
           type: "expense",
+          direction: "out",
           amount: normalized.paidAmount,
-          source: "manual",
+          source: "expense",
+          accountId: paidAccountId,
+          paymentMethod: getPaymentMethodFromAccount(paymentAccountSnap?.data()),
+          paymentProvider: paymentAccountSnap?.data()?.provider || paidAccountId,
           category: normalized.type,
+          label: getCashMovementReason(normalized.type, normalized.note),
           reason: getCashMovementReason(normalized.type, normalized.note),
           supplierId: normalized.supplierId,
           expenseId: expenseRef.id,
+          sourceExpenseId: expenseRef.id,
           createdBy: normalized.createdBy,
+          createdByRole: "manager",
           createdAt: serverTimestamp(),
+          occurredAt: serverTimestamp(),
+        })
+
+        transaction.update(paymentAccountRef!, {
+          balance: increment(-normalized.paidAmount),
+          updatedAt: serverTimestamp(),
         })
       }
 
@@ -280,6 +311,8 @@ function normalizeExpenseInput(input: CreateExpenseInput) {
   if (paymentStatus === "partial" && paidAmount <= 0) throw new Error("Montant partiel invalide.")
   if (paidAmount > amount) throw new Error("Le montant payé dépasse le total.")
 
+  if (paidAmount > 0 && !input.paymentAccountId?.trim()) throw new Error("Source de paiement obligatoire.")
+
   return {
     type,
     paymentStatus,
@@ -287,6 +320,7 @@ function normalizeExpenseInput(input: CreateExpenseInput) {
     paidAmount,
     supplierId: input.supplierId?.trim() || null,
     supplierName: input.supplierName?.trim() || null,
+    paymentAccountId: input.paymentAccountId?.trim() || null,
     items,
     category: input.category?.trim() || null,
     note: input.note?.trim() || null,
@@ -320,4 +354,10 @@ function getCashMovementReason(type: ExpenseType, note: string | null) {
   if (type === "supply") return "Approvisionnement"
   if (type === "salary") return "Salaire"
   return "Dépense"
+}
+
+function getPaymentMethodFromAccount(account: any) {
+  if (account?.kind === "mobile_money") return "mobile_money"
+  if (account?.kind === "bank") return "bank"
+  return "cash"
 }

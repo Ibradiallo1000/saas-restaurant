@@ -22,6 +22,7 @@ import {
   ExpenseType,
   SupplyExpenseService,
 } from "@/services/supply-expense.service"
+import { TreasuryService, getTreasuryAccountLabel, type TreasuryAccount } from "@/services/treasury.service"
 
 type Supplier = {
   id: string
@@ -60,6 +61,7 @@ export default function ManagerExpensesPage() {
   const [paymentStatus, setPaymentStatus] = React.useState<ExpensePaymentStatus>("paid")
   const [amount, setAmount] = React.useState("")
   const [paidAmount, setPaidAmount] = React.useState("")
+  const [paymentAccountId, setPaymentAccountId] = React.useState("cash")
   const [supplierId, setSupplierId] = React.useState("")
   const [newSupplierName, setNewSupplierName] = React.useState("")
   const [newSupplierPhone, setNewSupplierPhone] = React.useState("")
@@ -69,6 +71,7 @@ export default function ManagerExpensesPage() {
   ])
   const [saving, setSaving] = React.useState(false)
   const [feedback, setFeedback] = React.useState("")
+  const [treasurySetupStatus, setTreasurySetupStatus] = React.useState<"idle" | "creating" | "error">("idle")
 
   const suppliersQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
@@ -92,13 +95,52 @@ export default function ManagerExpensesPage() {
   }, [db, restaurantId, range.endDate, range.startDate])
   const { data: expenses, isLoading: expensesLoading } = useCollection<any>(expensesQuery)
 
+  const treasuryAccountsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TREASURY_ACCOUNTS)
+  }, [db, restaurantId])
+  const { data: treasuryAccounts, isLoading: treasuryAccountsLoading } = useCollection<TreasuryAccount>(treasuryAccountsQuery)
+
   const service = React.useMemo(() => (db ? new SupplyExpenseService(db) : null), [db])
+  const treasuryService = React.useMemo(() => (db ? new TreasuryService(db) : null), [db])
   const safeSuppliers = suppliers || []
   const safeInventoryItems = inventoryItems || []
+  const safeTreasuryAccounts = React.useMemo(
+    () => (treasuryAccounts || []).filter((account) => account.active !== false),
+    [treasuryAccounts]
+  )
   const safeExpenses = React.useMemo(
     () => [...(expenses || [])].sort((a, b) => getTimeMs(b.createdAt) - getTimeMs(a.createdAt)),
     [expenses]
   )
+
+  const ensureTreasuryAccounts = React.useCallback(async () => {
+    if (!treasuryService || !restaurantId || treasurySetupStatus === "creating") return
+    setTreasurySetupStatus("creating")
+    try {
+      await treasuryService.ensureDefaultTreasuryAccounts(restaurantId)
+      setTreasurySetupStatus("idle")
+    } catch (error) {
+      console.warn("[expenses] treasury accounts unavailable", error)
+      setTreasurySetupStatus("error")
+    }
+  }, [restaurantId, treasuryService, treasurySetupStatus])
+
+  React.useEffect(() => {
+    if (!treasuryService || !restaurantId || safeTreasuryAccounts.length > 0 || treasurySetupStatus !== "idle") return
+    ensureTreasuryAccounts()
+  }, [ensureTreasuryAccounts, restaurantId, safeTreasuryAccounts.length, treasuryService, treasurySetupStatus])
+
+  React.useEffect(() => {
+    if (paymentStatus === "unpaid") return
+    if (safeTreasuryAccounts.length === 0) {
+      setPaymentAccountId("")
+      return
+    }
+    if (!safeTreasuryAccounts.some((account) => account.id === paymentAccountId)) {
+      setPaymentAccountId(safeTreasuryAccounts[0]?.id || "")
+    }
+  }, [paymentAccountId, paymentStatus, safeTreasuryAccounts])
 
   const supplyTotal = React.useMemo(() => {
     return lines.reduce((sum, line) => {
@@ -120,6 +162,7 @@ export default function ManagerExpensesPage() {
     Boolean(service && restaurantId && user) &&
     effectiveAmount > 0 &&
     effectivePaidAmount <= effectiveAmount &&
+    (effectivePaidAmount <= 0 || (safeTreasuryAccounts.length > 0 && Boolean(paymentAccountId))) &&
     (!requiresSupplier || Boolean(supplierId)) &&
     (type !== "supply" || getValidSupplyLines(lines, safeInventoryItems).length > 0)
 
@@ -151,6 +194,7 @@ export default function ManagerExpensesPage() {
         type,
         paymentStatus,
         paidAmount: effectivePaidAmount,
+        paymentAccountId: effectivePaidAmount > 0 ? paymentAccountId : null,
         amount: type === "supply" ? undefined : effectiveAmount,
         supplierId: supplierId || null,
         supplierName: selectedSupplier?.name || null,
@@ -164,6 +208,7 @@ export default function ManagerExpensesPage() {
       setNote("")
       setLines([{ inventoryItemId: "", quantity: "", unitCost: "" }])
       setPaymentStatus("paid")
+      setPaymentAccountId("cash")
       setFeedback("Dépense enregistrée")
       window.setTimeout(() => setFeedback(""), 2500)
     } finally {
@@ -171,7 +216,7 @@ export default function ManagerExpensesPage() {
     }
   }
 
-  if (!restaurantId || suppliersLoading || inventoryLoading || expensesLoading) return <AdminRouteSkeleton />
+  if (!restaurantId || suppliersLoading || inventoryLoading || expensesLoading || treasuryAccountsLoading) return <AdminRouteSkeleton />
 
   return (
     <main className="space-y-5 pb-24 md:pb-6">
@@ -299,8 +344,64 @@ export default function ManagerExpensesPage() {
                 </div>
               ) : null}
               <p className="text-sm font-bold text-muted-foreground">
-                Cash impacté maintenant : {formatMoney(effectivePaidAmount)} FCFA
+                Trésorerie impactée maintenant : {formatMoney(effectivePaidAmount)} FCFA
               </p>
+              {paymentStatus !== "unpaid" && safeTreasuryAccounts.length === 0 ? (
+                <div className="rounded-lg border border-orange-300 bg-orange-50 p-3 text-orange-900">
+                  <p className="text-sm font-black">Configuration trésorerie requise</p>
+                  <p className="mt-1 text-sm font-semibold">
+                    Avant d'enregistrer une dépense payée, il faut créer les comptes qui représentent l'argent du restaurant : Cash physique et Mobile Money.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-3 bg-white font-black"
+                    disabled={treasurySetupStatus === "creating"}
+                    onClick={ensureTreasuryAccounts}
+                  >
+                    {treasurySetupStatus === "creating" ? "Création..." : "Créer les comptes de trésorerie"}
+                  </Button>
+                  {treasurySetupStatus === "error" ? (
+                    <p className="mt-2 text-xs font-bold">
+                      Création impossible pour le moment. Vérifie que les règles Firestore sont déployées.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              {paymentStatus !== "unpaid" && safeTreasuryAccounts.length > 0 ? (
+                <div className="space-y-2">
+                  <Label>Source de paiement</Label>
+                  <select
+                    value={paymentAccountId}
+                    onChange={(event) => setPaymentAccountId(event.target.value)}
+                    disabled={safeTreasuryAccounts.length === 0}
+                    className="h-11 w-full rounded-md border bg-background px-3 text-sm font-bold"
+                  >
+                    {safeTreasuryAccounts.length === 0 ? (
+                      <option value="">Aucun compte disponible</option>
+                    ) : (
+                      safeTreasuryAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name || getTreasuryAccountLabel(account.id)} - {formatMoney(account.balance)} FCFA
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              ) : null}
+              {paymentStatus !== "unpaid" && safeTreasuryAccounts.length > 0 ? (
+                <div className="rounded-lg border bg-card p-3">
+                  <p className="text-xs font-black uppercase text-muted-foreground">Argent disponible</p>
+                  <div className="mt-2 grid gap-2">
+                    {safeTreasuryAccounts.map((account) => (
+                      <div key={account.id} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="font-bold">{account.name || getTreasuryAccountLabel(account.id)}</span>
+                        <span className="font-black">{formatMoney(account.balance)} FCFA</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="space-y-3">
@@ -361,6 +462,11 @@ export default function ManagerExpensesPage() {
                 </div>
                 {expense.supplierName ? (
                   <p className="mt-2 text-sm font-bold">Fournisseur : {expense.supplierName}</p>
+                ) : null}
+                {expense.paymentAccountName || expense.paymentAccountId ? (
+                  <p className="mt-2 text-sm font-bold">
+                    Source : {expense.paymentAccountName || getTreasuryAccountLabel(expense.paymentAccountId)}
+                  </p>
                 ) : null}
                 {expense.note ? <p className="mt-2 rounded-lg bg-muted p-2 text-sm">{expense.note}</p> : null}
               </article>

@@ -156,6 +156,7 @@ export const COLLECTION_NAMES = {
   ORDER_ITEMS: 'orderItems',
   PAYMENTS: 'payments',
   CASH_MOVEMENTS: 'cashMovements',
+  TREASURY_ACCOUNTS: 'treasuryAccounts',
   EXPENSES: 'expenses',
   EXPENSE_LOGS: 'expenseLogs',
   SUPPLIERS: 'suppliers',

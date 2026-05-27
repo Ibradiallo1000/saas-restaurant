@@ -733,14 +733,39 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      match /treasuryAccounts/{accountId} {
+        allow get, list: if canApproveCashSession(restaurantId) || canUseRestaurant(restaurantId);
+        allow create: if (canApproveCashSession(restaurantId) || canWriteRestaurantBusinessDocs(restaurantId))
+          && accountId in ["cash", "mobile_money", "bank"]
+          && request.resource.data.id == accountId
+          && request.resource.data.name is string
+          && request.resource.data.kind in ["cash", "mobile_money", "bank"]
+          && request.resource.data.balance is number
+          && request.resource.data.balance >= 0
+          && request.resource.data.currency is string
+          && request.resource.data.active is bool
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.updatedAt is timestamp;
+        allow update: if (canApproveCashSession(restaurantId) || canWriteRestaurantBusinessDocs(restaurantId))
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.name is string
+          && request.resource.data.kind == resource.data.kind
+          && request.resource.data.balance is number
+          && request.resource.data.balance >= 0
+          && request.resource.data.currency is string
+          && request.resource.data.active is bool
+          && request.resource.data.updatedAt is timestamp;
+        allow delete: if false;
+      }
+
       match /cashMovements/{movementId} {
         allow get, list: if canUseRestaurant(restaurantId);
-        allow create: if canApproveCashSession(restaurantId)
+        allow create: if (canApproveCashSession(restaurantId) || canWriteRestaurantBusinessDocs(restaurantId))
           && request.resource.data.restaurantId == restaurantId
           && request.resource.data.type in ["deposit", "expense", "transfer"]
           && request.resource.data.amount is number
           && request.resource.data.amount > 0
-          && request.resource.data.source in ["session", "manual"]
+          && request.resource.data.source in ["session", "manual", "expense", "payment", "transfer"]
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.createdAt is timestamp
           && (
@@ -748,7 +773,11 @@ service cloud.firestore {
             || (
               request.resource.data.source == "session"
               && request.resource.data.sessionId is string
-              && movementId == "session-" + request.resource.data.sessionId
+              && (
+                movementId == "session-" + request.resource.data.sessionId
+                || movementId == "session-" + request.resource.data.sessionId + "-cash"
+                || movementId == "session-" + request.resource.data.sessionId + "-mobile"
+              )
               && !exists(/databases/$(database)/documents/restaurants/$(restaurantId)/cashMovements/$(movementId))
             )
           );

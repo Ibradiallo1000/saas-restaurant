@@ -19,6 +19,7 @@ import { getDateRange, useTimeFilter } from "@/contexts/time-filter-context"
 import { getFinancialSummary } from "@/lib/finance/financial-summary"
 import { cn } from "@/lib/utils"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
+import { TreasuryService } from "@/services/treasury.service"
 
 export default function ManagerCaissePage() {
   const db = useFirestore()
@@ -116,6 +117,7 @@ export default function ManagerCaissePage() {
     }
   }
   const { cashSessionRequests, cashSessions, payments, isLoadingOrders, isLoadingSessions } = useRestaurantLiveData()
+  const treasuryService = React.useMemo(() => (db ? new TreasuryService(db) : null), [db])
   const [processingOrderId, setProcessingOrderId] = React.useState<string | null>(null)
   const [validatingSessionId, setValidatingSessionId] = React.useState<string | null>(null)
   const [activatingRequestId, setActivatingRequestId] = React.useState<string | null>(null)
@@ -263,67 +265,22 @@ export default function ManagerCaissePage() {
   }
 
   const validateSession = async (session: SessionValidationRow, flag?: "discrepancy") => {
-    if (!db || !restaurantId || !user || !canValidateCash) return
+    if (!treasuryService || !restaurantId || !user || !canValidateCash) return
 
     setValidatingSessionId(session.id)
     try {
-      const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS, session.id)
-      const movementRef = doc(
-        db,
-        COLLECTION_NAMES.RESTAURANTS,
+      await treasuryService.postCashSessionMovementToTreasury({
         restaurantId,
-        COLLECTION_NAMES.CASH_MOVEMENTS,
-        `session-${session.id}`
-      )
-
-      await runTransaction(db, async (transaction) => {
-        const sessionSnap = await transaction.get(sessionRef)
-        const movementSnap = await transaction.get(movementRef)
-        if (!sessionSnap.exists()) throw new Error("Session introuvable.")
-        if (sessionSnap.data().validatedByManager || sessionSnap.data().status === "validated") return
-
-        transaction.update(sessionRef, {
-          status: "validated",
-          validatedByManager: true,
-          validatedBy: user.uid,
-          validatedAt: serverTimestamp(),
-          validationFlag: flag ?? null,
-          discrepancyAmount: flag === "discrepancy" ? session.difference : 0,
-          calculatedTotal: session.calculatedTotal,
-          calculatedCash: session.calculatedCash,
-          calculatedMobile: session.calculatedMobile,
-          calculatedOrders: session.totalOrders,
-          discrepancyStatus: flag === "discrepancy" ? "investigate" : "validated",
-          discrepancyReason: discrepancyReasons[session.id]?.trim() || null,
-          investigationRequired: flag === "discrepancy",
-          depositCreated: true,
-          updatedAt: serverTimestamp(),
-        })
-
-        if (movementSnap.exists()) {
-          console.info("[finance] depot session deja existant", {
-            sessionId: session.id,
-            amount: session.calculatedTotal,
-          })
-          return
-        }
-
-        console.info("[finance] creation depot session", {
-          sessionId: session.id,
-          amount: session.calculatedTotal,
-        })
-        transaction.set(movementRef, {
-          restaurantId,
-          type: "deposit",
-          amount: session.calculatedTotal,
-          source: "session",
-          sessionId: session.id,
-          createdAt: serverTimestamp(),
-          createdBy: user.uid,
-          reason: "Validation manager de session caisse",
-          category: "session",
-          discrepancyReason: discrepancyReasons[session.id]?.trim() || null,
-        })
+        sessionId: session.id,
+        managerId: user.uid,
+        managerRole: role || "manager",
+        calculatedTotal: session.calculatedTotal,
+        calculatedCash: session.calculatedCash,
+        calculatedMobile: session.calculatedMobile,
+        totalOrders: session.totalOrders,
+        difference: session.difference,
+        validationFlag: flag ?? null,
+        discrepancyReason: discrepancyReasons[session.id]?.trim() || null,
       })
     } finally {
       setValidatingSessionId(null)
