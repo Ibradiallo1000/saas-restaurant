@@ -28,14 +28,14 @@ export default function OperationalMobileHeader() {
   const router = useRouter()
   const { restaurant } = useRestaurant()
   const { user, role } = useTenant()
-  const { cashSessionRequests, unpaidServedCount, activeOrders } = useRestaurantLiveData()
+  const { cashSessionRequests, pendingCashValidationCount, unpaidServedCount, activeOrders } = useRestaurantLiveData()
   const restaurantName = restaurant?.name?.trim() || "Restaurant"
   const userLabel = user?.displayName || user?.email?.split("@")[0] || "Utilisateur"
   const lateOrdersCount = React.useMemo(
     () => (activeOrders || []).filter((order: any) => isLateKitchenOrder(order)).length,
     [activeOrders]
   )
-  const notificationsCount = cashSessionRequests.length + unpaidServedCount + lateOrdersCount
+  const notificationsCount = cashSessionRequests.length + pendingCashValidationCount + unpaidServedCount + lateOrdersCount
 
   const handleLogout = React.useCallback(async () => {
     await signOut(auth)

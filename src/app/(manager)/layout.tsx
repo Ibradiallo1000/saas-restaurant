@@ -51,13 +51,13 @@ const MANAGER_NAV = [
   { label: "Analytics", href: "/manager/dashboard", icon: LayoutDashboard },
   { label: "Commandes", href: "/manager/commandes", icon: ClipboardList, withBadge: true },
   { label: "Caisse", href: "/manager/caisse", icon: Wallet },
+  { label: "Trésorerie", href: "/manager/tresorerie", icon: Banknote },
+  { label: "Dépenses", href: "/manager/depenses", icon: ReceiptText },
   { label: "Menu", href: "/manager/menu", icon: MenuSquare },
   { label: "Tables", href: "/manager/tables", icon: Table2 },
   { label: "Images", href: "/manager/images", icon: ImageIcon },
   { label: "Inventaire", href: "/manager/inventory", icon: Package },
-  { label: "Dépenses", href: "/manager/depenses", icon: ReceiptText },
   { label: "Fournisseurs", href: "/manager/suppliers", icon: UserRound },
-  { label: "Trésorerie", href: "/manager/tresorerie", icon: Banknote },
   { label: "Cuisine", href: "/manager/cuisine", icon: ChefHat },
 ]
 
@@ -404,7 +404,8 @@ function useManagerPendingPaymentCount() {
 }
 
 function useManagerPendingCashOpeningCount() {
-  return useRestaurantLiveData().cashSessionRequests.length
+  const { cashSessionRequests, pendingCashValidationCount } = useRestaurantLiveData()
+  return cashSessionRequests.length + pendingCashValidationCount
 }
 
 function isActivePath(pathname: string, href: string) {

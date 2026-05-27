@@ -30,7 +30,7 @@ export default function OperationalBottomNav() {
   const router = useRouter()
   const pathname = usePathname() ?? ""
   const { role, user } = useTenant()
-  const { cashSessionRequests, unpaidServedCount } = useRestaurantLiveData()
+  const { cashSessionRequests, pendingCashValidationCount, unpaidServedCount } = useRestaurantLiveData()
   const [open, setOpen] = React.useState(false)
   const userLabel = user?.displayName || user?.email?.split("@")[0] || "Utilisateur"
   const navigation = React.useMemo(() => getNavigationByRole(role), [role])
@@ -42,10 +42,10 @@ export default function OperationalBottomNav() {
           item.id === "orders"
             ? unpaidServedCount
             : item.id === "cash"
-              ? cashSessionRequests.length
+              ? cashSessionRequests.length + pendingCashValidationCount
               : undefined,
       })),
-    [cashSessionRequests.length, navigation.bottomItems, unpaidServedCount]
+    [cashSessionRequests.length, navigation.bottomItems, pendingCashValidationCount, unpaidServedCount]
   )
   const drawerActive = navigation.drawerSections.some((section) =>
     section.items.some((item) => item.type === "link" && isActivePath(pathname, item.href))

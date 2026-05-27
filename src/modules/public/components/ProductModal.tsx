@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { X } from "lucide-react"
+import { Check, Plus, X } from "lucide-react"
 
 import { getOptimizedImage } from "@/lib/image"
 import { cn } from "@/lib/utils"
@@ -124,67 +124,111 @@ export default function ProductModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      <div className="w-[400px] max-w-full overflow-hidden rounded-xl bg-white p-5 text-foreground shadow-2xl dark:bg-[#1a1a1a]">
-        <div className="relative aspect-[4/3] bg-muted">
-          {imageUrl ? (
-            <img
-              src={getOptimizedImage(imageUrl, 600)}
-              alt={product.name}
-              className="h-full w-full object-cover"
-            />
+      <div className="flex max-h-[94dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[2rem] bg-background text-foreground shadow-2xl ring-1 ring-black/5 dark:ring-white/10 sm:rounded-[2rem]">
+        <div className="relative m-4 mb-0 overflow-hidden rounded-[1.75rem] bg-muted shadow-sm">
+          <div className="aspect-[16/11] w-full">
+            {imageUrl ? (
+              <img
+                src={getOptimizedImage(imageUrl, 900)}
+                alt={product.name}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground">
+                <Plus className="h-10 w-10" />
+              </div>
+            )}
+          </div>
+          {product?.isPopular || product?.popular ? (
+            <div className="absolute left-4 top-4 rounded-full bg-white/95 px-3 py-1 text-xs font-black uppercase tracking-wide text-[var(--color-primary)] shadow-sm backdrop-blur">
+              Populaire
+            </div>
           ) : null}
           <button
             type="button"
             onClick={onClose}
-            className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-black/50 text-white"
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white shadow-lg backdrop-blur transition hover:bg-black/70 active:scale-95"
+            aria-label="Fermer"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="space-y-4 p-5">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-5 pt-4">
           <div>
-            <h2 className="text-2xl font-black leading-tight">{product.name}</h2>
+            <h2 className="text-3xl font-black leading-tight tracking-tight">{product.name}</h2>
             {product.description ? (
-              <p className="mt-1 text-sm text-muted-foreground">{product.description}</p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{product.description}</p>
             ) : null}
-            <p className="mt-2 text-base font-black text-[var(--color-primary)]">
+            <p className="mt-4 whitespace-nowrap text-2xl font-black text-[var(--color-primary)]">
               {(getBasePrice(product) + getSelectedSizePrice(product, selectedSize)).toLocaleString()} FCFA
             </p>
           </div>
 
           {sizeChoices.length > 0 ? (
-            <section>
-              <p className="mb-2 text-xs font-black uppercase text-muted-foreground">Taille</p>
-              <div className="flex flex-wrap gap-2">
-                {sizeChoices.map((size: Choice) => (
-                  <button
-                    key={size.name}
-                    type="button"
-                    onClick={() => setSelectedSize(size.name)}
-                    className={cn(
-                      "rounded-full border px-3 py-2 text-xs font-bold",
-                      selectedSize === size.name
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
-                        : "border-border bg-card"
-                    )}
-                  >
-                    {formatSizeLabel(size)}
-                  </button>
-                ))}
+            <section className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black uppercase tracking-wide">Choisir la taille</p>
+                  <p className="mt-1 text-xs font-semibold text-muted-foreground">Sélection obligatoire</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-[11px] font-black uppercase text-[var(--color-primary)]">
+                  Obligatoire
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                {sizeChoices.map((size: Choice) => {
+                  const selected = selectedSize === size.name
+
+                  return (
+                    <button
+                      key={size.name}
+                      type="button"
+                      onClick={() => setSelectedSize(size.name)}
+                      className={cn(
+                        "min-h-24 rounded-2xl border p-3 text-left shadow-sm transition active:scale-[0.98] sm:p-4",
+                        selected
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 ring-2 ring-[var(--color-primary)]/25"
+                          : "border-border bg-card hover:border-[var(--color-primary)]/40"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="break-words text-sm font-black leading-tight sm:text-base">{formatSizeName(size.name)}</p>
+                          <p className="mt-2 whitespace-nowrap text-sm font-bold text-muted-foreground">
+                            {size.price > 0 ? `+${size.price.toLocaleString()} FCFA` : "Prix de base"}
+                          </p>
+                        </div>
+                        <span
+                          className={cn(
+                            "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
+                            selected
+                              ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+                              : "border-border bg-background"
+                          )}
+                        >
+                          {selected ? <Check className="h-3.5 w-3.5" /> : null}
+                        </span>
+                      </div>
+                    </button>
+                  )
+                })}
               </div>
             </section>
           ) : null}
 
           {supplementChoices.length > 0 ? (
-            <section>
-              <p className="mb-2 text-xs font-black uppercase text-muted-foreground">Supplements</p>
-              <div className="flex flex-wrap gap-2">
+            <section className="space-y-3">
+              <div>
+                <p className="text-sm font-black uppercase tracking-wide">Suppléments</p>
+                <p className="mt-1 text-xs font-semibold text-muted-foreground">Ajoutez ce qui vous fait plaisir</p>
+              </div>
+              <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
                 {supplementChoices.map((supplement: Choice) => {
                   const selected = selectedSupplements.some((item) => item.name === supplement.name)
                   return (
@@ -199,13 +243,29 @@ export default function ProductModal({
                         )
                       }}
                       className={cn(
-                        "rounded-full border px-3 py-2 text-xs font-bold",
-                        selected
-                          ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
-                          : "border-border bg-card"
+                        "flex min-h-16 w-full items-center gap-3 border-b border-border px-4 py-3 text-left transition last:border-b-0 active:scale-[0.99]",
+                        selected ? "bg-[var(--color-primary)]/10" : "bg-card hover:bg-muted/60"
                       )}
                     >
-                      {supplement.name} +{supplement.price.toLocaleString()}
+                      <span
+                        className={cn(
+                          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border",
+                          selected
+                            ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+                            : "border-border bg-muted text-muted-foreground"
+                        )}
+                      >
+                        {selected ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-black">{supplement.name}</span>
+                        <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">
+                          Supplément
+                        </span>
+                      </span>
+                      <span className="shrink-0 whitespace-nowrap text-sm font-black text-[var(--color-primary)]">
+                        +{supplement.price.toLocaleString()} FCFA
+                      </span>
                     </button>
                   )
                 })}
@@ -213,15 +273,32 @@ export default function ProductModal({
             </section>
           ) : null}
 
+          <section className="rounded-2xl border border-[var(--color-primary)]/15 bg-[var(--color-primary)]/10 p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">Total</p>
+                <p className="mt-1 text-sm font-semibold text-muted-foreground">
+                  Prix mis à jour automatiquement
+                </p>
+              </div>
+              <p className="shrink-0 whitespace-nowrap text-2xl font-black text-[var(--color-primary)]">
+                {calculateTotalPrice().toLocaleString()} FCFA
+              </p>
+            </div>
+          </section>
+        </div>
+
+        <div className="sticky bottom-0 border-t bg-background/95 p-4 backdrop-blur">
           <button
             type="button"
             onClick={() => {
               console.log("CLICK ADD PUBLIC")
               handleAddToCart()
             }}
-            className="h-12 w-full rounded-xl bg-[var(--color-primary)] text-sm font-black uppercase text-white shadow-lg active:scale-[0.98]"
+            className="flex h-14 w-full items-center justify-between gap-4 rounded-2xl bg-[var(--color-primary)] px-5 text-sm font-black uppercase text-white shadow-lg shadow-[var(--color-primary)]/20 transition active:scale-[0.98]"
           >
-            Ajouter à la commande · {calculateTotalPrice().toLocaleString()} FCFA
+            <span className="min-w-0 truncate">Ajouter à la commande</span>
+            <span className="shrink-0 whitespace-nowrap">{calculateTotalPrice().toLocaleString()} FCFA</span>
           </button>
         </div>
       </div>
@@ -328,9 +405,6 @@ function normalizeOptionName(value: string | null | undefined) {
     .toLowerCase()
 }
 
-function formatSizeLabel(size: Choice) {
-  const name = size.name.charAt(0).toUpperCase() + size.name.slice(1)
-  if (size.isDefault) return `${name} (par défaut)`
-  if (size.price > 0) return `${name} +${size.price.toLocaleString()} FCFA`
-  return name
+function formatSizeName(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }

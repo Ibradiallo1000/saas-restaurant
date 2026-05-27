@@ -19,6 +19,7 @@ type RestaurantLiveDataContextType = {
   activeOrders: any[]
   cashSessionRequests: any[]
   cashSessions: any[]
+  pendingCashValidationCount: number
   cashMovements: any[]
   isLoadingOrders: boolean
   isLoadingSessions: boolean
@@ -33,6 +34,7 @@ const RestaurantLiveDataContext = React.createContext<RestaurantLiveDataContextT
   activeOrders: [],
   cashSessionRequests: [],
   cashSessions: [],
+  pendingCashValidationCount: 0,
   cashMovements: [],
   isLoadingOrders: false,
   isLoadingSessions: false,
@@ -89,6 +91,8 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
 
   const { toast } = useToast()
   const lastPaymentAlertsRef = React.useRef<Set<string>>(new Set())
+  const lastCashClosureAlertsRef = React.useRef<Set<string>>(new Set())
+  const cashClosureAlertsInitializedRef = React.useRef(false)
   const hasInteractedRef = React.useRef(false)
 
   React.useEffect(() => {
@@ -137,6 +141,52 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
   }, [db, enabled, restaurantId])
   const { data: cashSessions, isLoading: isLoadingCashSessions } = useCollection<any>(cashSessionsQuery)
 
+  const pendingCashValidationSessions = React.useMemo(() => {
+    return (cashSessions || []).filter((session: any) => {
+      return (
+        (session.status === "closed" || session.status === "pending_validation") &&
+        !session.validatedByManager
+      )
+    })
+  }, [cashSessions])
+
+  React.useEffect(() => {
+    if (!cashSessions) return
+
+    const currentKeys = new Set(
+      pendingCashValidationSessions.map((session: any) => `${session.id}-${session.status}`)
+    )
+
+    if (!cashClosureAlertsInitializedRef.current) {
+      lastCashClosureAlertsRef.current = currentKeys
+      cashClosureAlertsInitializedRef.current = true
+      return
+    }
+
+    pendingCashValidationSessions.forEach((session: any) => {
+      const alertKey = `${session.id}-${session.status}`
+      if (lastCashClosureAlertsRef.current.has(alertKey)) return
+
+      lastCashClosureAlertsRef.current.add(alertKey)
+      if (hasInteractedRef.current && typeof window !== "undefined" && window.navigator?.vibrate) {
+        window.navigator.vibrate([120, 50, 120])
+      }
+      try {
+        const audio = new Audio("/notification.mp3")
+        audio.play().catch(() => {})
+      } catch {}
+
+      toast({
+        title: "Caisse clôturée",
+        description: "Une session POS attend la validation manager.",
+      })
+    })
+
+    lastCashClosureAlertsRef.current.forEach((key) => {
+      if (!currentKeys.has(key)) lastCashClosureAlertsRef.current.delete(key)
+    })
+  }, [cashSessions, pendingCashValidationSessions, toast])
+
   const cashSessionRequestsQuery = useMemoFirebase(() => {
     if (!enabled || !db || !restaurantId) return null
     return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "cashSessionRequests")
@@ -171,6 +221,7 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
       activeOrders: activeOrders || [],
       cashSessionRequests: pendingCashSessionRequests,
       cashSessions: cashSessions || [],
+      pendingCashValidationCount: pendingCashValidationSessions.length,
       cashMovements: cashMovements || [],
       isLoadingOrders,
       isLoadingSessions: isLoadingCashSessions || isLoadingCashSessionRequests,
@@ -184,6 +235,7 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
       activeOrders,
       pendingCashSessionRequests,
       cashSessions,
+      pendingCashValidationSessions.length,
       cashMovements,
       isLoadingCashSessionRequests,
       isLoadingCashSessions,
