@@ -7,6 +7,7 @@ import { PlatformProvider } from "@/contexts/platform-context"
 import { initializeApp, getApps, getApp } from 'firebase/app'
 import { getFirestore } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
+import PWARegister from "@/components/PWARegister"
 
 // Configuration Firebase (remplace par tes valeurs)
 const firebaseConfig = {
@@ -32,6 +33,7 @@ export default function Providers({
     <FirebaseProvider firebaseApp={app} firestore={firestore} auth={auth}>
       <PlatformProvider>
         <ThemeProvider>
+          <PWARegister />
           {children}
         </ThemeProvider>
       </PlatformProvider>
