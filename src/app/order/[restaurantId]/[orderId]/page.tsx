@@ -13,6 +13,7 @@ import { PAYMENT_STATUS } from "@/lib/constants"
 import { getClientOrderStep, getClientStatusLabel } from "@/lib/getClientOrderStep"
 import { getOrderDisplayId } from "@/lib/order-display-id"
 import { normalizeOrderType } from "@/lib/order-lifecycle"
+import { buildUssdTelHref } from "@/lib/ussd"
 import { CartProvider, useCart } from "@/modules/public/cart/CartContext"
 import CartDrawer from "@/modules/public/components/CartDrawer"
 import Header from "@/modules/public/components/Header"
@@ -350,7 +351,7 @@ function ClientOrderTrackingContent() {
     if (method.paymentCode && typeof window !== "undefined") {
       window.location.href =
         method.paymentCodeType === "ussd"
-          ? `tel:${encodeURIComponent(method.paymentCode)}`
+          ? buildUssdTelHref(method.paymentCode)
           : method.paymentCode
     }
 

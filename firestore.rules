@@ -897,7 +897,15 @@ service cloud.firestore {
           || (
             resource.data.restaurantId == restaurantId
             && resource.data.source in ["client", "qr", "qr_table", "manual"]
-            && (resource.data.sessionId is string || resource.data.tableSessionId is string)
+            && (
+              resource.data.sessionId is string
+              || resource.data.tableSessionId is string
+              || (
+                resource.data.orderType in ["takeaway", "pickup", "delivery"]
+                && resource.data.sessionId == null
+                && resource.data.tableId == null
+              )
+            )
           );
 
         allow list: if canUseRestaurant(restaurantId)

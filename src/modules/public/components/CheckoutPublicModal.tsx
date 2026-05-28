@@ -10,6 +10,7 @@ import { COLLECTION_NAMES } from "@/lib/constants"
 import { recalculateConfiguredUnitPrice } from "@/lib/order-pricing"
 import { ORDER_PAYMENT_STATUS } from "@/lib/order-lifecycle"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
+import { buildUssdTelHref } from "@/lib/ussd"
 import {
   getAvailablePaymentMethods,
   type AvailablePaymentMethod,
@@ -626,7 +627,7 @@ function PaymentStepCompact({
     })
 
     if (method.paymentCodeType === "ussd" && method.paymentCode && typeof window !== "undefined") {
-      window.location.href = `tel:${encodeURIComponent(method.paymentCode)}`
+      window.location.href = buildUssdTelHref(method.paymentCode)
     }
   }
 
@@ -740,7 +741,7 @@ function PaymentStep({
     })
 
     if (method.paymentCodeType === "ussd" && method.paymentCode && typeof window !== "undefined") {
-      window.location.href = `tel:${encodeURIComponent(method.paymentCode)}`
+      window.location.href = buildUssdTelHref(method.paymentCode)
     }
   }
 
