@@ -72,17 +72,18 @@ export default function DishCard({
   return (
     <article
       className="
-        flex items-center gap-3
-        bg-card border border-border
-        rounded-2xl p-3
-        shadow-sm
-        transition-all duration-200
+        flex min-h-[112px] items-center gap-3
+        rounded-2xl border border-border
+        bg-card p-3 shadow-sm
+        transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md
+        sm:min-h-[132px] sm:gap-4 sm:p-4
+        md:h-full
       "
     >
       {/* IMAGE */}
       <div
         onClick={onOpenDetails}
-        className="relative w-20 h-20 rounded-xl overflow-hidden bg-muted shrink-0"
+        className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-muted sm:h-24 sm:w-24"
       >
         {hasImage ? (
           <img
@@ -99,7 +100,7 @@ export default function DishCard({
 
         {/* BADGE */}
         {isPopular && (
-          <div className="absolute top-1 left-1 bg-orange-500 text-white text-[9px] px-2 py-0.5 rounded-full flex items-center gap-1">
+          <div className="absolute left-1 top-1 flex items-center gap-1 rounded-full bg-orange-500 px-2 py-0.5 text-[9px] text-white">
             <Flame className="h-3 w-3" />
             Populaire
           </div>
@@ -109,17 +110,17 @@ export default function DishCard({
       {/* CONTENT */}
       <div
         onClick={onOpenDetails}
-        className="flex-1 cursor-pointer min-w-0"
+        className="min-w-0 flex-1 cursor-pointer"
       >
-        <h3 className="text-sm font-bold text-foreground truncate">
+        <h3 className="truncate text-sm font-bold text-foreground sm:text-base">
           {product.name}
         </h3>
 
-        <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground sm:text-sm">
           {product.description || "Spécialité du restaurant"}
         </p>
 
-        <p className="text-[var(--color-primary)] font-bold mt-1 text-sm">
+        <p className="mt-2 whitespace-nowrap text-sm font-bold text-[var(--color-primary)] sm:text-base">
           {price > 0
             ? hasOptions
               ? `Dès ${price.toLocaleString()} FCFA`
@@ -132,8 +133,8 @@ export default function DishCard({
       <button
         onClick={handleQuickAdd}
         className={`
-          px-3 py-2 rounded-xl text-xs font-bold
-          transition-all duration-200 shrink-0
+          shrink-0 rounded-xl px-3 py-2 text-xs font-bold
+          transition-all duration-200 sm:px-4 sm:py-3
           ${
             added
               ? "bg-green-500 text-white"

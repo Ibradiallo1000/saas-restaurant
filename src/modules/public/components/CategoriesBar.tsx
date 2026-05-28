@@ -38,12 +38,12 @@ export default function CategoriesBar({
     <div className="mb-6">
 
       {/* HEADER */}
-      <div className="flex items-center justify-between px-4 mb-3">
-        <h2 className="text-lg font-black text-foreground">
+      <div className="mb-3 flex items-center justify-between px-4 sm:px-6 lg:px-8">
+        <h2 className="text-lg font-black text-foreground sm:text-xl">
           Catégories
         </h2>
 
-        <button className="text-sm font-bold text-[var(--color-primary)]">
+        <button className="hidden text-sm font-bold text-[var(--color-primary)] sm:inline-flex">
           Voir tout
         </button>
       </div>
@@ -51,7 +51,7 @@ export default function CategoriesBar({
       {/* LIST */}
       <div
         ref={containerRef}
-        className="flex gap-3 overflow-x-auto px-4 py-2 no-scrollbar"
+        className="no-scrollbar flex gap-3 overflow-x-auto px-4 py-2 sm:px-6 lg:px-8"
         style={{ overflowY: "visible" }}
       >
         {categories.map((cat) => {
@@ -65,7 +65,7 @@ export default function CategoriesBar({
               onClick={() => onSelect(cat.id)}
               className={`
                 relative z-10 flex flex-col items-center shrink-0
-                p-2 rounded-2xl border transition-all duration-200
+                min-w-[86px] rounded-2xl border p-2 transition-all duration-200 sm:min-w-[104px] sm:p-3
                 ${
                   isActive
                     ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 shadow-sm scale-[1.02]"
@@ -74,7 +74,7 @@ export default function CategoriesBar({
               `}
             >
               {/* IMAGE */}
-              <div className="h-14 w-14 rounded-full overflow-hidden">
+              <div className="h-14 w-14 overflow-hidden rounded-full sm:h-16 sm:w-16">
                 {image ? (
                   <img
                     src={image}
@@ -89,7 +89,7 @@ export default function CategoriesBar({
               {/* LABEL */}
               <span
                 className={`
-                  text-xs font-semibold mt-1 text-center max-w-[70px] line-clamp-2
+                  mt-1 max-w-[74px] text-center text-xs font-semibold leading-tight line-clamp-2 sm:max-w-[88px]
                   ${
                     isActive
                       ? "text-[var(--color-primary)]"

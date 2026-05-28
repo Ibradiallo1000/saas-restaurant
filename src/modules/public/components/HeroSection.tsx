@@ -20,7 +20,7 @@ export default function HeroSection({ restaurant }: { restaurant: any }) {
   const rating = Number(restaurant?.rating || restaurant?.averageRating || 4.8)
 
   return (
-    <section className="relative h-[160px] sm:h-[240px] w-full overflow-hidden">
+    <section className="relative h-[180px] w-full overflow-hidden sm:h-[260px] lg:h-[340px]">
 
       {/* IMAGE */}
       <img
@@ -43,12 +43,12 @@ export default function HeroSection({ restaurant }: { restaurant: any }) {
       </div>
 
       {/* INFOS */}
-      <div className="absolute bottom-4 left-4 right-4">
+      <div className="absolute bottom-5 left-4 right-4 mx-auto max-w-6xl sm:bottom-8 sm:px-6 lg:px-8">
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 sm:gap-3">
 
           {/* STATUS */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-md text-white text-xs font-bold border border-white/20">
+          <div className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
             <span
               className={`h-2 w-2 rounded-full ${
                 isOpen
@@ -60,13 +60,13 @@ export default function HeroSection({ restaurant }: { restaurant: any }) {
           </div>
 
           {/* TIME */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-md text-white text-xs font-bold border border-white/20">
+          <div className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
             <Clock className="h-3 w-3 text-white/80" />
             {serviceTime}
           </div>
 
           {/* RATING */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-md text-white text-xs font-bold border border-white/20">
+          <div className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
             <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
             {Number.isFinite(rating) ? rating.toFixed(1) : "4.8"}
           </div>

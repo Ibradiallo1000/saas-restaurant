@@ -21,11 +21,11 @@ export default function CartDrawer({ open, onClose, restaurantId, tableContext, 
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose} />
 
       {/* DRAWER */}
-      <div className="absolute bottom-0 left-0 right-0 bg-background text-foreground rounded-t-[2rem] max-h-[88vh] flex flex-col overflow-hidden shadow-[0_-20px_40px_rgba(0,0,0,0.15)] ring-1 ring-white/10 animate-in slide-in-from-bottom duration-300 ease-out">
+      <div className="absolute bottom-0 left-0 right-0 flex max-h-[88vh] flex-col overflow-hidden rounded-t-[2rem] bg-background text-foreground shadow-[0_-20px_40px_rgba(0,0,0,0.15)] ring-1 ring-white/10 animate-in slide-in-from-bottom duration-300 ease-out sm:left-1/2 sm:right-auto sm:max-h-[86vh] sm:w-[min(34rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:rounded-[2rem] sm:bottom-4">
 
         {/* 🔥 HEADER FIXE */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-background/95 backdrop-blur-md sticky top-0 z-10">
-          <h2 className="text-xl font-black">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 bg-background/95 px-5 py-4 backdrop-blur-md sm:px-6">
+          <h2 className="text-xl font-black sm:text-2xl">
             Commande ({items.length})
           </h2>
 
@@ -38,7 +38,7 @@ export default function CartDrawer({ open, onClose, restaurantId, tableContext, 
         </div>
 
         {/* 🔥 LISTE PRODUITS */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-6">
 
           {items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
@@ -51,7 +51,7 @@ export default function CartDrawer({ open, onClose, restaurantId, tableContext, 
             items.map((item: CartItem) => (
               <div
                 key={item.id}
-                className="bg-card text-card-foreground border border-border/50 shadow-sm rounded-2xl p-4 flex flex-col gap-3 group"
+                className="group flex flex-col gap-3 rounded-2xl border border-border/50 bg-card p-4 text-card-foreground shadow-sm"
               >
                 <div className="flex justify-between items-start gap-2">
                   <div className="flex-1 min-w-0">
@@ -121,7 +121,7 @@ export default function CartDrawer({ open, onClose, restaurantId, tableContext, 
 
         {/* 🔥 FOOTER FIXE */}
         {items.length > 0 && (
-          <div className="border-t border-border/50 px-5 py-6 bg-background/95 backdrop-blur-md space-y-4 shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
+          <div className="space-y-4 border-t border-border/50 bg-background/95 px-5 py-6 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] backdrop-blur-md sm:px-6">
 
             <div className="flex justify-between items-end">
               <span className="text-xs font-black uppercase tracking-widest text-muted-foreground">

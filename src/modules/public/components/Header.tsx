@@ -33,7 +33,7 @@ export default function Header({
     <header
       className={`
         fixed top-0 left-0 right-0 z-30
-        flex h-16 items-center justify-between px-4
+        flex h-16 items-center justify-between px-4 sm:h-[4.5rem] sm:px-6
         transition-all duration-300
         ${scrolled
           ? "bg-background/90 backdrop-blur-md border-b border-border"
@@ -47,16 +47,16 @@ export default function Header({
       )}
 
       {/* CONTENT */}
-      <div className="relative z-10 flex w-full items-center justify-between">
+      <div className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between">
 
         {/* LEFT */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex min-w-0 items-center gap-3">
 
           {/* LOGO */}
           {logo ? (
             <div
               className={`
-                h-10 w-10 rounded-full overflow-hidden
+                h-10 w-10 rounded-full overflow-hidden sm:h-11 sm:w-11
                 transition-all duration-300
                 ${scrolled
                   ? "bg-muted shadow-sm"
@@ -71,7 +71,7 @@ export default function Header({
               />
             </div>
           ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)] text-white text-sm font-black">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)] text-sm font-black text-white sm:h-11 sm:w-11">
               {initial}
             </div>
           )}
@@ -79,7 +79,7 @@ export default function Header({
           {/* NAME */}
           <p
             className={`
-              truncate font-extrabold transition-colors duration-300
+              max-w-[48vw] truncate text-sm font-extrabold transition-colors duration-300 sm:max-w-[55vw] sm:text-base lg:max-w-none
               ${scrolled ? "text-foreground" : "text-white"}
             `}
           >
@@ -88,7 +88,7 @@ export default function Header({
         </div>
 
         {/* RIGHT */}
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
 
           {/* THEME */}
           <div

@@ -302,7 +302,7 @@ function PublicPageContent({
   }
 
   return (
-    <div id="app-root" className="app-background min-h-screen pb-32 text-foreground">
+    <div id="app-root" className="app-background min-h-screen pb-32 text-foreground md:pb-28">
       <div id="main-content">
         <Header
           restaurant={restaurant}
@@ -311,7 +311,7 @@ function PublicPageContent({
         />
         <HeroSection restaurant={restaurant} />
 
-        <main className="-mt-4 rounded-t-3xl bg-background pt-4 shadow-md">
+        <main className="relative z-10 -mt-5 rounded-t-[1.75rem] bg-background pt-5 shadow-md sm:-mt-8 sm:rounded-t-[2rem] sm:pt-6 lg:-mt-10 lg:mx-auto lg:max-w-7xl lg:rounded-[2rem] lg:shadow-xl">
           <MainContent
             categories={visibleCategories}
             isLoading={isMenuLoading}
@@ -428,13 +428,13 @@ function MainContent({
 
   if (isLoading) {
     return (
-      <div className="mx-auto w-full max-w-5xl pb-5">
-        <div className="px-4">
-          <div className="mb-4 h-16 animate-pulse rounded-xl bg-muted" />
+      <div className="mx-auto w-full max-w-6xl pb-6 sm:pb-8">
+        <div className="px-4 sm:px-6 lg:px-8">
+          <div className="mb-4 h-16 animate-pulse rounded-2xl bg-muted" />
           <div className="mb-6 h-10 animate-pulse rounded-full bg-muted" />
-          <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-24 animate-pulse rounded-xl bg-muted" />
+              <div key={i} className="h-28 animate-pulse rounded-2xl bg-muted" />
             ))}
           </div>
         </div>
@@ -444,8 +444,8 @@ function MainContent({
 
   if (hasError) {
     return (
-      <div className="mx-auto w-full max-w-5xl pb-5">
-        <div className="rounded-2xl bg-card px-6 py-14 text-center">
+      <div className="mx-auto w-full max-w-6xl px-4 pb-6 sm:px-6 lg:px-8">
+        <div className="rounded-2xl bg-card px-6 py-14 text-center shadow-sm">
           <ChefHat className="mx-auto mb-3 h-12 w-12 text-muted-foreground/60" />
           <h2 className="text-base font-black">Menu indisponible</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -459,9 +459,9 @@ function MainContent({
   const currentCategory = filteredCategories[0]
 
   return (
-    <div className="mx-auto w-full max-w-5xl pb-5">
+    <div className="mx-auto w-full max-w-6xl pb-6 sm:pb-8 lg:pb-10">
       
-      <div className="px-4">
+      <div className="px-4 sm:px-6 lg:px-8">
         <TableContextBanner table={table} error={tableError} />
       </div>
 
@@ -476,12 +476,12 @@ function MainContent({
 
       {/* PRODUITS (UNE SEULE CATÉGORIE) */}
       {currentCategory && (
-        <div className="px-4 mb-6">
-          <h2 className="text-lg font-black mb-3 text-[var(--color-primary)]">
+        <div className="mb-6 px-4 sm:px-6 lg:px-8">
+          <h2 className="mb-3 text-xl font-black text-[var(--color-primary)] sm:text-2xl">
             {currentCategory.name}
           </h2>
 
-          <div className="flex flex-col gap-3">
+          <div className="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
             {(productsByCategory[currentCategory.id] || []).map((product: any) => (
               <DishCard
                 key={product.id}
@@ -512,7 +512,7 @@ function TableContextBanner({
   if (!table && !error) return null
 
   return (
-    <div className="mb-4 rounded-xl border bg-card px-4 py-3 text-sm font-bold shadow-sm">
+    <div className="mb-4 rounded-2xl border bg-card px-4 py-3 text-sm font-bold shadow-sm sm:px-5">
       {table ? (
         <span>Commande sur place - {table.name || table.id}</span>
       ) : (
@@ -558,7 +558,7 @@ export function PublicBottomNavigation({
   onTracking: () => void
 }) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 border-t bg-background/95 px-4 pb-2 pt-2 shadow-[0_-16px_35px_rgba(15,23,42,0.1)] z-50">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-16px_35px_rgba(15,23,42,0.1)] backdrop-blur md:bottom-4 md:left-1/2 md:right-auto md:w-[min(32rem,calc(100vw-2rem))] md:-translate-x-1/2 md:rounded-2xl md:border md:px-4 md:shadow-2xl">
       {active === "search" && (
         <div className="mx-auto mb-2 max-w-md">
           <div className="relative">
@@ -599,7 +599,7 @@ export function PublicBottomNavigation({
               <span>{item.label}</span>
               {item.id === "order" && count > 0 && (
                 <span
-                  className={`absolute -top-1 right-4 min-w-[18px] rounded-full px-1 py-0.5 text-[9px] font-black ${
+                  className={`absolute -top-1 right-3 min-w-[18px] rounded-full px-1 py-0.5 text-[9px] font-black sm:right-5 ${
                     isActive
                       ? "bg-primary-foreground text-[var(--color-primary)]"
                       : "bg-[var(--color-primary)] text-white"
