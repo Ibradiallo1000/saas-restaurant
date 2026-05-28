@@ -17,9 +17,9 @@ export default function CategorySidebar({
   onSelectCategory,
 }: CategorySidebarProps) {
   return (
-    <aside className="h-full overflow-hidden rounded-lg border bg-card">
+    <aside className="h-full overflow-hidden rounded-xl border bg-card shadow-sm">
       <div className="border-b px-3 py-3">
-        <p className="text-xs font-black uppercase text-muted-foreground">Categories</p>
+        <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">Catégories</p>
       </div>
 
       <div className="h-[calc(100%-45px)] overflow-y-auto p-2">
@@ -36,7 +36,7 @@ export default function CategorySidebar({
               key={category.id}
               active={selectedCategoryId === category.id}
               icon={<Store className="h-5 w-5" />}
-              label={category.name || "Categorie"}
+              label={category.name || "Catégorie"}
               onClick={() => onSelectCategory(category.id)}
             />
           ))}
@@ -62,7 +62,7 @@ function CategoryButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-12 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-black transition-colors active:scale-[0.99]",
+        "flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-black transition-colors active:scale-[0.99]",
         active
           ? "bg-primary text-primary-foreground shadow-sm"
           : "text-foreground hover:bg-orange-50 hover:text-orange-700 dark:hover:bg-orange-950/30"
@@ -70,7 +70,7 @@ function CategoryButton({
     >
       <span
         className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
           active ? "bg-white/20" : "bg-muted text-muted-foreground"
         )}
       >

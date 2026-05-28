@@ -1301,14 +1301,14 @@ function POSPageContent() {
       center={
         activeTab === "cashier" && activeCashSession ? (
           <div className="flex h-full min-h-0 flex-col">
-            <div className="mb-3 flex shrink-0 items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2">
+            <div className="mb-3 flex shrink-0 items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-muted-foreground">
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-black uppercase text-primary">
                     <span className="h-2 w-2 rounded-full bg-primary" />
                     Session ouverte
                   </span>
-                  <span>Debut : {formatSessionDateTime(activeCashSession.openedAt)}</span>
+                   <span>Début : {formatSessionDateTime(activeCashSession.openedAt)}</span>
                 </div>
                 <div className="mt-1 text-xs font-bold text-muted-foreground">
                   <span>Caissier : {activeCashSession.staffName || staffSnapshot.staffName}</span>
@@ -1347,7 +1347,7 @@ function POSPageContent() {
                   disabled={currentPage === 0}
                   onClick={() => setCurrentPage((page) => page - 1)}
                 >
-                  Prec
+                  Préc.
                 </Button>
                 <span className="text-xs font-black text-muted-foreground">
                   {currentPage + 1} / {totalPages}
@@ -1359,7 +1359,7 @@ function POSPageContent() {
                   disabled={currentPage === totalPages - 1}
                   onClick={() => setCurrentPage((page) => page + 1)}
                 >
-                  Suiv
+                  Suiv.
                 </Button>
               </div>
             ) : null}
@@ -1928,7 +1928,7 @@ function getCashierOrderTypeLabel(order: any) {
   const type = order.orderType || (order.type === "table" ? "dine_in" : order.type)
   if (type === "dine_in") return "Sur place"
   if (type === "delivery") return "Livraison"
-  return "A emporter"
+  return "À emporter"
 }
 
 function calculateSessionTotals(orders: any[], sessionId: string) {

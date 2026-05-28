@@ -10,7 +10,6 @@ import {
   Plus,
   Smartphone,
   Trash2,
-  X,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -71,16 +70,16 @@ export default function CartPanel({
   onCheckout,
 }: CartPanelProps) {
   return (
-    <aside className="flex h-full flex-col overflow-hidden rounded-lg border bg-card shadow-sm">
+    <aside className="flex h-full flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
       <div className="shrink-0 border-b bg-primary px-4 py-3 text-primary-foreground">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-black uppercase opacity-80">Panier</p>
-            <p className="text-lg font-black">{cart.length} ligne{cart.length > 1 ? "s" : ""}</p>
+            <p className="text-xs font-black uppercase tracking-wide opacity-80">Ticket en cours</p>
+            <p className="text-lg font-black">{cart.length} article{cart.length > 1 ? "s" : ""}</p>
           </div>
-          <div className="text-right">
-            <p className="text-xs font-bold opacity-80">Total</p>
-            <p className="text-2xl font-black">{total.toLocaleString("fr-FR")}</p>
+          <div className="rounded-xl bg-white/15 px-3 py-2 text-right ring-1 ring-white/20">
+            <p className="text-[10px] font-black uppercase tracking-wide opacity-80">À encaisser</p>
+            <p className="whitespace-nowrap text-2xl font-black">{total.toLocaleString("fr-FR")}</p>
           </div>
         </div>
       </div>
@@ -91,17 +90,17 @@ export default function CartPanel({
             type="button"
             onClick={() => onOrderTypeChange("takeaway")}
             className={cn(
-              "h-10 rounded-md text-sm font-black transition-colors",
+              "h-11 rounded-lg text-sm font-black transition-colors",
               orderType === "takeaway" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
             )}
           >
-            A emporter
+            À emporter
           </button>
           <button
             type="button"
             onClick={() => onOrderTypeChange("dine-in")}
             className={cn(
-              "h-10 rounded-md text-sm font-black transition-colors",
+              "h-11 rounded-lg text-sm font-black transition-colors",
               orderType === "dine-in" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
             )}
           >
@@ -134,8 +133,8 @@ export default function CartPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {cart.length === 0 ? (
-          <div className="flex h-full min-h-[260px] items-center justify-center rounded-lg border border-dashed text-sm font-bold text-muted-foreground">
-            Panier vide
+          <div className="flex h-full min-h-[260px] items-center justify-center rounded-xl border border-dashed bg-muted/20 text-center text-sm font-bold text-muted-foreground">
+            Sélectionnez un produit pour commencer.
           </div>
         ) : (
           <div className="space-y-2">
@@ -162,21 +161,20 @@ export default function CartPanel({
             <span>Remise</span>
             <span className="font-bold">-{discountAmount.toLocaleString("fr-FR")} FCFA</span>
           </div>
-          <div className="mt-2 flex items-end justify-between border-t pt-2">
-            <span className="text-sm font-black uppercase">Total</span>
-            <span className="text-3xl font-black text-primary">{total.toLocaleString("fr-FR")} FCFA</span>
+          <div className="mt-3 flex items-end justify-between rounded-xl bg-primary/10 px-3 py-3">
+            <span className="text-sm font-black uppercase text-primary">Total à payer</span>
+            <span className="whitespace-nowrap text-3xl font-black text-primary">{total.toLocaleString("fr-FR")} FCFA</span>
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="mt-3 grid grid-cols-3 gap-2">
           <ActionButton icon={<PauseCircle />} label="En attente" onClick={onHold} disabled={cart.length === 0 || processing} />
           <ActionButton icon={<Percent />} label="Remise" onClick={onDiscount} disabled={cart.length === 0 || processing} />
           <ActionButton icon={<Trash2 />} label="Vider" onClick={onClear} disabled={cart.length === 0 || processing} />
-          <ActionButton icon={<X />} label="Supprimer" onClick={onClear} disabled={cart.length === 0 || processing} />
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <PaymentButton active={paymentMode === "cash"} icon={<Banknote />} label="Especes" onClick={() => onPaymentModeChange("cash")} />
+          <PaymentButton active={paymentMode === "cash"} icon={<Banknote />} label="Espèces" onClick={() => onPaymentModeChange("cash")} />
           <PaymentButton active={paymentMode === "mobile"} icon={<Smartphone />} label="Mobile Money" onClick={() => onPaymentModeChange("mobile")} />
         </div>
 
@@ -202,7 +200,7 @@ export default function CartPanel({
 
         <Button
           type="button"
-          className="mt-3 h-14 w-full rounded-lg bg-primary text-lg font-black text-primary-foreground hover:bg-primary/90"
+          className="mt-3 h-14 w-full rounded-xl bg-primary text-lg font-black text-primary-foreground shadow-sm hover:bg-primary/90"
           disabled={!canCheckout || processing}
           onClick={onCheckout}
         >
@@ -229,16 +227,16 @@ function CartLine({
   const lineTotal = Math.round(unitPrice) * Number(item.quantity ?? 1)
 
   return (
-    <div className="grid grid-cols-[48px_minmax(0,1fr)_112px] gap-2 rounded-lg border bg-background p-2">
+    <div className="grid grid-cols-[52px_minmax(0,1fr)_112px] gap-2 rounded-xl border bg-background p-2 shadow-sm">
       {item.imageUrl ? (
         <img
           src={getOptimizedImage(item.imageUrl, 80)}
-          className="h-12 w-12 rounded-md object-cover"
+          className="h-12 w-12 rounded-lg object-cover"
           alt={item.name}
           loading="lazy"
         />
       ) : (
-        <div className="flex h-12 w-12 items-center justify-center rounded-md bg-muted">
+        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
           <Banknote className="h-5 w-5 text-muted-foreground" />
         </div>
       )}
@@ -249,14 +247,14 @@ function CartLine({
       </div>
 
       <div className="flex items-center justify-end gap-1">
-        <button type="button" onClick={onDecrease} className="flex h-9 w-9 items-center justify-center rounded-md bg-muted hover:bg-orange-100">
+        <button type="button" onClick={onDecrease} className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted hover:bg-orange-100">
           <Minus className="h-4 w-4" />
         </button>
         <span className="w-7 text-center text-base font-black">{item.quantity}</span>
-        <button type="button" onClick={onIncrease} className="flex h-9 w-9 items-center justify-center rounded-md bg-muted hover:bg-orange-100">
+        <button type="button" onClick={onIncrease} className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted hover:bg-orange-100">
           <Plus className="h-4 w-4" />
         </button>
-        <button type="button" onClick={onRemove} className="flex h-9 w-9 items-center justify-center rounded-md text-red-600 hover:bg-red-50">
+        <button type="button" onClick={onRemove} className="flex h-9 w-9 items-center justify-center rounded-lg text-red-600 hover:bg-red-50">
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
@@ -280,7 +278,7 @@ function ActionButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex h-10 items-center justify-center gap-2 rounded-md border bg-card text-xs font-black transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+      className="flex h-10 items-center justify-center gap-2 rounded-lg border bg-card text-xs font-black transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
     >
       {React.cloneElement(icon, { className: "h-4 w-4" })}
       {label}
@@ -304,7 +302,7 @@ function PaymentButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-12 items-center justify-center gap-2 rounded-md border text-sm font-black transition-colors active:scale-[0.99]",
+        "flex h-12 items-center justify-center gap-2 rounded-lg border text-sm font-black transition-colors active:scale-[0.99]",
         active ? "border-zinc-900 bg-zinc-100 text-zinc-950 dark:border-zinc-100 dark:bg-muted dark:text-foreground" : "bg-card hover:bg-muted"
       )}
     >

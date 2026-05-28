@@ -21,9 +21,9 @@ export default function ProductGrid({
 }: ProductGridProps) {
   if (loading) {
     return (
-      <div className="grid grid-cols-4 gap-3 2xl:grid-cols-5">
+      <div className="grid grid-cols-3 gap-3 xl:grid-cols-4 2xl:grid-cols-5">
         {Array.from({ length: 20 }).map((_, index) => (
-          <div key={index} className="h-44 animate-pulse rounded-lg bg-muted" />
+          <div key={index} className="h-48 animate-pulse rounded-xl bg-muted" />
         ))}
       </div>
     )
@@ -31,25 +31,25 @@ export default function ProductGrid({
 
   if (products.length === 0) {
     return (
-      <div className="flex h-full min-h-[360px] items-center justify-center rounded-lg border border-dashed bg-card text-sm font-bold text-muted-foreground">
-        Aucun produit dans cette categorie
+      <div className="flex h-full min-h-[360px] items-center justify-center rounded-xl border border-dashed bg-card text-sm font-bold text-muted-foreground">
+        Aucun produit dans cette catégorie
       </div>
     )
   }
 
   return (
-    <div className="grid grid-cols-4 gap-3 2xl:grid-cols-5">
+    <div className="grid grid-cols-3 gap-3 xl:grid-cols-4 2xl:grid-cols-5">
       {products.map((product: any) => (
         <button
           key={product.id}
           type="button"
           onClick={() => onProductClick(product)}
           className={cn(
-            "group flex min-h-44 flex-col overflow-hidden rounded-lg border bg-card text-left shadow-sm transition-colors",
-            "hover:border-orange-300 hover:bg-orange-50/60 active:border-primary active:bg-orange-100 dark:hover:bg-orange-950/20"
+            "group flex min-h-48 flex-col overflow-hidden rounded-xl border bg-card text-left shadow-sm transition-all",
+            "hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md active:translate-y-0 active:border-primary active:bg-primary/10"
           )}
         >
-          <div className="relative h-24 w-full bg-muted">
+          <div className="relative h-28 w-full bg-muted">
             {product.imageUrl ? (
               <img
                 src={getOptimizedImage(product.imageUrl, 260)}
@@ -62,7 +62,7 @@ export default function ProductGrid({
                 <ShoppingCart className="h-7 w-7 text-muted-foreground" />
               </div>
             )}
-            <span className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm">
+            <span className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
               <Plus className="h-4 w-4" />
             </span>
           </div>
@@ -71,7 +71,7 @@ export default function ProductGrid({
             <p className="line-clamp-2 text-sm font-black leading-tight text-foreground">
               {product.name}
             </p>
-            <p className="mt-2 text-base font-black text-primary">{formatPrice(product)}</p>
+            <p className="mt-3 whitespace-nowrap text-base font-black text-primary">{formatPrice(product)}</p>
           </div>
         </button>
       ))}
