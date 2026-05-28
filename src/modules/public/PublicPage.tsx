@@ -3,7 +3,7 @@
 import * as React from "react"
 import { collection, doc, limit, query, where } from "firebase/firestore"
 import { useRouter } from "next/navigation"
-import { ChefHat, ClipboardList, Coffee, Home, Search, ShoppingBag } from "lucide-react"
+import { ChefHat, ClipboardList, Coffee, MapPin, Search, ShoppingBag, Utensils } from "lucide-react"
 
 import { useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { getOptimizedImage } from "@/lib/image"
@@ -512,11 +512,26 @@ function TableContextBanner({
   if (!table && !error) return null
 
   return (
-    <div className="mb-4 rounded-2xl border bg-card px-4 py-3 text-sm font-bold shadow-sm sm:px-5">
+    <div className="mb-5 flex justify-center">
       {table ? (
-        <span>Commande sur place - {table.name || table.id}</span>
+        <div className="inline-flex max-w-full items-center gap-3 rounded-2xl border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/10 px-4 py-3 text-[var(--color-primary)] shadow-sm sm:px-5">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)] text-white shadow-sm">
+            <MapPin className="h-5 w-5" />
+          </span>
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="whitespace-nowrap text-[11px] font-black uppercase tracking-wide opacity-80 sm:text-xs">
+              Commande sur place
+            </p>
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-primary)]" />
+            <p className="truncate whitespace-nowrap text-base font-black text-foreground sm:text-lg">
+              {table.name || table.id}
+            </p>
+          </div>
+        </div>
       ) : (
-        <span className="text-red-600">{error}</span>
+        <div className="inline-flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700 shadow-sm">
+          {error}
+        </div>
       )}
     </div>
   )
@@ -576,10 +591,10 @@ export function PublicBottomNavigation({
 
       <div className="mx-auto grid h-12 max-w-md grid-cols-4 gap-1">
         {[
-          { id: "home" as const, label: "Accueil", icon: Home, onClick: onHome },
-          { id: "search" as const, label: "Recherche", icon: Search, onClick: onSearch },
+          { id: "home" as const, label: "Menu", icon: Utensils, onClick: onHome },
           { id: "order" as const, label: "Commande", icon: ShoppingBag, onClick: onOrder },
           { id: "tracking" as const, label: "Suivi", icon: ClipboardList, onClick: onTracking },
+          { id: "search" as const, label: "Recherche", icon: Search, onClick: onSearch },
         ].map((item) => {
           const Icon = item.icon
           const isActive = active === item.id

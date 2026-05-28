@@ -8,6 +8,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app'
 import { getFirestore } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
 import PWARegister from "@/components/PWARegister"
+import PWAInstallPrompt from "@/components/PWAInstallPrompt"
 
 // Configuration Firebase (remplace par tes valeurs)
 const firebaseConfig = {
@@ -34,6 +35,7 @@ export default function Providers({
       <PlatformProvider>
         <ThemeProvider>
           <PWARegister />
+          <PWAInstallPrompt />
           {children}
         </ThemeProvider>
       </PlatformProvider>

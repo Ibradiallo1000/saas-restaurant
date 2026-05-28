@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import * as React from "react"
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore"
@@ -181,7 +181,7 @@ function ClientOrderTrackingContent() {
         if (change.type === "added") {
           triggerOrderFeedback({
             orderId: changedOrder.id,
-            title: "Nouvelle commande ajoutÃ©e",
+            title: "Nouvelle commande ajoutÃƒÂ©e",
             description: "Une personne de la table vient de commander.",
           })
           return
@@ -190,7 +190,7 @@ function ClientOrderTrackingContent() {
         if (change.type === "modified") {
           triggerOrderFeedback({
             orderId: changedOrder.id,
-            title: "Commande mise Ã  jour",
+            title: "Commande mise ÃƒÂ  jour",
             description: getClientStatusLabel(changedOrder),
           })
         }
@@ -312,7 +312,7 @@ function ClientOrderTrackingContent() {
 
   const handleCashPaymentSession = async () => {
     if (!safeOrder.tableSessionId) {
-      console.error("NO TABLE SESSION ID – BLOCK PAYMENT")
+      console.error("NO TABLE SESSION ID â€“ BLOCK PAYMENT")
       return
     }
     if (!db || !restaurantId || isCashPaying) return
@@ -335,7 +335,7 @@ function ClientOrderTrackingContent() {
 
   const handleMobilePaymentSession = (method: AvailablePaymentMethod) => {
     if (!safeOrder.tableSessionId) {
-      console.error("NO TABLE SESSION ID – BLOCK PAYMENT")
+      console.error("NO TABLE SESSION ID â€“ BLOCK PAYMENT")
       return
     }
     if (!db || !restaurantId || isMobilePaying) return
@@ -370,7 +370,7 @@ function ClientOrderTrackingContent() {
 
   const handleConfirmMobilePayment = async () => {
     if (!safeOrder.tableSessionId) {
-      console.error("NO TABLE SESSION ID – BLOCK PAYMENT")
+      console.error("NO TABLE SESSION ID â€“ BLOCK PAYMENT")
       return
     }
     if (!db || !restaurantId || isConfirming) return
@@ -406,14 +406,6 @@ function ClientOrderTrackingContent() {
       onHome={goHome}
     >
       <div className="mx-auto max-w-md space-y-5">
-        <button
-          type="button"
-          onClick={goHome}
-          className="text-sm font-bold text-[var(--color-primary)]"
-        >
-          ← Retour au menu
-        </button>
-
         <section className={TRACKING_CARD_CLASS}>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-primary)]">
             Suivi commande
@@ -423,7 +415,7 @@ function ClientOrderTrackingContent() {
           </h1>
           <p className="mt-2 text-sm font-black text-muted-foreground">{orderDisplayId}</p>
           {shouldShowPhone && orderPhone ? (
-            <p className="mt-1 text-sm text-muted-foreground">Télé phone : {orderPhone}</p>
+            <p className="mt-1 text-sm text-muted-foreground">TÃ©lÃ© phone : {orderPhone}</p>
           ) : null}
         </section>
 
@@ -449,9 +441,14 @@ function ClientOrderTrackingContent() {
             </p>
             
             {tableSession?.paymentRequest?.status === "validated" ? (
-               <div className="mt-5 flex items-center gap-2 rounded-xl bg-green-500/10 p-3 text-sm font-black text-green-700 dark:text-green-300">
-                 <CheckCircle className="h-5 w-5" />
-                 Paiement confirmé
+               <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 p-4 text-green-800 dark:border-green-400/30 dark:bg-green-500/10 dark:text-green-200">
+                 <div className="flex items-center gap-2 text-sm font-black">
+                   <CheckCircle className="h-5 w-5" />
+                   Paiement confirmé
+                 </div>
+                 <p className="mt-2 text-sm font-semibold text-green-700 dark:text-green-200/90">
+                   Merci pour votre confiance. Nous espérons vous revoir très bientôt.
+                 </p>
                </div>
             ) : tableSession?.paymentRequest?.status === "requested" && tableSession?.paymentRequest?.method === "cash" ? (
                <div className="mt-5 rounded-xl border border-orange-300 bg-orange-100 p-4 text-center text-orange-800 dark:bg-orange-950/30 dark:text-orange-300">
@@ -475,7 +472,7 @@ function ClientOrderTrackingContent() {
                <div className="mt-5 space-y-3">
                  {tableSession?.paymentRequest?.status === "rejected" ? (
                     <div className="mb-3 rounded-xl bg-red-500/10 p-3 text-sm font-black text-red-700 dark:text-red-300">
-                      Paiement refusé, veuillez ré essayer.
+                      Paiement refusé, veuillez réessayer.
                     </div>
                  ) : null}
                  <p className="text-sm font-semibold text-orange-900 dark:text-orange-100">Comment souhaitez-vous payer ?</p>
@@ -521,17 +518,19 @@ function ClientOrderTrackingContent() {
             </p>
             <p className="mt-3 text-sm font-semibold text-emerald-900/80 dark:text-emerald-100/80">
               {prepaidPaymentConfirmed
-                ? "Paiement confirme. Aucun autre paiement n'est necessaire."
-                : "Paiement deja initie. La caisse finalise la validation si besoin."}
+                ? "Paiement confirmé. Aucun autre paiement n’est nécessaire."
+                : "Paiement déjà initié. La caisse finalise la validation si besoin."}
             </p>
           </section>
         ) : null}
         
-        <PaymentBadge
-          paymentStatus={effectivePaymentStatus}
-          paymentIntentStatus={orderWithPaymentVerification.paymentIntentStatus}
-          paymentVerificationStatus={orderWithPaymentVerification.paymentVerificationStatus}
-        />
+        {!shouldShowPostServicePayment ? (
+          <PaymentBadge
+            paymentStatus={effectivePaymentStatus}
+            paymentIntentStatus={orderWithPaymentVerification.paymentIntentStatus}
+            paymentVerificationStatus={orderWithPaymentVerification.paymentVerificationStatus}
+          />
+        ) : null}
 
       </div>
     </PublicTrackingLayout>
@@ -569,7 +568,7 @@ function buildVisibleSessionOrders(orders: any[], localTableUserId: string | nul
   orders.forEach((order) => {
     if (!order?.createdBy || order.createdBy === localTableUserId) return
     if (!guestMap.has(order.createdBy)) {
-      guestMap.set(order.createdBy, `InvitÃ© ${guestCount}`)
+      guestMap.set(order.createdBy, `InvitÃƒÂ© ${guestCount}`)
       guestCount += 1
     }
   })
@@ -581,7 +580,7 @@ function buildVisibleSessionOrders(orders: any[], localTableUserId: string | nul
 
     return {
       ...order,
-      createdByLabel: order?.createdBy ? guestMap.get(order.createdBy) || "InvitÃ©" : "InvitÃ©",
+      createdByLabel: order?.createdBy ? guestMap.get(order.createdBy) || "InvitÃƒÂ©" : "InvitÃƒÂ©",
     }
   })
 }
@@ -696,3 +695,4 @@ function mergeOrdersById(...arrays: any[]) {
   }
   return Array.from(map.values())
 }
+
