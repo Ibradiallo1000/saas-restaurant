@@ -3,7 +3,6 @@
 import * as React from "react"
 import {
   Banknote,
-  LockKeyhole,
   Loader2,
   Minus,
   PauseCircle,
@@ -44,8 +43,6 @@ type CartPanelProps = {
   onHold: () => void
   onDiscount: () => void
   onCheckout: () => void
-  canCloseSession: boolean
-  onCloseSession: () => void
 }
 
 export default function CartPanel({
@@ -72,8 +69,6 @@ export default function CartPanel({
   onHold,
   onDiscount,
   onCheckout,
-  canCloseSession,
-  onCloseSession,
 }: CartPanelProps) {
   return (
     <aside className="flex h-full flex-col overflow-hidden rounded-lg border bg-card shadow-sm">
@@ -214,16 +209,6 @@ export default function CartPanel({
           {processing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Encaisser"}
         </Button>
 
-        <Button
-          type="button"
-          variant="outline"
-          className="mt-2 h-14 w-full rounded-lg border-2 text-base font-black"
-          disabled={!canCloseSession || processing}
-          onClick={onCloseSession}
-        >
-          <LockKeyhole className="mr-2 h-5 w-5" />
-          Cloturer la caisse
-        </Button>
       </div>
     </aside>
   )

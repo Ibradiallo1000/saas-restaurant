@@ -184,6 +184,13 @@ function POSPageContent() {
     { id: ORDER_OPERATION_STATUS.COMPLETED, color: "border-zinc-500" },
   ], [])
 
+  const posVisibleOrders = React.useMemo(() => {
+    return safeActiveOrders.filter((order: any) => {
+      if (activeCashSession?.id && order.cashSessionId === activeCashSession.id) return true
+      return isPOSCollectionCandidate(order)
+    })
+  }, [activeCashSession?.id, safeActiveOrders])
+
   const posOrders = React.useMemo(() => {
     const groups: Record<string, any[]> = {
       [ORDER_OPERATION_STATUS.PENDING]: [],
@@ -193,7 +200,7 @@ function POSPageContent() {
       [ORDER_OPERATION_STATUS.COMPLETED]: [],
     }
 
-    safeActiveOrders.forEach((order: any) => {
+    posVisibleOrders.forEach((order: any) => {
       const orderStatus = getPOSOperationStatus(order)
       const isTerminalProductionStatus =
         orderStatus === ORDER_OPERATION_STATUS.SERVED ||
@@ -221,23 +228,23 @@ function POSPageContent() {
     })
 
     return groups
-  }, [safeActiveOrders])
+  }, [posVisibleOrders])
 
   const unpaidServedCount = React.useMemo(() => {
-    return safeActiveOrders.filter((order: any) => {
+    return posVisibleOrders.filter((order: any) => {
       const orderStatus = getPOSOperationStatus(order)
       return (
         orderStatus === ORDER_OPERATION_STATUS.SERVED ||
         orderStatus === ORDER_OPERATION_STATUS.PICKED_UP
       ) && !isOrderPaid(order)
     }).length
-  }, [safeActiveOrders])
+  }, [posVisibleOrders])
 
   React.useEffect(() => {
-    const currentOrderIds = new Set(safeActiveOrders.map((order: any) => order.id).filter(Boolean))
+    const currentOrderIds = new Set(posVisibleOrders.map((order: any) => order.id).filter(Boolean))
     const currentOrderStatuses = new Map<string, string>()
 
-    safeActiveOrders.forEach((order: any) => {
+    posVisibleOrders.forEach((order: any) => {
       if (order.id) {
         currentOrderStatuses.set(order.id, getPOSOperationStatus(order))
       }
@@ -250,7 +257,7 @@ function POSPageContent() {
       return
     }
 
-    const shouldAlert = safeActiveOrders.some((order: any) => {
+    const shouldAlert = posVisibleOrders.some((order: any) => {
       if (!order.id) return false
 
       const currentStatus = getPOSOperationStatus(order)
@@ -273,7 +280,7 @@ function POSPageContent() {
     if (shouldAlert) {
       playNewOrderNotificationSound()
     }
-  }, [safeActiveOrders])
+  }, [posVisibleOrders])
 
   const countryCode = React.useMemo(() => {
     const value = restaurant?.countryCode || restaurant?.country || restaurant?.countryIso
@@ -1280,6 +1287,8 @@ function POSPageContent() {
       userName={staffSnapshot.staffName}
       roleLabel="Caissier"
       onTabChange={setActiveTab}
+      canCloseSession={Boolean(activeCashSession) && cart.length === 0 && !processing}
+      onCloseSession={openCloseCashSessionDialog}
       sidebar={
         activeTab === "cashier" && activeCashSession ? (
           <CategorySidebar
@@ -1403,8 +1412,6 @@ function POSPageContent() {
             onHold={handleHoldCart}
             onDiscount={handleApplyDiscount}
             onCheckout={handleCheckoutSelectedPayment}
-            canCloseSession={Boolean(activeCashSession) && cart.length === 0}
-            onCloseSession={openCloseCashSessionDialog}
           />
         ) : undefined
       }
@@ -2000,6 +2007,19 @@ function getPOSOperationStatus(order: any) {
   }
 
   return orderStatusFromKitchenStatus(order?.kitchenStatus ?? order?.status)
+}
+
+function isPOSCollectionCandidate(order: any) {
+  if (isOrderPaid(order)) return false
+
+  const status = getPOSOperationStatus(order)
+  return (
+    status === ORDER_OPERATION_STATUS.SERVED ||
+    status === ORDER_OPERATION_STATUS.PICKED_UP ||
+    order.paymentStatus === "pending_cash" ||
+    order.paymentStatus === "pending_mobile" ||
+    order.paymentStatus === "pending_verification"
+  )
 }
 
 export function getOrderComputedTotal(order: any) {

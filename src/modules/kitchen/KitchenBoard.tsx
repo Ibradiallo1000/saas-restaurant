@@ -69,6 +69,7 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
 
   const kitchenOrders = React.useMemo(() => {
     return orders
+      .filter(shouldShowInTodayKitchen)
       .sort((a, b) => {
         const priorityDiff = getKitchenQueuePriority(a) - getKitchenQueuePriority(b)
 
@@ -280,6 +281,22 @@ function getCreatedAtMs(order: RestaurantOrder) {
     order.createdAt?.toMillis?.() ??
     order.createdAt?.toDate?.().getTime?.() ??
     Date.now()
+  )
+}
+
+function shouldShowInTodayKitchen(order: RestaurantOrder) {
+  const status = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
+  if (status !== ORDER_OPERATION_STATUS.SERVED && status !== ORDER_OPERATION_STATUS.PICKED_UP) return true
+  return isToday(getCreatedAtMs(order))
+}
+
+function isToday(timestamp: number) {
+  const date = new Date(timestamp)
+  const now = new Date()
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
   )
 }
 

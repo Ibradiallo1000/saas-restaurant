@@ -13,6 +13,8 @@ type POSLayoutProps = {
   roleLabel?: string
   totalAmount?: number
   onTabChange: (tab: POSTab) => void
+  canCloseSession?: boolean
+  onCloseSession?: () => void
   sidebar?: React.ReactNode
   center?: React.ReactNode
   left: React.ReactNode
@@ -29,6 +31,8 @@ export default function POSLayout({
   roleLabel,
   totalAmount = 0,
   onTabChange,
+  canCloseSession = false,
+  onCloseSession,
   sidebar,
   center,
   left,
@@ -48,6 +52,8 @@ export default function POSLayout({
         roleLabel={roleLabel}
         totalAmount={totalAmount}
         onTabChange={onTabChange}
+        canCloseSession={canCloseSession}
+        onCloseSession={onCloseSession}
       />
 
       {/* CONTENU PRINCIPAL */}

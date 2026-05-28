@@ -31,17 +31,20 @@ function getManagerKitchenColumnStatus(order: any) {
 export default function ManagerCuisinePage() {
   const now = useLiveNow()
   const { activeOrders, isLoadingOrders } = useRestaurantLiveData()
+  const visibleKitchenOrders = React.useMemo(() => {
+    return activeOrders.filter((order: any) => shouldShowInTodayKitchen(order, now))
+  }, [activeOrders, now])
 
   const ordersByStatus = React.useMemo(() => {
     return KITCHEN_COLUMNS.reduce<Record<string, any[]>>((groups, column) => {
-      groups[column.status] = activeOrders
+      groups[column.status] = visibleKitchenOrders
         .filter((order: any) => getManagerKitchenColumnStatus(order) === column.status)
         .sort((a: any, b: any) => getOrderAgeMinutes(b, now) - getOrderAgeMinutes(a, now))
       return groups
     }, {})
-  }, [activeOrders, now])
+  }, [visibleKitchenOrders, now])
 
-  const lateCount = activeOrders.filter((order: any) => isLateOrder(order, now)).length
+  const lateCount = visibleKitchenOrders.filter((order: any) => isLateOrder(order, now)).length
 
   return (
     <main className="flex h-[calc(100dvh-5rem)] min-h-0 flex-col gap-4 overflow-hidden pb-4 md:gap-6">
@@ -175,6 +178,21 @@ function isLateOrder(order: any, now: number) {
     status === ORDER_OPERATION_STATUS.PENDING ||
     status === ORDER_OPERATION_STATUS.IN_PREPARATION
   return isActionableStatus && getOrderAgeMinutes(order, now) > LATE_ORDER_THRESHOLD_MINUTES
+}
+
+function shouldShowInTodayKitchen(order: any, now: number) {
+  const status = getManagerKitchenColumnStatus(order)
+  if (status !== ORDER_OPERATION_STATUS.SERVED) return true
+
+  const createdAt = order.createdAt?.toDate?.().getTime?.() ?? now
+  const orderDate = new Date(createdAt)
+  const currentDate = new Date(now)
+
+  return (
+    orderDate.getFullYear() === currentDate.getFullYear() &&
+    orderDate.getMonth() === currentDate.getMonth() &&
+    orderDate.getDate() === currentDate.getDate()
+  )
 }
 
 function getOrderTypeLabel(order: any) {

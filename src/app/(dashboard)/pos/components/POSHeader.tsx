@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CircleDollarSign, LogOut } from "lucide-react"
+import { CircleDollarSign, LockKeyhole, LogOut } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
@@ -19,6 +19,8 @@ type POSHeaderProps = {
   roleLabel?: string
   totalAmount?: number
   onTabChange: (tab: POSTab) => void
+  canCloseSession?: boolean
+  onCloseSession?: () => void
   onLogout?: () => void
 }
 
@@ -36,6 +38,8 @@ export default function POSHeader({
   roleLabel = "Caissier",
   totalAmount = 0,
   onTabChange,
+  canCloseSession = false,
+  onCloseSession,
   onLogout,
 }: POSHeaderProps) {
   return (
@@ -86,6 +90,18 @@ export default function POSHeader({
         >
           {isCashSessionOpen ? "Active" : "Ferm\u00e9e"}
         </Badge>
+
+        {isCashSessionOpen ? (
+          <button
+            type="button"
+            onClick={onCloseSession}
+            disabled={!canCloseSession}
+            className="hidden h-10 items-center gap-2 rounded-md border border-white/30 bg-white/15 px-3 text-xs font-black text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-45 md:inline-flex"
+          >
+            <LockKeyhole className="h-4 w-4" />
+            Clôturer
+          </button>
+        ) : null}
 
         <div className="flex flex-col text-xs leading-tight">
           <span className="font-medium">{userName || "Utilisateur"}</span>

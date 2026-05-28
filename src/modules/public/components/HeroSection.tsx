@@ -20,7 +20,7 @@ export default function HeroSection({ restaurant }: { restaurant: any }) {
   const rating = Number(restaurant?.rating || restaurant?.averageRating || 4.8)
 
   return (
-    <section className="relative h-[180px] w-full overflow-hidden sm:h-[260px] lg:h-[340px]">
+    <section className="relative h-[160px] w-full overflow-hidden sm:h-[260px] lg:h-[340px]">
 
       {/* IMAGE */}
       <img
