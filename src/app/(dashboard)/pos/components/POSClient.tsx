@@ -51,7 +51,11 @@ import {
   updateCashSessionTotals,
   validateMobilePaymentTransaction,
 } from "@/services/pos-security.service"
-import { PaymentLedgerService } from "@/services/payment-ledger.service"
+import {
+  buildPaymentIdempotencyKey,
+  normalizePaymentProvider,
+  PaymentLedgerService,
+} from "@/services/payment-ledger.service"
 import {
   getConfiguredCartItemId,
   recalculateConfiguredUnitPrice,
@@ -1090,11 +1094,47 @@ function POSPageContent() {
       tableSessionOrdersSnap.docs.forEach((orderDoc) => orderDocs.set(orderDoc.id, orderDoc))
       legacySessionOrdersSnap.docs.forEach((orderDoc) => orderDocs.set(orderDoc.id, orderDoc))
 
-      const batch = writeBatch(db)
       const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TABLE_SESSIONS, session.id)
       const method = session.paymentRequest?.method === "mobile" ? "mobile" : "cash"
-      let sessionTotal = 0
+      const paymentType = method === "mobile" ? "mobile_money" : "cash"
+      const paymentProvider = method === "mobile" ? normalizePaymentProvider(session.paymentRequest?.provider || "mobile_money") : null
+      const ledger = new PaymentLedgerService(db)
 
+      for (const orderDoc of Array.from(orderDocs.values())) {
+        const currentOrder = { id: orderDoc.id, ...orderDoc.data() } as any
+        const amount = getOrderComputedTotal(currentOrder)
+
+        await ledger.createPayment({
+          restaurantId,
+          orderId: orderDoc.id,
+          sessionId: activeCashSession.id,
+          cashierId: user.uid,
+          source: "qr_table",
+          type: paymentType,
+          provider: paymentProvider,
+          amount,
+          status: "confirmed",
+          idempotencyKey: buildPaymentIdempotencyKey([
+            "table-session-payment",
+            restaurantId,
+            session.id,
+            orderDoc.id,
+            paymentType,
+            paymentProvider,
+          ]),
+          orderUpdate: {
+            paymentStatus: "paid",
+            paymentMethod: paymentType,
+            paymentType,
+            paymentProvider,
+            cashSessionId: activeCashSession.id,
+            paidAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+        })
+      }
+
+      const batch = writeBatch(db)
       batch.update(sessionRef, {
         "paymentRequest.status": "validated",
         "paymentRequest.handledAt": serverTimestamp(),
@@ -1114,22 +1154,7 @@ function POSPageContent() {
         })
       }
 
-      orderDocs.forEach((orderDoc) => {
-        const currentOrder = { id: orderDoc.id, ...orderDoc.data() } as any
-        sessionTotal += getOrderComputedTotal(currentOrder)
-        batch.update(orderDoc.ref, {
-          paymentStatus: "paid",
-          paymentMethod: method === "mobile" ? "mobile_money" : "cash",
-          paymentType: method === "mobile" ? "mobile_money" : "cash",
-          paymentProvider: method === "mobile" ? session.paymentRequest?.provider ?? null : null,
-          cashSessionId: activeCashSession.id,
-          paidAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
-      })
-
       await batch.commit()
-      await updateActiveCashSessionTotals(method, sessionTotal)
       toast({ title: "Paiement valide" })
     } catch (error: any) {
       console.error(error)

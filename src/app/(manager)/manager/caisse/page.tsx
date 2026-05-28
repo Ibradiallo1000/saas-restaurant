@@ -20,6 +20,11 @@ import { getFinancialSummary } from "@/lib/finance/financial-summary"
 import { cn } from "@/lib/utils"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 import { TreasuryService } from "@/services/treasury.service"
+import {
+  buildPaymentIdempotencyKey,
+  normalizePaymentProvider,
+  PaymentLedgerService,
+} from "@/services/payment-ledger.service"
 
 export default function ManagerCaissePage() {
   const db = useFirestore()
@@ -59,6 +64,15 @@ export default function ManagerCaissePage() {
 
   const validateTableSessionPayment = async (session: any) => {
     if (!db || !restaurantId || !user) return
+    if (!activeSession?.id) {
+      toast({
+        title: "Caisse fermée",
+        description: "Ouvre une session caisse avant de valider un paiement.",
+        variant: "destructive",
+      })
+      return
+    }
+
     setProcessingOrderId(session.id)
     try {
       const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "tableSessions", session.id)
@@ -72,6 +86,45 @@ export default function ManagerCaissePage() {
       tableSessionOrdersSnap.docs.forEach((orderDoc) => orderDocs.set(orderDoc.id, orderDoc))
       legacySessionOrdersSnap.docs.forEach((orderDoc) => orderDocs.set(orderDoc.id, orderDoc))
 
+      const method = session.paymentRequest?.method === "mobile" ? "mobile" : "cash"
+      const paymentType = method === "mobile" ? "mobile_money" : "cash"
+      const paymentProvider = method === "mobile" ? normalizePaymentProvider(session.paymentRequest?.provider || "mobile_money") : null
+      const ledger = new PaymentLedgerService(db)
+
+      for (const orderDoc of Array.from(orderDocs.values())) {
+        const currentOrder = { id: orderDoc.id, ...orderDoc.data() } as any
+        const amount = getOrderComputedTotal(currentOrder)
+
+        await ledger.createPayment({
+          restaurantId,
+          orderId: orderDoc.id,
+          sessionId: activeSession.id,
+          cashierId: user.uid,
+          source: "qr_table",
+          type: paymentType,
+          provider: paymentProvider,
+          amount,
+          status: "confirmed",
+          idempotencyKey: buildPaymentIdempotencyKey([
+            "table-session-payment",
+            restaurantId,
+            session.id,
+            orderDoc.id,
+            paymentType,
+            paymentProvider,
+          ]),
+          orderUpdate: {
+            paymentStatus: "paid",
+            paymentMethod: paymentType,
+            paymentType,
+            paymentProvider,
+            cashSessionId: activeSession.id,
+            paidAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+        })
+      }
+
       const batch = writeBatch(db)
       batch.update(sessionRef, {
         "paymentRequest.status": "validated",
@@ -79,14 +132,6 @@ export default function ManagerCaissePage() {
         "paymentRequest.handledBy": user.uid,
         status: "closed",
         closedAt: serverTimestamp(),
-      })
-
-      orderDocs.forEach((orderDoc) => {
-        batch.update(orderDoc.ref, {
-          paymentStatus: "paid",
-          paidAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
       })
 
       await batch.commit()
@@ -128,7 +173,12 @@ export default function ManagerCaissePage() {
   const [discrepancyReasons, setDiscrepancyReasons] = React.useState<Record<string, string>>({})
 
   const canValidateCash = role === "manager" || role === "owner"
-  const activeSession = cashSessions.find((session: any) => isOpenCashSessionStatus(session.status)) ?? null
+  const activeSession = cashSessions.find((session: any) => {
+    return (
+      isOpenCashSessionStatus(session.status) &&
+      (session.cashierId === user?.uid || session.userId === user?.uid)
+    )
+  }) ?? null
   const openingRequests = React.useMemo(() => {
     const requestRows = cashSessionRequests.map((request: any) => ({
       ...request,
@@ -788,6 +838,18 @@ function getTableSessionPaymentSummary(sessions: any[]) {
 
 function getSessionAmount(session: any) {
   return Number(session.totalAmount ?? session.total ?? 0)
+}
+
+function getOrderComputedTotal(order: any) {
+  if (Array.isArray(order.items) && order.items.length > 0) {
+    return order.items.reduce((sum: number, item: any) => {
+      const unitPrice = Number(item.priceSnapshot ?? item.price ?? item.unitPrice ?? 0)
+      const quantity = Number(item.quantity ?? 1)
+      return sum + unitPrice * quantity
+    }, 0)
+  }
+
+  return Number(order.totalAmount ?? order.total ?? 0)
 }
 
 function formatSessionTime(value: any) {
