@@ -4,6 +4,7 @@ import * as React from "react"
 import { X, Minus, Plus, Trash2 } from "lucide-react"
 
 import type { CartItem } from "@/modules/restaurant/types"
+import { groupCartLinesByBundle } from "@/lib/linked-option-groups"
 import { useCart } from "../cart/CartContext"
 import CheckoutQRModal from "./CheckoutQRModal"
 import CheckoutPublicModal from "./CheckoutPublicModal"
@@ -48,16 +49,22 @@ export default function CartDrawer({ open, onClose, restaurantId, tableContext, 
               <p className="text-sm font-semibold">Votre commande est vide</p>
             </div>
           ) : (
-            items.map((item: CartItem) => (
+            groupCartLinesByBundle(items).map((group) => (
+              <div key={group.bundleId || group.lines[0]?.id} className="space-y-2">
+                {group.lines.map((item: CartItem, index) => (
               <div
                 key={item.id}
                 className="group flex flex-col gap-3 rounded-2xl border border-border/50 bg-card p-4 text-card-foreground shadow-sm"
+                style={item.bundleId && !item.isBundleMain ? { marginLeft: "1rem", opacity: 0.95 } : undefined}
               >
                 <div className="flex justify-between items-start gap-2">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-black truncate">
-                      {item.name}
+                      {item.bundleId && !item.isBundleMain ? `+ ${item.name}` : item.name}
                     </p>
+                    {item.linkedGroupTitle ? (
+                      <p className="text-[10px] text-muted-foreground">{item.linkedGroupTitle}</p>
+                    ) : null}
 
                     {item.selections &&
                       Object.entries(item.selections).map(([option, values]) => (
@@ -80,6 +87,7 @@ export default function CartDrawer({ open, onClose, restaurantId, tableContext, 
                   <button
                     onClick={() => removeItem(item.id)}
                     className="text-red-500"
+                    style={{ visibility: index === 0 || !group.bundleId ? "visible" : "hidden" }}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -114,6 +122,8 @@ export default function CartDrawer({ open, onClose, restaurantId, tableContext, 
                     {item.total.toLocaleString()} FCFA
                   </div>
                 </div>
+              </div>
+                ))}
               </div>
             ))
           )}

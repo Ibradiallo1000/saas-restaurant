@@ -64,6 +64,11 @@ import {
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import OptionEditor from "@/components/menu/OptionEditor"
+import LinkedOptionsEditor from "@/components/menu/LinkedOptionsEditor"
+import {
+  sanitizeLinkedOptionGroups,
+  type LinkedOptionGroup,
+} from "@/lib/linked-option-groups"
 import ImagePickerModal from "@/components/ImagePickerModal"
 import { CatalogProvider, useCatalog } from "@/modules/catalog/CatalogProvider"
 
@@ -416,6 +421,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   })
 
   const [options, setOptions] = React.useState<any[]>([])
+  const [linkedOptionGroups, setLinkedOptionGroups] = React.useState<LinkedOptionGroup[]>([])
   const [recipe, setRecipe] = React.useState<any[]>([])
   const draftProductForConsumption = React.useMemo(() => {
     const components = buildComponentsFromLegacy({ recipe, options })
@@ -755,6 +761,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       options: sanitizedOptions,
       recipe: sanitizedRecipe,
       components: sanitizedComponents,
+      linkedOptionGroups: sanitizeLinkedOptionGroups(linkedOptionGroups),
       hasComplexConsumption: productHasComplexConsumption,
       preparationMode: productForm.preparationMode,
       updatedAt: serverTimestamp()
@@ -805,6 +812,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
         preparationMode: "kitchen",
       })
       setOptions([])
+      setLinkedOptionGroups([])
       setRecipe([])
     } catch (error) {
       console.error(error)
@@ -840,6 +848,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       preparationMode: product.preparationMode || getDefaultPreparationMode(categoryName),
     })
     setOptions(product.options || [])
+    setLinkedOptionGroups(sanitizeLinkedOptionGroups(product.linkedOptionGroups))
     setRecipe(normalizeRecipe(product.recipe))
     setIsProductOpen(true)
   }
@@ -858,6 +867,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       preparationMode: getDefaultPreparationMode(categoryName),
     })
     setOptions([])
+    setLinkedOptionGroups([])
     setRecipe([])
     setIsProductOpen(true)
   }
@@ -1330,6 +1340,21 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
             <div className="border-t pt-4">
               <OptionEditor options={options} setOptions={setOptions} inventoryItems={inventoryItems || []} />
             </div>
+
+            <LinkedOptionsEditor
+              groups={linkedOptionGroups}
+              setGroups={setLinkedOptionGroups}
+              categories={(categories || []).map((category: any) => ({
+                id: category.id,
+                name: category.name,
+              }))}
+              products={(products || []).map((product: any) => ({
+                id: product.id,
+                name: product.name,
+                categoryId: product.categoryId,
+                isActive: product.isActive,
+              }))}
+            />
 
             <div className="flex justify-end gap-2 pt-4 border-t">
               <Button variant="ghost" onClick={() => setIsProductOpen(false)}>

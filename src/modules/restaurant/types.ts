@@ -114,6 +114,9 @@ export type CartItem = {
   selections?: CartSelection
   selectedOptions?: SelectedCartOption[]
   imageUrl?: string
+  bundleId?: string
+  isBundleMain?: boolean
+  linkedGroupTitle?: string
 }
 
 // types.ts - AJOUTE À LA FIN

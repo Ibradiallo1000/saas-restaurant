@@ -68,6 +68,18 @@ import { CatalogProvider, useCatalog } from "@/modules/catalog/CatalogProvider"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 import type { SelectedCartOption } from "@/modules/restaurant/types"
 import {
+  buildBundleCartLines,
+  getActiveLinkedOptionGroups,
+  getCartLinesForBundleRemoval,
+  productNeedsConfigurator,
+  type LinkedOptionGroup,
+  type LinkedOptionSelection,
+} from "@/lib/linked-option-groups"
+import { getDefaultConfigSelections } from "@/lib/product-configurator"
+import ProductConfiguratorModal, {
+  validateConfiguratorSelections,
+} from "@/components/product-configurator/ProductConfiguratorModal"
+import {
   getKitchenOrderItems,
   orderHasKitchenItems,
   resolveProductPreparationMode,
@@ -142,6 +154,8 @@ function POSPageContent() {
   const [declaredMobileInput, setDeclaredMobileInput] = React.useState("")
   const [configProduct, setConfigProduct] = React.useState<any | null>(null)
   const [configSelections, setConfigSelections] = React.useState<Record<string, SelectedCartOption>>({})
+  const [configLinkedSelections, setConfigLinkedSelections] = React.useState<LinkedOptionSelection[]>([])
+  const [configValidationError, setConfigValidationError] = React.useState<string | null>(null)
   const previousOrderIdsRef = React.useRef<Set<string>>(new Set())
   const previousOrderStatusRef = React.useRef<Map<string, string>>(new Map())
   const hasInitializedOrderSoundRef = React.useRef(false)
@@ -567,23 +581,22 @@ function POSPageContent() {
       console.log("POS product", product)
     }
 
-    const hasOptions =
-      (Array.isArray(product.options) && product.options.length > 0) ||
-      (Array.isArray(product.sizes) && product.sizes.length > 0) ||
-      (Array.isArray(product.variants) && product.variants.length > 0)
-
-    if (!hasOptions) {
+    if (!productNeedsConfigurator(product)) {
       addToCart(product)
       return
     }
 
     setConfigProduct(product)
     setConfigSelections(getDefaultConfigSelections(product))
+    setConfigLinkedSelections([])
+    setConfigValidationError(null)
   }
 
   const closeProductSelector = () => {
     setConfigProduct(null)
     setConfigSelections({})
+    setConfigLinkedSelections([])
+    setConfigValidationError(null)
   }
 
   const toggleConfigChoice = (
@@ -614,12 +627,73 @@ function POSPageContent() {
     })
   }
 
+  const toggleLinkedProduct = (group: LinkedOptionGroup, productId: string) => {
+    setConfigLinkedSelections((current) => {
+      const inGroup = current.filter((selection) => selection.groupId === group.id)
+      const exists = inGroup.some((selection) => selection.productId === productId)
+
+      if (exists) {
+        return current.filter(
+          (selection) => !(selection.groupId === group.id && selection.productId === productId)
+        )
+      }
+
+      let next = current.filter((selection) => selection.groupId !== group.id || group.maxSelect > 1)
+      if (group.maxSelect === 1) {
+        next = next.filter((selection) => selection.groupId !== group.id)
+      } else if (inGroup.length >= group.maxSelect) {
+        return current
+      }
+
+      return [
+        ...next,
+        {
+          groupId: group.id,
+          groupTitle: group.title,
+          productId,
+        },
+      ]
+    })
+    setConfigValidationError(null)
+  }
+
   const addConfiguredToCart = () => {
     if (!configProduct) return
 
+    const validationError = validateConfiguratorSelections(
+      configProduct,
+      configSelections,
+      configLinkedSelections
+    )
+    if (validationError) {
+      setConfigValidationError(validationError)
+      return
+    }
+
     const selectedOptions = Object.values(configSelections)
+    const mainUnitPrice = getConfiguredUnitPrice(configProduct, selectedOptions)
+    const linkedGroups = getActiveLinkedOptionGroups(configProduct)
+    const hasLinkedSelections = configLinkedSelections.length > 0
+
+    if (hasLinkedSelections || linkedGroups.length > 0) {
+      const bundleLines = buildBundleCartLines({
+        mainProduct: configProduct,
+        selectedOptions,
+        linkedSelections: configLinkedSelections,
+        linkedGroups,
+        catalogProducts: safeProducts,
+        mainUnitPrice,
+      })
+
+      setCart((current) => [...current, ...bundleLines])
+      closeProductSelector()
+      if (!turboMode) {
+        toast({ title: "Ajouté", description: configProduct.name, duration: 500 })
+      }
+      return
+    }
+
     const productId = configProduct.id
-    const unitPrice = getConfiguredUnitPrice(configProduct, selectedOptions)
     const cartItemId = getConfiguredCartItemId(productId, selectedOptions)
 
     setCart((current) => {
@@ -641,7 +715,7 @@ function POSPageContent() {
           productId,
           name: configProduct.name,
           imageUrl: configProduct.imageUrl,
-          unitPrice,
+          unitPrice: mainUnitPrice,
           quantity: 1,
           selectedOptions,
         },
@@ -649,7 +723,6 @@ function POSPageContent() {
     })
 
     closeProductSelector()
-
     if (!turboMode) {
       toast({ title: "Ajouté", description: configProduct.name, duration: 500 })
     }
@@ -1407,13 +1480,17 @@ function POSPageContent() {
             ) : null}
 
             {configProduct ? (
-              <ProductOptionsModal
+              <ProductConfiguratorModal
                 product={configProduct}
-                selections={configSelections}
+                catalogProducts={safeProducts}
+                embeddedSelections={configSelections}
+                linkedSelections={configLinkedSelections}
                 unitPrice={getConfiguredUnitPrice(configProduct, Object.values(configSelections))}
-                onToggleChoice={toggleConfigChoice}
+                onToggleEmbeddedChoice={toggleConfigChoice}
+                onToggleLinkedProduct={toggleLinkedProduct}
                 onClose={closeProductSelector}
                 onAdd={addConfiguredToCart}
+                validationError={configValidationError}
               />
             ) : null}
           </div>
@@ -1446,7 +1523,11 @@ function POSPageContent() {
             onTableSelect={handleTableSelect}
             onIncrease={increaseCartItem}
             onDecrease={removeFromCart}
-            onRemove={(itemId) => setCart((current) => current.filter((item) => item.id !== itemId))}
+            onRemove={(itemId) =>
+              setCart((current) =>
+                current.filter((item) => !getCartLinesForBundleRemoval(current, itemId).includes(item.id))
+              )
+            }
             onClear={() => {
               setCart([])
               setDiscountRate(0)
@@ -1712,205 +1793,6 @@ function DiffAmount({ label, value, strong }: { label: string; value: number; st
 function normalizeMoneyInput(value: string) {
   const amount = Math.round(Number(value || 0))
   return Number.isFinite(amount) && amount > 0 ? amount : 0
-}
-
-function ProductOptionsModal({
-  product,
-  selections,
-  unitPrice,
-  onToggleChoice,
-  onClose,
-  onAdd,
-}: {
-  product: any
-  selections: Record<string, SelectedCartOption>
-  unitPrice: number
-  onToggleChoice: (group: { name: string; multiple?: boolean }, choice: { name: string; price?: number }) => void
-  onClose: () => void
-  onAdd: () => void
-}) {
-  const groups = getProductConfigGroups(product)
-  const imageUrl = product.imageUrl
-
-  React.useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose()
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [onClose])
-
-  React.useEffect(() => {
-    if (!product.sizes?.length || selections.Taille) return
-
-    const defaultSize = product.sizes[0]
-    onToggleChoice(
-      { name: "Taille" },
-      {
-        name: defaultSize.name || defaultSize.label || defaultSize.size || "Taille",
-        price: Number(defaultSize.price ?? 0),
-      }
-    )
-  }, [product])
-
-  const handleOverlayMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (event.target === event.currentTarget) onClose()
-  }
-
-  const description =
-    product.description || product.shortDescription || product.details || null
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      onMouseDown={handleOverlayMouseDown}
-    >
-      <div className="mx-auto w-full max-w-md overflow-hidden rounded-2xl bg-card shadow-xl">
-        <div className="relative h-48 w-full bg-muted">
-          {imageUrl ? (
-            <img
-              src={getOptimizedImage(imageUrl, 720)}
-              className="h-48 w-full object-cover"
-              alt={product.name}
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center">
-              <ShoppingCart className="h-10 w-10 text-muted-foreground" />
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute right-3 top-3 rounded-full bg-background/90 p-2 text-foreground shadow-sm hover:bg-background"
-            aria-label="Fermer"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-3">
-          <div className="space-y-1">
-            <h2 className="text-lg font-bold">{product.name}</h2>
-            {description ? (
-              <p className="text-sm text-muted-foreground">
-                {description}
-              </p>
-            ) : null}
-            <p className="font-bold text-primary">{unitPrice.toLocaleString()} FCFA</p>
-          </div>
-
-          {groups.map((group) => (
-            <div key={group.name}>
-              <p className="mb-2 text-[10px] font-black uppercase text-muted-foreground">
-                {group.name}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {group.choices.map((choice) => {
-                  const active = group.multiple
-                    ? Boolean(selections[`${group.name}:${choice.name}`])
-                    : selections[group.name]?.choiceName === choice.name
-
-                  return (
-                    <button
-                      key={choice.name}
-                      type="button"
-                      onClick={() => onToggleChoice(group, choice)}
-                      className={cn(
-                        "rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-bold text-foreground",
-                        active && "border-primary bg-primary/10 text-primary"
-                      )}
-                    >
-                      {choice.name}
-                      {choice.price ? ` +${Number(choice.price).toLocaleString()}` : ""}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="border-t border-border p-4">
-          <Button
-            type="button"
-            className="w-full rounded-xl bg-primary py-3 font-semibold text-white hover:bg-primary/90"
-            onClick={onAdd}
-          >
-            Ajouter au panier
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function getProductConfigGroups(product: any) {
-  const groups: Array<{
-    name: string
-    multiple?: boolean
-    choices: Array<{ name: string; price?: number }>
-  }> = []
-
-  if (Array.isArray(product?.sizes) && product.sizes.length > 0) {
-    groups.push({
-      name: "Taille",
-      choices: product.sizes.map((size: any) => ({
-        name: size.name || size.label || size.size || "Taille",
-        price: Number(size.price ?? 0),
-      })),
-    })
-  }
-
-  if (Array.isArray(product?.variants) && product.variants.length > 0) {
-    groups.push({
-      name: "Variante",
-      choices: product.variants.map((variant: any) => ({
-        name: variant.name || variant.label || "Variante",
-        price: Number(variant.price ?? 0),
-      })),
-    })
-  }
-
-  if (Array.isArray(product?.options)) {
-    product.options.forEach((option: any) => {
-      if (!Array.isArray(option?.choices) || option.choices.length === 0) return
-      groups.push({
-        name: option.name || "Option",
-        multiple: Boolean(option.multiple),
-        choices: option.choices.map((choice: any) => ({
-          name: choice.name || choice.label || "Choix",
-          price: Number(choice.price ?? 0),
-        })),
-      })
-    })
-  }
-
-  if (groups.length === 0) {
-    buildSelectionOptionsFromComponents(product).forEach((option: any) => {
-      groups.push({
-        name: option.name,
-        multiple: Boolean(option.multiple),
-        choices: option.choices || [],
-      })
-    })
-  }
-
-  return groups
-}
-
-function getDefaultConfigSelections(product: any): Record<string, SelectedCartOption> {
-  const defaultSize = product?.sizes?.[0] || null
-
-  if (!defaultSize) return {}
-
-  return {
-    Taille: {
-      optionName: "Taille",
-      choiceName: defaultSize.name || defaultSize.label || defaultSize.size || "Taille",
-      price: Number(defaultSize.price ?? 0),
-    },
-  }
 }
 
 // Compact closed session panel

@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { getOptimizedImage } from "@/lib/image"
 import { cn } from "@/lib/utils"
+import { groupCartLinesByBundle } from "@/lib/linked-option-groups"
 
 export type PosPaymentMode = "cash" | "mobile"
 
@@ -138,14 +139,20 @@ export default function CartPanel({
           </div>
         ) : (
           <div className="space-y-2">
-            {cart.map((item) => (
-              <CartLine
-                key={item.id}
-                item={item}
-                onIncrease={() => onIncrease(item)}
-                onDecrease={() => onDecrease(item.id)}
-                onRemove={() => onRemove(item.id)}
-              />
+            {groupCartLinesByBundle(cart).map((group) => (
+              <div key={group.bundleId || group.lines[0]?.id} className="space-y-1">
+                {group.lines.map((item, index) => (
+                  <CartLine
+                    key={item.id}
+                    item={item}
+                    nested={Boolean(group.bundleId && !item.isBundleMain)}
+                    onIncrease={() => onIncrease(item)}
+                    onDecrease={() => onDecrease(item.id)}
+                    onRemove={() => onRemove(item.id)}
+                    showControls={index === 0 || !group.bundleId}
+                  />
+                ))}
+              </div>
             ))}
           </div>
         )}
@@ -214,11 +221,15 @@ export default function CartPanel({
 
 function CartLine({
   item,
+  nested = false,
+  showControls = true,
   onIncrease,
   onDecrease,
   onRemove,
 }: {
   item: any
+  nested?: boolean
+  showControls?: boolean
   onIncrease: () => void
   onDecrease: () => void
   onRemove: () => void
@@ -227,7 +238,12 @@ function CartLine({
   const lineTotal = Math.round(unitPrice) * Number(item.quantity ?? 1)
 
   return (
-    <div className="grid grid-cols-[52px_minmax(0,1fr)_112px] gap-2 rounded-xl border bg-background p-2 shadow-sm">
+    <div
+      className={cn(
+        "grid grid-cols-[52px_minmax(0,1fr)_112px] gap-2 rounded-xl border bg-background p-2 shadow-sm",
+        nested && "ml-4 border-dashed bg-muted/20"
+      )}
+    >
       {item.imageUrl ? (
         <img
           src={getOptimizedImage(item.imageUrl, 80)}
@@ -242,10 +258,25 @@ function CartLine({
       )}
 
       <div className="min-w-0">
-        <p className="truncate text-sm font-black">{item.name}</p>
+        <p className="truncate text-sm font-black">
+          {nested && item.linkedGroupTitle ? `+ ${item.name}` : item.name}
+        </p>
+        {nested && item.linkedGroupTitle ? (
+          <p className="text-[10px] font-semibold text-muted-foreground">{item.linkedGroupTitle}</p>
+        ) : null}
+        {!nested && item.selectedOptions?.length ? (
+          <div className="mt-1 space-y-0.5">
+            {item.selectedOptions.map((option: any) => (
+              <p key={`${option.optionName}-${option.choiceName}`} className="text-[10px] text-muted-foreground">
+                {option.optionName}: {option.choiceName}
+              </p>
+            ))}
+          </div>
+        ) : null}
         <p className="text-xs font-bold text-muted-foreground">{lineTotal.toLocaleString("fr-FR")} FCFA</p>
       </div>
 
+      {showControls ? (
       <div className="flex items-center justify-end gap-1">
         <button type="button" onClick={onDecrease} className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted hover:bg-orange-100">
           <Minus className="h-4 w-4" />
@@ -258,6 +289,9 @@ function CartLine({
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
+      ) : (
+        <div />
+      )}
     </div>
   )
 }

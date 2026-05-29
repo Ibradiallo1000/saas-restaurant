@@ -3,6 +3,7 @@
 import * as React from "react"
 
 import type { CartItem, CartSelection, SelectedCartOption } from "@/modules/restaurant/types"
+import { getCartLinesForBundleRemoval } from "@/lib/linked-option-groups"
 
 const CART_STORAGE_KEY = "restaurant_public_cart_v1"
 
@@ -16,6 +17,9 @@ type AddCartItemInput = {
   selections?: CartSelection
   selectedOptions?: SelectedCartOption[]
   imageUrl?: string
+  bundleId?: string
+  isBundleMain?: boolean
+  linkedGroupTitle?: string
 }
 
 type CartContextType = {
@@ -90,7 +94,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }
 
   const removeItem = (id: string) => {
-    setItems((prev) => prev.filter((i) => i.id !== id))
+    setItems((prev) => {
+      const idsToRemove = new Set(getCartLinesForBundleRemoval(prev, id))
+      return prev.filter((item) => !idsToRemove.has(item.id))
+    })
   }
 
   const updateQty = (id: string, qty: number) => {
@@ -156,6 +163,9 @@ function normalizeInputItem(input: AddCartItemInput): CartItem | null {
     selections: input.selections,
     selectedOptions: input.selectedOptions,
     imageUrl: input.imageUrl,
+    bundleId: input.bundleId,
+    isBundleMain: input.isBundleMain,
+    linkedGroupTitle: input.linkedGroupTitle,
   }
 }
 

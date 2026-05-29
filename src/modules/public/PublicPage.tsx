@@ -14,6 +14,8 @@ import DishCard from "./components/DishCard"
 import Header from "./components/Header"
 import HeroSection from "./components/HeroSection"
 import ProductModal from "./components/ProductModal"
+import PublicProductConfigurator from "./components/PublicProductConfigurator"
+import { productNeedsConfigurator } from "@/lib/linked-option-groups"
 import StickyCartBar from "./components/StickyCartBar"
 import { useCart } from "./cart/CartContext"
 import {
@@ -348,13 +350,22 @@ function PublicPageContent({
         activeOrderId={isDineInContinuation ? orderId : null}
       />
 
-      {selectedProduct && (
+      {selectedProduct && productNeedsConfigurator(selectedProduct) ? (
+        <PublicProductConfigurator
+          product={selectedProduct}
+          catalogProducts={products || []}
+          onClose={() => setSelectedProduct(null)}
+          onAdded={() => setSelectedProduct(null)}
+        />
+      ) : null}
+
+      {selectedProduct && !productNeedsConfigurator(selectedProduct) ? (
         <ProductModal
           product={selectedProduct}
           onAddToCart={handleAddToCartGlobal}
           onClose={() => setSelectedProduct(null)}
         />
-      )}
+      ) : null}
     </div>
   )
 }

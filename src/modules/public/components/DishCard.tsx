@@ -3,6 +3,7 @@
 import * as React from "react"
 import { ChefHat, Plus, Check, Flame } from "lucide-react"
 
+import { productNeedsConfigurator } from "@/lib/linked-option-groups"
 import { getOptimizedImage } from "@/lib/image"
 import { useCart } from "../cart/CartContext"
 
@@ -19,10 +20,7 @@ export default function DishCard({
 
   const hasImage = Boolean(product?.imageUrl && !imgError)
 
-  const hasOptions =
-    (Array.isArray(product?.options) && product.options.length > 0) ||
-    (Array.isArray(product?.sizes) && product.sizes.length > 0) ||
-    (Array.isArray(product?.variants) && product.variants.length > 0)
+  const hasOptions = productNeedsConfigurator(product)
 
   // ✅ POPULARITÉ PLUS PROPRE
   const isPopular = (product?.orderCount || 0) > 10
