@@ -147,8 +147,14 @@ function ManagerSidebar() {
   const [collapsed, setCollapsed] = React.useState(false)
 
   const handleLogout = React.useCallback(async () => {
-    await signOut(auth)
-    router.push("/login")
+    try {
+      await signOut(auth)
+      router.push("/login")
+    } catch (error) {
+      console.error("Erreur lors de la déconnexion:", error)
+      // Rediriger même en cas d'erreur pour éviter de laisser l'utilisateur bloqué
+      router.push("/login")
+    }
   }, [auth, router])
 
   return (
@@ -278,8 +284,14 @@ function ManagerMobileDrawer({
   const pendingCashOpeningCount = useManagerPendingCashOpeningCount()
 
   const handleLogout = React.useCallback(async () => {
-    await signOut(auth)
-    router.push("/login")
+    try {
+      await signOut(auth)
+      router.push("/login")
+    } catch (error) {
+      console.error("Erreur lors de la déconnexion:", error)
+      // Rediriger même en cas d'erreur pour éviter de laisser l'utilisateur bloqué
+      router.push("/login")
+    }
   }, [auth, router])
 
   return (

@@ -2,8 +2,9 @@
 
 import * as React from "react"
 import { addDoc, collection, doc, getDocs, limit, query, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore"
-import { useSearchParams } from "next/navigation"
-import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
+import { signOut } from "firebase/auth"
+import { useSearchParams, useRouter } from "next/navigation"
+import { useCollection, useFirestore, useMemoFirebase, useAuth } from "@/firebase"
 import { 
   Banknote, 
   ShoppingCart, 
@@ -94,6 +95,8 @@ export default function POSPage() {
 
 function POSPageContent() {
   const db = useFirestore()
+  const auth = useAuth()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const { restaurantId, restaurant } = useRestaurant()
   const { user, profile } = useTenant()
@@ -1267,6 +1270,17 @@ function POSPageContent() {
     }
   }
 
+  const handleLogout = React.useCallback(async () => {
+    try {
+      await signOut(auth)
+      router.push("/login")
+    } catch (error) {
+      console.error("Erreur lors de la déconnexion:", error)
+      // Rediriger même en cas d'erreur pour éviter de laisser l'utilisateur bloqué
+      router.push("/login")
+    }
+  }, [auth, router])
+
   if (isLoadingVisible || !Array.isArray(products) || !Array.isArray(categories)) {
     return (
       <div className="flex h-screen items-center justify-center bg-background text-foreground">
@@ -1289,6 +1303,7 @@ function POSPageContent() {
       onTabChange={setActiveTab}
       canCloseSession={Boolean(activeCashSession) && cart.length === 0 && !processing}
       onCloseSession={openCloseCashSessionDialog}
+      onLogout={handleLogout}
       sidebar={
         activeTab === "cashier" && activeCashSession ? (
           <CategorySidebar

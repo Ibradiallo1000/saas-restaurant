@@ -15,6 +15,7 @@ type POSLayoutProps = {
   onTabChange: (tab: POSTab) => void
   canCloseSession?: boolean
   onCloseSession?: () => void
+  onLogout?: () => void
   sidebar?: React.ReactNode
   center?: React.ReactNode
   left: React.ReactNode
@@ -33,6 +34,7 @@ export default function POSLayout({
   onTabChange,
   canCloseSession = false,
   onCloseSession,
+  onLogout,
   sidebar,
   center,
   left,
@@ -54,6 +56,7 @@ export default function POSLayout({
         onTabChange={onTabChange}
         canCloseSession={canCloseSession}
         onCloseSession={onCloseSession}
+        onLogout={onLogout}
       />
 
       {/* CONTENU PRINCIPAL */}
