@@ -10,6 +10,8 @@ import { COLLECTION_NAMES } from "@/lib/constants"
 import { recalculateConfiguredUnitPrice } from "@/lib/order-pricing"
 import { ORDER_PAYMENT_STATUS } from "@/lib/order-lifecycle"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
+import { ORDER_OPERATION_STATUS } from "@/lib/order-lifecycle"
+import { orderHasKitchenItems, resolveProductPreparationMode } from "@/utils/preparation-logic"
 import { buildUssdTelHref } from "@/lib/ussd"
 import {
   getAvailablePaymentMethods,
@@ -202,8 +204,16 @@ export default function CheckoutPublicModal({
             throw new Error(`Produit introuvable: ${item.productId}`)
           }
 
-          const product = { id: productSnap.id, ...productSnap.data() }
+          const product = { id: productSnap.id, ...productSnap.data() } as any
           const unitPrice = recalculateConfiguredUnitPrice(product, item.selectedOptions ?? [])
+
+          let categoryName = ""
+          if (product.categoryId) {
+            const categorySnap = await getDoc(
+              doc(db, "restaurants", restaurantId, "categories", product.categoryId)
+            )
+            categoryName = categorySnap.data()?.name || ""
+          }
 
           return {
             id: `${item.productId}-${Date.now()}-${index}`,
@@ -215,6 +225,7 @@ export default function CheckoutPublicModal({
             quantity: item.quantity,
             total: unitPrice * item.quantity,
             selectedOptions: item.selectedOptions ?? [],
+            preparationMode: resolveProductPreparationMode(product, categoryName),
           }
         })
       )
@@ -222,14 +233,15 @@ export default function CheckoutPublicModal({
       const recalculatedSubtotal = orderItems.reduce((sum, item) => sum + item.total, 0)
       const normalizedOrderType = flow.orderType === "pickup" ? "pickup" : "delivery"
       const orderTotal = recalculatedSubtotal + deliveryFee
+      const requiresKitchen = orderHasKitchenItems(orderItems)
 
       const order = {
         restaurantId,
         orderType: normalizedOrderType,
         publicOrderType: flow.orderType,
         source: "manual",
-        kitchenStatus: "pending",
-        orderStatus: "pending",
+        kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
+        orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
         sessionId: null,
         tableId: null,
         zoneId: null,

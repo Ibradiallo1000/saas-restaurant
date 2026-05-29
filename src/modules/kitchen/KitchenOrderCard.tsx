@@ -25,6 +25,7 @@ import {
 import { getOrderDisplayId } from "@/lib/order-display-id"
 import { cn } from "@/lib/utils"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
+import { getKitchenOrderItems } from "@/utils/preparation-logic"
 
 type KitchenOrderCardProps = {
   order: RestaurantOrder
@@ -185,7 +186,11 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
       }
     : null
 
-  const totalItems = order.items?.reduce((acc, item) => acc + item.quantity, 0) ?? 0
+  const kitchenItems = React.useMemo(
+    () => getKitchenOrderItems(order.items || []),
+    [order.items]
+  )
+  const totalItems = kitchenItems.reduce((acc, item) => acc + item.quantity, 0)
   const displayOrderType = getKitchenDisplayOrderType(order)
   const isTableOrder = displayOrderType === "dine_in"
   const orderCode = getOrderDisplayId(order)
@@ -201,14 +206,14 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
   const isPaid = isOrderPaid(order)
 
   const lastItemAddedAt = React.useMemo(() => {
-    const itemTimes = (order.items || []).map((item: any) => {
+    const itemTimes = kitchenItems.map((item: any) => {
       if (item.createdAt?.toMillis) return item.createdAt.toMillis()
       if (item.createdAt?.getTime) return item.createdAt.getTime()
       if (typeof item.createdAt === "number") return item.createdAt
       return 0
     })
     return Math.max(0, ...itemTimes, createdAtMs)
-  }, [order.items, createdAtMs])
+  }, [kitchenItems, createdAtMs])
 
   const isRecentActivity = (nowMs - lastItemAddedAt) < 20000 // 20 secondes
   const isNewOrder = (lastItemAddedAt - createdAtMs) < 10000 // dans les 10s apres creation
@@ -372,7 +377,7 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
         ) : null}
 
         <ul className="mt-3 space-y-2">
-          {(order.items || []).slice(0, 5).map((item, index) => {
+          {kitchenItems.slice(0, 5).map((item, index) => {
             const itemStatus = normalizeOrderItemStatus((item as any).status ?? order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
             const { options, extras, note } = parseItemDetails(item)
             
@@ -497,7 +502,7 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
                 Produits
               </h3>
               <div className="space-y-2">
-                {(order.items || []).map((item, index) => (
+                {kitchenItems.map((item, index) => (
                   <OrderItemDetail
                     key={`${order.id}-detail-${item.productId ?? index}-${item.name}`}
                     item={item}

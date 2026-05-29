@@ -1,3 +1,5 @@
+import { getKitchenOrderItems } from "@/utils/preparation-logic"
+
 export type PrintType = "kitchen" | "client" | "z-report"
 
 export type PrintableRestaurant = {
@@ -12,6 +14,7 @@ export type PrintableOrderItem = {
   unitPrice?: number
   price?: number
   priceSnapshot?: number
+  preparationMode?: "kitchen" | "direct" | "bar"
   selectedOptions?: Array<{
     optionName?: string
     choiceName?: string
@@ -183,7 +186,9 @@ function buildKitchenTicketHtml(order: PrintableOrder) {
   const location = escapeHtml(table ? `Table ${table}` : "A emporter")
   const orderNote = order.notes || order.customerNote || order.customerNotes
 
-  const items = (order.items || [])
+  const kitchenItems = getKitchenOrderItems(order.items || [])
+
+  const items = kitchenItems
     .map((item) => `
       <div class="item">
         <div><span class="bold">${item.quantity}x</span> ${escapeHtml(item.name ?? item.nameSnapshot ?? "Article")}</div>

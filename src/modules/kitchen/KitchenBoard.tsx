@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils"
 import { KitchenOrderCard } from "@/modules/kitchen/KitchenOrderCard"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
 import { playNewOrderNotificationSound } from "@/services/notification-sound.service"
+import { isKitchenItem, orderHasKitchenItems } from "@/utils/preparation-logic"
 
 type KitchenBoardProps = {
   orders: RestaurantOrder[]
@@ -69,6 +70,7 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
 
   const kitchenOrders = React.useMemo(() => {
     return orders
+      .filter((order) => orderHasKitchenItems(order.items || []))
       .filter(shouldShowInTodayKitchen)
       .sort((a, b) => {
         const priorityDiff = getKitchenQueuePriority(a) - getKitchenQueuePriority(b)
@@ -145,6 +147,10 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     const currentStatus = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
     const nextItemStatus = itemStatusFromOperationStatus(newOrderStatus)
     const nextItems = (order.items || []).map((item) => {
+      if (!isKitchenItem(item)) {
+        return item
+      }
+
       const itemStatus = normalizeOrderItemStatus((item as any).status ?? order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
 
       if (itemStatus !== itemStatusFromOperationStatus(currentStatus)) {

@@ -5,6 +5,7 @@ import { doc, orderBy, query, updateDoc } from "firebase/firestore"
 
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
+import { orderHasKitchenItems } from "@/utils/preparation-logic"
 
 type OrdersContextType = {
   orders: any[]
@@ -69,6 +70,7 @@ export function OrdersProvider({
 
       const kitchenStatus = mapLegacyStatus(order.kitchenStatus ?? order.status ?? order.orderStatus)
       if (!["pending", "preparing", "ready", "served"].includes(kitchenStatus)) return
+      if (!orderHasKitchenItems(order.items || [])) return
 
       mergedOrders.set(order.id, {
         ...order,

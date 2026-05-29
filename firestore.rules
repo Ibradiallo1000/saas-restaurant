@@ -168,7 +168,7 @@ service cloud.firestore {
     }
 
     function isValidOrderStatus(status) {
-      return status in ["pending", "preparing", "ready", "served", "picked_up", "cancelled"];
+      return status in ["pending", "preparing", "ready", "served", "picked_up", "cancelled", "completed"];
     }
 
     function hasLegacyOrderStatusFields(data) {
@@ -527,12 +527,16 @@ service cloud.firestore {
 
       match /products/{productId} {
         allow get, list: if true;
-        allow write: if canManageRestaurantMenu(restaurantId);
+        allow write: if canManageRestaurantMenu(restaurantId)
+          && (!("preparationMode" in request.resource.data) 
+              || request.resource.data.preparationMode in ["kitchen", "direct", "bar"]);
       }
 
       match /menuItems/{menuItemId} {
         allow get, list: if true;
-        allow write: if canManageRestaurantMenu(restaurantId);
+        allow write: if canManageRestaurantMenu(restaurantId)
+          && (!("preparationMode" in request.resource.data) 
+              || request.resource.data.preparationMode in ["kitchen", "direct", "bar"]);
       }
 
       match /inventory/{inventoryId} {
@@ -549,6 +553,8 @@ service cloud.firestore {
           && request.resource.data.stockEstimated >= 0
           && (!("minThreshold" in request.resource.data) || request.resource.data.minThreshold is number)
           && (!("minThreshold" in request.resource.data) || request.resource.data.minThreshold >= 0)
+          && (!("preparationMode" in request.resource.data) 
+              || request.resource.data.preparationMode in ["kitchen", "direct", "bar"])
           && request.resource.data.lastCountedStock is number
           && request.resource.data.lastCountedStock >= 0
           && request.resource.data.avgDailyConsumption is number
@@ -566,6 +572,8 @@ service cloud.firestore {
           && request.resource.data.stockEstimated >= 0
           && (!("minThreshold" in request.resource.data) || request.resource.data.minThreshold is number)
           && (!("minThreshold" in request.resource.data) || request.resource.data.minThreshold >= 0)
+          && (!("preparationMode" in request.resource.data) 
+              || request.resource.data.preparationMode in ["kitchen", "direct", "bar"])
           && request.resource.data.costPerUnit is number
           && request.resource.data.costPerUnit >= 0
           && request.resource.data.lossRate is number

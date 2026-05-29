@@ -10,7 +10,7 @@ import {
   updateDoc,
   deleteDoc,
 } from "firebase/firestore"
-import { db } from "../lib/firebase"
+import { useFirestore } from "@/firebase"
 import { ImageIcon, MoreVertical, Trash2, Edit2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,6 +27,7 @@ type ImageType = {
 }
 
 export default function ImageGallery({ restaurantId }: Props) {
+  const db = useFirestore()
   const [images, setImages] = useState<ImageType[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -35,7 +36,7 @@ export default function ImageGallery({ restaurantId }: Props) {
 
   // 🔁 LOAD
   const loadImages = async () => {
-    if (!restaurantId) return
+    if (!db || !restaurantId) return
 
     setLoading(true)
 
@@ -60,7 +61,7 @@ export default function ImageGallery({ restaurantId }: Props) {
 
   useEffect(() => {
     loadImages()
-  }, [restaurantId])
+  }, [db, restaurantId])
 
   // ✏️ RENAME
   const handleRename = async () => {

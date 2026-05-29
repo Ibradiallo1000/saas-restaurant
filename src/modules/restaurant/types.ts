@@ -15,6 +15,7 @@ export type Product = {
   imageUrl?: string
   categoryId: string
   isActive: boolean
+  preparationMode?: "kitchen" | "direct" | "bar"
 }
 
 export type Category = {
@@ -38,6 +39,7 @@ export type OrderItem = {
   quantity: number
   total: number
   selectedOptions?: SelectedCartOption[]
+  preparationMode?: "kitchen" | "direct" | "bar"
 }
 
 export type RestaurantOrder = {

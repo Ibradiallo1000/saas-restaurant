@@ -67,6 +67,11 @@ import { useTenant } from "@/design-system/context/TenantProvider"
 import { CatalogProvider, useCatalog } from "@/modules/catalog/CatalogProvider"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 import type { SelectedCartOption } from "@/modules/restaurant/types"
+import {
+  getKitchenOrderItems,
+  orderHasKitchenItems,
+  resolveProductPreparationMode,
+} from "@/utils/preparation-logic"
 import POSLayout from "./POSLayout"
 import type { POSTab } from "./POSHeader"
 import CategorySidebar from "./CategorySidebar"
@@ -693,6 +698,9 @@ function POSPageContent() {
           priceSnapshot = getCartItemUnitPrice(item)
         }
 
+        const categoryName =
+          safeCategories.find((category: any) => category.id === product.categoryId)?.name || ""
+
         return {
           id: `${productId}-${Date.now()}-${index}`,
           productId,
@@ -702,6 +710,7 @@ function POSPageContent() {
           priceSnapshot,
           quantity: item.quantity,
           selectedOptions: item.selectedOptions ?? [],
+          preparationMode: resolveProductPreparationMode(product, categoryName),
         }
       })
 
@@ -722,6 +731,8 @@ function POSPageContent() {
         })
         mobilePaymentCode = paymentResult.value
       }
+
+      const requiresKitchen = orderHasKitchenItems(recalculatedItems)
 
       const orderData: any = {
         restaurantId: restaurantId,
@@ -755,8 +766,8 @@ function POSPageContent() {
         totalAmount: total,
         paymentMethod: method === "mobile" ? selectedMobileConfig?.code : "cash",
         paymentStatus: method === "mobile" ? ORDER_PAYMENT_STATUS.PENDING_MOBILE : ORDER_PAYMENT_STATUS.PAID,
-        kitchenStatus: ORDER_OPERATION_STATUS.PENDING,
-        orderStatus: ORDER_OPERATION_STATUS.PENDING,
+        kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
+        orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
         createdAt: new Date(),
       }
 
@@ -781,7 +792,22 @@ function POSPageContent() {
         await updateActiveCashSessionTotals("cash", total)
       }
 
-      queuePrint(printableOrder, "kitchen", { automatic: true })
+      if (orderHasKitchenItems(recalculatedItems)) {
+        const kitchenPrintOrder: PrintableOrder = {
+          ...printableOrder,
+          items: getKitchenOrderItems(
+            (printableOrder.items || []).map((item: any) => ({
+              ...item,
+              name: item.name ?? item.nameSnapshot,
+              preparationMode: item.preparationMode,
+            }))
+          ).map((item: any) => ({
+            ...item,
+            name: item.name ?? item.nameSnapshot,
+          })),
+        }
+        queuePrint(kitchenPrintOrder, "kitchen", { automatic: true })
+      }
       if (method === "cash") {
         queuePrint(printableOrder, "client", { automatic: true })
       }
@@ -1348,6 +1374,7 @@ function POSPageContent() {
 
             <ProductGrid
               products={paginatedProducts}
+              categories={safeCategories}
               loading={isLoadingVisible}
               formatPrice={formatDisplayPrice}
               onProductClick={openProductSelector}

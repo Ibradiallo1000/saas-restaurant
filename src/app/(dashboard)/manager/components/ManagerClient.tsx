@@ -43,6 +43,12 @@ import {
   isOrderPaid,
 } from "@/lib/order-lifecycle"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
+import { PreparationBadge } from "@/components/PreparationBadge"
+import {
+  getDefaultPreparationMode,
+  PREPARATION_MODES,
+  type PreparationMode,
+} from "@/utils/preparation-logic"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -321,6 +327,12 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
             <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-700">
               {category?.name || "Sans catégorie"}
             </Badge>
+            <PreparationBadge
+              item={{
+                preparationMode: product.preparationMode,
+                categoryName: category?.name,
+              }}
+            />
           </div>
 
           {(hasOptions || !isInactive) && (
@@ -399,7 +411,8 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     description: "",
     categoryId: "",
     imageUrl: "",
-    imageId: ""
+    imageId: "",
+    preparationMode: "kitchen" as PreparationMode,
   })
 
   const [options, setOptions] = React.useState<any[]>([])
@@ -743,6 +756,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       recipe: sanitizedRecipe,
       components: sanitizedComponents,
       hasComplexConsumption: productHasComplexConsumption,
+      preparationMode: productForm.preparationMode,
       updatedAt: serverTimestamp()
     }
 
@@ -787,7 +801,8 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
         description: "",
         categoryId: "",
         imageUrl: "",
-        imageId: ""
+        imageId: "",
+        preparationMode: "kitchen",
       })
       setOptions([])
       setRecipe([])
@@ -813,6 +828,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
 
   // OPEN EDIT MODAL
   const openEditModal = (product: any) => {
+    const categoryName = categories?.find((c: any) => c.id === product.categoryId)?.name || ""
     setEditingProduct(product)
     setProductForm({
       name: product.name,
@@ -820,7 +836,8 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       description: product.description || "",
       categoryId: product.categoryId || "",
       imageUrl: product.imageUrl || "",
-      imageId: product.imageId || ""
+      imageId: product.imageId || "",
+      preparationMode: product.preparationMode || getDefaultPreparationMode(categoryName),
     })
     setOptions(product.options || [])
     setRecipe(normalizeRecipe(product.recipe))
@@ -829,6 +846,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
 
   // OPEN CREATE MODAL
   const openCreateModal = () => {
+    const categoryName = categories?.find((c: any) => c.id === selectedCategory)?.name || ""
     setEditingProduct(null)
     setProductForm({
       name: "",
@@ -836,7 +854,8 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       description: "",
       categoryId: selectedCategory || "",
       imageUrl: "",
-      imageId: ""
+      imageId: "",
+      preparationMode: getDefaultPreparationMode(categoryName),
     })
     setOptions([])
     setRecipe([])
@@ -1171,7 +1190,15 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
             <select
               className="w-full border-none bg-secondary/30 p-3 rounded-xl"
               value={productForm.categoryId}
-              onChange={(e) => setProductForm({ ...productForm, categoryId: e.target.value })}
+              onChange={(e) => {
+                const categoryId = e.target.value
+                const category = categories?.find((cat: any) => cat.id === categoryId)
+                setProductForm({
+                  ...productForm,
+                  categoryId,
+                  preparationMode: getDefaultPreparationMode(category?.name || ""),
+                })
+              }}
             >
               <option value="">Sélectionner une catégorie</option>
               {categories?.map((cat: any) => (
@@ -1180,6 +1207,32 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
                 </option>
               ))}
             </select>
+
+            <div className="space-y-2 rounded-xl bg-secondary/30 p-3">
+              <label htmlFor="preparationMode" className="text-sm font-semibold">
+                Mode de traitement du produit
+              </label>
+              <select
+                id="preparationMode"
+                className="w-full border-none bg-background p-3 rounded-xl"
+                value={productForm.preparationMode}
+                onChange={(e) =>
+                  setProductForm({
+                    ...productForm,
+                    preparationMode: e.target.value as PreparationMode,
+                  })
+                }
+              >
+                {PREPARATION_MODES.map((mode) => (
+                  <option key={mode.value} value={mode.value}>
+                    {mode.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Cuisine : envoyé en cuisine. Service direct : servi immédiatement (eau, soda…). Bar : préparé au bar (jus, café…).
+              </p>
+            </div>
 
             <div className="space-y-3 rounded-lg border p-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1332,10 +1385,16 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
                     <p className="text-gray-600 leading-relaxed">{previewProduct.description}</p>
                   )}
 
-                  <div className="pt-2">
+                  <div className="pt-2 flex flex-wrap gap-2">
                     <Badge variant="secondary" className="bg-gray-100 text-gray-700">
                       {categories?.find((c: any) => c.id === previewProduct.categoryId)?.name || "Sans catégorie"}
                     </Badge>
+                    <PreparationBadge
+                      item={{
+                        preparationMode: previewProduct.preparationMode,
+                        categoryName: categories?.find((c: any) => c.id === previewProduct.categoryId)?.name,
+                      }}
+                    />
                   </div>
                 </div>
 

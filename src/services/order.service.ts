@@ -30,6 +30,8 @@ import {
 } from '@/lib/order-lifecycle';
 import { normalizePaymentMethod, paymentStatusForMethod, type PaymentMethod } from '@/lib/order-payment';
 import type { SelectedCartOption } from '@/modules/restaurant/types';
+import type { PreparationMode } from '@/utils/preparation-logic';
+import { orderHasKitchenItems } from '@/utils/preparation-logic';
 import { LoyaltyService } from './loyalty.service';
 import { InventoryService } from './inventory.service';
 
@@ -43,6 +45,7 @@ export interface OrderItemInput {
   createdAt?: Date;
   selectedOptions?: SelectedCartOption[];
   instructions?: string;
+  preparationMode?: PreparationMode;
 }
 
 export interface OrderInput {
@@ -85,6 +88,25 @@ export class OrderService {
     const normalizedOrderType =
       input.orderType === 'takeaway' ? 'pickup' : input.orderType || (input.type === 'table' ? 'dine_in' : input.type);
 
+    const mappedItems = input.items.map((item) => ({
+      id: (item as any).id || `${item.productId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      productId: item.productId,
+      name: item.nameSnapshot,
+      status: (item as any).status || "pending",
+      createdAt: (item as any).createdAt || new Date(),
+      unitPrice: item.priceSnapshot,
+      quantity: item.quantity,
+      total: item.priceSnapshot * item.quantity,
+      selectedOptions: item.selectedOptions || [],
+      variant: (item as any).variant || null,
+      addons: (item as any).addons || [],
+      preparationMode: item.preparationMode || null,
+    }));
+
+    const requiresKitchen = orderHasKitchenItems(
+      mappedItems.map((item) => ({ preparationMode: item.preparationMode ?? undefined }))
+    );
+
     const orderData = {
       restaurantId: input.restaurantId,
       source: input.source || 'pos',
@@ -103,11 +125,11 @@ export class OrderService {
       roomId: input.roomId || null,
       customerName: input.customerName || 'Client Anonyme',
       customerPhone: input.customerPhone || null,
-      kitchenStatus: ORDER_OPERATION_STATUS.PENDING,
-      orderStatus: ORDER_OPERATION_STATUS.PENDING,
+      kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
+      orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
       statusHistory: [
         {
-          status: ORDER_OPERATION_STATUS.PENDING,
+          status: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
           at: new Date(),
           source: "order",
         },
@@ -126,19 +148,7 @@ export class OrderService {
       totalAmount,
       deliveryAddress: input.deliveryAddress || null,
       total: totalAmount,
-      items: input.items.map((item) => ({
-        id: (item as any).id || `${item.productId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        productId: item.productId,
-        name: item.nameSnapshot,
-        status: (item as any).status || "pending",
-        createdAt: (item as any).createdAt || new Date(),
-        unitPrice: item.priceSnapshot,
-        quantity: item.quantity,
-        total: item.priceSnapshot * item.quantity,
-        selectedOptions: item.selectedOptions || [],
-        variant: (item as any).variant || null,
-        addons: (item as any).addons || [],
-      })),
+      items: mappedItems,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
