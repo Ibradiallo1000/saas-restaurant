@@ -20,7 +20,7 @@ export default function HeroSection({ restaurant }: { restaurant: any }) {
   const rating = Number(restaurant?.rating || restaurant?.averageRating || 4.8)
 
   return (
-    <section className="relative h-[160px] w-full overflow-hidden sm:h-[260px] lg:h-[340px]">
+    <section className="relative h-[170px] w-full overflow-hidden sm:h-[270px] lg:h-[350px]">
 
       {/* IMAGE */}
       <img
@@ -33,13 +33,16 @@ export default function HeroSection({ restaurant }: { restaurant: any }) {
       <div className="absolute inset-0">
 
         {/* overlay principal */}
-        <div className="absolute inset-0 bg-black/40" />
+        <div className="absolute inset-0 bg-black/38" />
 
         {/* gradient haut (pour header) */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/20 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-black/25 to-transparent" />
 
         {/* gradient bas (lisibilité infos) */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/78 via-black/18 to-transparent" />
+
+        {/* accent chaud discret */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_88%,rgba(249,115,22,0.32),transparent_32rem)]" />
       </div>
 
       {/* INFOS */}
@@ -48,7 +51,7 @@ export default function HeroSection({ restaurant }: { restaurant: any }) {
         <div className="flex flex-wrap gap-2 sm:gap-3">
 
           {/* STATUS */}
-          <div className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
+          <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
             <span
               className={`h-2 w-2 rounded-full ${
                 isOpen
@@ -60,13 +63,13 @@ export default function HeroSection({ restaurant }: { restaurant: any }) {
           </div>
 
           {/* TIME */}
-          <div className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
+          <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
             <Clock className="h-3 w-3 text-white/80" />
             {serviceTime}
           </div>
 
           {/* RATING */}
-          <div className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
+          <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
             <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
             {Number.isFinite(rating) ? rating.toFixed(1) : "4.8"}
           </div>

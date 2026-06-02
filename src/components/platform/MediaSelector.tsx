@@ -17,7 +17,7 @@ import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
-import { uploadImage } from "@/services/cloudinary.service"
+import { CloudinaryConfigurationError, uploadImage } from "@/services/cloudinary.service"
 
 type PlatformMedia = {
   url: string
@@ -27,18 +27,27 @@ type PlatformMedia = {
   updatedAt?: unknown
 }
 
+type PlatformMediaSelection = PlatformMedia & {
+  id: string
+}
+
 type MediaSelectorProps = {
   value?: string | null
   onChange: (url: string | null) => void
+  onSelect?: (media: PlatformMediaSelection | null) => void
   type: "logo" | "payment" | "restaurant" | string
   label?: string
   description?: string
   className?: string
 }
 
+const isPersistableImageUrl = (url: string) =>
+  /^https?:\/\//.test(url) || url.startsWith("/")
+
 export function MediaSelector({
   value,
   onChange,
+  onSelect,
   type,
   label = "Image",
   description = "Choisir une image depuis la galerie plateforme.",
@@ -74,25 +83,40 @@ export function MediaSelector({
     try {
       const url = await uploadImage(file)
 
-      if (!url.startsWith("blob:")) {
-        await addDoc(collection(db, COLLECTION_NAMES.PLATFORM_MEDIA), {
-          url,
-          publicId: "",
-          type,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
+      if (!isPersistableImageUrl(url)) {
+        throw new Error("URL image non persistable")
       }
 
+      const docRef = await addDoc(collection(db, COLLECTION_NAMES.PLATFORM_MEDIA), {
+        url,
+        publicId: "",
+        type,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+
       onChange(url)
+      onSelect?.({
+        id: docRef.id,
+        url,
+        publicId: "",
+        type,
+      })
       setOpen(false)
       toast({ title: "Image ajoutée" })
     } catch (error) {
-      console.error(error)
+      const isCloudinaryConfigurationError = error instanceof CloudinaryConfigurationError
+
+      if (!isCloudinaryConfigurationError) {
+        console.error(error)
+      }
+
       toast({
         variant: "destructive",
-        title: "Upload impossible",
-        description: "Vérifiez la configuration Cloudinary.",
+        title: isCloudinaryConfigurationError ? "Cloudinary non configure" : "Upload impossible",
+        description: isCloudinaryConfigurationError
+          ? "Ajoutez NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME et NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET dans .env.local, puis redemarrez Next."
+          : "Verifiez la configuration Cloudinary.",
       })
     } finally {
       setIsUploading(false)
@@ -126,7 +150,10 @@ export function MediaSelector({
             type="button"
             variant="destructive"
             className="h-auto"
-            onClick={() => onChange(null)}
+            onClick={() => {
+              onChange(null)
+              onSelect?.(null)
+            }}
           >
             Supprimer
           </Button>
@@ -179,6 +206,7 @@ export function MediaSelector({
                   type="button"
                   onClick={() => {
                     onChange(item.url)
+                    onSelect?.(item)
                     setOpen(false)
                   }}
                   className={cn(

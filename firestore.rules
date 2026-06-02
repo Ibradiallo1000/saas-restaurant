@@ -1064,6 +1064,24 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
+    match /platformMenuPacks/{packId} {
+      allow get, list: if isSuperAdmin();
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /platformMenuCategories/{categoryTemplateId} {
+      allow get, list: if isSuperAdmin();
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /platformMenuProducts/{productTemplateId} {
+      allow get, list: if isSuperAdmin();
+      allow create, update: if isSuperAdmin()
+        && (!("preparationMode" in request.resource.data)
+          || request.resource.data.preparationMode in ["kitchen", "direct", "bar"]);
+      allow delete: if isSuperAdmin();
+    }
+
     match /platformCountries/{countryId} {
       allow get, list: if isSignedIn();
       allow create: if isSuperAdmin()

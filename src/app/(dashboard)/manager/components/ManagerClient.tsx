@@ -11,10 +11,11 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  getDoc,
   serverTimestamp,
 } from "firebase/firestore"
 
-import { Store, Plus, Search, X, MoreVertical, Edit2, Trash2, Power, PowerOff, Eye, ImageIcon, ArrowLeft, AlertTriangle, Clock, ShieldCheck, Banknote, ReceiptText, Wallet, ClipboardList } from "lucide-react"
+import { Store, Plus, Search, X, MoreVertical, Edit2, Trash2, Power, PowerOff, Eye, ImageIcon, ArrowLeft, AlertTriangle, Clock, ShieldCheck, Banknote, ReceiptText, Wallet, ClipboardList, BookOpen } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -71,6 +72,7 @@ import {
 } from "@/lib/linked-option-groups"
 import ImagePickerModal from "@/components/ImagePickerModal"
 import { CatalogProvider, useCatalog } from "@/modules/catalog/CatalogProvider"
+import MenuLibraryImportDialog from "@/modules/menu-library/MenuLibraryImportDialog"
 
 // Drag & Drop imports
 import {
@@ -398,6 +400,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   const [isProductOpen, setIsProductOpen] = React.useState(false)
   const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false)
+  const [isLibraryImportOpen, setIsLibraryImportOpen] = React.useState(false)
   const [isImagePickerOpen, setIsImagePickerOpen] = React.useState(false)
   const [isCategoryImagePickerOpen, setIsCategoryImagePickerOpen] = React.useState(false)
   const [previewProduct, setPreviewProduct] = React.useState<any>(null)
@@ -439,6 +442,30 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     () => hasTrackedConsumption(draftProductForConsumption),
     [draftProductForConsumption]
   )
+
+  const validateLinkedOptionGroupDrafts = React.useCallback((groups: LinkedOptionGroup[]) => {
+    for (const [index, group] of groups.entries()) {
+      const label = `Groupe lié #${index + 1}`
+
+      if (!group.title?.trim()) {
+        return `${label}: ajoute un titre avant de sauvegarder.`
+      }
+
+      if (group.sourceType === "category" && (group.categoryIds?.filter(Boolean).length || 0) === 0) {
+        return `${label}: sélectionne au moins une catégorie source.`
+      }
+
+      if (group.sourceType === "products" && (group.productIds?.filter(Boolean).length || 0) === 0) {
+        return `${label}: sélectionne au moins un produit source.`
+      }
+
+      if (Number(group.minSelect) > Number(group.maxSelect)) {
+        return `${label}: le minimum ne peut pas dépasser le maximum.`
+      }
+    }
+
+    return null
+  }, [])
 
   // Order states for drag & drop
   const [categoryOrder, setCategoryOrder] = React.useState<string[]>([])
@@ -751,6 +778,18 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       return
     }
 
+    const linkedOptionGroupsError = validateLinkedOptionGroupDrafts(linkedOptionGroups)
+    if (linkedOptionGroupsError) {
+      toast({
+        title: "Options liées invalides",
+        description: linkedOptionGroupsError,
+        variant: "destructive",
+      })
+      return
+    }
+
+    const sanitizedLinkedOptionGroups = sanitizeLinkedOptionGroups(linkedOptionGroups)
+
     const payload = {
       name: productForm.name.trim(),
       description: productForm.description?.trim() || "",
@@ -761,7 +800,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       options: sanitizedOptions,
       recipe: sanitizedRecipe,
       components: sanitizedComponents,
-      linkedOptionGroups: sanitizeLinkedOptionGroups(linkedOptionGroups),
+      linkedOptionGroups: sanitizedLinkedOptionGroups,
       hasComplexConsumption: productHasComplexConsumption,
       preparationMode: productForm.preparationMode,
       updatedAt: serverTimestamp()
@@ -777,8 +816,26 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
           editingProduct.id
         )
         await updateDoc(productRef, payload)
+        const updatedProductSnapshot = await getDoc(productRef)
+        if (!updatedProductSnapshot.exists()) {
+          throw new Error("Vérification Firestore impossible: le produit mis à jour est introuvable.")
+        }
+        const updatedLinkedOptionGroups = sanitizeLinkedOptionGroups(
+          updatedProductSnapshot.data()?.linkedOptionGroups
+        )
+        if (
+          sanitizedLinkedOptionGroups.length > 0 &&
+          JSON.stringify(updatedLinkedOptionGroups) !== JSON.stringify(sanitizedLinkedOptionGroups)
+        ) {
+          throw new Error("Vérification Firestore impossible: les options liées n'ont pas été relues après sauvegarde.")
+        }
         refreshCatalog()
-        toast({ title: "Produit mis à jour" })
+        toast({
+          title: "Produit mis à jour",
+          description: sanitizedLinkedOptionGroups.length
+            ? "Options liées sauvegardées."
+            : "Produit sauvegardé sans options liées.",
+        })
       } else {
         // Get current max order for this category
         const productsInCategory = products?.filter((p: any) => p.categoryId === productForm.categoryId) ?? []
@@ -815,8 +872,12 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       setLinkedOptionGroups([])
       setRecipe([])
     } catch (error) {
-      console.error(error)
-      toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" })
+      console.error("Erreur sauvegarde produit:", error)
+      toast({
+        title: "Erreur lors de la sauvegarde",
+        description: error instanceof Error ? error.message : "Le produit n'a pas été sauvegardé.",
+        variant: "destructive",
+      })
     }
   }
 
@@ -960,10 +1021,20 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
             </h1>
           </div>
 
-          <Button onClick={openCreateModal} className="h-12 rounded-xl bg-primary hover:bg-primary/90 font-black uppercase italic shadow-lg">
-            <Plus className="mr-2 h-4 w-4" />
-            Ajouter produit
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              onClick={() => setIsLibraryImportOpen(true)}
+              variant="outline"
+              className="h-12 rounded-xl border-primary/20 font-black uppercase italic text-primary"
+            >
+              <BookOpen className="mr-2 h-4 w-4" />
+              Importer depuis la bibliotheque
+            </Button>
+            <Button onClick={openCreateModal} className="h-12 rounded-xl bg-primary hover:bg-primary/90 font-black uppercase italic shadow-lg">
+              <Plus className="mr-2 h-4 w-4" />
+              Ajouter produit
+            </Button>
+          </div>
         </div>
 
         {viewMode === "products" && (
@@ -1469,6 +1540,17 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
           )}
         </DialogContent>
       </Dialog>
+
+      {restaurantId && (
+        <MenuLibraryImportDialog
+          open={isLibraryImportOpen}
+          restaurantId={restaurantId}
+          existingCategories={categories || []}
+          existingProducts={products || []}
+          onClose={() => setIsLibraryImportOpen(false)}
+          onImported={refreshCatalog}
+        />
+      )}
 
       {/* IMAGE PICKER MODALS */}
       {restaurantId && (

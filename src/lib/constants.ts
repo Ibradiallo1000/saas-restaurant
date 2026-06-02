@@ -140,6 +140,9 @@ export const COLLECTION_NAMES = {
   PLATFORM_COUNTRIES: 'platformCountries',
   PLATFORM_PAYMENT_METHODS: 'platformPaymentMethods',
   PLATFORM_PAYMENT_VARIANTS: 'platformPaymentVariants',
+  PLATFORM_MENU_PACKS: 'platformMenuPacks',
+  PLATFORM_MENU_CATEGORIES: 'platformMenuCategories',
+  PLATFORM_MENU_PRODUCTS: 'platformMenuProducts',
   RESTAURANT_PAYMENT_CONFIGS: 'restaurantPaymentConfigs',
 
   // 🔥 séparation claire

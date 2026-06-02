@@ -4,6 +4,7 @@ import * as React from "react"
 import {
   Building2,
   Banknote,
+  BookOpen,
   ChefHat,
   ChevronLeft,
   ChevronRight,
@@ -82,6 +83,7 @@ const AppSidebarComponent = () => {
           items: [
             { name: "Analytics Admin", href: "/platform", icon: LayoutDashboard },
             { name: "Restaurants", href: "/platform/restaurants", icon: Building2 },
+            { name: "Bibliotheque menus", href: "/platform/menu-library", icon: BookOpen },
             { name: "Abonnements", href: "/platform/billing", icon: CreditCard },
           ],
         },

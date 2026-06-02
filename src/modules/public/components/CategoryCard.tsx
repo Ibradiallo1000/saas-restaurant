@@ -12,9 +12,9 @@ export default function CategoryCard({ category, onSelect }: CategoryCardProps) 
     <button
       type="button"
       onClick={() => onSelect(category)}
-      className="flex min-w-0 flex-col items-center text-center transition active:scale-95"
+      className="flex min-w-0 flex-col items-center rounded-[1.5rem] border border-[var(--public-card-border)] bg-[var(--public-card-bg)] p-3 text-center shadow-[0_14px_35px_rgba(15,23,42,0.08)] backdrop-blur-xl transition active:scale-95"
     >
-      <div className="relative h-24 w-24 overflow-hidden rounded-full border-4 border-[var(--color-primary)] bg-card shadow-sm">
+      <div className="relative h-24 w-24 overflow-hidden rounded-full border-4 border-[var(--public-orange)]/70 bg-[var(--public-orange-soft)] shadow-sm">
         {category.imageUrl ? (
           <img
             src={category.imageUrl}
@@ -28,7 +28,7 @@ export default function CategoryCard({ category, onSelect }: CategoryCardProps) 
         )}
       </div>
 
-      <p className="mt-2 max-w-28 px-1 text-xs font-bold leading-tight text-gray-800 dark:text-white">
+      <p className="mt-2 max-w-28 px-1 text-xs font-black leading-tight text-[var(--public-text-main)]">
         {category.name}
       </p>
     </button>

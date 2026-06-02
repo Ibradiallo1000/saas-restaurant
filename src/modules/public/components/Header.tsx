@@ -36,14 +36,14 @@ export default function Header({
         flex h-16 items-center justify-between px-4 sm:h-[4.5rem] sm:px-6
         transition-all duration-300
         ${scrolled
-          ? "bg-background/90 backdrop-blur-md border-b border-border"
+          ? "border-b border-[var(--public-card-border)] bg-[var(--public-card-bg)] shadow-[0_12px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl"
           : "bg-transparent"
         }
       `}
     >
       {/* OVERLAY (uniquement quand pas scroll) */}
       {!scrolled && (
-        <div className="absolute inset-0 bg-gradient-to-b from-black/50 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/20 to-transparent pointer-events-none" />
       )}
 
       {/* CONTENT */}
@@ -59,8 +59,8 @@ export default function Header({
                 h-10 w-10 rounded-full overflow-hidden sm:h-11 sm:w-11
                 transition-all duration-300
                 ${scrolled
-                  ? "bg-muted shadow-sm"
-                  : "bg-white/10 backdrop-blur"
+                  ? "border border-[var(--public-card-border)] bg-[var(--public-orange-soft)] shadow-sm"
+                  : "border border-white/20 bg-white/[0.12] shadow-lg backdrop-blur"
                 }
               `}
             >
@@ -71,7 +71,7 @@ export default function Header({
               />
             </div>
           ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)] text-sm font-black text-white sm:h-11 sm:w-11">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--public-orange)] text-sm font-black text-white shadow-lg shadow-orange-500/20 sm:h-11 sm:w-11">
               {initial}
             </div>
           )}
@@ -80,7 +80,7 @@ export default function Header({
           <p
             className={`
               max-w-[48vw] truncate text-sm font-extrabold transition-colors duration-300 sm:max-w-[55vw] sm:text-base lg:max-w-none
-              ${scrolled ? "text-foreground" : "text-white"}
+              ${scrolled ? "text-[var(--public-text-main)]" : "text-white"}
             `}
           >
             {name}
@@ -96,8 +96,8 @@ export default function Header({
               flex h-9 w-9 items-center justify-center rounded-lg
               transition-all duration-300
               ${scrolled
-                ? "bg-muted border border-border"
-                : "bg-white/10 backdrop-blur text-white"
+                ? "border border-[var(--public-card-border)] bg-[var(--public-orange-soft)] text-[var(--public-text-main)]"
+                : "border border-white/20 bg-white/[0.12] text-white backdrop-blur"
               }
             `}
           >
@@ -111,8 +111,8 @@ export default function Header({
               relative flex h-9 w-9 items-center justify-center rounded-lg
               transition-all duration-300
               ${scrolled
-                ? "bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
-                : "bg-white/10 backdrop-blur text-white"
+                ? "bg-[var(--public-orange-soft)] text-[var(--public-orange)]"
+                : "border border-white/20 bg-white/[0.12] text-white backdrop-blur"
               }
               active:scale-95
             `}
@@ -126,7 +126,7 @@ export default function Header({
                   h-4 min-w-[16px]
                   flex items-center justify-center
                   rounded-full
-                  bg-[var(--color-primary)]
+                  bg-[var(--public-orange)]
                   text-[9px] font-black text-white px-1
                 "
               >

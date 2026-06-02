@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChefHat, Plus, Check, Flame } from "lucide-react"
+import { ChefHat, Flame } from "lucide-react"
 
 import { productNeedsConfigurator } from "@/lib/linked-option-groups"
 import { getOptimizedImage } from "@/lib/image"
@@ -71,9 +71,10 @@ export default function DishCard({
     <article
       className="
         flex min-h-[112px] items-center gap-3
-        rounded-2xl border border-border
-        bg-card p-3 shadow-sm
-        transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md
+        rounded-[1.6rem] border border-[var(--public-card-border)]
+        bg-[var(--public-card-bg)] p-3 shadow-[0_18px_45px_rgba(15,23,42,0.10)]
+        backdrop-blur-xl
+        transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--public-orange)]/35 hover:shadow-[0_22px_55px_rgba(15,23,42,0.14)]
         sm:min-h-[132px] sm:gap-4 sm:p-4
         md:h-full
       "
@@ -81,7 +82,7 @@ export default function DishCard({
       {/* IMAGE */}
       <div
         onClick={onOpenDetails}
-        className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-muted sm:h-24 sm:w-24"
+        className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-[var(--public-orange-soft)] shadow-inner sm:h-24 sm:w-24"
       >
         {hasImage ? (
           <img
@@ -91,14 +92,14 @@ export default function DishCard({
             onError={() => setImgError(true)}
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+          <div className="flex h-full w-full items-center justify-center text-[var(--public-text-muted)]">
             <ChefHat className="h-6 w-6 opacity-50" />
           </div>
         )}
 
         {/* BADGE */}
         {isPopular && (
-          <div className="absolute left-1 top-1 flex items-center gap-1 rounded-full bg-orange-500 px-2 py-0.5 text-[9px] text-white">
+          <div className="absolute left-1 top-1 flex items-center gap-1 rounded-full bg-[var(--public-orange)] px-2 py-0.5 text-[9px] font-black text-white shadow-lg shadow-orange-500/20">
             <Flame className="h-3 w-3" />
             Populaire
           </div>
@@ -110,15 +111,15 @@ export default function DishCard({
         onClick={onOpenDetails}
         className="min-w-0 flex-1 cursor-pointer"
       >
-        <h3 className="truncate text-sm font-bold text-foreground sm:text-base">
+        <h3 className="truncate text-sm font-black text-[var(--public-text-main)] sm:text-base">
           {product.name}
         </h3>
 
-        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground sm:text-sm">
+        <p className="mt-1 line-clamp-2 text-xs leading-5 text-[var(--public-text-muted)] sm:text-sm">
           {product.description || "Spécialité du restaurant"}
         </p>
 
-        <p className="mt-2 whitespace-nowrap text-sm font-bold text-[var(--color-primary)] sm:text-base">
+        <p className="mt-2 whitespace-nowrap text-sm font-black text-[var(--public-orange)] sm:text-base">
           {price > 0
             ? hasOptions
               ? `Dès ${price.toLocaleString()} FCFA`
@@ -131,12 +132,12 @@ export default function DishCard({
       <button
         onClick={handleQuickAdd}
         className={`
-          shrink-0 rounded-xl px-3 py-2 text-xs font-bold
-          transition-all duration-200 sm:px-4 sm:py-3
+          shrink-0 rounded-full px-3 py-2 text-xs font-black
+          shadow-lg transition-all duration-200 active:scale-95 sm:px-4 sm:py-3
           ${
             added
-              ? "bg-green-500 text-white"
-              : "bg-[var(--color-primary)] text-white"
+              ? "bg-green-500 text-white shadow-green-500/20"
+              : "bg-gradient-to-br from-[#fb923c] to-[#f97316] text-white shadow-orange-500/25"
           }
         `}
       >

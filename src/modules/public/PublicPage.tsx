@@ -7,7 +7,6 @@ import { ChefHat, ClipboardList, Coffee, MapPin, Search, ShoppingBag, Utensils }
 
 import { useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { getOptimizedImage } from "@/lib/image"
-import { formatPrice } from "@/lib/pricing"
 import CartDrawer from "./components/CartDrawer"
 import CategoriesBar from "./components/CategoriesBar"
 import DishCard from "./components/DishCard"
@@ -304,8 +303,8 @@ function PublicPageContent({
   }
 
   return (
-    <div id="app-root" className="app-background min-h-screen pb-32 text-foreground md:pb-28">
-      <div id="main-content">
+    <div id="app-root" className="public-menu-page min-h-screen pb-36 md:pb-32">
+      <div id="main-content" className="public-menu-content">
         <Header
           restaurant={restaurant}
           cartCount={count}
@@ -313,7 +312,7 @@ function PublicPageContent({
         />
         <HeroSection restaurant={restaurant} />
 
-        <main className="relative z-10 -mt-5 rounded-t-[1.75rem] bg-background pt-5 shadow-md sm:-mt-8 sm:rounded-t-[2rem] sm:pt-6 lg:-mt-10 lg:mx-auto lg:max-w-7xl lg:rounded-[2rem] lg:shadow-xl">
+        <main className="relative z-10 -mt-5 rounded-t-[1.75rem] border-t border-[var(--public-card-border)] bg-[var(--public-bg-soft)] pt-5 shadow-[0_-18px_48px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:-mt-8 sm:rounded-t-[2rem] sm:pt-6 lg:-mt-10 lg:mx-auto lg:max-w-7xl lg:rounded-[2rem] lg:border lg:shadow-[0_20px_70px_rgba(15,23,42,0.12)]">
           <MainContent
             categories={visibleCategories}
             isLoading={isMenuLoading}
@@ -470,7 +469,7 @@ function MainContent({
   const currentCategory = filteredCategories[0]
 
   return (
-    <div className="mx-auto w-full max-w-6xl pb-6 sm:pb-8 lg:pb-10">
+    <div className="mx-auto w-full max-w-6xl pb-28 sm:pb-32 lg:pb-36">
       
       <div className="px-4 sm:px-6 lg:px-8">
         <TableContextBanner table={table} error={tableError} />
@@ -488,7 +487,7 @@ function MainContent({
       {/* PRODUITS (UNE SEULE CATÉGORIE) */}
       {currentCategory && (
         <div className="mb-6 px-4 sm:px-6 lg:px-8">
-          <h2 className="mb-3 text-xl font-black text-[var(--color-primary)] sm:text-2xl">
+          <h2 className="mb-3 text-xl font-black text-[var(--public-orange)] sm:text-2xl">
             {currentCategory.name}
           </h2>
 
@@ -525,16 +524,16 @@ function TableContextBanner({
   return (
     <div className="mb-5 flex justify-center">
       {table ? (
-        <div className="inline-flex max-w-full items-center gap-3 rounded-2xl border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/10 px-4 py-3 text-[var(--color-primary)] shadow-sm sm:px-5">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)] text-white shadow-sm">
+        <div className="inline-flex max-w-full items-center gap-3 rounded-2xl border border-[var(--public-card-border)] bg-[var(--public-card-bg)] px-4 py-3 text-[var(--public-orange)] shadow-[0_14px_35px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:px-5">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--public-orange)] text-white shadow-sm">
             <MapPin className="h-5 w-5" />
           </span>
           <div className="flex min-w-0 items-center gap-2">
             <p className="whitespace-nowrap text-[11px] font-black uppercase tracking-wide opacity-80 sm:text-xs">
               Commande sur place
             </p>
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-primary)]" />
-            <p className="truncate whitespace-nowrap text-base font-black text-foreground sm:text-lg">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--public-orange)]" />
+            <p className="truncate whitespace-nowrap text-base font-black text-[var(--public-text-main)] sm:text-lg">
               {table.name || table.id}
             </p>
           </div>
@@ -584,7 +583,7 @@ export function PublicBottomNavigation({
   onTracking: () => void
 }) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-16px_35px_rgba(15,23,42,0.1)] backdrop-blur md:bottom-4 md:left-1/2 md:right-auto md:w-[min(32rem,calc(100vw-2rem))] md:-translate-x-1/2 md:rounded-2xl md:border md:px-4 md:shadow-2xl">
+    <nav className="fixed bottom-4 left-4 right-4 z-50 rounded-[1.75rem] border border-[var(--public-card-border)] bg-[var(--public-card-bg)] px-3 pb-[max(0.65rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_18px_45px_rgba(15,23,42,0.16)] backdrop-blur-xl md:bottom-5 md:left-1/2 md:right-auto md:w-[min(32rem,calc(100vw-2rem))] md:-translate-x-1/2 md:px-4">
       {active === "search" && (
         <div className="mx-auto mb-2 max-w-md">
           <div className="relative">
@@ -592,10 +591,10 @@ export function PublicBottomNavigation({
               value={searchValue}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Rechercher un plat..."
-              className="h-12 w-full rounded-xl border bg-card pl-4 pr-11 text-sm font-semibold text-card-foreground outline-none focus:border-[var(--color-primary)] focus:ring-4 focus:ring-[var(--color-primary)]/10"
+              className="h-12 w-full rounded-2xl border border-[var(--public-card-border)] bg-[var(--public-card-bg)] pl-4 pr-11 text-sm font-semibold text-[var(--public-text-main)] outline-none backdrop-blur focus:border-[var(--public-orange)] focus:ring-4 focus:ring-[var(--public-orange)]/10"
               autoFocus
             />
-            <Search className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--color-primary)]" />
+            <Search className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--public-orange)]" />
           </div>
         </div>
       )}
@@ -617,8 +616,8 @@ export function PublicBottomNavigation({
               onClick={item.onClick}
               className={`relative flex h-full flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-black transition-all ${
                 isActive
-                  ? "text-[var(--color-primary)]"
-                  : "text-muted-foreground hover:bg-muted"
+                  ? "bg-[var(--public-orange-soft)] text-[var(--public-orange)]"
+                  : "text-[var(--public-text-muted)] hover:bg-[var(--public-orange-soft)] hover:text-[var(--public-text-main)]"
               }`}
             >
               <Icon className="h-4 w-4" />
@@ -627,8 +626,8 @@ export function PublicBottomNavigation({
                 <span
                   className={`absolute -top-1 right-3 min-w-[18px] rounded-full px-1 py-0.5 text-[9px] font-black sm:right-5 ${
                     isActive
-                      ? "bg-primary-foreground text-[var(--color-primary)]"
-                      : "bg-[var(--color-primary)] text-white"
+                      ? "bg-white text-[var(--public-orange)] dark:bg-[#24170d]"
+                      : "bg-[var(--public-orange)] text-white"
                   }`}
                 >
                   {count > 99 ? "99+" : count}
@@ -660,7 +659,8 @@ function CategoriesSkeleton() {
 
 function PublicLoadingSkeleton() {
   return (
-    <div className="app-background min-h-screen text-foreground">
+    <div className="public-menu-page min-h-screen text-[var(--public-text-main)]">
+      <div className="public-menu-content">
       <div className="relative flex h-[140px] items-end bg-muted p-4">
         <div className="absolute inset-0 animate-pulse bg-muted" />
         <div className="relative flex items-center gap-3">
@@ -677,13 +677,14 @@ function PublicLoadingSkeleton() {
         <div className="mb-5 h-12 animate-pulse rounded-xl bg-muted" />
         <CategoriesSkeleton />
       </main>
+      </div>
     </div>
   )
 }
 
 function PublicFallbackMessage({ message }: { message: string }) {
   return (
-    <div className="app-background mx-auto flex min-h-screen w-full items-center justify-center px-4 text-foreground">
+    <div className="public-menu-page mx-auto flex min-h-screen w-full items-center justify-center px-4 text-[var(--public-text-main)]">
       <div className="space-y-4 text-center">
         <Coffee className="mx-auto h-16 w-16 text-muted-foreground/60" />
         <h2 className="text-xl font-semibold">{message}</h2>
