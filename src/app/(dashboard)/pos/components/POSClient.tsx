@@ -80,6 +80,7 @@ import ProductConfiguratorModal, {
   validateConfiguratorSelections,
 } from "@/components/product-configurator/ProductConfiguratorModal"
 import {
+  getEffectivePreparationMode,
   getKitchenOrderItems,
   orderHasKitchenItems,
   resolveProductPreparationMode,
@@ -150,6 +151,7 @@ function POSPageContent() {
   const [discountRate, setDiscountRate] = React.useState(0)
   const [selectedPaymentMode, setSelectedPaymentMode] = React.useState<PosPaymentMode | null>(null)
   const [closeDialogOpen, setCloseDialogOpen] = React.useState(false)
+  const [selectedOrderDetailId, setSelectedOrderDetailId] = React.useState<string | null>(null)
   const [declaredCashInput, setDeclaredCashInput] = React.useState("")
   const [declaredMobileInput, setDeclaredMobileInput] = React.useState("")
   const [configProduct, setConfigProduct] = React.useState<any | null>(null)
@@ -261,6 +263,15 @@ function POSPageContent() {
       ) && !isOrderPaid(order)
     }).length
   }, [posVisibleOrders])
+
+  const selectedOrderDetail = React.useMemo(() => {
+    if (!selectedOrderDetailId) return null
+    return posVisibleOrders.find((order: any) => order.id === selectedOrderDetailId) ?? null
+  }, [posVisibleOrders, selectedOrderDetailId])
+  const selectedOrderPaymentSession = React.useMemo(() => {
+    if (!selectedOrderDetail) return null
+    return getPaymentSessionForOrder(selectedOrderDetail, safeTableSessions)
+  }, [safeTableSessions, selectedOrderDetail])
 
   React.useEffect(() => {
     const currentOrderIds = new Set(posVisibleOrders.map((order: any) => order.id).filter(Boolean))
@@ -1621,12 +1632,27 @@ function POSPageContent() {
                           order.tableNumber ||
                           order.table ||
                           (order.tableId ? order.tableId.slice(-2).toUpperCase() : "")
-                        const oneLineProducts = (Array.isArray(order.items) ? order.items : [])
+                        const orderItems = Array.isArray(order.items) ? order.items : []
+                        const previewItems = orderItems.slice(0, 3)
+                        const hiddenItemsCount = Math.max(0, orderItems.length - previewItems.length)
+                        const oneLineProducts = previewItems
                           .map((item: any) => `${item.quantity}x ${item.name || item.nameSnapshot}`)
                           .join(" · ")
 
                         return (
-                          <div key={order.id} className="rounded-lg border bg-background p-2">
+                          <div
+                            key={order.id}
+                            role="button"
+                            tabIndex={0}
+                            className="rounded-lg border bg-background p-2 text-left transition hover:border-primary/50 hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            onClick={() => setSelectedOrderDetailId(order.id)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault()
+                                setSelectedOrderDetailId(order.id)
+                              }
+                            }}
+                          >
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
                                 <p className="text-xs font-black">{getOrderDisplayId(order)}</p>
@@ -1646,11 +1672,29 @@ function POSPageContent() {
                             <p className="mt-2 line-clamp-1 text-[10px] font-semibold text-muted-foreground">
                               {oneLineProducts || "Aucun produit"}
                             </p>
+                            <div className="mt-1 flex items-center justify-between gap-2">
+                              <span className="text-[9px] font-bold text-muted-foreground">
+                                {hiddenItemsCount > 0 ? `+ ${hiddenItemsCount} article(s)` : `${orderItems.length} article(s)`}
+                              </span>
+                              <button
+                                type="button"
+                                className="text-[9px] font-black uppercase text-primary underline-offset-2 hover:underline"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setSelectedOrderDetailId(order.id)
+                                }}
+                              >
+                                Voir dÃ©tails
+                              </button>
+                            </div>
 
                             <Button
                               variant="outline"
                               className="mt-2 h-7 w-full text-[9px] font-black"
-                              onClick={() => queuePrint(order, "client")}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                queuePrint(order, "client")
+                              }}
                             >
                               Réimprimer
                             </Button>
@@ -1677,7 +1721,10 @@ function POSPageContent() {
                                   <Button
                                     className="mt-2 h-7 w-full bg-primary text-[9px] font-black hover:bg-primary/90"
                                     disabled={processing || !canVerifyPayment}
-                                    onClick={() => paymentSession ? validateTableSessionPayment(paymentSession) : markOrderPaid(order)}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      paymentSession ? validateTableSessionPayment(paymentSession) : markOrderPaid(order)
+                                    }}
                                   >
                                     {isMobilePayment ? "Valider paiement" : "Encaisser (cash)"}
                                   </Button>
@@ -1697,7 +1744,10 @@ function POSPageContent() {
                               <Button
                                 className="mt-2 h-7 w-full text-[9px] font-black"
                                 disabled={processing}
-                                onClick={() => markOrderCompleted(order)}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  markOrderCompleted(order)
+                                }}
                               >
                                 Terminer
                               </Button>
@@ -1713,6 +1763,26 @@ function POSPageContent() {
           </div>
         </div>
       }
+    />
+
+    <CashierOrderDetailDialog
+      order={selectedOrderDetail}
+      paymentSession={selectedOrderPaymentSession}
+      tables={tables}
+      processing={processing}
+      onClose={() => setSelectedOrderDetailId(null)}
+      onPrint={() => {
+        if (selectedOrderDetail) queuePrint(selectedOrderDetail, "client")
+      }}
+      onValidatePayment={() => {
+        if (!selectedOrderDetail) return
+        selectedOrderPaymentSession
+          ? validateTableSessionPayment(selectedOrderPaymentSession)
+          : markOrderPaid(selectedOrderDetail)
+      }}
+      onComplete={() => {
+        if (selectedOrderDetail) markOrderCompleted(selectedOrderDetail)
+      }}
     />
 
     <Dialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
@@ -1805,9 +1875,267 @@ function DiffAmount({ label, value, strong }: { label: string; value: number; st
   )
 }
 
+function CashierOrderDetailDialog({
+  order,
+  paymentSession,
+  tables,
+  processing,
+  onClose,
+  onPrint,
+  onValidatePayment,
+}: {
+  order: any | null
+  paymentSession: any | null
+  tables: RestaurantTableRecord[]
+  processing: boolean
+  onClose: () => void
+  onPrint: () => void
+  onValidatePayment: () => void
+  onComplete: () => void
+}) {
+  if (!order) return null
+
+  const items = Array.isArray(order.items) ? order.items : []
+  const groupedItems = groupCashierOrderItems(items)
+  const normalizedType = normalizeOrderType(order.orderType || order.type)
+  const paymentRequestStatus = paymentSession?.paymentRequest?.status
+  const isPaid = isOrderPaid(order) || paymentRequestStatus === "validated"
+  const isMobilePayment = isMobileMoneyOrder(order) || paymentSession?.paymentRequest?.method === "mobile"
+  const canValidatePayment =
+    !isPaid &&
+    (
+      paymentRequestStatus === "requested" ||
+      paymentRequestStatus === "pending_confirmation" ||
+      order.paymentStatus === "pending_verification" ||
+      order.paymentStatus === "pending_mobile" ||
+      order.paymentStatus === "pending_cash" ||
+      order.paymentStatus === "pending"
+    )
+  const tableLabel =
+    tables.find((table) => table.id === order.tableId)?.name ||
+    order.tableNumber ||
+    order.table ||
+    (order.tableId ? order.tableId.slice(-2).toUpperCase() : "")
+  const phone = order.customer?.phone || order.customerPhone || order.phoneNumber
+  const deliveryAddress = formatDeliveryAddress(order.deliveryAddress)
+
+  return (
+    <Dialog open={Boolean(order)} onOpenChange={(open) => {
+      if (!open) onClose()
+    }}>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-hidden p-0">
+        <DialogHeader className="border-b px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <DialogTitle>{getOrderDisplayId(order)}</DialogTitle>
+              <DialogDescription>
+                {getCashierOrderTypeLabel(order)}
+                {normalizedType === "dine_in" && tableLabel ? ` · Table ${tableLabel}` : ""}
+              </DialogDescription>
+            </div>
+            <div className="text-right">
+              <p className="text-lg font-black text-primary">
+                {getOrderComputedTotal(order).toLocaleString("fr-FR")} FCFA
+              </p>
+              <p className="text-[10px] font-black uppercase text-muted-foreground">
+                {items.length} article(s)
+              </p>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <div className="max-h-[64vh] overflow-y-auto px-5 py-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <DetailMeta label="Type" value={getCashierOrderTypeLabel(order)} />
+            <DetailMeta label="Paiement" value={formatCashierPaymentStatus(order, paymentSession)} />
+            <DetailMeta label="Préparation" value={formatCashierOrderStatus(order)} />
+            <DetailMeta label="Mode paiement" value={formatCashierPaymentMethod(order.paymentMethod || paymentSession?.paymentRequest?.method)} />
+          </div>
+
+          {(phone || deliveryAddress) ? (
+            <div className="mt-3 rounded-lg border bg-muted/30 p-3 text-sm">
+              {phone ? <p><span className="font-black">Téléphone:</span> {phone}</p> : null}
+              {deliveryAddress ? <p className="mt-1"><span className="font-black">Adresse:</span> {deliveryAddress}</p> : null}
+            </div>
+          ) : null}
+
+          <div className="mt-5 space-y-5">
+            {groupedItems.map((group) => (
+              <section key={group.mode} className="space-y-2">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h3 className="text-sm font-black uppercase">{group.label}</h3>
+                  <span className="text-xs font-bold text-muted-foreground">{group.items.length} ligne(s)</span>
+                </div>
+
+                <div className="space-y-2">
+                  {group.items.map((item: any, index: number) => {
+                    const quantity = Number(item.quantity ?? 1)
+                    const unitPrice = getCashierOrderItemUnitPrice(item)
+                    const lineTotal = getCashierOrderItemLineTotal(item)
+                    const options = getCashierOrderItemOptions(item)
+
+                    return (
+                      <div key={item.id || `${item.productId}-${index}`} className="rounded-lg border bg-card p-3">
+                        <div className="grid grid-cols-[auto_1fr_auto] gap-3">
+                          <span className="flex h-8 min-w-8 items-center justify-center rounded-md bg-primary/10 px-2 text-sm font-black text-primary">
+                            {quantity}x
+                          </span>
+                          <div className="min-w-0">
+                            <p className="break-words text-sm font-black">
+                              {item.name || item.nameSnapshot || "Article"}
+                            </p>
+                            <p className="mt-1 text-[10px] font-bold uppercase text-muted-foreground">
+                              {getPreparationModeLabel(group.mode)}
+                            </p>
+                            {options.length > 0 ? (
+                              <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                                {options.map((option, optionIndex) => (
+                                  <li key={`${option}-${optionIndex}`}>- {option}</li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-bold text-muted-foreground">
+                              {unitPrice.toLocaleString("fr-FR")} FCFA
+                            </p>
+                            <p className="mt-1 text-sm font-black">
+                              {lineTotal.toLocaleString("fr-FR")} FCFA
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+
+        <DialogFooter className="border-t px-5 py-4">
+          <Button variant="outline" onClick={onClose}>Fermer</Button>
+          <Button variant="outline" onClick={onPrint}>Réimprimer ticket</Button>
+          {!isPaid ? (
+            <Button disabled={processing || !canValidatePayment} onClick={onValidatePayment}>
+              {isMobilePayment ? "Valider paiement" : "Encaisser"}
+            </Button>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DetailMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border bg-muted/30 p-3">
+      <p className="text-[10px] font-black uppercase text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-black">{value}</p>
+    </div>
+  )
+}
+
 function normalizeMoneyInput(value: string) {
   const amount = Math.round(Number(value || 0))
   return Number.isFinite(amount) && amount > 0 ? amount : 0
+}
+
+function groupCashierOrderItems(items: any[]) {
+  const groups = [
+    { mode: "kitchen" as const, label: "Cuisine", items: [] as any[] },
+    { mode: "direct" as const, label: "Service direct", items: [] as any[] },
+    { mode: "bar" as const, label: "Bar / Comptoir", items: [] as any[] },
+  ]
+  const groupByMode = new Map(groups.map((group) => [group.mode, group]))
+
+  items.forEach((item) => {
+    const mode = getEffectivePreparationMode({
+      preparationMode: item.preparationMode,
+      categoryName: item.categoryName,
+    })
+    groupByMode.get(mode)?.items.push(item)
+  })
+
+  return groups.filter((group) => group.items.length > 0)
+}
+
+function getPreparationModeLabel(mode: "kitchen" | "direct" | "bar") {
+  if (mode === "direct") return "Service direct"
+  if (mode === "bar") return "Bar / Comptoir"
+  return "Cuisine"
+}
+
+function getCashierOrderItemUnitPrice(item: any) {
+  const unitPrice = Number(item.priceSnapshot ?? item.price ?? item.unitPrice ?? 0)
+  return Number.isFinite(unitPrice) ? Math.round(unitPrice) : 0
+}
+
+function getCashierOrderItemLineTotal(item: any) {
+  const explicitTotal = Number(item.total ?? item.subtotal)
+  if (Number.isFinite(explicitTotal) && explicitTotal > 0) return Math.round(explicitTotal)
+
+  return getCashierOrderItemUnitPrice(item) * Number(item.quantity ?? 1)
+}
+
+function getCashierOrderItemOptions(item: any) {
+  const options: string[] = []
+
+  if (item.variant) {
+    options.push(`Variante: ${typeof item.variant === "string" ? item.variant : item.variant.name || item.variant.label || "sélectionnée"}`)
+  }
+
+  if (item.linkedGroupTitle) {
+    options.push(`Option liée: ${item.linkedGroupTitle}`)
+  }
+
+  if (Array.isArray(item.selectedOptions)) {
+    item.selectedOptions.forEach((option: any) => {
+      const optionName = option.optionName || option.name || "Option"
+      const choiceName = option.choiceName || option.label || option.value
+      const price = Number(option.price ?? 0)
+      options.push(`${optionName}: ${choiceName || "sélection"}${price > 0 ? ` (+${price.toLocaleString("fr-FR")} FCFA)` : ""}`)
+    })
+  }
+
+  if (Array.isArray(item.addons)) {
+    item.addons.forEach((addon: any) => {
+      const name = addon.name || addon.label || addon
+      const price = Number(addon.price ?? 0)
+      options.push(`Supplément: ${name}${price > 0 ? ` (+${price.toLocaleString("fr-FR")} FCFA)` : ""}`)
+    })
+  }
+
+  if (item.selectedOptionsText) {
+    options.push(String(item.selectedOptionsText))
+  }
+
+  return options
+}
+
+function formatCashierPaymentStatus(order: any, paymentSession: any | null) {
+  const paymentRequestStatus = paymentSession?.paymentRequest?.status
+  if (isOrderPaid(order) || paymentRequestStatus === "validated") return "Payé"
+  if (paymentRequestStatus === "pending_confirmation") return "Confirmation client"
+  if (paymentRequestStatus === "requested") return "Paiement demandé"
+  if (order.paymentStatus === "pending_mobile") return "Mobile en attente"
+  if (order.paymentStatus === "pending_cash") return "Cash à encaisser"
+  if (order.paymentStatus === "pending_verification") return "À vérifier"
+  if (order.paymentStatus === "unpaid") return "Non payé"
+  return order.paymentStatus || "Non défini"
+}
+
+function formatDeliveryAddress(value: any) {
+  if (!value) return ""
+  if (typeof value === "string") return value
+
+  return [
+    value.label,
+    value.street,
+    value.address,
+    value.city,
+    value.zone,
+  ].filter(Boolean).join(", ")
 }
 
 // Compact closed session panel
