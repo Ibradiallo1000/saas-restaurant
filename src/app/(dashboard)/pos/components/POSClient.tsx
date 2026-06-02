@@ -377,7 +377,7 @@ function POSPageContent() {
     setTableNumber(initialTableId)
   }, [initialTableId, tables])
 
-  function getDisplayPrice(product: any) {
+  const getDisplayPrice = React.useCallback((product: any) => {
     if (product.basePrice) return product.basePrice
     if (product.price) return product.price
 
@@ -390,12 +390,12 @@ function POSPageContent() {
     }
 
     return null
-  }
+  }, [])
 
-  const formatDisplayPrice = (product: any) => {
+  const formatDisplayPrice = React.useCallback((product: any) => {
     const price = getDisplayPrice(product)
     return Number.isFinite(price) ? `${Math.round(Number(price)).toLocaleString()} FCFA` : "-"
-  }
+  }, [getDisplayPrice])
 
   const getCartItemUnitPrice = (item: any) => {
     const price = Number(item.unitPrice ?? getDisplayPrice(item) ?? 0)
@@ -428,7 +428,7 @@ function POSPageContent() {
     }
   }
 
-  const addToCart = (product: any) => {
+  const addToCart = React.useCallback((product: any) => {
     if (!product?.id) return
 
     setCart((current) => {
@@ -443,7 +443,7 @@ function POSPageContent() {
     if (!turboMode) {
       toast({ title: "Ajouté", description: product.name, duration: 500 })
     }
-  }
+  }, [toast, turboMode])
 
   const removeFromCart = (productId: string) => {
     setCart((current) => {
@@ -576,7 +576,7 @@ function POSPageContent() {
       })
   }, [restaurant, toast])
 
-  const openProductSelector = (product: any) => {
+  const openProductSelector = React.useCallback((product: any) => {
     if (process.env.NODE_ENV === "development") {
       console.log("POS product", product)
     }
@@ -590,7 +590,7 @@ function POSPageContent() {
     setConfigSelections(getDefaultConfigSelections(product))
     setConfigLinkedSelections([])
     setConfigValidationError(null)
-  }
+  }, [addToCart])
 
   const closeProductSelector = () => {
     setConfigProduct(null)
@@ -807,18 +807,20 @@ function POSPageContent() {
 
       const requiresKitchen = orderHasKitchenItems(recalculatedItems)
 
-      console.info("[preparationMode][pos]", {
-        restaurantId,
-        orderType,
-        items: recalculatedItems.map((item) => ({
-          productId: item.productId,
-          name: item.nameSnapshot,
-          preparationMode: item.preparationMode,
-          sentToKitchen: item.preparationMode === "kitchen",
-        })),
-        kitchenItems: getKitchenOrderItems(recalculatedItems).map((item) => item.productId),
-        requiresKitchen,
-      })
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[preparationMode][pos]", {
+          restaurantId,
+          orderType,
+          items: recalculatedItems.map((item) => ({
+            productId: item.productId,
+            name: item.nameSnapshot,
+            preparationMode: item.preparationMode,
+            sentToKitchen: item.preparationMode === "kitchen",
+          })),
+          kitchenItems: getKitchenOrderItems(recalculatedItems).map((item) => item.productId),
+          requiresKitchen,
+        })
+      }
 
       const orderData: any = {
         restaurantId: restaurantId,

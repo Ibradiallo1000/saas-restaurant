@@ -92,9 +92,9 @@ function CheckoutPage() {
           }
 
           const product = { id: productSnap.id, ...productSnap.data() } as any
-          let categoryName = ""
+          let categoryName = (item as any).categoryName || ""
 
-          if (product.categoryId) {
+          if (!product.preparationMode && !categoryName && product.categoryId) {
             const categorySnap = await getDoc(
               doc(db, COLLECTION_NAMES.RESTAURANTS, restaurant.id, "categories", product.categoryId)
             )
@@ -113,25 +113,27 @@ function CheckoutPage() {
             quantity: item.quantity,
             selections: item.selections || {},
             total,
-            preparationMode: resolveProductPreparationMode(product, categoryName),
+            preparationMode: (item as any).preparationMode || resolveProductPreparationMode(product, categoryName),
           }
         })
       )
       const requiresKitchen = orderHasKitchenItems(orderItems)
 
-      console.info("[preparationMode][legacy_public_checkout]", {
-        restaurantId: restaurant.id,
-        items: orderItems.map((item) => ({
-          productId: item.productId,
-          name: item.name,
-          preparationMode: item.preparationMode,
-          sentToKitchen: item.preparationMode === "kitchen",
-        })),
-        kitchenItems: orderItems
-          .filter((item) => item.preparationMode === "kitchen")
-          .map((item) => item.productId),
-        requiresKitchen,
-      })
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[preparationMode][legacy_public_checkout]", {
+          restaurantId: restaurant.id,
+          items: orderItems.map((item) => ({
+            productId: item.productId,
+            name: item.name,
+            preparationMode: item.preparationMode,
+            sentToKitchen: item.preparationMode === "kitchen",
+          })),
+          kitchenItems: orderItems
+            .filter((item) => item.preparationMode === "kitchen")
+            .map((item) => item.productId),
+          requiresKitchen,
+        })
+      }
 
       const orderData = {
         restaurantId: restaurant.id,

@@ -41,6 +41,7 @@ export type BundleCartLine = {
   unitPrice: number
   quantity: number
   imageUrl?: string
+  preparationMode?: PreparationMode
   selectedOptions?: SelectedCartOption[]
   bundleId: string
   isBundleMain: boolean
@@ -226,6 +227,7 @@ export function buildBundleCartLines({
       unitPrice: Math.round(mainUnitPrice),
       quantity: 1,
       imageUrl: mainProduct.imageUrl,
+      preparationMode: mainProduct.preparationMode,
       selectedOptions,
       bundleId,
       isBundleMain: true,
@@ -260,6 +262,7 @@ export function buildBundleCartLines({
       unitPrice: getLinkedSelectionUnitPrice(resolvedProduct, group.pricingMode),
       quantity: 1,
       imageUrl: resolvedProduct.imageUrl,
+      preparationMode: resolvedProduct.preparationMode,
       bundleId,
       isBundleMain: false,
       linkedGroupTitle: selection.groupTitle,

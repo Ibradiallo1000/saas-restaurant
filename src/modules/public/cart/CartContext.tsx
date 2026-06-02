@@ -17,6 +17,8 @@ type AddCartItemInput = {
   selections?: CartSelection
   selectedOptions?: SelectedCartOption[]
   imageUrl?: string
+  preparationMode?: CartItem["preparationMode"]
+  categoryName?: string
   bundleId?: string
   isBundleMain?: boolean
   linkedGroupTitle?: string
@@ -163,6 +165,8 @@ function normalizeInputItem(input: AddCartItemInput): CartItem | null {
     selections: input.selections,
     selectedOptions: input.selectedOptions,
     imageUrl: input.imageUrl,
+    preparationMode: input.preparationMode,
+    categoryName: input.categoryName,
     bundleId: input.bundleId,
     isBundleMain: input.isBundleMain,
     linkedGroupTitle: input.linkedGroupTitle,

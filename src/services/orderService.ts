@@ -37,20 +37,22 @@ export const createOrder = async (
     requiresKitchen ? kitchenStatus ?? legacyStatus ?? safeOrder.orderStatus : "completed"
   );
 
-  console.info("[preparationMode][legacy_order_service]", {
-    restaurantId: companyId,
-    items: (safeOrder.items || []).map((item: any) => ({
-      productId: item.productId,
-      name: item.name ?? item.nameSnapshot,
-      preparationMode: item.preparationMode,
-      sentToKitchen: item.preparationMode === "kitchen",
-    })),
-    kitchenItems: (safeOrder.items || [])
-      .filter((item: any) => item.preparationMode === "kitchen")
-      .map((item: any) => item.productId),
-    requiresKitchen,
-    initialKitchenStatus,
-  });
+  if (process.env.NODE_ENV !== "production") {
+    console.info("[preparationMode][legacy_order_service]", {
+      restaurantId: companyId,
+      items: (safeOrder.items || []).map((item: any) => ({
+        productId: item.productId,
+        name: item.name ?? item.nameSnapshot,
+        preparationMode: item.preparationMode,
+        sentToKitchen: item.preparationMode === "kitchen",
+      })),
+      kitchenItems: (safeOrder.items || [])
+        .filter((item: any) => item.preparationMode === "kitchen")
+        .map((item: any) => item.productId),
+      requiresKitchen,
+      initialKitchenStatus,
+    });
+  }
 
   return await addDoc(ORDERS_SUBCOLLECTION(companyId), {
     ...safeOrder,

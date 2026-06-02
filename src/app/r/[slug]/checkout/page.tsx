@@ -72,9 +72,9 @@ function CheckoutPage() {
           }
 
           const product = { id: productSnap.id, ...productSnap.data() } as any;
-          let categoryName = "";
+          let categoryName = (i as any).categoryName || "";
 
-          if (product.categoryId) {
+          if (!product.preparationMode && !categoryName && product.categoryId) {
             const categorySnap = await getDoc(
               doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "categories", product.categoryId)
             );
@@ -91,25 +91,27 @@ function CheckoutPage() {
             unitPrice: i.price,
             quantity: i.quantity,
             total: i.price * i.quantity,
-            preparationMode: resolveProductPreparationMode(product, categoryName),
+            preparationMode: (i as any).preparationMode || resolveProductPreparationMode(product, categoryName),
           };
         })
       );
       const requiresKitchen = orderHasKitchenItems(orderItems);
 
-      console.info("[preparationMode][legacy_r_checkout]", {
-        restaurantId,
-        items: orderItems.map((item) => ({
-          productId: item.productId,
-          name: item.name,
-          preparationMode: item.preparationMode,
-          sentToKitchen: item.preparationMode === "kitchen",
-        })),
-        kitchenItems: orderItems
-          .filter((item) => item.preparationMode === "kitchen")
-          .map((item) => item.productId),
-        requiresKitchen,
-      });
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[preparationMode][legacy_r_checkout]", {
+          restaurantId,
+          items: orderItems.map((item) => ({
+            productId: item.productId,
+            name: item.name,
+            preparationMode: item.preparationMode,
+            sentToKitchen: item.preparationMode === "kitchen",
+          })),
+          kitchenItems: orderItems
+            .filter((item) => item.preparationMode === "kitchen")
+            .map((item) => item.productId),
+          requiresKitchen,
+        });
+      }
 
       const orderRef = await addDoc(collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS), {
         restaurantId,

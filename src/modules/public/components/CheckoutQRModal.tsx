@@ -88,14 +88,14 @@ export default function CheckoutQRModal({
             product,
             item.selectedOptions ?? []
           )
-          let categoryName = ""
-          if ((product as any).categoryId) {
+          let categoryName = item.categoryName || ""
+          if (!product.preparationMode && !categoryName && product.categoryId) {
             const categorySnap = await getDoc(
-              doc(db, "restaurants", restaurantId, "categories", (product as any).categoryId)
+              doc(db, "restaurants", restaurantId, "categories", product.categoryId)
             )
             categoryName = categorySnap.data()?.name || ""
           }
-          const preparationMode = resolveProductPreparationMode(product, categoryName)
+          const preparationMode = item.preparationMode || resolveProductPreparationMode(product, categoryName)
 
           return {
             id: `${item.productId}-${Date.now()}-${index}`,
@@ -115,20 +115,22 @@ export default function CheckoutQRModal({
       const recalculatedTotal = orderItems.reduce((sum, item) => sum + item.total, 0)
       const requiresKitchen = orderHasKitchenItems(orderItems)
 
-      console.info("[preparationMode][qr_table]", {
-        restaurantId,
-        tableSessionId,
-        items: orderItems.map((item) => ({
-          productId: item.productId,
-          name: item.name,
-          preparationMode: item.preparationMode,
-          sentToKitchen: item.preparationMode === "kitchen",
-        })),
-        kitchenItems: orderItems
-          .filter((item) => item.preparationMode === "kitchen")
-          .map((item) => item.productId),
-        requiresKitchen,
-      })
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[preparationMode][qr_table]", {
+          restaurantId,
+          tableSessionId,
+          items: orderItems.map((item) => ({
+            productId: item.productId,
+            name: item.name,
+            preparationMode: item.preparationMode,
+            sentToKitchen: item.preparationMode === "kitchen",
+          })),
+          kitchenItems: orderItems
+            .filter((item) => item.preparationMode === "kitchen")
+            .map((item) => item.productId),
+          requiresKitchen,
+        })
+      }
 
       const order = {
         restaurantId,

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { collection, getDocs, limit, query } from "firebase/firestore"
+import { collection, getDocs, limit, query, where } from "firebase/firestore"
 
 import { useFirestore } from "@/firebase"
 import { COLLECTION_NAMES } from "@/lib/constants"
@@ -79,6 +79,7 @@ export function CatalogProvider({
           safeRestaurantId,
           COLLECTION_NAMES.PRODUCTS
         ),
+        where("isActive", "==", true),
         limit(50)
       )
       const categoriesQuery = query(
@@ -101,10 +102,12 @@ export function CatalogProvider({
           id: document.id,
           ...document.data(),
         })),
-        categories: categoriesSnapshot.docs.map((document) => ({
-          id: document.id,
-          ...document.data(),
-        })),
+        categories: categoriesSnapshot.docs
+          .map((document) => ({
+            id: document.id,
+            ...document.data(),
+          }))
+          .filter((category: any) => category.isActive !== false),
       }
 
       catalogCache[safeCacheKey] = nextCatalog

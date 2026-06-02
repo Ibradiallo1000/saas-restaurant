@@ -207,8 +207,8 @@ export default function CheckoutPublicModal({
           const product = { id: productSnap.id, ...productSnap.data() } as any
           const unitPrice = recalculateConfiguredUnitPrice(product, item.selectedOptions ?? [])
 
-          let categoryName = ""
-          if (product.categoryId) {
+          let categoryName = item.categoryName || ""
+          if (!product.preparationMode && !categoryName && product.categoryId) {
             const categorySnap = await getDoc(
               doc(db, "restaurants", restaurantId, "categories", product.categoryId)
             )
@@ -225,7 +225,7 @@ export default function CheckoutPublicModal({
             quantity: item.quantity,
             total: unitPrice * item.quantity,
             selectedOptions: item.selectedOptions ?? [],
-            preparationMode: resolveProductPreparationMode(product, categoryName),
+            preparationMode: item.preparationMode || resolveProductPreparationMode(product, categoryName),
           }
         })
       )
@@ -235,21 +235,23 @@ export default function CheckoutPublicModal({
       const orderTotal = recalculatedSubtotal + deliveryFee
       const requiresKitchen = orderHasKitchenItems(orderItems)
 
-      console.info("[preparationMode][public_checkout]", {
-        restaurantId,
-        orderType: normalizedOrderType,
-        paymentMethodCode: flow.paymentMethodCode,
-        items: orderItems.map((item) => ({
-          productId: item.productId,
-          name: item.name,
-          preparationMode: item.preparationMode,
-          sentToKitchen: item.preparationMode === "kitchen",
-        })),
-        kitchenItems: orderItems
-          .filter((item) => item.preparationMode === "kitchen")
-          .map((item) => item.productId),
-        requiresKitchen,
-      })
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[preparationMode][public_checkout]", {
+          restaurantId,
+          orderType: normalizedOrderType,
+          paymentMethodCode: flow.paymentMethodCode,
+          items: orderItems.map((item) => ({
+            productId: item.productId,
+            name: item.name,
+            preparationMode: item.preparationMode,
+            sentToKitchen: item.preparationMode === "kitchen",
+          })),
+          kitchenItems: orderItems
+            .filter((item) => item.preparationMode === "kitchen")
+            .map((item) => item.productId),
+          requiresKitchen,
+        })
+      }
 
       const order = {
         restaurantId,

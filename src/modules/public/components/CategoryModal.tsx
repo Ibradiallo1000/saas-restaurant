@@ -25,6 +25,8 @@ export default function CategoryModal({
   const { addItem } = useCart()
 
   const handleAddToCart = (item: ProductSelectorCartItem) => {
+    const product = products.find((currentProduct) => currentProduct.id === item.productId)
+
     addItem({
       id: getConfiguredCartItemId(item.productId, item.selectedOptions),
       productId: item.productId,
@@ -34,6 +36,8 @@ export default function CategoryModal({
       total: item.total,
       imageUrl: item.imageUrl,
       selectedOptions: item.selectedOptions,
+      preparationMode: product?.preparationMode,
+      categoryName: product?.categoryName || category?.name,
     })
 
     onClose()

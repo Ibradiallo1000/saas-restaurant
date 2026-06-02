@@ -114,6 +114,8 @@ export type CartItem = {
   selections?: CartSelection
   selectedOptions?: SelectedCartOption[]
   imageUrl?: string
+  preparationMode?: "kitchen" | "direct" | "bar"
+  categoryName?: string
   bundleId?: string
   isBundleMain?: boolean
   linkedGroupTitle?: string

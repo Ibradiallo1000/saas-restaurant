@@ -59,6 +59,8 @@ export default function DishCard({
       quantity: 1,
       total: price,
       imageUrl: product.imageUrl,
+      preparationMode: product.preparationMode,
+      categoryName: product.categoryName,
     })
 
     navigator.vibrate?.(10)

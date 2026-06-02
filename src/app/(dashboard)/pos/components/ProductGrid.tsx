@@ -15,13 +15,17 @@ type ProductGridProps = {
   onProductClick: (product: any) => void
 }
 
-export default function ProductGrid({
+function ProductGrid({
   products,
   categories = [],
   loading = false,
   formatPrice,
   onProductClick,
 }: ProductGridProps) {
+  const categoriesById = React.useMemo(() => {
+    return new Map(categories.map((category: any) => [category.id, category.name || ""]))
+  }, [categories])
+
   if (loading) {
     return (
       <div className="grid grid-cols-3 gap-3 xl:grid-cols-4 2xl:grid-cols-5">
@@ -43,8 +47,7 @@ export default function ProductGrid({
   return (
     <div className="grid grid-cols-3 gap-3 xl:grid-cols-4 2xl:grid-cols-5">
       {products.map((product: any) => {
-        const categoryName =
-          categories.find((category: any) => category.id === product.categoryId)?.name || ""
+        const categoryName = categoriesById.get(product.categoryId) || ""
 
         return (
           <button
@@ -94,3 +97,5 @@ export default function ProductGrid({
     </div>
   )
 }
+
+export default React.memo(ProductGrid)

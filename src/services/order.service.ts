@@ -107,20 +107,22 @@ export class OrderService {
       mappedItems.map((item) => ({ preparationMode: item.preparationMode ?? undefined }))
     );
 
-    console.info("[preparationMode][order_service]", {
-      restaurantId: input.restaurantId,
-      source: input.source || "pos",
-      items: mappedItems.map((item) => ({
-        productId: item.productId,
-        name: item.name,
-        preparationMode: item.preparationMode,
-        sentToKitchen: item.preparationMode === "kitchen",
-      })),
-      kitchenItems: mappedItems
-        .filter((item) => item.preparationMode === "kitchen")
-        .map((item) => item.productId),
-      requiresKitchen,
-    });
+    if (process.env.NODE_ENV !== "production") {
+      console.info("[preparationMode][order_service]", {
+        restaurantId: input.restaurantId,
+        source: input.source || "pos",
+        items: mappedItems.map((item) => ({
+          productId: item.productId,
+          name: item.name,
+          preparationMode: item.preparationMode,
+          sentToKitchen: item.preparationMode === "kitchen",
+        })),
+        kitchenItems: mappedItems
+          .filter((item) => item.preparationMode === "kitchen")
+          .map((item) => item.productId),
+        requiresKitchen,
+      });
+    }
 
     const orderData = {
       restaurantId: input.restaurantId,

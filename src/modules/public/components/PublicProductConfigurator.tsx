@@ -142,6 +142,7 @@ export default function PublicProductConfigurator({
           total: line.unitPrice * line.quantity,
           selectedOptions: line.selectedOptions,
           imageUrl: line.imageUrl,
+          preparationMode: line.preparationMode,
           bundleId: line.bundleId,
           isBundleMain: line.isBundleMain,
           linkedGroupTitle: line.linkedGroupTitle,
@@ -157,6 +158,8 @@ export default function PublicProductConfigurator({
         total: mainUnitPrice,
         selectedOptions,
         imageUrl: product.imageUrl,
+        preparationMode: product.preparationMode,
+        categoryName: product.categoryName,
       })
     }
 

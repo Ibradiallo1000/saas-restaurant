@@ -23,6 +23,8 @@ type PublicCartItem = {
   total: number
   totalPrice: number
   imageUrl?: string
+  preparationMode?: "kitchen" | "direct" | "bar"
+  categoryName?: string
   selectedOptions?: Array<{
     optionName: string
     choiceName: string
@@ -66,8 +68,6 @@ export default function ProductModal({
   }
 
   function handleAddToCart() {
-    console.log("HANDLE ADD TRIGGERED")
-
     if (!product) return
 
     if (getSizeChoices(product).length > 0 && !selectedSize) {
@@ -104,17 +104,16 @@ export default function ProductModal({
       total: calculateTotalPrice(),
       totalPrice: calculateTotalPrice(),
       imageUrl: product.imageUrl,
+      preparationMode: product.preparationMode,
+      categoryName: product.categoryName,
       selectedOptions,
     }
-
-    console.log("ITEM BUILT", item)
 
     if (!onAddToCart) {
       console.error("onAddToCart is undefined")
       return
     }
 
-    console.log("ADD TO CART", item)
     onAddToCart(item)
   }
 
@@ -292,7 +291,6 @@ export default function ProductModal({
           <button
             type="button"
             onClick={() => {
-              console.log("CLICK ADD PUBLIC")
               handleAddToCart()
             }}
             className="flex h-14 w-full items-center justify-between gap-4 rounded-2xl bg-[var(--color-primary)] px-5 text-sm font-black uppercase text-white shadow-lg shadow-[var(--color-primary)]/20 transition active:scale-[0.98]"

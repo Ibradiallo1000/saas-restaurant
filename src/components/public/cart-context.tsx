@@ -17,6 +17,8 @@ export interface CartItem {
   quantity: number
   selections: Record<string, number[]>
   imageUrl?: string
+  preparationMode?: "kitchen" | "direct" | "bar"
+  categoryName?: string
 }
 
 interface CartContextType {
@@ -94,6 +96,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
           quantity,
           selections,
           imageUrl: product.imageUrl,
+          preparationMode: product.preparationMode,
+          categoryName: product.categoryName,
         },
       ]
     })

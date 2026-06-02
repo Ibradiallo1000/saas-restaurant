@@ -22,6 +22,8 @@ import {
   type RestaurantTableRecord,
 } from "@/services/table-session.service"
 
+const PUBLIC_MENU_CACHE_TTL_MS = 5 * 60 * 1000
+
 function PublicPageContent({
   slug,
   tableId,
@@ -55,10 +57,6 @@ function PublicPageContent({
   }, [])
 
   React.useEffect(() => {
-    console.log("CART STATE", items)
-  }, [items])
-
-  React.useEffect(() => {
     if (!clientReady) return
 
     setLoadTimedOut(false)
@@ -78,7 +76,7 @@ function PublicPageContent({
     data: restaurants,
     isLoading: isRestaurantDocLoading,
     error: restaurantError,
-  } = useCollectionOnce(restaurantQuery)
+  } = useCollectionOnce(restaurantQuery, PUBLIC_MENU_CACHE_TTL_MS)
   const restaurant = restaurants?.[0] ?? null
 
   const restaurantId = restaurant?.id
@@ -144,14 +142,18 @@ function PublicPageContent({
 
   const productsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
-    return query(collection(db, "restaurants", restaurantId, "products"), limit(50))
+    return query(
+      collection(db, "restaurants", restaurantId, "products"),
+      where("isActive", "==", true),
+      limit(50)
+    )
   }, [db, restaurantId])
 
   const {
     data: products,
     isLoading: isProductsLoading,
     error: productsError,
-  } = useCollectionOnce(productsQuery)
+  } = useCollectionOnce(productsQuery, PUBLIC_MENU_CACHE_TTL_MS)
 
   const categoriesQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
@@ -162,7 +164,7 @@ function PublicPageContent({
     data: categoriesData,
     isLoading: isCategoriesLoading,
     error: categoriesError,
-  } = useCollectionOnce(categoriesQuery)
+  } = useCollectionOnce(categoriesQuery, PUBLIC_MENU_CACHE_TTL_MS)
 
   const isRestaurantLoading =
     !clientReady ||
@@ -177,10 +179,12 @@ function PublicPageContent({
       categoriesData === null)
 
   const optimizedCategories = React.useMemo(() => {
-    return (categoriesData || []).map((category: any) => ({
-      ...category,
-      imageUrl: getOptimizedImage(category.imageUrl || "", 300),
-    }))
+    return (categoriesData || [])
+      .filter((category: any) => category.isActive !== false)
+      .map((category: any) => ({
+        ...category,
+        imageUrl: getOptimizedImage(category.imageUrl || "", 300),
+      }))
   }, [categoriesData])
 
   const productsByCategory = React.useMemo(() => {

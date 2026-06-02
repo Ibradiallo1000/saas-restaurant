@@ -276,9 +276,6 @@ function ClientOrderTrackingContent() {
   const orders = tableSessionOrders
   const mainOrder = orders[0] || (order as any)
   
-  console.log("ORDERS:", orders)
-  console.log("MAIN ORDER:", mainOrder)
-
   if (error || !mainOrder) {
     return (
       <PublicTrackingLayout
@@ -339,7 +336,6 @@ function ClientOrderTrackingContent() {
 
     setIsCashPaying(true)
     try {
-      console.log("SESSION USED:", safeOrder.tableSessionId)
       await updateDoc(doc(db, "restaurants", restaurantId, "tableSessions", safeOrder.tableSessionId), {
         "paymentRequest.status": "requested",
         "paymentRequest.method": "cash",
@@ -375,10 +371,6 @@ function ClientOrderTrackingContent() {
           : method.paymentCode
     }
 
-    console.log("SESSION USED:", safeOrder.tableSessionId)
-    console.log("SESSION WRITE:", safeOrder.tableSessionId)
-    console.log("PAYMENT REQUEST:", paymentRequest)
-
     setIsMobilePaying(true)
     updateDoc(sessionRef, { paymentRequest })
       .catch(console.error)
@@ -402,9 +394,6 @@ function ClientOrderTrackingContent() {
         provider: tableSession?.paymentRequest?.provider || "Mobile Money",
         confirmedByClientAt: serverTimestamp(),
       }
-      console.log("SESSION USED:", safeOrder.tableSessionId)
-      console.log("SESSION WRITE:", safeOrder.tableSessionId)
-      console.log("PAYMENT REQUEST:", paymentRequest)
       await updateDoc(doc(db, "restaurants", restaurantId, "tableSessions", safeOrder.tableSessionId), {
         paymentRequest,
       })
