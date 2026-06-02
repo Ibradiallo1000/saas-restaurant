@@ -807,6 +807,19 @@ function POSPageContent() {
 
       const requiresKitchen = orderHasKitchenItems(recalculatedItems)
 
+      console.info("[preparationMode][pos]", {
+        restaurantId,
+        orderType,
+        items: recalculatedItems.map((item) => ({
+          productId: item.productId,
+          name: item.nameSnapshot,
+          preparationMode: item.preparationMode,
+          sentToKitchen: item.preparationMode === "kitchen",
+        })),
+        kitchenItems: getKitchenOrderItems(recalculatedItems).map((item) => item.productId),
+        requiresKitchen,
+      })
+
       const orderData: any = {
         restaurantId: restaurantId,
         type: orderType === "dine-in" ? "table" : "takeaway",

@@ -19,6 +19,7 @@ import {
 } from "firebase/firestore";
 import type { Order, OrderStatus } from "@/types/index";
 import { getOrderStatus, normalizeOperationStatus, orderStatusFromKitchenStatus, toKitchenServedEventStatus } from "@/lib/order-lifecycle";
+import { orderHasKitchenItems } from "@/utils/preparation-logic";
 
 const ORDERS_SUBCOLLECTION = (restaurantId: string) =>
   collection(db, "restaurants", restaurantId, "orders");
@@ -31,7 +32,25 @@ export const createOrder = async (
   order: Omit<Order, "id" | "createdAt">
 ) => {
   const { status: legacyStatus, kitchenStatus, ...safeOrder } = order as any;
-  const initialKitchenStatus = orderStatusFromKitchenStatus(kitchenStatus ?? legacyStatus ?? safeOrder.orderStatus);
+  const requiresKitchen = orderHasKitchenItems(safeOrder.items || []);
+  const initialKitchenStatus = orderStatusFromKitchenStatus(
+    requiresKitchen ? kitchenStatus ?? legacyStatus ?? safeOrder.orderStatus : "completed"
+  );
+
+  console.info("[preparationMode][legacy_order_service]", {
+    restaurantId: companyId,
+    items: (safeOrder.items || []).map((item: any) => ({
+      productId: item.productId,
+      name: item.name ?? item.nameSnapshot,
+      preparationMode: item.preparationMode,
+      sentToKitchen: item.preparationMode === "kitchen",
+    })),
+    kitchenItems: (safeOrder.items || [])
+      .filter((item: any) => item.preparationMode === "kitchen")
+      .map((item: any) => item.productId),
+    requiresKitchen,
+    initialKitchenStatus,
+  });
 
   return await addDoc(ORDERS_SUBCOLLECTION(companyId), {
     ...safeOrder,

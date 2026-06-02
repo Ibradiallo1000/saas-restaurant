@@ -235,6 +235,22 @@ export default function CheckoutPublicModal({
       const orderTotal = recalculatedSubtotal + deliveryFee
       const requiresKitchen = orderHasKitchenItems(orderItems)
 
+      console.info("[preparationMode][public_checkout]", {
+        restaurantId,
+        orderType: normalizedOrderType,
+        paymentMethodCode: flow.paymentMethodCode,
+        items: orderItems.map((item) => ({
+          productId: item.productId,
+          name: item.name,
+          preparationMode: item.preparationMode,
+          sentToKitchen: item.preparationMode === "kitchen",
+        })),
+        kitchenItems: orderItems
+          .filter((item) => item.preparationMode === "kitchen")
+          .map((item) => item.productId),
+        requiresKitchen,
+      })
+
       const order = {
         restaurantId,
         orderType: normalizedOrderType,

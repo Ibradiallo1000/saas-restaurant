@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { CartProvider, useCart } from '@/components/public/cart-context';
 import { useFirestore, useDocOnce, useMemoFirebase } from '@/firebase';
-import { collection, doc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, addDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { COLLECTION_NAMES } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, CheckCircle2, Loader2, Phone, User, ShoppingBag, Send } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { ORDER_OPERATION_STATUS } from '@/lib/order-lifecycle';
+import { orderHasKitchenItems, resolveProductPreparationMode } from '@/utils/preparation-logic';
 
 export default function CheckoutPageWrapper() {
   return (
@@ -58,24 +60,67 @@ function CheckoutPage() {
     setLoading(true);
 
     try {
+      const orderItems = await Promise.all(
+        items.map(async (i, index) => {
+          const productId = i.productId || i.id;
+          const productSnap = await getDoc(
+            doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.PRODUCTS, productId)
+          );
+
+          if (!productSnap.exists()) {
+            throw new Error(`Produit introuvable: ${productId}`);
+          }
+
+          const product = { id: productSnap.id, ...productSnap.data() } as any;
+          let categoryName = "";
+
+          if (product.categoryId) {
+            const categorySnap = await getDoc(
+              doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "categories", product.categoryId)
+            );
+            categoryName = categorySnap.data()?.name || "";
+          }
+
+          return {
+            id: `${productId}-${Date.now()}-${index}`,
+            productId,
+            name: i.name,
+            status: "pending",
+            createdAt: new Date(),
+            price: i.price,
+            unitPrice: i.price,
+            quantity: i.quantity,
+            total: i.price * i.quantity,
+            preparationMode: resolveProductPreparationMode(product, categoryName),
+          };
+        })
+      );
+      const requiresKitchen = orderHasKitchenItems(orderItems);
+
+      console.info("[preparationMode][legacy_r_checkout]", {
+        restaurantId,
+        items: orderItems.map((item) => ({
+          productId: item.productId,
+          name: item.name,
+          preparationMode: item.preparationMode,
+          sentToKitchen: item.preparationMode === "kitchen",
+        })),
+        kitchenItems: orderItems
+          .filter((item) => item.preparationMode === "kitchen")
+          .map((item) => item.productId),
+        requiresKitchen,
+      });
+
       const orderRef = await addDoc(collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS), {
         restaurantId,
         customerName: formData.name,
         customerPhone: formData.phone,
         tableId: formData.table || 'Emporté',
-        items: items.map((i, index) => ({
-          id: `${i.id}-${Date.now()}-${index}`,
-          productId: i.id,
-          name: i.name,
-          status: "pending",
-          createdAt: new Date(),
-          price: i.price,
-          quantity: i.quantity
-        })),
+        items: orderItems,
         totalAmount: totalPrice,
         total: totalPrice,
-        kitchenStatus: "pending",
-        orderStatus: "pending",
+        kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
+        orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
         paymentMethod: null,
         paymentStatus: null,
         paidAt: null,
@@ -85,13 +130,14 @@ function CheckoutPage() {
       });
 
       // Also create sub-collection for items (redundancy for existing services)
-      for (const item of items) {
+      for (const item of orderItems) {
         await addDoc(collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS, orderRef.id, COLLECTION_NAMES.ORDER_ITEMS), {
-          productId: item.id,
+          productId: item.productId,
           nameSnapshot: item.name,
           priceSnapshot: item.price,
           quantity: item.quantity,
-          subtotal: item.price * item.quantity,
+          subtotal: item.total,
+          preparationMode: item.preparationMode,
           createdAt: serverTimestamp()
         });
       }

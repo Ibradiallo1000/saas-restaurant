@@ -62,6 +62,7 @@ function ClientOrderTrackingContent() {
   const [highlightedOrderIds, setHighlightedOrderIds] = React.useState<Set<string>>(new Set())
   const feedbackInitializedRef = React.useRef(false)
   const lastFeedbackAtRef = React.useRef(0)
+  const hasInteractedRef = React.useRef(false)
   const ordersEndRef = React.useRef<HTMLDivElement | null>(null)
 
   const restaurantRef = useMemoFirebase(() => {
@@ -71,6 +72,25 @@ function ClientOrderTrackingContent() {
 
   const { data: restaurant } = useDocOnce(restaurantRef)
   const activeTableSessionId = ((order as any)?.tableSessionId as string | undefined) || null
+
+  React.useEffect(() => {
+    const handleInteraction = () => {
+      hasInteractedRef.current = true
+      document.removeEventListener("click", handleInteraction)
+      document.removeEventListener("keydown", handleInteraction)
+      document.removeEventListener("touchstart", handleInteraction)
+    }
+
+    document.addEventListener("click", handleInteraction)
+    document.addEventListener("keydown", handleInteraction)
+    document.addEventListener("touchstart", handleInteraction)
+
+    return () => {
+      document.removeEventListener("click", handleInteraction)
+      document.removeEventListener("keydown", handleInteraction)
+      document.removeEventListener("touchstart", handleInteraction)
+    }
+  }, [])
 
   const tableSessionOrdersQuery = useMemoFirebase(() => {
     if (!db || !restaurantId || !activeTableSessionId) return null
@@ -226,7 +246,7 @@ function ClientOrderTrackingContent() {
 
     ordersEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
 
-    if (window.navigator?.vibrate) {
+    if (hasInteractedRef.current && window.navigator?.vibrate) {
       window.navigator.vibrate(80)
     }
   }

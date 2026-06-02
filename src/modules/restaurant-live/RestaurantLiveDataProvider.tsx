@@ -123,7 +123,7 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
           window.navigator.vibrate([100, 50, 100])
         }
         try {
-          const audio = new Audio('/notification.mp3')
+          const audio = new Audio("/sounds/son.mp3")
           audio.play().catch(() => {})
         } catch(e) {}
 
@@ -172,7 +172,7 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
         window.navigator.vibrate([120, 50, 120])
       }
       try {
-        const audio = new Audio("/notification.mp3")
+        const audio = new Audio("/sounds/son.mp3")
         audio.play().catch(() => {})
       } catch {}
 

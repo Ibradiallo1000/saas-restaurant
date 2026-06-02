@@ -6,12 +6,17 @@ import { useRouter } from "next/navigation"
 import { CheckCircle, X } from "lucide-react"
 
 import { useFirestore } from "@/firebase"
+import { ORDER_OPERATION_STATUS } from "@/lib/order-lifecycle"
 import { recalculateConfiguredUnitPrice } from "@/lib/order-pricing"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
 import {
   type RestaurantTableRecord,
   getOrCreateActiveTableSession,
 } from "@/services/table-session.service"
+import {
+  orderHasKitchenItems,
+  resolveProductPreparationMode,
+} from "@/utils/preparation-logic"
 import { useCart } from "../cart/CartContext"
 
 export default function CheckoutQRModal({
@@ -78,11 +83,19 @@ export default function CheckoutQRModal({
             throw new Error(`Produit introuvable: ${item.productId}`)
           }
 
-          const product = { id: productSnap.id, ...productSnap.data() }
+          const product = { id: productSnap.id, ...productSnap.data() } as any
           const unitPrice = recalculateConfiguredUnitPrice(
             product,
             item.selectedOptions ?? []
           )
+          let categoryName = ""
+          if ((product as any).categoryId) {
+            const categorySnap = await getDoc(
+              doc(db, "restaurants", restaurantId, "categories", (product as any).categoryId)
+            )
+            categoryName = categorySnap.data()?.name || ""
+          }
+          const preparationMode = resolveProductPreparationMode(product, categoryName)
 
           return {
             id: `${item.productId}-${Date.now()}-${index}`,
@@ -94,18 +107,35 @@ export default function CheckoutQRModal({
             quantity: item.quantity,
             total: unitPrice * item.quantity,
             selectedOptions: item.selectedOptions ?? [],
+            preparationMode,
           }
         })
       )
 
       const recalculatedTotal = orderItems.reduce((sum, item) => sum + item.total, 0)
+      const requiresKitchen = orderHasKitchenItems(orderItems)
+
+      console.info("[preparationMode][qr_table]", {
+        restaurantId,
+        tableSessionId,
+        items: orderItems.map((item) => ({
+          productId: item.productId,
+          name: item.name,
+          preparationMode: item.preparationMode,
+          sentToKitchen: item.preparationMode === "kitchen",
+        })),
+        kitchenItems: orderItems
+          .filter((item) => item.preparationMode === "kitchen")
+          .map((item) => item.productId),
+        requiresKitchen,
+      })
 
       const order = {
         restaurantId,
         orderType: "dine_in",
         source: "qr_table",
-        kitchenStatus: "pending",
-        orderStatus: "pending",
+        kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
+        orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
         sessionActive: true,
         sessionId: tableSessionId,
         tableSessionId,
