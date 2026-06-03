@@ -10,7 +10,10 @@ import {
   ShoppingCart, 
   Zap, 
   Loader2,
-  X
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Search
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -162,9 +165,9 @@ function POSPageContent() {
   const previousOrderStatusRef = React.useRef<Map<string, string>>(new Map())
   const hasInitializedOrderSoundRef = React.useRef(false)
   
-  // Pagination
   const [currentPage, setCurrentPage] = React.useState(0)
-  const ITEMS_PER_PAGE = 48
+  const productsPerPage = usePOSProductsPerPage()
+  const [productSearch, setProductSearch] = React.useState("")
 
   const tables = safeTables as RestaurantTableRecord[]
   const initialTableId = searchParams?.get("tableId")
@@ -365,20 +368,33 @@ function POSPageContent() {
     if (selectedCategoryId) {
       filtered = filtered.filter((p: any) => p.categoryId === selectedCategoryId)
     }
+    const search = productSearch.trim().toLowerCase()
+    if (search) {
+      filtered = filtered.filter((p: any) => {
+        const name = String(p.name || "").toLowerCase()
+        const sku = String(p.sku || p.code || "").toLowerCase()
+        return name.includes(search) || sku.includes(search)
+      })
+    }
     return filtered
-  }, [safeProducts, selectedCategoryId])
+  }, [productSearch, safeProducts, selectedCategoryId])
 
-  // Pagination
-  const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE)
-  const paginatedProducts = filteredProducts.slice(
-    currentPage * ITEMS_PER_PAGE,
-    (currentPage + 1) * ITEMS_PER_PAGE
-  )
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / productsPerPage))
+  const safeCurrentPage = Math.min(currentPage, totalPages - 1)
+  const paginatedProducts = React.useMemo(() => {
+    const start = safeCurrentPage * productsPerPage
+    return filteredProducts.slice(start, start + productsPerPage)
+  }, [filteredProducts, productsPerPage, safeCurrentPage])
 
-  // Reset page when category changes
   React.useEffect(() => {
     setCurrentPage(0)
-  }, [selectedCategoryId])
+  }, [filteredProducts.length, productSearch, selectedCategoryId])
+
+  React.useEffect(() => {
+    if (currentPage > totalPages - 1) {
+      setCurrentPage(totalPages - 1)
+    }
+  }, [currentPage, totalPages])
 
   React.useEffect(() => {
     if (!initialTableId || tables.length === 0) return
@@ -1460,6 +1476,15 @@ function POSPageContent() {
                 ) : null}
                 </div>
               </div>
+              <div className="relative hidden min-w-56 max-w-sm flex-1 lg:block">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={productSearch}
+                  onChange={(event) => setProductSearch(event.target.value)}
+                  placeholder="Rechercher un produit"
+                  className="h-9 rounded-md pl-9 text-sm font-semibold"
+                />
+              </div>
               <Button
                 variant={turboMode ? "default" : "outline"}
                 size="sm"
@@ -1480,26 +1505,28 @@ function POSPageContent() {
             />
 
             {totalPages > 1 ? (
-              <div className="mt-3 flex shrink-0 items-center justify-center gap-2">
+              <div className="mt-3 flex shrink-0 items-center justify-center gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-9 px-3 text-xs font-black"
-                  disabled={currentPage === 0}
+                  className="h-9 gap-1 rounded-md px-3 text-xs font-black"
+                  disabled={safeCurrentPage === 0}
                   onClick={() => setCurrentPage((page) => page - 1)}
                 >
+                  <ChevronLeft className="h-4 w-4" />
                   Préc.
                 </Button>
-                <span className="text-xs font-black text-muted-foreground">
-                  {currentPage + 1} / {totalPages}
+                <span className="min-w-24 text-center text-xs font-black text-muted-foreground">
+                  Page {safeCurrentPage + 1} / {totalPages}
                 </span>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-9 px-3 text-xs font-black"
-                  disabled={currentPage === totalPages - 1}
+                  className="h-9 gap-1 rounded-md px-3 text-xs font-black"
+                  disabled={safeCurrentPage === totalPages - 1}
                   onClick={() => setCurrentPage((page) => page + 1)}
                 >
+                  <ChevronRight className="h-4 w-4" />
                   Suiv.
                 </Button>
               </div>
@@ -2236,6 +2263,23 @@ function getPaymentSessionForOrder(order: any, tableSessions: any[]) {
   if (!sessionId) return null
 
   return tableSessions.find((session) => session.id === sessionId) ?? null
+}
+
+function usePOSProductsPerPage() {
+  const [productsPerPage, setProductsPerPage] = React.useState(10)
+
+  React.useEffect(() => {
+    const updateProductsPerPage = () => {
+      const canShowLargePage = window.innerWidth >= 1536 && window.innerHeight >= 860
+      setProductsPerPage(canShowLargePage ? 15 : 10)
+    }
+
+    updateProductsPerPage()
+    window.addEventListener("resize", updateProductsPerPage)
+    return () => window.removeEventListener("resize", updateProductsPerPage)
+  }, [])
+
+  return productsPerPage
 }
 
 function formatSessionDateTime(value: any) {

@@ -12,6 +12,11 @@ import {
   updateDoc,
   deleteDoc,
   getDoc,
+  limit,
+  orderBy,
+  query,
+  Timestamp,
+  where,
   serverTimestamp,
 } from "firebase/firestore"
 
@@ -44,6 +49,7 @@ import {
   isOrderPaid,
 } from "@/lib/order-lifecycle"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
+import { getDateRange, useTimeFilter } from "@/contexts/time-filter-context"
 import { PreparationBadge } from "@/components/PreparationBadge"
 import {
   getDefaultPreparationMode,
@@ -1608,13 +1614,25 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
   const db = useFirestore()
   const now = useLiveNow()
   const { restaurant } = useRestaurant()
+  const { filter } = useTimeFilter()
+  const orderRange = React.useMemo(() => getDateRange(filter), [filter])
   const {
-    activeOrders,
     cashSessionRequests,
     cashSessions,
     payments,
-    isLoadingOrders: isLoading,
   } = useRestaurantLiveData()
+
+  const ordersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS),
+      where("createdAt", ">=", Timestamp.fromDate(orderRange.startDate)),
+      where("createdAt", "<=", Timestamp.fromDate(orderRange.endDate)),
+      orderBy("createdAt", "desc"),
+      limit(300)
+    )
+  }, [db, orderRange.endDate, orderRange.startDate, restaurantId])
+  const { data: periodOrders, error: ordersError, isLoading: isLoading } = useCollection<any>(ordersQuery)
 
   const cashMovementsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
@@ -1622,7 +1640,14 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
   }, [db, restaurantId])
   const { data: cashMovements } = useCollection<any>(cashMovementsQuery)
 
-  const orderedOrders = activeOrders
+  const orderedOrders = periodOrders || []
+
+  React.useEffect(() => {
+    if (ordersError) {
+      console.error("Failed to load manager analytics orders for selected period", ordersError)
+    }
+  }, [ordersError])
+
   const activeCashSession = cashSessions.find((session: any) => session.status === "open") ?? null
   const activeCashSessionId = activeCashSession?.id ?? null
   const financialScope = React.useMemo(
@@ -1671,6 +1696,11 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
 
       <section className="space-y-3">
         <SectionTitle title="Production cuisine" />
+        {ordersError ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700 md:text-sm">
+            Impossible de charger les commandes de la periode pour les analytics. Consultez la console pour le detail Firestore.
+          </div>
+        ) : null}
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-4">
           <KitchenProductionCard label="En attente" value={kitchenProductionStats.pending} tone="orange" />
           <KitchenProductionCard label="Preparation" value={kitchenProductionStats.preparing} tone="blue" />
@@ -1961,27 +1991,52 @@ function KitchenProductionCard({
 }
 
 function ManagerOrdersPage({ restaurantId }: { restaurantId: string | null }) {
+  const db = useFirestore()
   const searchParams = useSearchParams()
   const now = useLiveNow()
-  const { activeOrders, isLoadingOrders: isLoading } = useRestaurantLiveData()
+  const { filter } = useTimeFilter()
+  const orderRange = React.useMemo(() => getDateRange(filter), [filter])
   const initialTab = normalizeOrderTab(searchParams?.get("status") ?? null)
   const [activeTab, setActiveTab] = React.useState(initialTab)
   const [expandedOrderId, setExpandedOrderId] = React.useState<string | null>(null)
+  const [visibleLimit, setVisibleLimit] = React.useState(MANAGER_ORDERS_PAGE_SIZE)
+  const ordersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS),
+      where("createdAt", ">=", Timestamp.fromDate(orderRange.startDate)),
+      where("createdAt", "<=", Timestamp.fromDate(orderRange.endDate)),
+      orderBy("createdAt", "desc"),
+      limit(MANAGER_ORDERS_QUERY_LIMIT)
+    )
+  }, [db, orderRange.endDate, orderRange.startDate, restaurantId])
+  const { data: periodOrders, error: ordersError, isLoading } = useCollection<any>(ordersQuery)
+  const orderedOrders = React.useMemo(() => sortManagerOrders(periodOrders || [], now), [now, periodOrders])
+  const counts = React.useMemo(() => getManagerOrderCountsFromOrders(orderedOrders, now), [now, orderedOrders])
+  const activeTabOrders = React.useMemo(
+    () => orderedOrders.filter((order) => matchesManagerOrderTab(order, activeTab, now)),
+    [activeTab, now, orderedOrders]
+  )
+  const visibleOrders = React.useMemo(
+    () => activeTabOrders.slice(0, visibleLimit),
+    [activeTabOrders, visibleLimit]
+  )
+  const hasMore = visibleOrders.length < activeTabOrders.length
 
   React.useEffect(() => {
     setActiveTab(initialTab)
   }, [initialTab])
 
-  const ordersByTab = React.useMemo(() => {
-    return {
-      pending: sortManagerOrders(activeOrders.filter((order: any) => getOrderStatus(order) === ORDER_OPERATION_STATUS.PENDING), now),
-      preparing: sortManagerOrders(activeOrders.filter((order: any) => getOrderStatus(order) === ORDER_OPERATION_STATUS.IN_PREPARATION), now),
-      ready: sortManagerOrders(activeOrders.filter((order: any) => getOrderStatus(order) === ORDER_OPERATION_STATUS.READY), now),
-      served: sortManagerOrders(activeOrders.filter((order: any) => isKitchenServedStatus(getOrderStatus(order))), now),
-      delivery: sortManagerOrders(activeOrders.filter((order: any) => getManagerOrderType(order) === "Livraison"), now),
-      late: sortManagerOrders(activeOrders.filter((order: any) => isLateOrder(order, now)), now),
+  React.useEffect(() => {
+    setVisibleLimit(MANAGER_ORDERS_PAGE_SIZE)
+    setExpandedOrderId(null)
+  }, [activeTab, orderRange.endDate, orderRange.startDate])
+
+  React.useEffect(() => {
+    if (ordersError) {
+      console.error("Failed to load manager orders for selected period", ordersError)
     }
-  }, [activeOrders, now])
+  }, [ordersError])
 
   if (!restaurantId) {
     return <div className="p-6 text-muted-foreground">Restaurant non disponible.</div>
@@ -1997,38 +2052,56 @@ function ManagerOrdersPage({ restaurantId }: { restaurantId: string | null }) {
         <p className="text-sm text-muted-foreground">Traitement centralise des commandes terrain.</p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(normalizeOrderTab(value))} className="space-y-4">
         <div className="-mx-3 overflow-x-auto px-3">
           <TabsList className="h-12 w-max justify-start gap-1">
-            <OrderTab value="pending" label="Attente" count={ordersByTab.pending.length} />
-            <OrderTab value="preparing" label="Preparation" count={ordersByTab.preparing.length} />
-            <OrderTab value="ready" label="Pretes" count={ordersByTab.ready.length} />
-            <OrderTab value="served" label="Servies" count={ordersByTab.served.length} />
-            <OrderTab value="delivery" label="Delivery" count={ordersByTab.delivery.length} />
-            <OrderTab value="late" label="Retard" count={ordersByTab.late.length} />
+            <OrderTab value="pending" label="Attente" count={counts.pending} />
+            <OrderTab value="preparing" label="Preparation" count={counts.preparing} />
+            <OrderTab value="ready" label="Pretes" count={counts.ready} />
+            <OrderTab value="served" label="Servies" count={counts.served} />
+            <OrderTab value="delivery" label="Livraison" count={counts.delivery} />
+            <OrderTab value="late" label="Retard" count={counts.late} />
           </TabsList>
         </div>
 
-        {Object.entries(ordersByTab).map(([tab, orders]) => (
+        {MANAGER_ORDER_TABS.map((tab) => (
           <TabsContent key={tab} value={tab} className="space-y-3">
-            {isLoading ? (
+            {ordersError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm font-semibold text-red-700">
+                Impossible de charger les commandes de cette periode. Consultez la console pour le detail Firestore.
+              </div>
+            ) : isLoading ? (
               <div className="rounded-xl border bg-card p-6 text-center text-muted-foreground">Chargement...</div>
-            ) : orders.length === 0 ? (
+            ) : visibleOrders.length === 0 ? (
               <div className="rounded-xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
-                Aucune commande.
+                Aucune commande pour cette periode.
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {orders.map((order: any) => (
-                  <ManagerOrderCard
-                    key={order.id}
-                    order={order}
-                    now={now}
-                    expanded={expandedOrderId === order.id}
-                    onToggleDetails={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {visibleOrders.map((order: any) => (
+                    <ManagerOrderCard
+                      key={order.id}
+                      order={order}
+                      now={now}
+                      expanded={expandedOrderId === order.id}
+                      onToggleDetails={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
+                    />
+                  ))}
+                </div>
+                {hasMore ? (
+                  <div className="flex justify-center pt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setVisibleLimit((current) => current + MANAGER_ORDERS_PAGE_SIZE)}
+                      disabled={isLoading}
+                    >
+                      Charger plus
+                    </Button>
+                  </div>
+                ) : null}
+              </>
             )}
           </TabsContent>
         ))}
@@ -2046,6 +2119,46 @@ function OrderTab({ value, label, count }: { value: string; label: string; count
       </span>
     </TabsTrigger>
   )
+}
+
+type ManagerOrderTab = "pending" | "preparing" | "ready" | "served" | "delivery" | "late"
+
+type ManagerOrderCounts = Record<ManagerOrderTab, number>
+
+const MANAGER_ORDER_TABS: ManagerOrderTab[] = ["pending", "preparing", "ready", "served", "delivery", "late"]
+const MANAGER_ORDERS_PAGE_SIZE = 30
+const MANAGER_ORDERS_QUERY_LIMIT = 500
+
+const EMPTY_MANAGER_ORDER_COUNTS: ManagerOrderCounts = {
+  pending: 0,
+  preparing: 0,
+  ready: 0,
+  served: 0,
+  delivery: 0,
+  late: 0,
+}
+
+function getManagerOrderCountsFromOrders(orders: any[], now: number): ManagerOrderCounts {
+  return orders.reduce(
+    (counts, order) => {
+      MANAGER_ORDER_TABS.forEach((tab) => {
+        if (matchesManagerOrderTab(order, tab, now)) counts[tab] += 1
+      })
+      return counts
+    },
+    { ...EMPTY_MANAGER_ORDER_COUNTS }
+  )
+}
+
+function matchesManagerOrderTab(order: any, tab: ManagerOrderTab, now: number) {
+  const status = getOrderStatus(order)
+  if (tab === "pending") return status === ORDER_OPERATION_STATUS.PENDING
+  if (tab === "preparing") return status === ORDER_OPERATION_STATUS.IN_PREPARATION
+  if (tab === "ready") return status === ORDER_OPERATION_STATUS.READY
+  if (tab === "served") return isKitchenServedStatus(status)
+  if (tab === "delivery") return getNormalizedManagerOrderType(order) === "delivery"
+  if (tab === "late") return isLateOrder(order, now)
+  return false
 }
 
 function ManagerOrderCard({
@@ -2176,10 +2289,14 @@ function ManagerFinancialCard({
 }
 
 function getManagerOrderType(order: any) {
-  const type = order.orderType || (order.type === "table" ? "dine_in" : order.type)
+  const type = getNormalizedManagerOrderType(order)
   if (type === "dine_in") return "Sur place"
   if (type === "delivery") return "Livraison"
   return "A emporter"
+}
+
+function getNormalizedManagerOrderType(order: any) {
+  return order.orderType || (order.type === "table" ? "dine_in" : order.type)
 }
 
 function useLiveNow(intervalMs = 30000) {
@@ -2226,7 +2343,7 @@ function sortManagerOrders(orders: any[], now = Date.now()) {
   })
 }
 
-function normalizeOrderTab(value: string | null) {
+function normalizeOrderTab(value: string | null): ManagerOrderTab {
   if (value === "late") return "late"
   if (value === "preparing") return "preparing"
   if (value === "ready") return "ready"

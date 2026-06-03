@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { addDoc, collection, doc, query, updateDoc, serverTimestamp, where } from "firebase/firestore"
+import { addDoc, collection, doc, limit, orderBy, query, updateDoc, serverTimestamp, where } from "firebase/firestore"
 import {
   Activity,
   AlertTriangle,
@@ -137,21 +137,30 @@ function OwnerPageContent() {
   const { restaurantId, loading } = useRestaurant()
   const { user, role } = useTenant()
   const {
-    activeOrders,
     cashMovements,
     cashSessionRequests,
     cashSessions,
-    isLoadingOrders,
     isLoadingSessions,
     payments,
   } = useRestaurantLiveData()
-  const orders = React.useMemo(() => activeOrders as Order[], [activeOrders])
 
   const timeFilter = useTimeFilter()
   const searchParams = useSearchParams()
   const periodMode = timeFilter.type
   const filter = timeFilter.filter
   const queryRange = React.useMemo(() => getDateRange(filter), [filter])
+  const ordersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS),
+      where("createdAt", ">=", queryRange.startDate),
+      where("createdAt", "<=", queryRange.endDate),
+      orderBy("createdAt", "desc"),
+      limit(500)
+    )
+  }, [db, queryRange.endDate, queryRange.startDate, restaurantId])
+  const { data: periodOrders, isLoading: isLoadingOrders } = useCollection<Order>(ordersQuery)
+  const orders = React.useMemo(() => (periodOrders || []) as Order[], [periodOrders])
   const inventoryHref = React.useMemo(
     () => getHrefWithCurrentQuery("/manager/inventory", searchParams),
     [searchParams]

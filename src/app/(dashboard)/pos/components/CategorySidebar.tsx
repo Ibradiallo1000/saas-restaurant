@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Grid3X3, Store } from "lucide-react"
 
+import { getOptimizedImage } from "@/lib/image"
 import { cn } from "@/lib/utils"
 
 type CategorySidebarProps = {
@@ -35,6 +36,7 @@ export default function CategorySidebar({
             <CategoryButton
               key={category.id}
               active={selectedCategoryId === category.id}
+              imageUrl={category.imageUrl}
               icon={<Store className="h-5 w-5" />}
               label={category.name || "Catégorie"}
               onClick={() => onSelectCategory(category.id)}
@@ -49,11 +51,13 @@ export default function CategorySidebar({
 function CategoryButton({
   active,
   icon,
+  imageUrl,
   label,
   onClick,
 }: {
   active: boolean
   icon: React.ReactNode
+  imageUrl?: string | null
   label: string
   onClick: () => void
 }) {
@@ -70,11 +74,20 @@ function CategoryButton({
     >
       <span
         className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+          "flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg",
           active ? "bg-white/20" : "bg-muted text-muted-foreground"
         )}
       >
-        {icon}
+        {imageUrl ? (
+          <img
+            src={getOptimizedImage(imageUrl, 96)}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          icon
+        )}
       </span>
       <span className="min-w-0 truncate">{label}</span>
     </button>

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { doc, orderBy, query, updateDoc } from "firebase/firestore"
+import { doc, limit, orderBy, query, Timestamp, updateDoc, where } from "firebase/firestore"
 
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
@@ -25,17 +25,41 @@ export function OrdersProvider({
   restaurantId?: string
 }) {
   const db = useFirestore()
+  const todayStart = React.useMemo(() => startOfToday(), [])
 
-  const ordersQuery = useMemoFirebase(() => {
+  const activeOrdersQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
 
     return query(
       restaurantOrdersRef(db, restaurantId),
-      orderBy("createdAt", "desc")
+      where("kitchenStatus", "in", ["pending", "preparing", "ready"]),
+      orderBy("createdAt", "desc"),
+      limit(150)
     )
   }, [db, restaurantId])
 
-  const { data: orders, isLoading } = useCollection(ordersQuery)
+  const todayServedOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      where("createdAt", ">=", Timestamp.fromDate(todayStart)),
+      where("kitchenStatus", "in", ["served", "completed", "picked_up"]),
+      orderBy("createdAt", "desc"),
+      limit(100)
+    )
+  }, [db, restaurantId, todayStart])
+
+  const { data: activeOrders, isLoading: isLoadingActiveOrders } = useCollection(activeOrdersQuery)
+  const { data: todayServedOrders, isLoading: isLoadingTodayServedOrders } = useCollection(todayServedOrdersQuery)
+  const orders = React.useMemo(() => {
+    const merged = new Map<string, any>()
+    ;[...(activeOrders || []), ...(todayServedOrders || [])].forEach((order: any) => {
+      if (order?.id) merged.set(order.id, order)
+    })
+    return Array.from(merged.values())
+  }, [activeOrders, todayServedOrders])
+  const isLoading = isLoadingActiveOrders || isLoadingTodayServedOrders
 
   React.useEffect(() => {
     if (!db || !restaurantId || !orders?.length) return
@@ -104,4 +128,10 @@ function mapLegacyStatus(status: string | null | undefined) {
   if (status === "served" || status === "servie" || status === "servies" || status === "completed" || status === "terminee") return "served"
   if (status === "picked_up" || status === "recuperee") return "served"
   return "pending"
+}
+
+function startOfToday() {
+  const date = new Date()
+  date.setHours(0, 0, 0, 0)
+  return date
 }

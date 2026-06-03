@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { collection, doc, updateDoc } from "firebase/firestore"
+import { collection, doc, limit, orderBy, query, Timestamp, updateDoc, where } from "firebase/firestore"
 import { usePathname } from "next/navigation"
 
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
@@ -49,8 +49,10 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
   const pathname = usePathname() ?? ""
   const [isClient, setIsClient] = React.useState(false)
   const enabled = isClient && isOperationalRoute(pathname)
+  const isKitchenRoute = pathname.startsWith("/kitchen") || pathname.startsWith("/manager/cuisine")
   const db = useFirestore()
   const { restaurantId } = useRestaurant()
+  const todayStart = React.useMemo(() => startOfToday(), [])
 
   React.useEffect(() => {
     setIsClient(true)
@@ -58,9 +60,38 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
 
   const ordersQuery = useMemoFirebase(() => {
     if (!enabled || !db || !restaurantId) return null
-    return restaurantOrdersRef(db, restaurantId)
-  }, [db, enabled, restaurantId])
-  const { data: activeOrders, isLoading: isLoadingOrders } = useCollection<any>(ordersQuery)
+    if (isKitchenRoute) {
+      return query(
+        restaurantOrdersRef(db, restaurantId),
+        where("kitchenStatus", "in", ["pending", "preparing", "ready"]),
+        orderBy("createdAt", "desc"),
+        limit(150)
+      )
+    }
+    return query(restaurantOrdersRef(db, restaurantId), orderBy("createdAt", "desc"), limit(150))
+  }, [db, enabled, isKitchenRoute, restaurantId])
+  const { data: recentOrKitchenActiveOrders, isLoading: isLoadingRecentOrKitchenActiveOrders } = useCollection<any>(ordersQuery)
+  const kitchenTodayServedOrdersQuery = useMemoFirebase(() => {
+    if (!enabled || !db || !restaurantId || !isKitchenRoute) return null
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      where("createdAt", ">=", Timestamp.fromDate(todayStart)),
+      where("kitchenStatus", "in", ["served", "completed", "picked_up"]),
+      orderBy("createdAt", "desc"),
+      limit(100)
+    )
+  }, [db, enabled, isKitchenRoute, restaurantId, todayStart])
+  const { data: kitchenTodayServedOrders, isLoading: isLoadingKitchenTodayServedOrders } =
+    useCollection<any>(kitchenTodayServedOrdersQuery)
+  const activeOrders = React.useMemo(() => {
+    if (!isKitchenRoute) return recentOrKitchenActiveOrders || []
+    const merged = new Map<string, any>()
+    ;[...(recentOrKitchenActiveOrders || []), ...(kitchenTodayServedOrders || [])].forEach((order: any) => {
+      if (order?.id) merged.set(order.id, order)
+    })
+    return Array.from(merged.values())
+  }, [isKitchenRoute, kitchenTodayServedOrders, recentOrKitchenActiveOrders])
+  const isLoadingOrders = isLoadingRecentOrKitchenActiveOrders || isLoadingKitchenTodayServedOrders
 
   React.useEffect(() => {
     if (!db || !restaurantId || !activeOrders?.length) return
@@ -281,4 +312,10 @@ function isOperationalRoute(pathname: string) {
     pathname.startsWith("/pos") ||
     pathname.startsWith("/tables")
   )
+}
+
+function startOfToday() {
+  const date = new Date()
+  date.setHours(0, 0, 0, 0)
+  return date
 }

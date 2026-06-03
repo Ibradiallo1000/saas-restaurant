@@ -18,6 +18,7 @@ type UseRestaurantPageOptions<T> = {
   orderByField?: string | null
   pageSize?: number
   initialItems?: Array<T & { id: string }>
+  resetKey?: string
 }
 
 const EMPTY_CONSTRAINTS: QueryConstraint[] = []
@@ -30,6 +31,7 @@ export function useRestaurantPage<T extends DocumentData = DocumentData>({
   orderByField = "createdAt",
   pageSize = DEFAULT_RESTAURANT_PAGE_SIZE,
   initialItems = EMPTY_ITEMS as Array<T & { id: string }>,
+  resetKey = "",
 }: UseRestaurantPageOptions<T>) {
   const db = useFirestore()
   const { restaurantId } = useRestaurant()
@@ -38,7 +40,7 @@ export function useRestaurantPage<T extends DocumentData = DocumentData>({
   const [hasMore, setHasMore] = React.useState(true)
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState<Error | null>(null)
-  const autoLoadKey = `${restaurantId ?? "none"}:${collectionName}:${enabled ? "enabled" : "disabled"}`
+  const autoLoadKey = `${restaurantId ?? "none"}:${collectionName}:${enabled ? "enabled" : "disabled"}:${resetKey}`
 
   const loadMore = React.useCallback(
     async ({ reset = false }: { reset?: boolean } = {}) => {
@@ -61,7 +63,14 @@ export function useRestaurantPage<T extends DocumentData = DocumentData>({
         setCursor(page.cursor)
         setHasMore(page.hasMore)
       } catch (caught) {
-        setError(caught instanceof Error ? caught : new Error("Unable to load restaurant page"))
+        const nextError = caught instanceof Error ? caught : new Error("Unable to load restaurant page")
+        console.error("Failed to load restaurant page", {
+          collectionName,
+          orderByField,
+          reset,
+          error: nextError,
+        })
+        setError(nextError)
       } finally {
         setIsLoading(false)
       }
@@ -94,9 +103,9 @@ export function useRestaurantPage<T extends DocumentData = DocumentData>({
   }, [autoLoadKey, initialItems])
 
   React.useEffect(() => {
-    if (!enabled || !db || !restaurantId || items.length > 0 || isLoading || error) return
+    if (!enabled || !db || !restaurantId || items.length > 0 || !hasMore || isLoading || error) return
     void loadMore({ reset: true })
-  }, [db, enabled, error, isLoading, items.length, loadMore, restaurantId])
+  }, [db, enabled, error, hasMore, isLoading, items.length, loadMore, restaurantId])
 
   return {
     error,

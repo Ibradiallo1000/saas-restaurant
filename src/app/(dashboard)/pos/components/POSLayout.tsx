@@ -65,7 +65,7 @@ export default function POSLayout({
         {sidebar && center && right ? (
           <div className="grid h-full grid-cols-[220px_minmax(0,1fr)_380px] gap-4">
             <section className="min-h-0 overflow-hidden">{sidebar}</section>
-            <section className="min-w-0 overflow-y-auto pr-1">{center}</section>
+            <section className="min-h-0 min-w-0 overflow-hidden pr-1">{center}</section>
             <aside className="min-h-0 overflow-hidden">{right}</aside>
           </div>
         ) : right ? (

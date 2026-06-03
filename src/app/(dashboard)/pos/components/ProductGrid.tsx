@@ -28,9 +28,9 @@ function ProductGrid({
 
   if (loading) {
     return (
-      <div className="grid grid-cols-3 gap-3 xl:grid-cols-4 2xl:grid-cols-5">
-        {Array.from({ length: 20 }).map((_, index) => (
-          <div key={index} className="h-48 animate-pulse rounded-xl bg-muted" />
+      <div className="grid h-full min-h-0 grid-cols-2 content-start gap-3 md:grid-cols-3 xl:grid-cols-5">
+        {Array.from({ length: 10 }).map((_, index) => (
+          <div key={index} className="h-[210px] animate-pulse rounded-xl bg-muted" />
         ))}
       </div>
     )
@@ -45,7 +45,7 @@ function ProductGrid({
   }
 
   return (
-    <div className="grid grid-cols-3 gap-3 xl:grid-cols-4 2xl:grid-cols-5">
+    <div className="grid h-full min-h-0 grid-cols-2 content-start gap-3 md:grid-cols-3 xl:grid-cols-5 2xl:auto-rows-fr">
       {products.map((product: any) => {
         const categoryName = categoriesById.get(product.categoryId) || ""
 
@@ -55,11 +55,11 @@ function ProductGrid({
             type="button"
             onClick={() => onProductClick(product)}
             className={cn(
-              "group flex min-h-48 flex-col overflow-hidden rounded-xl border bg-card text-left shadow-sm transition-all",
+              "group flex h-[210px] flex-col overflow-hidden rounded-xl border bg-card text-left shadow-sm transition-all 2xl:h-[198px]",
               "hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md active:translate-y-0 active:border-primary active:bg-primary/10"
             )}
           >
-            <div className="relative h-28 w-full bg-muted">
+            <div className="relative h-24 w-full shrink-0 bg-muted 2xl:h-20">
               {product.imageUrl ? (
                 <img
                   src={getOptimizedImage(product.imageUrl, 260)}
@@ -77,8 +77,8 @@ function ProductGrid({
               </span>
             </div>
 
-            <div className="flex flex-1 flex-col justify-between p-3">
-              <div className="space-y-2">
+            <div className="flex min-h-0 flex-1 flex-col justify-between p-3">
+              <div className="min-h-0 space-y-2">
                 <p className="line-clamp-2 text-sm font-black leading-tight text-foreground">
                   {product.name}
                 </p>
@@ -89,7 +89,7 @@ function ProductGrid({
                   }}
                 />
               </div>
-              <p className="mt-3 whitespace-nowrap text-base font-black text-primary">{formatPrice(product)}</p>
+              <p className="mt-2 whitespace-nowrap text-base font-black text-primary">{formatPrice(product)}</p>
             </div>
           </button>
         )
