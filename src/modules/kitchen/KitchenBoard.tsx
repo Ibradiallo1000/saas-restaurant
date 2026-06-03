@@ -293,7 +293,7 @@ function getCreatedAtMs(order: RestaurantOrder) {
 function shouldShowInTodayKitchen(order: RestaurantOrder) {
   const status = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
   if (status !== ORDER_OPERATION_STATUS.SERVED && status !== ORDER_OPERATION_STATUS.PICKED_UP) return true
-  return isToday(getCreatedAtMs(order))
+  return isToday(getKitchenServedAtMs(order) ?? getCreatedAtMs(order))
 }
 
 function isToday(timestamp: number) {
@@ -304,6 +304,36 @@ function isToday(timestamp: number) {
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate()
   )
+}
+
+function getKitchenServedAtMs(order: RestaurantOrder) {
+  const servedAt =
+    (order as any).timestamps?.servedAt ??
+    (order as any).timestamps?.pickedUpAt ??
+    (order as any).servedAt ??
+    (order as any).pickedUpAt ??
+    (order as any).updatedAt
+  const explicitTimestamp = toTimestampMs(servedAt)
+  if (explicitTimestamp) return explicitTimestamp
+
+  const history = Array.isArray((order as any).statusHistory) ? (order as any).statusHistory : []
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const event = history[index]
+    const eventStatus = orderStatusFromKitchenStatus(event?.status)
+    if (eventStatus === ORDER_OPERATION_STATUS.SERVED || eventStatus === ORDER_OPERATION_STATUS.PICKED_UP) {
+      const historyTimestamp = toTimestampMs(event?.at)
+      if (historyTimestamp) return historyTimestamp
+    }
+  }
+
+  return null
+}
+
+function toTimestampMs(value: any) {
+  if (!value) return null
+  if (typeof value === "number") return value
+  if (value instanceof Date) return value.getTime()
+  return value.toMillis?.() ?? value.toDate?.().getTime?.() ?? null
 }
 
 function getKitchenQueuePriority(order: RestaurantOrder) {

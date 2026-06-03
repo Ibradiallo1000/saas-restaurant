@@ -1,9 +1,16 @@
 "use client"
 
-import { Clock, Star } from "lucide-react"
+import { Clock, MapPin, Star } from "lucide-react"
 import { getOptimizedImage } from "@/lib/image"
+import type { RestaurantTableRecord } from "@/services/table-session.service"
 
-export default function HeroSection({ restaurant }: { restaurant: any }) {
+export default function HeroSection({
+  restaurant,
+  table,
+}: {
+  restaurant: any
+  table?: RestaurantTableRecord | null
+}) {
   const coverImage =
     restaurant?.coverImage ||
     restaurant?.coverImageUrl ||
@@ -61,6 +68,14 @@ export default function HeroSection({ restaurant }: { restaurant: any }) {
             />
             {isOpen ? "Ouvert" : "Fermé"}
           </div>
+
+          {/* TABLE */}
+          {table ? (
+            <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
+              <MapPin className="h-3 w-3 text-white/80" />
+              {table.name || table.id}
+            </div>
+          ) : null}
 
           {/* TIME */}
           <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">

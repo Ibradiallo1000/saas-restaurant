@@ -17,6 +17,16 @@ const OrdersContext = React.createContext<OrdersContextType>({
   isLoading: true,
 })
 
+const ACTIVE_KITCHEN_STATUSES = ["pending", "preparing", "ready", "served"]
+const TODAY_SERVED_KITCHEN_STATUSES = [
+  "served",
+  "servie",
+  "servies",
+  "completed",
+  "picked_up",
+  "terminee",
+]
+
 export function OrdersProvider({
   children,
   restaurantId,
@@ -32,7 +42,7 @@ export function OrdersProvider({
 
     return query(
       restaurantOrdersRef(db, restaurantId),
-      where("kitchenStatus", "in", ["pending", "preparing", "ready"]),
+      where("kitchenStatus", "in", ACTIVE_KITCHEN_STATUSES),
       orderBy("createdAt", "desc"),
       limit(150)
     )
@@ -44,46 +54,139 @@ export function OrdersProvider({
     return query(
       restaurantOrdersRef(db, restaurantId),
       where("createdAt", ">=", Timestamp.fromDate(todayStart)),
-      where("kitchenStatus", "in", ["served", "completed", "picked_up"]),
+      where("kitchenStatus", "in", TODAY_SERVED_KITCHEN_STATUSES),
       orderBy("createdAt", "desc"),
       limit(100)
     )
   }, [db, restaurantId, todayStart])
 
+  const todayRecentServedOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      where("kitchenStatus", "in", TODAY_SERVED_KITCHEN_STATUSES),
+      orderBy("updatedAt", "desc"),
+      limit(100)
+    )
+  }, [db, restaurantId])
+
+  const todayServedAtOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      where("timestamps.servedAt", ">=", Timestamp.fromDate(todayStart)),
+      orderBy("timestamps.servedAt", "desc"),
+      limit(100)
+    )
+  }, [db, restaurantId, todayStart])
+
+  const todayLegacyServedAtOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      where("servedAt", ">=", Timestamp.fromDate(todayStart)),
+      orderBy("servedAt", "desc"),
+      limit(100)
+    )
+  }, [db, restaurantId, todayStart])
+
+  const todayPickedUpAtOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      where("timestamps.pickedUpAt", ">=", Timestamp.fromDate(todayStart)),
+      orderBy("timestamps.pickedUpAt", "desc"),
+      limit(100)
+    )
+  }, [db, restaurantId, todayStart])
+
+  const todayLegacyPickedUpAtOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      where("pickedUpAt", ">=", Timestamp.fromDate(todayStart)),
+      orderBy("pickedUpAt", "desc"),
+      limit(100)
+    )
+  }, [db, restaurantId, todayStart])
+
+  const recentCreatedOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      orderBy("createdAt", "desc"),
+      limit(150)
+    )
+  }, [db, restaurantId])
+
+  const recentUpdatedOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      orderBy("updatedAt", "desc"),
+      limit(150)
+    )
+  }, [db, restaurantId])
+
   const { data: activeOrders, isLoading: isLoadingActiveOrders } = useCollection(activeOrdersQuery)
   const { data: todayServedOrders, isLoading: isLoadingTodayServedOrders } = useCollection(todayServedOrdersQuery)
+  const { data: todayServedAtOrders, isLoading: isLoadingTodayServedAtOrders } = useCollection(todayServedAtOrdersQuery)
+  const { data: todayRecentServedOrders, isLoading: isLoadingTodayRecentServedOrders } = useCollection(todayRecentServedOrdersQuery)
+  const { data: todayLegacyServedAtOrders, isLoading: isLoadingTodayLegacyServedAtOrders } = useCollection(todayLegacyServedAtOrdersQuery)
+  const { data: todayPickedUpAtOrders, isLoading: isLoadingTodayPickedUpAtOrders } = useCollection(todayPickedUpAtOrdersQuery)
+  const { data: todayLegacyPickedUpAtOrders, isLoading: isLoadingTodayLegacyPickedUpAtOrders } = useCollection(todayLegacyPickedUpAtOrdersQuery)
+  const { data: recentCreatedOrders, isLoading: isLoadingRecentCreatedOrders } = useCollection(recentCreatedOrdersQuery)
+  const { data: recentUpdatedOrders, isLoading: isLoadingRecentUpdatedOrders } = useCollection(recentUpdatedOrdersQuery)
   const orders = React.useMemo(() => {
     const merged = new Map<string, any>()
-    ;[...(activeOrders || []), ...(todayServedOrders || [])].forEach((order: any) => {
+    ;[
+      ...(activeOrders || []),
+      ...(todayServedOrders || []),
+      ...(todayRecentServedOrders || []),
+      ...(todayServedAtOrders || []),
+      ...(todayLegacyServedAtOrders || []),
+      ...(todayPickedUpAtOrders || []),
+      ...(todayLegacyPickedUpAtOrders || []),
+      ...(recentCreatedOrders || []),
+      ...(recentUpdatedOrders || []),
+    ].forEach((order: any) => {
       if (order?.id) merged.set(order.id, order)
     })
     return Array.from(merged.values())
-  }, [activeOrders, todayServedOrders])
-  const isLoading = isLoadingActiveOrders || isLoadingTodayServedOrders
+  }, [
+    activeOrders,
+    recentCreatedOrders,
+    recentUpdatedOrders,
+    todayLegacyPickedUpAtOrders,
+    todayLegacyServedAtOrders,
+    todayPickedUpAtOrders,
+    todayRecentServedOrders,
+    todayServedAtOrders,
+    todayServedOrders,
+  ])
+  const isLoading =
+    isLoadingActiveOrders ||
+    isLoadingTodayServedOrders ||
+    isLoadingTodayRecentServedOrders ||
+    isLoadingTodayServedAtOrders ||
+    isLoadingTodayLegacyServedAtOrders ||
+    isLoadingTodayPickedUpAtOrders ||
+    isLoadingTodayLegacyPickedUpAtOrders ||
+    isLoadingRecentCreatedOrders ||
+    isLoadingRecentUpdatedOrders
 
+  // Legacy migrations should not run from the client UI because
+  // normal kitchen users may not have permissions to update order documents.
+  // These updates belong in a server-side migration script or admin-only tool.
   React.useEffect(() => {
-    if (!db || !restaurantId || !orders?.length) return
-
-    orders.forEach((order: any) => {
-      if (!order?.id || order.kitchenStatus) return
-      console.warn("Missing kitchenStatus", order.id)
-      const legacyStatus = order.status ?? order.orderStatus
-      if (!legacyStatus) return
-      updateDoc(doc(restaurantOrdersRef(db, restaurantId), order.id), {
-        kitchenStatus: mapLegacyStatus(legacyStatus),
-      }).catch((error) => {
-        console.warn("Failed to migrate kitchenStatus", order.id, error)
-      })
-    })
-
-    orders.forEach((order: any) => {
-      if (!order?.id || order.tableSessionId || !order.sessionId || order.orderType !== "dine_in") return
-      updateDoc(doc(restaurantOrdersRef(db, restaurantId), order.id), {
-        tableSessionId: order.sessionId,
-      }).catch((error) => {
-        console.warn("Failed to migrate tableSessionId", order.id, error)
-      })
-    })
+    // intentionally no-op
   }, [db, orders, restaurantId])
 
   const kitchenOrders = React.useMemo(() => {

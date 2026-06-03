@@ -3,7 +3,7 @@
 import * as React from "react"
 import { collection, doc, limit, query, where } from "firebase/firestore"
 import { useRouter } from "next/navigation"
-import { ChefHat, ClipboardList, Coffee, MapPin, Search, ShoppingBag, Utensils } from "lucide-react"
+import { ChefHat, ClipboardList, Coffee, Search, ShoppingBag, Utensils } from "lucide-react"
 
 import { useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { getOptimizedImage } from "@/lib/image"
@@ -314,7 +314,7 @@ function PublicPageContent({
           cartCount={count}
           onCartClick={() => setCartOpen(true)}
         />
-        <HeroSection restaurant={restaurant} />
+        <HeroSection restaurant={restaurant} table={tableContext} />
 
         <main className="relative z-10 -mt-5 rounded-t-[1.75rem] border-t border-[var(--public-card-border)] bg-[var(--public-bg-soft)] pt-5 shadow-[0_-18px_48px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:-mt-8 sm:rounded-t-[2rem] sm:pt-6 lg:-mt-10 lg:mx-auto lg:max-w-7xl lg:rounded-[2rem] lg:border lg:shadow-[0_20px_70px_rgba(15,23,42,0.12)]">
           <MainContent
@@ -322,7 +322,6 @@ function PublicPageContent({
             isLoading={isMenuLoading}
             hasError={Boolean(productsError || categoriesError)}
             productsByCategory={productsByCategory}
-            table={tableContext}
             tableError={tableSessionError}
             activeCategoryId={activeCategoryId}
             onCategorySelect={handleCategorySelect}
@@ -420,7 +419,6 @@ function MainContent({
   isLoading,
   hasError,
   productsByCategory,
-  table,
   tableError,
   activeCategoryId,
   onCategorySelect,
@@ -475,9 +473,7 @@ function MainContent({
   return (
     <div className="mx-auto w-full max-w-6xl pb-28 sm:pb-32 lg:pb-36">
       
-      <div className="px-4 sm:px-6 lg:px-8">
-        <TableContextBanner table={table} error={tableError} />
-      </div>
+      <TableContextError error={tableError} />
 
       {/* CATÉGORIES BAR */}
       <div className="mb-4">
@@ -516,37 +512,16 @@ function MainContent({
   )
 }
 
-function TableContextBanner({
-  table,
-  error,
-}: {
-  table: RestaurantTableRecord | null
-  error: string
-}) {
-  if (!table && !error) return null
+function TableContextError({ error }: { error: string }) {
+  if (!error) return null
 
   return (
-    <div className="mb-5 flex justify-center">
-      {table ? (
-        <div className="inline-flex max-w-full items-center gap-3 rounded-2xl border border-[var(--public-card-border)] bg-[var(--public-card-bg)] px-4 py-3 text-[var(--public-orange)] shadow-[0_14px_35px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:px-5">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--public-orange)] text-white shadow-sm">
-            <MapPin className="h-5 w-5" />
-          </span>
-          <div className="flex min-w-0 items-center gap-2">
-            <p className="whitespace-nowrap text-[11px] font-black uppercase tracking-wide opacity-80 sm:text-xs">
-              Commande sur place
-            </p>
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--public-orange)]" />
-            <p className="truncate whitespace-nowrap text-base font-black text-[var(--public-text-main)] sm:text-lg">
-              {table.name || table.id}
-            </p>
-          </div>
-        </div>
-      ) : (
+    <div className="mb-5 px-4 sm:px-6 lg:px-8">
+      <div className="flex justify-center">
         <div className="inline-flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700 shadow-sm">
           {error}
         </div>
-      )}
+      </div>
     </div>
   )
 }

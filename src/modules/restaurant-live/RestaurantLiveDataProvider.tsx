@@ -63,7 +63,7 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
     if (isKitchenRoute) {
       return query(
         restaurantOrdersRef(db, restaurantId),
-        where("kitchenStatus", "in", ["pending", "preparing", "ready"]),
+        where("kitchenStatus", "in", ["pending", "preparing", "ready", "served"]),
         orderBy("createdAt", "desc"),
         limit(150)
       )
@@ -81,17 +81,95 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
       limit(100)
     )
   }, [db, enabled, isKitchenRoute, restaurantId, todayStart])
+  const kitchenTodayRecentServedOrdersQuery = useMemoFirebase(() => {
+    if (!enabled || !db || !restaurantId || !isKitchenRoute) return null
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      where("kitchenStatus", "in", ["served", "completed", "picked_up"]),
+      orderBy("updatedAt", "desc"),
+      limit(100)
+    )
+  }, [db, enabled, isKitchenRoute, restaurantId])
   const { data: kitchenTodayServedOrders, isLoading: isLoadingKitchenTodayServedOrders } =
     useCollection<any>(kitchenTodayServedOrdersQuery)
+  const { data: kitchenTodayRecentServedOrders, isLoading: isLoadingKitchenTodayRecentServedOrders } =
+    useCollection<any>(kitchenTodayRecentServedOrdersQuery)
+  const kitchenTodayServedAtOrdersQuery = useMemoFirebase(() => {
+    if (!enabled || !db || !restaurantId || !isKitchenRoute) return null
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      where("timestamps.servedAt", ">=", Timestamp.fromDate(todayStart)),
+      orderBy("timestamps.servedAt", "desc"),
+      limit(100)
+    )
+  }, [db, enabled, isKitchenRoute, restaurantId, todayStart])
+  const kitchenTodayLegacyServedAtOrdersQuery = useMemoFirebase(() => {
+    if (!enabled || !db || !restaurantId || !isKitchenRoute) return null
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      where("servedAt", ">=", Timestamp.fromDate(todayStart)),
+      orderBy("servedAt", "desc"),
+      limit(100)
+    )
+  }, [db, enabled, isKitchenRoute, restaurantId, todayStart])
+  const kitchenTodayPickedUpAtOrdersQuery = useMemoFirebase(() => {
+    if (!enabled || !db || !restaurantId || !isKitchenRoute) return null
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      where("timestamps.pickedUpAt", ">=", Timestamp.fromDate(todayStart)),
+      orderBy("timestamps.pickedUpAt", "desc"),
+      limit(100)
+    )
+  }, [db, enabled, isKitchenRoute, restaurantId, todayStart])
+  const kitchenTodayLegacyPickedUpAtOrdersQuery = useMemoFirebase(() => {
+    if (!enabled || !db || !restaurantId || !isKitchenRoute) return null
+    return query(
+      restaurantOrdersRef(db, restaurantId),
+      where("pickedUpAt", ">=", Timestamp.fromDate(todayStart)),
+      orderBy("pickedUpAt", "desc"),
+      limit(100)
+    )
+  }, [db, enabled, isKitchenRoute, restaurantId, todayStart])
+  const { data: kitchenTodayServedAtOrders, isLoading: isLoadingKitchenTodayServedAtOrders } =
+    useCollection<any>(kitchenTodayServedAtOrdersQuery)
+  const { data: kitchenTodayLegacyServedAtOrders, isLoading: isLoadingKitchenTodayLegacyServedAtOrders } =
+    useCollection<any>(kitchenTodayLegacyServedAtOrdersQuery)
+  const { data: kitchenTodayPickedUpAtOrders, isLoading: isLoadingKitchenTodayPickedUpAtOrders } =
+    useCollection<any>(kitchenTodayPickedUpAtOrdersQuery)
+  const { data: kitchenTodayLegacyPickedUpAtOrders, isLoading: isLoadingKitchenTodayLegacyPickedUpAtOrders } =
+    useCollection<any>(kitchenTodayLegacyPickedUpAtOrdersQuery)
   const activeOrders = React.useMemo(() => {
     if (!isKitchenRoute) return recentOrKitchenActiveOrders || []
     const merged = new Map<string, any>()
-    ;[...(recentOrKitchenActiveOrders || []), ...(kitchenTodayServedOrders || [])].forEach((order: any) => {
+    ;[
+      ...(recentOrKitchenActiveOrders || []),
+      ...(kitchenTodayServedOrders || []),
+      ...(kitchenTodayRecentServedOrders || []),
+      ...(kitchenTodayServedAtOrders || []),
+      ...(kitchenTodayLegacyServedAtOrders || []),
+      ...(kitchenTodayPickedUpAtOrders || []),
+      ...(kitchenTodayLegacyPickedUpAtOrders || []),
+    ].forEach((order: any) => {
       if (order?.id) merged.set(order.id, order)
     })
     return Array.from(merged.values())
-  }, [isKitchenRoute, kitchenTodayServedOrders, recentOrKitchenActiveOrders])
-  const isLoadingOrders = isLoadingRecentOrKitchenActiveOrders || isLoadingKitchenTodayServedOrders
+  }, [
+    isKitchenRoute,
+    kitchenTodayLegacyPickedUpAtOrders,
+    kitchenTodayLegacyServedAtOrders,
+    kitchenTodayPickedUpAtOrders,
+    kitchenTodayServedAtOrders,
+    kitchenTodayServedOrders,
+    recentOrKitchenActiveOrders,
+  ])
+  const isLoadingOrders =
+    isLoadingRecentOrKitchenActiveOrders ||
+    isLoadingKitchenTodayServedOrders ||
+    isLoadingKitchenTodayRecentServedOrders ||
+    isLoadingKitchenTodayLegacyServedAtOrders ||
+    isLoadingKitchenTodayServedAtOrders ||
+    isLoadingKitchenTodayPickedUpAtOrders ||
+    isLoadingKitchenTodayLegacyPickedUpAtOrders
 
   React.useEffect(() => {
     if (!db || !restaurantId || !activeOrders?.length) return

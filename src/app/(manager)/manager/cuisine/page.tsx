@@ -184,8 +184,8 @@ function shouldShowInTodayKitchen(order: any, now: number) {
   const status = getManagerKitchenColumnStatus(order)
   if (status !== ORDER_OPERATION_STATUS.SERVED) return true
 
-  const createdAt = order.createdAt?.toDate?.().getTime?.() ?? now
-  const orderDate = new Date(createdAt)
+  const servedAt = getKitchenServedAtMs(order) ?? order.createdAt?.toDate?.().getTime?.() ?? now
+  const orderDate = new Date(servedAt)
   const currentDate = new Date(now)
 
   return (
@@ -193,6 +193,36 @@ function shouldShowInTodayKitchen(order: any, now: number) {
     orderDate.getMonth() === currentDate.getMonth() &&
     orderDate.getDate() === currentDate.getDate()
   )
+}
+
+function getKitchenServedAtMs(order: any) {
+  const servedAt =
+    order.timestamps?.servedAt ??
+    order.timestamps?.pickedUpAt ??
+    order.servedAt ??
+    order.pickedUpAt ??
+    order.updatedAt
+  const explicitTimestamp = toTimestampMs(servedAt)
+  if (explicitTimestamp) return explicitTimestamp
+
+  const history = Array.isArray(order.statusHistory) ? order.statusHistory : []
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const event = history[index]
+    const eventStatus = orderStatusFromKitchenStatus(event?.status)
+    if (eventStatus === ORDER_OPERATION_STATUS.SERVED || eventStatus === ORDER_OPERATION_STATUS.PICKED_UP) {
+      const historyTimestamp = toTimestampMs(event?.at)
+      if (historyTimestamp) return historyTimestamp
+    }
+  }
+
+  return null
+}
+
+function toTimestampMs(value: any) {
+  if (!value) return null
+  if (typeof value === "number") return value
+  if (value instanceof Date) return value.getTime()
+  return value.toMillis?.() ?? value.toDate?.().getTime?.() ?? null
 }
 
 function getOrderTypeLabel(order: any) {
