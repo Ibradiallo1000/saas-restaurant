@@ -1,12 +1,6 @@
-import { OwnerSectionPage } from "@/app/owner/_components/OwnerSectionPage"
+import ManagerCommandesPage from "@/app/(manager)/manager/commandes/page"
 
 export default function OwnerCommandesPage() {
-  return (
-    <OwnerSectionPage
-      title="Commandes"
-      description="Suivi des commandes avec le filtre global owner conservé."
-      detailHref="/manager/commandes"
-    />
-  )
+  return <ManagerCommandesPage />
 }
 

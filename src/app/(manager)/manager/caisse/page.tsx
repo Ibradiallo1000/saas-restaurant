@@ -64,7 +64,7 @@ export default function ManagerCaissePage() {
 
   const validateTableSessionPayment = async (session: any) => {
     if (!db || !restaurantId || !user) return
-    if (!activeSession?.id) {
+    if (!currentUserCashSession?.id) {
       toast({
         title: "Caisse fermée",
         description: "Ouvre une session caisse avant de valider un paiement.",
@@ -98,7 +98,7 @@ export default function ManagerCaissePage() {
         await ledger.createPayment({
           restaurantId,
           orderId: orderDoc.id,
-          sessionId: activeSession.id,
+          sessionId: currentUserCashSession.id,
           cashierId: user.uid,
           source: "qr_table",
           type: paymentType,
@@ -118,7 +118,7 @@ export default function ManagerCaissePage() {
             paymentMethod: paymentType,
             paymentType,
             paymentProvider,
-            cashSessionId: activeSession.id,
+            cashSessionId: currentUserCashSession.id,
             paidAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           },
@@ -173,12 +173,22 @@ export default function ManagerCaissePage() {
   const [discrepancyReasons, setDiscrepancyReasons] = React.useState<Record<string, string>>({})
 
   const canValidateCash = role === "manager" || role === "owner"
-  const activeSession = cashSessions.find((session: any) => {
+  const currentUserCashSession = cashSessions.find((session: any) => {
     return (
       isOpenCashSessionStatus(session.status) &&
       (session.cashierId === user?.uid || session.userId === user?.uid)
     )
   }) ?? null
+  const activeCashSession = React.useMemo(() => {
+    const openSessions = (cashSessions || []).filter((session: any) => isOpenCashSessionStatus(session.status))
+    if (!openSessions.length) return null
+    return openSessions.sort((a: any, b: any) => getSessionOpenedAtMs(b) - getSessionOpenedAtMs(a))[0]
+  }, [cashSessions])
+  const activeCashSessionAmount = React.useMemo(() => {
+    if (!activeCashSession) return 0
+    return getCashSessionAmount(activeCashSession)
+  }, [activeCashSession])
+
   const openingRequests = React.useMemo(() => {
     const requestRows = cashSessionRequests.map((request: any) => ({
       ...request,
@@ -379,14 +389,25 @@ export default function ManagerCaissePage() {
             </p>
           </div>
           <div className="rounded-full border bg-background px-3 py-1 text-xs font-black uppercase text-emerald-600">
-            {activeSession ? "Session active" : "Aucune session active"}
+            {activeCashSession ? "Session active" : "Aucune session active"}
           </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-3 text-xs font-bold text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <Clock className="h-3 w-3" />
-            Ouverture : {formatSessionTime(activeSession?.openedAt)}
+            Ouverture : {formatSessionTime(activeCashSession?.openedAt)}
           </span>
+          {activeCashSession ? (
+            <span className="inline-flex items-center gap-1">
+              <Wallet className="h-3 w-3" />
+              Montant session : {activeCashSessionAmount.toLocaleString()} FCFA
+            </span>
+          ) : null}
+          {activeCashSession ? (
+            <span className="inline-flex items-center gap-1">
+              <strong>Caissier :</strong> {activeCashSession.staffName || activeCashSession.cashierName || activeCashSession.userName || activeCashSession.cashierId || activeCashSession.userId || "Caissier"}
+            </span>
+          ) : null}
         </div>
       </section>
 
@@ -856,6 +877,19 @@ function formatSessionTime(value: any) {
   const date = value?.toDate?.()
   if (!date) return "temps réel"
   return date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+}
+
+function getCashSessionAmount(session: any) {
+  return (
+    Number(session?.openingBalance ?? 0) +
+    Number(session?.totalCash ?? 0) +
+    Number(session?.totalMobile ?? 0)
+  )
+}
+
+function getSessionOpenedAtMs(session: any) {
+  const date = session?.openedAt?.toDate?.() ?? (session?.openedAt instanceof Date ? session.openedAt : null)
+  return date?.getTime?.() ?? 0
 }
 
 function isValueInDateRange(value: any, startDate: Date, endDate: Date) {

@@ -2152,12 +2152,26 @@ function getManagerOrderCountsFromOrders(orders: any[], now: number): ManagerOrd
 
 function matchesManagerOrderTab(order: any, tab: ManagerOrderTab, now: number) {
   const status = getOrderStatus(order)
+  
+  // Make tabs mutually exclusive: "late" and "delivery" are meta-tabs that override status tabs
+  if (tab === "late") {
+    return isLateOrder(order, now)
+  }
+  
+  if (tab === "delivery") {
+    // Delivery tab should show unserved delivery orders only
+    return getNormalizedManagerOrderType(order) === "delivery" && !isKitchenServedStatus(status)
+  }
+  
+  // Status-based tabs (pending, preparing, ready, served) - only if not late or delivery
+  const isLateOrDelivery = isLateOrder(order, now) || getNormalizedManagerOrderType(order) === "delivery"
+  if (isLateOrDelivery) return false
+  
   if (tab === "pending") return status === ORDER_OPERATION_STATUS.PENDING
   if (tab === "preparing") return status === ORDER_OPERATION_STATUS.IN_PREPARATION
   if (tab === "ready") return status === ORDER_OPERATION_STATUS.READY
   if (tab === "served") return isKitchenServedStatus(status)
-  if (tab === "delivery") return getNormalizedManagerOrderType(order) === "delivery"
-  if (tab === "late") return isLateOrder(order, now)
+  
   return false
 }
 
@@ -2296,7 +2310,8 @@ function getManagerOrderType(order: any) {
 }
 
 function getNormalizedManagerOrderType(order: any) {
-  return order.orderType || (order.type === "table" ? "dine_in" : order.type)
+  const orderType = order.orderType || (order.type === "table" ? "dine_in" : order.type)
+  return orderType || "dine_in" // Default to dine_in if not set
 }
 
 function useLiveNow(intervalMs = 30000) {

@@ -7,6 +7,7 @@ import { AlertTriangle, ChefHat, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { getOrderDisplayId } from "@/lib/order-display-id"
+import { cn } from "@/lib/utils"
 import { ORDER_OPERATION_STATUS, orderStatusFromKitchenStatus } from "@/lib/order-lifecycle"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 
@@ -45,6 +46,16 @@ export default function ManagerCuisinePage() {
   }, [visibleKitchenOrders, now])
 
   const lateCount = visibleKitchenOrders.filter((order: any) => isLateOrder(order, now)).length
+  const deliveryCount = visibleKitchenOrders.filter((order: any) => getOrderTypeLabel(order) === "Livraison").length
+
+  const summaryItems = [
+    { label: "Attente", count: ordersByStatus[ORDER_OPERATION_STATUS.PENDING]?.length ?? 0, tone: "orange" },
+    { label: "Preparation", count: ordersByStatus[ORDER_OPERATION_STATUS.IN_PREPARATION]?.length ?? 0, tone: "yellow" },
+    { label: "Pretes", count: ordersByStatus[ORDER_OPERATION_STATUS.READY]?.length ?? 0, tone: "sky" },
+    { label: "Servies", count: ordersByStatus[ORDER_OPERATION_STATUS.SERVED]?.length ?? 0, tone: "indigo" },
+    { label: "Livraison", count: deliveryCount, tone: "emerald" },
+    { label: "Retard", count: lateCount, tone: "red" },
+  ]
 
   return (
     <main className="flex h-[calc(100dvh-5rem)] min-h-0 flex-col gap-4 overflow-hidden pb-4 md:gap-6">
@@ -64,9 +75,37 @@ export default function ManagerCuisinePage() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="rounded-full bg-red-500/10 px-3 py-1 text-xs font-black text-red-600">
-              {lateCount} retard
+          <div className="flex flex-col gap-3 sm:items-end">
+            <div className="grid min-w-[260px] grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+              {summaryItems.map((item) => (
+                <div
+                  key={item.label}
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-xs font-black shadow-sm",
+                    item.tone === "orange" && "border-orange-300 bg-orange-100 text-orange-900",
+                    item.tone === "yellow" && "border-amber-300 bg-amber-100 text-amber-900",
+                    item.tone === "sky" && "border-sky-300 bg-sky-100 text-sky-900",
+                    item.tone === "indigo" && "border-indigo-300 bg-indigo-100 text-indigo-900",
+                    item.tone === "emerald" && "border-emerald-300 bg-emerald-100 text-emerald-900",
+                    item.tone === "red" && "border-red-300 bg-red-100 text-red-900"
+                  )}
+                >
+                  <span>{item.label}</span>
+                  <span
+                    className={cn(
+                      "ml-2 rounded-full px-2 py-1 text-[11px] font-black shadow-sm",
+                      item.tone === "orange" && "bg-orange-900 text-white",
+                      item.tone === "yellow" && "bg-amber-900 text-white",
+                      item.tone === "sky" && "bg-sky-900 text-white",
+                      item.tone === "indigo" && "bg-indigo-900 text-white",
+                      item.tone === "emerald" && "bg-emerald-900 text-white",
+                      item.tone === "red" && "bg-red-900 text-white"
+                    )}
+                  >
+                    {item.count}
+                  </span>
+                </div>
+              ))}
             </div>
             <Button asChild variant="outline" className="min-h-11 font-black">
               <Link href="/manager/commandes">Aller vers commandes</Link>
@@ -85,7 +124,15 @@ export default function ManagerCuisinePage() {
               <CardContent className="flex min-h-0 flex-1 flex-col p-3 md:p-4">
                 <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
                   <h2 className="text-sm font-black uppercase tracking-tight">{column.label}</h2>
-                  <span className="rounded-full bg-muted px-2 py-1 text-xs font-black text-muted-foreground">
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-1 text-xs font-black ring-1 ring-inset",
+                      column.status === ORDER_OPERATION_STATUS.PENDING && "bg-orange-200 text-orange-900 ring-orange-200",
+                      column.status === ORDER_OPERATION_STATUS.IN_PREPARATION && "bg-amber-200 text-amber-900 ring-amber-200",
+                      column.status === ORDER_OPERATION_STATUS.READY && "bg-sky-200 text-sky-900 ring-sky-200",
+                      column.status === ORDER_OPERATION_STATUS.SERVED && "bg-indigo-200 text-indigo-900 ring-indigo-200"
+                    )}
+                  >
                     {orders.length}
                   </span>
                 </div>

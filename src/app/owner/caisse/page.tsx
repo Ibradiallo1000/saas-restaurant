@@ -1,12 +1,6 @@
-import { OwnerSectionPage } from "@/app/owner/_components/OwnerSectionPage"
+import ManagerCaissePage from "@/app/(manager)/manager/caisse/page"
 
 export default function OwnerCaissePage() {
-  return (
-    <OwnerSectionPage
-      title="Caisse"
-      description="Lecture owner de la caisse avec le filtre global conservé."
-      detailHref="/manager/caisse"
-    />
-  )
+  return <ManagerCaissePage />
 }
 
