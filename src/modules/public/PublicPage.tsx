@@ -645,9 +645,9 @@ function PublicLoadingSkeleton() {
         <div className="relative flex items-center gap-3">
           <div className="h-12 w-12 rounded-full bg-card shadow-sm" />
           <div>
-            <p className="text-lg font-black">Chargement</p>
+            <p className="text-lg font-black">Preparation de votre table...</p>
             <p className="text-xs font-semibold text-muted-foreground">
-              Preparation du menu...
+              Nous ouvrons votre session et recuperons le menu. Merci de patienter quelques secondes.
             </p>
           </div>
         </div>

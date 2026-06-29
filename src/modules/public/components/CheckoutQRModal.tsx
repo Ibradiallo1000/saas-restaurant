@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore"
+import { doc, getDoc, increment, runTransaction, serverTimestamp } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import { CheckCircle, X } from "lucide-react"
 
@@ -170,7 +170,20 @@ export default function CheckoutQRModal({
       }
 
       const orderRef = doc(restaurantOrdersRef(db, restaurantId))
-      await setDoc(orderRef, order)
+      const tableSessionRef = doc(db, "restaurants", restaurantId, "tableSessions", tableSessionId)
+
+      await runTransaction(db, async (transaction) => {
+        const sessionSnap = await transaction.get(tableSessionRef)
+        if (!sessionSnap.exists() || sessionSnap.data()?.status !== "active") {
+          throw new Error("Session de table introuvable ou fermee")
+        }
+
+        transaction.set(orderRef, order)
+        transaction.update(tableSessionRef, {
+          totalAmount: increment(recalculatedTotal),
+          lastActivityAt: serverTimestamp(),
+        })
+      })
 
       clear()
       onClose()

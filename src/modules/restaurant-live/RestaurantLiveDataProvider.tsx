@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { isOrderServed, isOrderPaid } from "@/lib/order-lifecycle"
+import { playNewOrderNotificationSound } from "@/services/notification-sound.service"
 import {
   restaurantOrdersRef,
   restaurantTableSessionsRef,
@@ -200,6 +201,8 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
 
   const { toast } = useToast()
   const lastPaymentAlertsRef = React.useRef<Set<string>>(new Set())
+  const lastServedOrderAlertsRef = React.useRef<Set<string>>(new Set())
+  const servedOrderAlertsInitializedRef = React.useRef(false)
   const lastCashClosureAlertsRef = React.useRef<Set<string>>(new Set())
   const cashClosureAlertsInitializedRef = React.useRef(false)
   const hasInteractedRef = React.useRef(false)
@@ -223,7 +226,9 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
 
   React.useEffect(() => {
     if (!tableSessions) return
-    const pendingRequests = tableSessions.filter((s: any) => s.paymentRequest?.status === "requested")
+    const pendingRequests = tableSessions.filter((s: any) => {
+      return s.paymentRequest?.status === "requested" || s.paymentRequest?.status === "pending_confirmation"
+    })
     pendingRequests.forEach((session: any) => {
       const alertKey = `${session.id}-${session.paymentRequest?.status}`
       if (!lastPaymentAlertsRef.current.has(alertKey)) {
@@ -231,18 +236,49 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
         if (hasInteractedRef.current && typeof window !== 'undefined' && window.navigator?.vibrate) {
           window.navigator.vibrate([100, 50, 100])
         }
-        try {
-          const audio = new Audio("/sounds/son.mp3")
-          audio.play().catch(() => {})
-        } catch(e) {}
+        playNewOrderNotificationSound()
 
         toast({
-          title: "Demande de paiement",
+          title: session.paymentRequest?.status === "pending_confirmation" ? "Paiement a verifier" : "Demande de paiement",
           description: `Table ${session.tableName || session.tableId} demande paiement (${session.paymentRequest?.method === "cash" ? "Espèces" : session.paymentRequest?.provider || "Mobile Money"})`,
         })
       }
     })
   }, [tableSessions, toast])
+
+  React.useEffect(() => {
+    if (!activeOrders) return
+
+    if (!servedOrderAlertsInitializedRef.current) {
+      activeOrders.forEach((order: any) => {
+        const isTableOrder = Boolean(order.tableSessionId || order.sessionId || order.orderType === "dine_in")
+        if (isTableOrder && isOrderServed(order) && !isOrderPaid(order)) {
+          lastServedOrderAlertsRef.current.add(`${order.id}-served`)
+        }
+      })
+      servedOrderAlertsInitializedRef.current = true
+      return
+    }
+
+    activeOrders.forEach((order: any) => {
+      const isTableOrder = Boolean(order.tableSessionId || order.sessionId || order.orderType === "dine_in")
+      if (!isTableOrder || !isOrderServed(order) || isOrderPaid(order)) return
+
+      const alertKey = `${order.id}-served`
+      if (lastServedOrderAlertsRef.current.has(alertKey)) return
+
+      lastServedOrderAlertsRef.current.add(alertKey)
+      if (hasInteractedRef.current && typeof window !== "undefined" && window.navigator?.vibrate) {
+        window.navigator.vibrate([100, 50, 100])
+      }
+      playNewOrderNotificationSound()
+
+      toast({
+        title: "Commande servie",
+        description: `Table ${order.table || order.tableId || order.tableSessionId || "table"} prete pour encaissement.`,
+      })
+    })
+  }, [activeOrders, toast])
 
   const cashSessionsQuery = useMemoFirebase(() => {
     if (!enabled || !db || !restaurantId) return null

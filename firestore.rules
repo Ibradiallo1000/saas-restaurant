@@ -305,6 +305,16 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["lastActivityAt"]);
     }
 
+    function canUpdatePublicTableSessionTotal() {
+      return resource.data.status == "active"
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.tableId == resource.data.tableId
+        && request.resource.data.zoneId == resource.data.zoneId
+        && request.resource.data.totalAmount is number
+        && request.resource.data.totalAmount >= resource.data.totalAmount
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["totalAmount", "lastActivityAt"]);
+    }
+
     function canClosePublicTableSession() {
       return resource.data.status == "active"
         && request.resource.data.status == "closed"
@@ -829,6 +839,7 @@ service cloud.firestore {
         ) || canCreatePublicTableSession(restaurantId);
         allow update: if canUseRestaurant(restaurantId)
           || canUpdatePublicTablePaymentRequest()
+          || canUpdatePublicTableSessionTotal()
           || canTouchPublicTableSession()
           || canClosePublicTableSession();
         allow delete: if isSuperAdmin();

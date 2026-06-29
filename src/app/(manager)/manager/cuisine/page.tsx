@@ -230,6 +230,7 @@ function isLateOrder(order: any, now: number) {
 function shouldShowInTodayKitchen(order: any, now: number) {
   const status = getManagerKitchenColumnStatus(order)
   if (status !== ORDER_OPERATION_STATUS.SERVED) return true
+  if (order.sessionActive === true && (order.tableSessionId || order.sessionId)) return true
 
   const servedAt = getKitchenServedAtMs(order) ?? order.createdAt?.toDate?.().getTime?.() ?? now
   const orderDate = new Date(servedAt)

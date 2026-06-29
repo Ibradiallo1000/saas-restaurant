@@ -51,14 +51,26 @@ export default function ManagerCaissePage() {
   )
   const { data: tableSessions } = useCollection<any>(tableSessionsQuery)
 
+  const { activeOrders, cashSessionRequests, cashSessions, payments, isLoadingOrders, isLoadingSessions } = useRestaurantLiveData()
+
   const pendingPaymentSessions = React.useMemo(() => {
     const sessions = tableSessions || []
     const requests = sessions.filter((session: any) => {
       return session.paymentRequest?.status === "requested" || session.paymentRequest?.status === "pending_confirmation"
     })
-    console.log("CAISSE READ:", requests)
-    return requests
-  }, [tableSessions])
+    return requests.map((session: any) => {
+      const sessionOrders = (activeOrders || []).filter((order: any) => {
+        return order.tableSessionId === session.id || order.sessionId === session.id
+      })
+      const ordersTotalAmount = sessionOrders.reduce((sum: number, order: any) => sum + getOrderComputedTotal(order), 0)
+
+      return {
+        ...session,
+        ordersTotalAmount,
+        payableAmount: ordersTotalAmount > 0 ? ordersTotalAmount : Number(session.totalAmount ?? session.total ?? 0),
+      }
+    })
+  }, [activeOrders, tableSessions])
 
   
 
@@ -119,6 +131,7 @@ export default function ManagerCaissePage() {
             paymentType,
             paymentProvider,
             cashSessionId: currentUserCashSession.id,
+            sessionActive: false,
             paidAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           },
@@ -131,8 +144,19 @@ export default function ManagerCaissePage() {
         "paymentRequest.handledAt": serverTimestamp(),
         "paymentRequest.handledBy": user.uid,
         status: "closed",
+        totalAmount: Number(session.payableAmount ?? session.totalAmount ?? 0),
         closedAt: serverTimestamp(),
+        lastActivityAt: serverTimestamp(),
       })
+      if (session.tableId) {
+        const tableRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "tables", session.tableId)
+        batch.update(tableRef, {
+          status: "free",
+          currentSessionId: null,
+          updatedAt: serverTimestamp(),
+          lastActivityAt: serverTimestamp(),
+        })
+      }
 
       await batch.commit()
       toast({ title: "Paiement validé" })
@@ -161,7 +185,6 @@ export default function ManagerCaissePage() {
       setProcessingOrderId(null)
     }
   }
-  const { cashSessionRequests, cashSessions, payments, isLoadingOrders, isLoadingSessions } = useRestaurantLiveData()
   const treasuryService = React.useMemo(() => (db ? new TreasuryService(db) : null), [db])
   const [processingOrderId, setProcessingOrderId] = React.useState<string | null>(null)
   const [validatingSessionId, setValidatingSessionId] = React.useState<string | null>(null)
@@ -629,7 +652,7 @@ function TableSessionPaymentRequestCard({
             {requestLabel} : <span className="uppercase text-orange-900 font-black dark:text-orange-100">{session.paymentRequest?.method === "cash" ? "Espèces" : session.paymentRequest?.provider || "Mobile Money"}</span>
           </p>
         </div>
-        <p className="text-2xl font-black text-orange-600">{Number(session.totalAmount || 0).toLocaleString()} FCFA</p>
+        <p className="text-2xl font-black text-orange-600">{Number(session.payableAmount || 0).toLocaleString()} FCFA</p>
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2 pl-2">
@@ -858,7 +881,7 @@ function getTableSessionPaymentSummary(sessions: any[]) {
 }
 
 function getSessionAmount(session: any) {
-  return Number(session.totalAmount ?? session.total ?? 0)
+  return Number(session.payableAmount ?? session.ordersTotalAmount ?? session.totalAmount ?? session.total ?? 0)
 }
 
 function getOrderComputedTotal(order: any) {
