@@ -298,6 +298,7 @@ function ClientOrderTrackingContent() {
   const safeOrder = order || mainOrder
   const rawOrderType = (safeOrder as any).type || safeOrder.orderType
   const orderType = normalizeOrderType(safeOrder.orderType) as ClientOrderType
+  const isDeliveryOrder = orderType === "delivery"
   const isQrTableOrder = orderType === "dine_in" && (safeOrder.source === "qr_table" || safeOrder.source === "qr")
   const step = getClientOrderStep(mainOrder)
   const label = getClientStatusLabel(mainOrder)
@@ -436,7 +437,7 @@ function ClientOrderTrackingContent() {
           </h1>
           <p className="mt-2 text-sm font-black text-muted-foreground">{orderDisplayId}</p>
           {shouldShowPhone && orderPhone ? (
-            <p className="mt-1 text-sm text-muted-foreground">TÃ©lÃ© phone : {orderPhone}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Téléphone : {orderPhone}</p>
           ) : null}
         </section>
 
@@ -541,7 +542,9 @@ function ClientOrderTrackingContent() {
             </p>
             <p className="mt-3 text-sm font-semibold text-emerald-900/80 dark:text-emerald-100/80">
               {prepaidPaymentConfirmed
-                ? "Paiement confirmé. Aucun autre paiement n’est nécessaire."
+                ? isDeliveryOrder
+                  ? "Votre commande est prête. Le livreur vous contactera très prochainement."
+                  : "Paiement confirmé. Votre commande est terminée."
                 : "Paiement déjà initié. La caisse finalise la validation si besoin."}
             </p>
           </section>

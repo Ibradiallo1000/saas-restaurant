@@ -3,7 +3,7 @@
 import * as React from "react"
 import { addDoc, doc, getDoc, serverTimestamp } from "firebase/firestore"
 import { useRouter } from "next/navigation"
-import { ArrowRight, Banknote, CheckCircle, ChevronLeft, CreditCard, ShoppingBag, Truck, X } from "lucide-react"
+import { ArrowRight, Banknote, CheckCircle, ChevronLeft, CreditCard, MapPin, Phone, ShoppingBag, Truck, X } from "lucide-react"
 
 import { useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { COLLECTION_NAMES } from "@/lib/constants"
@@ -28,6 +28,7 @@ type OrderFlowState = {
   orderType: PublicOrderType | null
   address: string
   phone: string
+  secondaryPhone: string
   instructions: string
   customerNote: string
   paymentMethodCode: string
@@ -46,6 +47,7 @@ const DEFAULT_FLOW_STATE: OrderFlowState = {
   orderType: null,
   address: "",
   phone: "",
+  secondaryPhone: "",
   instructions: "",
   customerNote: "",
   paymentMethodCode: "",
@@ -345,7 +347,7 @@ export default function CheckoutPublicModal({
             <DeliveryStep
               address={flow.address}
               phone={flow.phone}
-              instructions={flow.instructions}
+              secondaryPhone={flow.secondaryPhone}
               onChange={updateFlow}
             />
           ) : null}
@@ -435,26 +437,23 @@ function CartStep({
   onSelect: (type: PublicOrderType) => void
 }) {
   const modes = [
-    restaurantFeatures.takeaway
-      ? {
-          id: "pickup" as const,
-          label: "A emporter",
-          description: "Vous recuperez votre commande sur place.",
-          icon: ShoppingBag,
-        }
-      : null,
     restaurantFeatures.delivery
       ? {
           id: "delivery" as const,
           label: "Livraison",
-          description: "La commande est livree a votre adresse.",
           icon: Truck,
+        }
+      : null,
+    restaurantFeatures.takeaway
+      ? {
+          id: "pickup" as const,
+          label: "À emporter",
+          icon: ShoppingBag,
         }
       : null,
   ].filter(Boolean) as Array<{
     id: PublicOrderType
     label: string
-    description: string
     icon: React.ElementType
   }>
 
@@ -467,7 +466,7 @@ function CartStep({
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-3">
         {modes.map((mode) => {
           const Icon = mode.icon
           const active = orderType === mode.id
@@ -477,24 +476,21 @@ function CartStep({
               key={mode.id}
               type="button"
               onClick={() => onSelect(mode.id)}
-              className={`rounded-2xl border-2 p-4 text-left transition ${
+              className={`flex h-14 items-center justify-center rounded-xl border-2 px-3 text-center transition ${
                 active
                   ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
                   : "border-border bg-card hover:bg-muted"
               }`}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center gap-2">
                 <span
-                  className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+                  className={`flex h-8 w-8 items-center justify-center rounded-lg ${
                     active ? "bg-[var(--color-primary)] text-white" : "bg-muted text-foreground"
                   }`}
                 >
-                  <Icon className="h-5 w-5" />
+                  <Icon className="h-4 w-4" />
                 </span>
-                <div>
-                  <p className="font-black">{mode.label}</p>
-                  <p className="text-xs font-semibold text-muted-foreground">{mode.description}</p>
-                </div>
+                <p className="font-black">{mode.label}</p>
               </div>
             </button>
           )
@@ -507,35 +503,45 @@ function CartStep({
 function DeliveryStep({
   address,
   phone,
-  instructions,
+  secondaryPhone,
   onChange,
 }: {
   address: string
   phone: string
-  instructions: string
+  secondaryPhone: string
   onChange: (patch: Partial<OrderFlowState>) => void
 }) {
   return (
     <div className="space-y-4">
-      <input
-        value={address}
-        onChange={(event) => onChange({ address: event.target.value })}
-        placeholder="Adresse de livraison *"
-        className="h-14 w-full rounded-xl border border-border bg-card px-4 text-base outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
-      />
-      <input
-        type="tel"
-        value={phone}
-        onChange={(event) => onChange({ phone: event.target.value })}
-        placeholder="Telephone *"
-        className="h-14 w-full rounded-xl border border-border bg-card px-4 text-base outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
-      />
-      <textarea
-        value={instructions}
-        onChange={(event) => onChange({ instructions: event.target.value })}
-        placeholder="Instructions de livraison (optionnel)"
-        className="min-h-24 w-full resize-none rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
-      />
+      <div className="flex h-14 items-center gap-3 rounded-xl border border-border bg-card px-4 focus-within:ring-2 focus-within:ring-[var(--color-primary)]/30">
+        <MapPin className="h-5 w-5 shrink-0 text-muted-foreground" />
+        <input
+          value={address}
+          onChange={(event) => onChange({ address: event.target.value })}
+          placeholder="Quartier / adresse *"
+          className="h-full min-w-0 flex-1 bg-transparent text-base outline-none"
+        />
+      </div>
+      <div className="flex h-14 items-center gap-3 rounded-xl border border-border bg-card px-4 focus-within:ring-2 focus-within:ring-[var(--color-primary)]/30">
+        <Phone className="h-5 w-5 shrink-0 text-muted-foreground" />
+        <input
+          type="tel"
+          value={phone}
+          onChange={(event) => onChange({ phone: event.target.value })}
+          placeholder="Téléphone *"
+          className="h-full min-w-0 flex-1 bg-transparent text-base outline-none"
+        />
+      </div>
+      <div className="flex h-14 items-center gap-3 rounded-xl border border-border bg-card px-4 focus-within:ring-2 focus-within:ring-[var(--color-primary)]/30">
+        <Phone className="h-5 w-5 shrink-0 text-muted-foreground" />
+        <input
+          type="tel"
+          value={secondaryPhone}
+          onChange={(event) => onChange({ secondaryPhone: event.target.value })}
+          placeholder="Deuxième numéro de téléphone (optionnel)"
+          className="h-full min-w-0 flex-1 bg-transparent text-base outline-none"
+        />
+      </div>
     </div>
   )
 }
@@ -665,7 +671,7 @@ function PaymentStepCompact({
     <div className="space-y-3">
       <h3 className="font-black">Choisissez un moyen de paiement</h3>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="flex flex-wrap gap-3">
         {canPayCash ? (
           <button
             type="button"
@@ -676,19 +682,19 @@ function PaymentStepCompact({
                 paymentInstruction: "",
               })
             }
-            className={`flex h-24 flex-col items-center justify-center rounded-xl border p-4 text-center transition hover:border-orange-500 ${
+            className={`flex h-12 min-w-[120px] flex-1 items-center justify-center gap-2 rounded-xl border px-4 text-center transition hover:border-orange-500 ${
               paymentMethodCode === "cash"
                 ? "border-orange-500 bg-orange-50 text-slate-950"
                 : "border-border bg-card hover:bg-muted"
             }`}
           >
-            <Banknote className="mb-2 h-6 w-6 shrink-0" />
-            <span className="truncate text-base font-medium">Espèces</span>
+            <Banknote className="h-5 w-5 shrink-0" />
+            <span className="truncate text-sm font-black">Espèces</span>
           </button>
         ) : null}
 
         {loadingPaymentMethods ? (
-          <div className="col-span-full rounded-lg border bg-muted p-3 text-sm font-semibold text-muted-foreground">
+          <div className="w-full rounded-lg border bg-muted p-3 text-sm font-semibold text-muted-foreground">
             Chargement des moyens de paiement...
           </div>
         ) : paymentMethods.length > 0 ? (
@@ -700,13 +706,13 @@ function PaymentStepCompact({
                 key={method.code}
                 type="button"
                 onClick={() => selectMethod(method)}
-                className={`flex h-24 flex-col items-center justify-center rounded-xl border p-4 text-center transition hover:border-orange-500 ${
+                className={`flex h-12 min-w-[120px] flex-1 items-center justify-center gap-2 rounded-xl border px-4 text-center transition hover:border-orange-500 ${
                   active
                     ? "border-orange-500 bg-orange-50 text-slate-950"
                     : "border-border bg-card hover:bg-muted"
                 }`}
               >
-                <div className="mb-2 h-6 w-6 shrink-0 overflow-hidden rounded bg-card">
+                <div className="h-6 w-6 shrink-0 overflow-hidden rounded bg-card">
                   {method.logoUrl ? (
                     <img src={method.logoUrl} alt={method.name} className="h-full w-full object-contain" />
                   ) : (
@@ -715,12 +721,12 @@ function PaymentStepCompact({
                     </div>
                   )}
                 </div>
-                <span className="w-full truncate text-base font-medium">{method.name}</span>
+                <span className="truncate text-sm font-black">{method.name}</span>
               </button>
             )
           })
         ) : (
-          <div className="col-span-full rounded-lg border bg-muted p-3 text-sm font-semibold text-muted-foreground">
+          <div className="w-full rounded-lg border bg-muted p-3 text-sm font-semibold text-muted-foreground">
             Aucun moyen de paiement configure.
           </div>
         )}
