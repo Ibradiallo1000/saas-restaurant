@@ -252,8 +252,7 @@ function ClientOrderTrackingContent() {
   }
 
   const slug = restaurant?.slug
-  const homePath = slug ? `/${slug}` : "/"
-  const goHome = () => router.push(homePath)
+  const goHome = () => router.push(slug ? `/${slug}` : "/")
 
   if (isLoading) {
     return (
@@ -312,9 +311,13 @@ function ClientOrderTrackingContent() {
   const shouldShowPostServicePayment = allServed && isQrTableOrder
   const shouldShowPrepaidCompletion = allServed && !isQrTableOrder
   const prepaidPaymentConfirmed = tableSessionOrders.every((sessionOrder: any) => isPaidPaymentStatus(sessionOrder.paymentStatus))
-  const effectivePaymentStatus =
+  const sessionPaymentConfirmed =
     tableSession?.paymentRequest?.status === "validated" ||
-    isPaidPaymentStatus(safeOrder.paymentStatus) ||
+    tableSession?.status === "closed" ||
+    (tableSessionOrders.length > 0 && tableSessionOrders.every((sessionOrder: any) => isPaidPaymentStatus(sessionOrder.paymentStatus))) ||
+    isPaidPaymentStatus(safeOrder.paymentStatus)
+  const effectivePaymentStatus =
+    sessionPaymentConfirmed ||
     tableSessionOrders.some((sessionOrder: any) => isPaidPaymentStatus(sessionOrder.paymentStatus))
       ? "paid"
       : safeOrder.paymentStatus
@@ -326,6 +329,15 @@ function ClientOrderTrackingContent() {
   const orderDisplayId = getOrderDisplayId(safeOrder)
   const orderPhone = safeOrder.customer?.phone?.trim()
   const shouldShowPhone = isDeliveryOrderType(rawOrderType) || Boolean(orderPhone)
+  const canContinueOrdering =
+    Boolean(slug) &&
+    isQrTableOrder &&
+    tableSession?.status === "active" &&
+    Boolean(safeOrder.tableId) &&
+    !["requested", "pending_confirmation", "validated"].includes(tableSession?.paymentRequest?.status)
+  const continueOrdering = () => {
+    router.push(buildContinueOrderingPath(slug, safeOrder))
+  }
 
   const handleCashPaymentSession = async () => {
     if (!safeOrder.tableSessionId) {
@@ -412,7 +424,7 @@ function ClientOrderTrackingContent() {
       count={count}
       cartOpen={cartOpen}
       setCartOpen={setCartOpen}
-      onHome={goHome}
+      onHome={canContinueOrdering ? continueOrdering : goHome}
     >
       <div className="mx-auto max-w-md space-y-5">
         <section className={TRACKING_CARD_CLASS}>
@@ -448,17 +460,9 @@ function ClientOrderTrackingContent() {
             <p className="mt-2 text-4xl font-black text-orange-900 dark:text-orange-100">
               {formatMoney(sessionTotal)} FCFA
             </p>
-            
-            {tableSession?.paymentRequest?.status === "validated" ? (
-               <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 p-4 text-green-800 dark:border-green-400/30 dark:bg-green-500/10 dark:text-green-200">
-                 <div className="flex items-center gap-2 text-sm font-black">
-                   <CheckCircle className="h-5 w-5" />
-                   Paiement confirmé
-                 </div>
-                 <p className="mt-2 text-sm font-semibold text-green-700 dark:text-green-200/90">
-                   Merci pour votre confiance. Nous espérons vous revoir très bientôt.
-                 </p>
-               </div>
+
+            {sessionPaymentConfirmed ? (
+              <PaymentConfirmedPanel />
             ) : tableSession?.paymentRequest?.status === "requested" && tableSession?.paymentRequest?.method === "cash" ? (
                <div className="mt-5 rounded-xl border border-orange-300 bg-orange-100 p-4 text-center text-orange-800 dark:bg-orange-950/30 dark:text-orange-300">
                  <p className="font-black text-lg animate-pulse">Un serveur arrive pour encaisser</p>
@@ -516,6 +520,16 @@ function ClientOrderTrackingContent() {
                  </div>
                </div>
              )}
+
+            {!sessionPaymentConfirmed && canContinueOrdering ? (
+              <button
+                type="button"
+                onClick={continueOrdering}
+                className="mt-5 flex h-12 w-full items-center justify-center rounded-xl border border-orange-300 bg-background px-4 text-sm font-black uppercase text-orange-900 shadow-sm transition hover:bg-orange-100 active:scale-[0.98] dark:text-orange-100 dark:hover:bg-orange-500/10"
+              >
+                Commander encore
+              </button>
+            ) : null}
            </section>
         ) : shouldShowPrepaidCompletion ? (
           <section className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-5 text-emerald-950 shadow-lg dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-100">
@@ -551,6 +565,44 @@ function getOrderTotal(order: any) {
   if (Number.isFinite(explicit) && explicit > 0) return explicit
 
   return (order?.items || []).reduce((sum: number, item: any) => sum + getItemTotal(item), 0)
+}
+
+function PaymentConfirmedPanel() {
+  return (
+    <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 p-5 text-green-900 shadow-sm dark:border-green-400/30 dark:bg-green-500/10 dark:text-green-100">
+      <div className="flex items-center gap-2 text-sm font-black uppercase">
+        <CheckCircle className="h-5 w-5" />
+        Commande terminee
+      </div>
+      <h2 className="mt-3 text-2xl font-black">Paiement confirme</h2>
+      <p className="mt-2 text-sm font-semibold text-green-800 dark:text-green-100/90">
+        Merci pour votre visite. Votre table a ete cloturee avec succes.
+      </p>
+      <p className="mt-3 text-sm text-green-800/80 dark:text-green-100/80">
+        Nous esperons vous revoir bientot. Vous pouvez partager votre avis avec l equipe du restaurant avant de partir.
+      </p>
+    </div>
+  )
+}
+
+function buildContinueOrderingPath(slug: string | null | undefined, order: any) {
+  if (!slug) return "/"
+
+  const tableId = order?.tableId
+  const tableSessionId = order?.tableSessionId || order?.sessionId
+  const orderId = order?.id
+
+  if (!tableId || !tableSessionId) return `/${slug}`
+
+  const params = new URLSearchParams({
+    t: String(tableId),
+    sessionId: String(tableSessionId),
+    mode: "dine_in",
+  })
+
+  if (orderId) params.set("orderId", String(orderId))
+
+  return `/${slug}?${params.toString()}`
 }
 
 function buildTableContextFromOrder(order: any) {

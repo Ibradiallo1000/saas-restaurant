@@ -257,6 +257,14 @@ function POSPageContent() {
     return groups
   }, [posVisibleOrders])
 
+  const servedTableSessionGroups = React.useMemo(() => {
+    return buildServedTableSessionGroups(
+      posOrders[ORDER_OPERATION_STATUS.SERVED] ?? [],
+      safeTableSessions,
+      tables
+    )
+  }, [posOrders, safeTableSessions, tables])
+
   const unpaidServedCount = React.useMemo(() => {
     return posVisibleOrders.filter((order: any) => {
       const orderStatus = getPOSOperationStatus(order)
@@ -1609,16 +1617,110 @@ function POSPageContent() {
             <div className="grid grid-cols-5 gap-4 h-full p-4">
               {posColumns.map((column) => {
                 const columnOrders = posOrders[column.id] ?? []
+                const isServedColumn = column.id === ORDER_OPERATION_STATUS.SERVED
+                const displayedCount = isServedColumn ? servedTableSessionGroups.length : columnOrders.length
 
                 return (
                   <div key={column.id} className="bg-card rounded-xl p-3 flex flex-col h-full min-h-0 border">
                     <div className="flex justify-between items-center mb-2">
                       <h3 className="font-semibold text-xs uppercase">{STATUS_LABELS[column.id as keyof typeof STATUS_LABELS]}</h3>
-                      <span className="text-xs">{columnOrders.length}</span>
+                      <span className="text-xs">{displayedCount}</span>
                     </div>
 
                     <div className="flex-1 overflow-y-auto space-y-2">
-                      {columnOrders.map((order: any) => {
+                      {isServedColumn ? servedTableSessionGroups.map((group: any) => {
+                        const paymentSession = group.paymentSession
+                        const paymentRequestStatus = paymentSession?.paymentRequest?.status
+                        const hasSessionPaymentRequest =
+                          paymentRequestStatus === "requested" ||
+                          paymentRequestStatus === "pending_confirmation"
+                        const isMobilePayment = paymentSession?.paymentRequest?.method === "mobile"
+                        const canVerifyPayment = Boolean(hasSessionPaymentRequest)
+                        const paymentLabel = paymentRequestStatus === "requested"
+                          ? "Client veut payer"
+                          : paymentRequestStatus === "pending_confirmation"
+                            ? "Client dit avoir paye"
+                            : "En attente paiement client"
+                        const sessionStatusLabel = paymentSession?.status === "active" || !paymentSession?.status
+                          ? "Session active"
+                          : "Session"
+
+                        return (
+                          <div
+                            key={group.id}
+                            className="rounded-lg border bg-background p-2 text-left transition hover:border-primary/50 hover:bg-primary/5"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-xs font-black">
+                                  Table {group.tableLabel || "-"} / {sessionStatusLabel}
+                                </p>
+                              </div>
+                              <p className="shrink-0 text-xs font-black text-primary">
+                                {group.totalAmount.toLocaleString()} FCFA
+                              </p>
+                            </div>
+
+                            <div className="mt-2 rounded-md bg-muted/40 p-2">
+                              <div className="flex items-center justify-between gap-2 text-[9px] font-bold text-muted-foreground">
+                                <span>{group.orderCount} commande(s)</span>
+                                <span>{group.itemCount} article(s)</span>
+                              </div>
+                              <div className="mt-2 space-y-1">
+                                {group.orders.slice(0, 4).map((order: any) => (
+                                  <button
+                                    key={order.id}
+                                    type="button"
+                                    className="block w-full rounded border border-transparent px-1 py-1 text-left hover:border-primary/30 hover:bg-background"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      setSelectedOrderDetailId(order.id)
+                                    }}
+                                  >
+                                    <span className="block text-[9px] font-black text-foreground">
+                                      {getOrderDisplayId(order)} - {getOrderComputedTotal(order).toLocaleString()} FCFA
+                                    </span>
+                                    <span className="block truncate text-[9px] font-semibold text-muted-foreground">
+                                      {summarizeCashierOrderItems(order)}
+                                    </span>
+                                  </button>
+                                ))}
+                                {group.orders.length > 4 ? (
+                                  <p className="px-1 text-[9px] font-bold text-muted-foreground">
+                                    + {group.orders.length - 4} commande(s)
+                                  </p>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="mt-3 space-y-2 rounded-md bg-muted/50 p-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-semibold text-muted-foreground">Paiement:</span>
+                                <span className="text-[10px] font-black">
+                                  {paymentSession?.paymentRequest?.method === "cash"
+                                    ? "Espèces"
+                                    : isMobilePayment
+                                      ? paymentSession?.paymentRequest?.provider || "Mobile Money"
+                                      : "Non initié"}
+                                </span>
+                              </div>
+                              <p className={cn("text-right text-[10px] font-black", canVerifyPayment ? "text-amber-600" : "text-muted-foreground")}>
+                                {paymentLabel}
+                              </p>
+                              <Button
+                                className="mt-2 h-7 w-full bg-primary text-[9px] font-black hover:bg-primary/90"
+                                disabled={processing || !canVerifyPayment || !paymentSession}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  if (paymentSession) validateTableSessionPayment(paymentSession)
+                                }}
+                              >
+                                {isMobilePayment ? "Valider paiement session" : "Encaisser session"}
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      }) : columnOrders.map((order: any) => {
                         const paymentSession = getPaymentSessionForOrder(order, safeTableSessions)
                         const paymentRequestStatus = paymentSession?.paymentRequest?.status
                         const hasSessionPaymentRequest =
@@ -1711,7 +1813,7 @@ function POSPageContent() {
                                   setSelectedOrderDetailId(order.id)
                                 }}
                               >
-                                Voir dÃ©tails
+                                Voir détails
                               </button>
                             </div>
 
@@ -2263,6 +2365,67 @@ function getPaymentSessionForOrder(order: any, tableSessions: any[]) {
   if (!sessionId) return null
 
   return tableSessions.find((session) => session.id === sessionId) ?? null
+}
+
+function buildServedTableSessionGroups(orders: any[], tableSessions: any[], tables: RestaurantTableRecord[]) {
+  const groups = new Map<string, any>()
+
+  orders.forEach((order: any) => {
+    const sessionId = order?.tableSessionId || order?.sessionId || `order:${order?.id}`
+    const paymentSession = tableSessions.find((session: any) => session.id === sessionId) ?? null
+    const tableId = paymentSession?.tableId || order?.tableId || null
+    const tableLabel =
+      tables.find((table) => table.id === tableId)?.name ||
+      paymentSession?.tableNumber ||
+      paymentSession?.tableName ||
+      order?.tableNumber ||
+      order?.table ||
+      (tableId ? String(tableId).slice(-2).toUpperCase() : "")
+
+    if (!groups.has(sessionId)) {
+      groups.set(sessionId, {
+        id: sessionId,
+        paymentSession,
+        tableLabel,
+        orders: [],
+        orderCount: 0,
+        itemCount: 0,
+        totalAmount: 0,
+      })
+    }
+
+    const group = groups.get(sessionId)
+    group.paymentSession = group.paymentSession || paymentSession
+    group.tableLabel = group.tableLabel || tableLabel
+    group.orders.push(order)
+    group.orderCount += 1
+    group.itemCount += countOrderItems(order)
+    group.totalAmount += getOrderComputedTotal(order)
+  })
+
+  return Array.from(groups.values()).sort((a: any, b: any) => {
+    const timeA = Math.max(...a.orders.map((order: any) => order.createdAt?.toMillis?.() || 0))
+    const timeB = Math.max(...b.orders.map((order: any) => order.createdAt?.toMillis?.() || 0))
+    return timeB - timeA
+  })
+}
+
+function countOrderItems(order: any) {
+  const items = Array.isArray(order?.items) ? order.items : []
+  return items.reduce((sum: number, item: any) => sum + Number(item.quantity ?? 1), 0)
+}
+
+function summarizeCashierOrderItems(order: any) {
+  const items = Array.isArray(order?.items) ? order.items : []
+  if (items.length === 0) return "Aucun produit"
+
+  const visibleItems = items.slice(0, 3)
+  const summary = visibleItems
+    .map((item: any) => `${Number(item.quantity ?? 1)}x ${item.name || item.nameSnapshot || "Article"}`)
+    .join(", ")
+  const hiddenCount = Math.max(0, items.length - visibleItems.length)
+
+  return hiddenCount > 0 ? `${summary}, + ${hiddenCount} article(s)` : summary
 }
 
 function usePOSProductsPerPage() {

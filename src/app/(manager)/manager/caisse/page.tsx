@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
-import { addDoc, collection, doc, getDocs, query, runTransaction, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore"
+import { addDoc, collection, doc, getDocs, query, runTransaction, serverTimestamp, where, writeBatch } from "firebase/firestore"
 import { AlertTriangle, Banknote, CheckCircle2, Clock, CreditCard, Plus, ReceiptText, Wallet } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { getDateRange, useTimeFilter } from "@/contexts/time-filter-context"
 import { getFinancialSummary } from "@/lib/finance/financial-summary"
+import { isOrderPaid, isOrderServed } from "@/lib/order-lifecycle"
 import { cn } from "@/lib/utils"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 import { TreasuryService } from "@/services/treasury.service"
@@ -55,21 +56,65 @@ export default function ManagerCaissePage() {
 
   const pendingPaymentSessions = React.useMemo(() => {
     const sessions = tableSessions || []
-    const requests = sessions.filter((session: any) => {
-      return session.paymentRequest?.status === "requested" || session.paymentRequest?.status === "pending_confirmation"
-    })
-    return requests.map((session: any) => {
-      const sessionOrders = (activeOrders || []).filter((order: any) => {
-        return order.tableSessionId === session.id || order.sessionId === session.id
-      })
-      const ordersTotalAmount = sessionOrders.reduce((sum: number, order: any) => sum + getOrderComputedTotal(order), 0)
+    const sessionsById = new Map(sessions.map((session: any) => [session.id, session]))
+    const groups = new Map<string, any>()
 
+    const ensureGroup = (sessionId: string, seed?: any) => {
+      const session = seed || sessionsById.get(sessionId) || {}
+      const existing = groups.get(sessionId)
+      if (existing) return existing
+
+      const group = {
+        ...session,
+        id: sessionId,
+        tableId: session.tableId || null,
+        zoneId: session.zoneId || "main",
+        paymentRequest: session.paymentRequest || { status: "none" },
+        orders: [] as any[],
+      }
+      groups.set(sessionId, group)
+      return group
+    }
+
+    ;(activeOrders || []).forEach((order: any) => {
+      const sessionId = order.tableSessionId || order.sessionId
+      if (!sessionId || !isOrderServed(order) || isOrderPaid(order)) return
+
+      const group = ensureGroup(sessionId)
+      group.tableId = group.tableId || order.tableId || null
+      group.tableName = group.tableName || order.table || order.tableName || order.tableId || null
+      group.orders.push(order)
+    })
+
+    sessions
+      .filter((session: any) => {
+        return session.paymentRequest?.status === "requested" || session.paymentRequest?.status === "pending_confirmation"
+      })
+      .forEach((session: any) => {
+        const group = ensureGroup(session.id, session)
+        const sessionOrders = (activeOrders || []).filter((order: any) => {
+          return (order.tableSessionId === session.id || order.sessionId === session.id) && !isOrderPaid(order)
+        })
+        sessionOrders.forEach((order: any) => {
+          if (!group.orders.some((currentOrder: any) => currentOrder.id === order.id)) {
+            group.orders.push(order)
+          }
+        })
+      })
+
+    return Array.from(groups.values()).map((session: any) => {
+      const ordersTotalAmount = session.orders.reduce((sum: number, order: any) => sum + getOrderComputedTotal(order), 0)
+      const itemCount = session.orders.reduce((sum: number, order: any) => {
+        return sum + (order.items || []).reduce((itemSum: number, item: any) => itemSum + Number(item.quantity || 0), 0)
+      }, 0)
       return {
         ...session,
         ordersTotalAmount,
+        orderCount: session.orders.length,
+        itemCount,
         payableAmount: ordersTotalAmount > 0 ? ordersTotalAmount : Number(session.totalAmount ?? session.total ?? 0),
       }
-    })
+    }).filter((session: any) => session.orderCount > 0 || session.paymentRequest?.status === "requested" || session.paymentRequest?.status === "pending_confirmation")
   }, [activeOrders, tableSessions])
 
   
@@ -168,23 +213,6 @@ export default function ManagerCaissePage() {
     }
   }
 
-  const rejectTableSessionPayment = async (session: any) => {
-    if (!db || !restaurantId || !user) return
-    setProcessingOrderId(session.id)
-    try {
-      const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "tableSessions", session.id)
-      await updateDoc(sessionRef, {
-        "paymentRequest.status": "rejected",
-        "paymentRequest.handledAt": serverTimestamp(),
-        "paymentRequest.handledBy": user.uid,
-      })
-      toast({ title: "Paiement refusé" })
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setProcessingOrderId(null)
-    }
-  }
   const treasuryService = React.useMemo(() => (db ? new TreasuryService(db) : null), [db])
   const [processingOrderId, setProcessingOrderId] = React.useState<string | null>(null)
   const [validatingSessionId, setValidatingSessionId] = React.useState<string | null>(null)
@@ -475,7 +503,6 @@ export default function ManagerCaissePage() {
                 session={session}
                 processing={processingOrderId === session.id}
                 onValidate={() => validateTableSessionPayment(session)}
-                onReject={() => rejectTableSessionPayment(session)}
               />
             ))}
           </div>
@@ -626,47 +653,86 @@ function TableSessionPaymentRequestCard({
   session,
   processing,
   onValidate,
-  onReject,
 }: {
   session: any
   processing: boolean
   onValidate: () => void
-  onReject: () => void
 }) {
   const requestStatus = session.paymentRequest?.status
-  const requestLabel =
-    requestStatus === "pending_confirmation"
-      ? "Client dit avoir payé"
-      : "Client a choisi paiement"
+  const orders = session.orders || []
+  const orderPreview = orders.slice(0, 3)
 
   return (
     <article className="rounded-2xl border-2 border-orange-300 bg-orange-50 p-4 shadow-sm relative overflow-hidden dark:bg-orange-950/20">
       <div className="absolute top-0 left-0 w-1.5 h-full bg-orange-500 animate-pulse" />
       <div className="flex items-start justify-between gap-3 pl-2">
         <div>
-          <h3 className="text-xl font-black uppercase text-orange-600">{session.tableName || session.tableId}</h3>
+          <h3 className="text-xl font-black uppercase text-orange-600">{session.tableName || session.tableId || "Table"}</h3>
           <p className="text-sm font-bold text-orange-800/80 dark:text-orange-200/80 mt-1">
             {requestStatus === "pending_confirmation" && (
               <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-[10px] mr-2 uppercase animate-pulse">À vérifier</span>
             )}
-            {requestLabel} : <span className="uppercase text-orange-900 font-black dark:text-orange-100">{session.paymentRequest?.method === "cash" ? "Espèces" : session.paymentRequest?.provider || "Mobile Money"}</span>
+            {getTableSessionPaymentStatusLabel(session)}
+          </p>
+          <p className="mt-1 text-xs font-bold text-orange-900/70 dark:text-orange-100/70">
+            {session.orderCount || 0} commande{session.orderCount > 1 ? "s" : ""} · {session.itemCount || 0} article{session.itemCount > 1 ? "s" : ""}
           </p>
         </div>
         <p className="text-2xl font-black text-orange-600">{Number(session.payableAmount || 0).toLocaleString()} FCFA</p>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 pl-2">
-        <Button disabled={processing} onClick={onValidate} className="font-black h-12 bg-emerald-600 hover:bg-emerald-700 text-white w-full">
+      <div className="mt-4 space-y-2 pl-2">
+        {orderPreview.map((order: any) => (
+          <div key={order.id} className="rounded-xl border border-orange-200 bg-white/70 px-3 py-2 text-xs font-semibold text-orange-950 dark:border-orange-900 dark:bg-background/40 dark:text-orange-100">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-black">{getShortOrderLabel(order)}</span>
+              <span>{getOrderComputedTotal(order).toLocaleString()} FCFA</span>
+            </div>
+            <p className="mt-1 line-clamp-2 text-orange-900/75 dark:text-orange-100/75">
+              {summarizeOrderItems(order)}
+            </p>
+          </div>
+        ))}
+        {orders.length > orderPreview.length ? (
+          <p className="text-xs font-bold text-orange-900/70 dark:text-orange-100/70">
+            +{orders.length - orderPreview.length} commande{orders.length - orderPreview.length > 1 ? "s" : ""} dans cette session
+          </p>
+        ) : null}
+      </div>
+
+      <div className="mt-4 pl-2">
+        <Button disabled={processing || Number(session.payableAmount || 0) <= 0} onClick={onValidate} className="font-black h-12 bg-emerald-600 hover:bg-emerald-700 text-white w-full">
           <CheckCircle2 className="mr-2 h-5 w-5" />
-          Valider le paiement
-        </Button>
-        <Button disabled={processing} onClick={onReject} variant="outline" className="font-black h-12 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 w-full bg-white dark:bg-transparent">
-          <AlertTriangle className="mr-2 h-5 w-5" />
-          Refuser
+          {processing ? "Validation..." : "Encaisser et cloturer la table"}
         </Button>
       </div>
     </article>
   )
+}
+
+function getTableSessionPaymentStatusLabel(session: any) {
+  const status = session.paymentRequest?.status
+  if (status === "pending_confirmation") return "Paiement declare par le client - verification caisse"
+  if (status === "requested") {
+    const method = session.paymentRequest?.method === "cash" ? "Especes" : session.paymentRequest?.provider || "Mobile Money"
+    return `Paiement demande - ${method}`
+  }
+  return "Commandes servies non payees"
+}
+
+function getShortOrderLabel(order: any) {
+  const id = String(order?.orderNumber || order?.displayId || order?.id || "").slice(-6).toUpperCase()
+  return id ? `Commande #${id}` : "Commande"
+}
+
+function summarizeOrderItems(order: any) {
+  const items = Array.isArray(order?.items) ? order.items : []
+  if (items.length === 0) return "Aucun detail article"
+
+  return items
+    .slice(0, 4)
+    .map((item: any) => `${Number(item.quantity || 1)}x ${item.name || item.nameSnapshot || "Article"}`)
+    .join(", ")
 }
 
 function CashOpeningRequestCard({
