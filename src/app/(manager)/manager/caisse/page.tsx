@@ -16,7 +16,7 @@ import { useTenant } from "@/design-system/context/TenantProvider"
 import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { getDateRange, useTimeFilter } from "@/contexts/time-filter-context"
-import { getFinancialSummary } from "@/lib/finance/financial-summary"
+import { isConfirmedFinancePayment } from "@/lib/finance/financial-summary"
 import { isOrderPaid, isOrderServed } from "@/lib/order-lifecycle"
 import { cn } from "@/lib/utils"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
@@ -287,13 +287,9 @@ export default function ManagerCaissePage() {
     () => getTableSessionPaymentSummary(pendingPaymentSessions),
     [pendingPaymentSessions]
   )
-  const periodPayments = React.useMemo(
-    () => (payments || []).filter((payment: any) => isValueInDateRange(payment.createdAt, range.startDate, range.endDate)),
-    [payments, range.endDate, range.startDate]
-  )
-  const globalCash = React.useMemo(
-    () => getFinancialSummary({ movements: cashMovements || [], payments: periodPayments }),
-    [cashMovements, periodPayments]
+  const activeCashSummary = React.useMemo(
+    () => buildActiveCashSummary(activeCashSession, payments || [], cashMovements || []),
+    [activeCashSession, cashMovements, payments]
   )
   const isPaymentsFilter = searchParams?.get("filter") === "payments"
 
@@ -432,10 +428,10 @@ export default function ManagerCaissePage() {
   return (
     <main className="space-y-4 pb-20 lg:pb-6">
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard icon={Wallet} label="Total caisse actuelle" value={globalCash.balance} />
-        <KpiCard icon={ReceiptText} label="Total entrées" value={globalCash.deposits} />
-        <KpiCard icon={Banknote} label="Total dépenses" value={globalCash.expenses} danger={globalCash.expenses > 0} />
-        <KpiCard icon={Wallet} label="Solde réel" value={globalCash.balance} />
+        <KpiCard icon={Wallet} label="Total caisse actuelle" value={activeCashSummary.balance} />
+        <KpiCard icon={ReceiptText} label="Total entrées" value={activeCashSummary.entries} />
+        <KpiCard icon={Banknote} label="Total dépenses" value={activeCashSummary.expenses} danger={activeCashSummary.expenses > 0} />
+        <KpiCard icon={Wallet} label="Solde réel" value={activeCashSummary.balance} />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
@@ -1003,20 +999,49 @@ function formatSessionTime(value: any) {
 function getCashSessionAmount(session: any) {
   return (
     Number(session?.openingBalance ?? 0) +
-    Number(session?.totalCash ?? 0) +
-    Number(session?.totalMobile ?? 0)
+    getCashSessionSalesAmount(session)
   )
+}
+
+function buildActiveCashSummary(activeCashSession: any, payments: any[], cashMovements: any[]) {
+  if (!activeCashSession?.id) {
+    return { entries: 0, expenses: 0, balance: 0 }
+  }
+
+  const sessionId = String(activeCashSession.id)
+  const sessionPaymentsTotal = payments
+    .filter((payment: any) => isConfirmedFinancePayment(payment) && String(payment.sessionId || "") === sessionId)
+    .reduce((sum: number, payment: any) => sum + getPositiveAmount(payment.amount), 0)
+  const sessionAggregateTotal = getCashSessionSalesAmount(activeCashSession)
+  const entries = sessionPaymentsTotal > 0 ? sessionPaymentsTotal : sessionAggregateTotal
+  const expenses = cashMovements
+    .filter((movement: any) => String(movement.sessionId || movement.sourceSessionId || "") === sessionId)
+    .filter((movement: any) => movement.type === "expense" || movement.type === "withdrawal" || movement.direction === "out")
+    .reduce((sum: number, movement: any) => sum + getPositiveAmount(movement.amount), 0)
+  const openingBalance = getPositiveAmount(activeCashSession.openingBalance)
+
+  return {
+    entries,
+    expenses,
+    balance: openingBalance + entries - expenses,
+  }
+}
+
+function getCashSessionSalesAmount(session: any) {
+  return (
+    getPositiveAmount(session?.totalCash) +
+    getPositiveAmount(session?.totalMobileMoney ?? session?.totalMobile)
+  )
+}
+
+function getPositiveAmount(value: unknown) {
+  const amount = Number(value || 0)
+  return Number.isFinite(amount) && amount > 0 ? amount : 0
 }
 
 function getSessionOpenedAtMs(session: any) {
   const date = session?.openedAt?.toDate?.() ?? (session?.openedAt instanceof Date ? session.openedAt : null)
   return date?.getTime?.() ?? 0
-}
-
-function isValueInDateRange(value: any, startDate: Date, endDate: Date) {
-  const date = value?.toDate?.() ?? (value instanceof Date ? value : null)
-  if (!date) return false
-  return date >= startDate && date <= endDate
 }
 
 function formatSessionStatus(status: string) {

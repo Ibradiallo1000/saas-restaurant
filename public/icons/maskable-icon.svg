@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SaaS Restaurant">
-  <rect width="512" height="512" fill="#f97316"/>
-  <circle cx="256" cy="256" r="134" fill="#fff7ed"/>
-  <path d="M176 188c0-13 11-24 24-24h112c13 0 24 11 24 24v15H176v-15Z" fill="#111827"/>
-  <path d="M158 236h196c0 54-44 98-98 98s-98-44-98-98Z" fill="#111827"/>
-  <path d="M194 354h124c9 0 16 7 16 16s-7 16-16 16H194c-9 0-16-7-16-16s7-16 16-16Z" fill="#111827"/>
-  <path d="M225 160c0-20 13-33 31-33s31 13 31 33" fill="none" stroke="#111827" stroke-width="24" stroke-linecap="round"/>
-</svg>

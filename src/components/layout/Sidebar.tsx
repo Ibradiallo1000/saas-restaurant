@@ -75,7 +75,7 @@ export function Sidebar() {
         return [{
           label: "Restaurant",
           items: [
-            { name: "Analytics", href: "/owner", icon: LayoutDashboard },
+            { name: "Dashboard", href: "/owner", icon: LayoutDashboard },
             { name: "Menu", href: "/menu", icon: Store },
             { name: "Tables", href: "/tables", icon: Table2 },
             { name: "Images", href: "/images", icon: ImageIcon },
@@ -87,7 +87,7 @@ export function Sidebar() {
       return [{
         label: "Administration",
         items: [
-          { name: "Analytics", href: "/owner", icon: LayoutDashboard },
+          { name: "Dashboard", href: "/owner", icon: LayoutDashboard },
           { name: "Manager", href: "/manager", icon: Store },
           { name: "Images", href: "/dashboard/images", icon: ImageIcon },
           { name: "Caisse", href: "/pos", icon: Monitor },

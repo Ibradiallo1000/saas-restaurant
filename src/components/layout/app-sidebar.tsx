@@ -109,7 +109,7 @@ const AppSidebarComponent = () => {
     const items: NavItem[] = []
 
     if (role === ROLES.OWNER) {
-      items.push({ name: "Analytics", href: "/owner", icon: LayoutDashboard })
+      items.push({ name: "Dashboard", href: "/owner", icon: LayoutDashboard })
       items.push({ name: "Commandes", href: "/owner/commandes", icon: ListOrdered })
       items.push({ name: "Caisse", href: "/owner/caisse", icon: Wallet })
       items.push({ name: "Dépenses", href: "/owner/depenses", icon: ReceiptText })

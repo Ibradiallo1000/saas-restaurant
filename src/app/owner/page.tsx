@@ -30,7 +30,7 @@ import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { getDateRange, getPreviousDateRange, useTimeFilter, type TimeFilterType } from "@/contexts/time-filter-context"
 import { COLLECTION_NAMES } from "@/lib/constants"
-import { getFinancialSummary } from "@/lib/finance/financial-summary"
+import { isConfirmedFinancePayment } from "@/lib/finance/financial-summary"
 import { getOrderStatus } from "@/lib/order-lifecycle"
 import { cn } from "@/lib/utils"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
@@ -95,7 +95,9 @@ type BusinessStatus = {
 
 const KITCHEN_PRODUCTION_STATUSES = ["pending", "preparing", "ready", "served"] as const
 
-const sectionTitleClass = "text-base font-black tracking-tight md:text-xl"
+const sectionTitleClass = "text-sm font-black tracking-tight md:text-base"
+const panelClass = "rounded-lg border bg-background shadow-sm"
+const metricCardClass = "min-h-[116px] rounded-lg border bg-background p-3 shadow-sm transition"
 
 const sectionStyles = {
   performance: {
@@ -231,14 +233,14 @@ function OwnerPageContent() {
   }
 
   return (
-    <main className="space-y-4 pb-20 md:space-y-6">
-      <header className="flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+    <main className="space-y-3 pb-14 md:space-y-4">
+      <header className="flex flex-col gap-3 rounded-lg border bg-card p-3 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <BarChart3 className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-black tracking-tight md:text-3xl">Analytics</h1>
+            <BarChart3 className="h-5 w-5 text-primary" />
+            <h1 className="text-xl font-black tracking-tight md:text-2xl">Dashboard</h1>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-0.5 text-xs font-medium text-muted-foreground">
             Centre de pilotage business : performance, stock, trésorerie et actions.
           </p>
         </div>
@@ -255,7 +257,7 @@ function OwnerPageContent() {
       ) : null}
 
       {!business.hasPeriodData ? (
-        <div className="rounded-2xl border border-dashed bg-card p-4 text-sm font-bold text-muted-foreground">
+        <div className="rounded-lg border border-dashed bg-card p-3 text-sm font-bold text-muted-foreground">
           Aucune donnée pour cette période
         </div>
       ) : null}
@@ -266,7 +268,7 @@ function OwnerPageContent() {
         title="Performance"
         description="La santé commerciale de la période sélectionnée."
       >
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard
             href="/owner"
             title="Total commandes"
@@ -304,7 +306,7 @@ function OwnerPageContent() {
         title="Évolution"
         description="Tendance rapide du chiffre d’affaires et des commandes."
       >
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-2 xl:grid-cols-2">
           <TrendChart title={periodMode === "month" || periodMode === "custom" ? "CA sur la période" : "CA sur 7 jours"} points={business.trend} valueKey="revenue" />
           <TrendChart title={periodMode === "month" || periodMode === "custom" ? "Commandes sur la période" : "Commandes sur 7 jours"} points={business.trend} valueKey="orders" />
         </div>
@@ -313,7 +315,7 @@ function OwnerPageContent() {
       <DashboardSection
         tone="alerts"
         icon={AlertTriangle}
-        title="⚠ Attention requise"
+        title="Attention requise"
         description="Ce qui mérite une décision immédiate."
       >
         <AlertActionList alerts={business.alerts} />
@@ -326,7 +328,7 @@ function OwnerPageContent() {
         description="Impact financier du stock sur la période."
         action={<Button asChild variant="outline" size="sm"><Link href={inventoryHref}>Voir détails inventaire</Link></Button>}
       >
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <SimpleMetricCard title="Coût consommé" value={`${formatMoney(business.inventory.consumedCost)} FCFA`} description="Coût estimé des ingrédients utilisés." />
           <SimpleMetricCard title="Pertes estimées" value={`${formatMoney(business.inventory.estimatedLosses)} FCFA`} description="Écart inventaire valorisé." danger={business.inventory.estimatedLosses > 0} />
           <SimpleMetricCard title="Valeur totale du stock" value={`${formatMoney(business.inventory.stockValue)} FCFA`} description="Capital immobilisé en stock." />
@@ -340,11 +342,11 @@ function OwnerPageContent() {
         title="Trésorerie"
         description="Argent disponible, sorties et mouvements."
       >
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SimpleMetricCard href="/manager/caisse" title="Solde réel" value={`${formatMoney(business.treasury.balance)} FCFA`} description="Encaissements moins sorties." />
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <SimpleMetricCard href="/owner/tresorerie" title="Solde trésorerie validé" value={`${formatMoney(business.treasury.balance)} FCFA`} description="Dépôts clôturés moins sorties." />
           <SimpleMetricCard href="/manager/depenses" title="Dépenses" value={`${formatMoney(business.treasury.expenses)} FCFA`} description="Sorties sur la période." danger={business.treasury.expenses > 0} />
           <SimpleMetricCard href="/manager/caisse" title="Transferts" value={`${formatMoney(business.treasury.transfers)} FCFA`} description="Mouvements hors dépenses." />
-          <SimpleMetricCard title="Sessions ouvertes" value={String(business.treasury.openSessions)} description="Caisses actuellement actives." />
+          <SimpleMetricCard title="Sessions ouvertes" value={String(business.treasury.openSessions)} description={`Caisse en cours : ${formatMoney(business.treasury.openSessionSales)} FCFA non clôturés.`} />
         </div>
       </DashboardSection>
 
@@ -354,7 +356,7 @@ function OwnerPageContent() {
         title="Analyse business"
         description="Produits et jours qui tirent la performance."
       >
-        <div className="grid gap-4 xl:grid-cols-3">
+        <div className="grid gap-2 xl:grid-cols-3">
           <RankedList title="Top produits vendus" empty="Aucun produit vendu sur cette période." items={business.analysis.topProducts.map((item) => ({
             key: item.name,
             label: item.name,
@@ -374,9 +376,9 @@ function OwnerPageContent() {
         icon={Eye}
         title="Temps réel"
         description="Ce qui se passe maintenant dans le restaurant."
-        action={<span className="rounded-full border bg-background px-3 py-1 text-xs font-bold text-muted-foreground">{isLiveLoading ? "Synchronisation..." : "Live"}</span>}
+        action={<span className="rounded-full border bg-background px-2.5 py-1 text-[11px] font-bold text-muted-foreground">{isLiveLoading ? "Synchronisation..." : "Live"}</span>}
       >
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <SimpleMetricCard href="/manager/commandes" title="Commandes en cours" value={String(business.live.activeOrders)} description={getLiveActivityMessage(business.live.activeOrders)} danger={business.live.activeOrders === 0} />
           <SimpleMetricCard href="/kitchen" title="Cuisine active" value={String(business.live.kitchenActive)} description="Commandes à préparer ou servir." />
           <SimpleMetricCard href="/manager/commandes?status=late" title="Anomalies" value={String(business.live.anomalies.length)} description="Commandes en retard." danger={business.live.anomalies.length > 0} />
@@ -397,7 +399,7 @@ function BusinessStatusBadge({ status }: { status: BusinessStatus }) {
         : "border-orange-300 bg-orange-50 text-orange-700"
 
   return (
-    <div className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-black", tone)}>
+    <div className={cn("inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-black", tone)}>
       <span className={cn(
         "h-2 w-2 rounded-full",
         status.tone === "good" && "bg-emerald-500",
@@ -413,15 +415,15 @@ function DecisionSummary({ periodLabel, lines }: { periodLabel: string; lines: s
   if (lines.length === 0) return null
 
   return (
-    <section className="rounded-2xl border border-blue-200 bg-blue-50/80 p-4 shadow-sm dark:border-blue-400/30 dark:bg-blue-500/10">
-      <div className="flex items-start gap-3">
-        <div className="rounded-xl bg-background/80 p-2 shadow-sm">
-          <Info className="h-5 w-5 text-blue-700 dark:text-blue-200" />
+    <section className="rounded-lg border border-blue-200 bg-blue-50/80 p-3 shadow-sm dark:border-blue-400/30 dark:bg-blue-500/10">
+      <div className="flex items-start gap-2.5">
+        <div className="rounded-lg bg-background/80 p-1.5 shadow-sm">
+          <Info className="h-4 w-4 text-blue-700 dark:text-blue-200" />
         </div>
-        <div>
-          <h2 className="text-base font-black">Résumé {periodLabel}</h2>
-          <div className="mt-2 grid gap-1 text-sm font-semibold text-foreground">
-            {lines.slice(0, 4).map((line) => (
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-black">Résumé {periodLabel}</h2>
+          <div className="mt-2 grid gap-1 text-sm font-semibold text-foreground sm:grid-cols-2 xl:grid-cols-4">
+            {lines.slice(0, 5).map((line) => (
               <p key={line}>{line}</p>
             ))}
           </div>
@@ -448,15 +450,15 @@ function DashboardSection({
 }) {
   const style = sectionStyles[tone]
   return (
-    <section className={cn("space-y-4 rounded-2xl border p-4 shadow-sm", style.wrapper)}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <div className="rounded-xl bg-background/80 p-2 shadow-sm">
-            <Icon className={cn("h-5 w-5", style.icon)} />
+    <section className={cn("space-y-3 rounded-lg border p-3 shadow-sm", style.wrapper)}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex items-start gap-2.5">
+          <div className="rounded-lg bg-background/80 p-1.5 shadow-sm">
+            <Icon className={cn("h-4 w-4", style.icon)} />
           </div>
           <div>
             <h2 className={sectionTitleClass}>{title}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            <p className="mt-0.5 text-xs font-medium text-muted-foreground">{description}</p>
           </div>
         </div>
         {action}
@@ -478,9 +480,9 @@ function MetricTooltip({ text }: { text: string }) {
           setOpen((value) => !value)
         }}
         onBlur={() => setOpen(false)}
-        className="group inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+        className="group inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
       >
-        <Info className="h-3.5 w-3.5" />
+        <Info className="h-3 w-3" />
         <span className={cn(
           "pointer-events-none absolute right-0 top-6 z-50 w-60 rounded-lg bg-gray-950 p-3 text-left text-xs font-semibold leading-relaxed text-white opacity-0 shadow-xl transition group-hover:opacity-100",
           open && "opacity-100"
@@ -509,14 +511,14 @@ function KpiCard({
   const targetHref = getHrefWithCurrentQuery(href, searchParams)
 
   return (
-    <Link href={targetHref} className="rounded-xl border bg-background p-4 shadow-sm transition hover:border-primary/40 hover:shadow-md">
+    <Link href={targetHref} className={cn(metricCardClass, "block hover:border-primary/40 hover:shadow-md")}>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-black uppercase text-muted-foreground">{title}</p>
+        <p className="text-[11px] font-black uppercase text-muted-foreground">{title}</p>
         <MetricTooltip text={description} />
       </div>
-      <p className="mt-2 text-2xl font-black">{value}</p>
+      <p className="mt-1.5 text-xl font-black leading-tight md:text-2xl">{value}</p>
       <VariationBadge variation={variation} />
-      <p className={cn("mt-2 text-xs font-black", getVariationInterpretation(variation).className)}>
+      <p className={cn("mt-1.5 text-xs font-black", getVariationInterpretation(variation).className)}>
         {getVariationInterpretation(variation).label}
       </p>
     </Link>
@@ -540,24 +542,24 @@ function SimpleMetricCard({
   const targetHref = href ? getHrefWithCurrentQuery(href, searchParams) : null
   const content = (
     <div className={cn(
-      "h-full rounded-xl border bg-background p-4 shadow-sm transition",
+      metricCardClass,
       href && "hover:border-primary/40 hover:shadow-md",
       danger && "border-red-200 bg-red-50/80 text-red-700 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-200"
     )}>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-black uppercase text-muted-foreground">{title}</p>
+        <p className="text-[11px] font-black uppercase text-muted-foreground">{title}</p>
         <MetricTooltip text={description} />
       </div>
-      <p className="mt-2 text-2xl font-black">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+      <p className="mt-1.5 text-xl font-black leading-tight md:text-2xl">{value}</p>
+      <p className="mt-1 text-xs font-medium leading-snug text-muted-foreground">{description}</p>
     </div>
   )
-  return targetHref ? <Link href={targetHref}>{content}</Link> : content
+  return targetHref ? <Link href={targetHref} className="block h-full">{content}</Link> : content
 }
 
 function VariationBadge({ variation }: { variation: Variation }) {
   if (variation.trend === "none" || variation.percent === null) {
-    return <p className="mt-2 text-xs font-bold text-muted-foreground">Comparaison indisponible</p>
+    return <p className="mt-1.5 text-xs font-bold text-muted-foreground">Comparaison indisponible</p>
   }
 
   const tone =
@@ -575,7 +577,7 @@ function VariationBadge({ variation }: { variation: Variation }) {
         : "bg-orange-500"
 
   return (
-    <div className={cn("mt-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-black", tone)}>
+    <div className={cn("mt-2 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-black", tone)}>
       <span className={cn("h-2 w-2 rounded-full", dot)} />
       <span>{sign}{formatMoney(variation.absolute)} ({variation.percent.toFixed(1)}%)</span>
     </div>
@@ -595,21 +597,21 @@ function TrendChart({
   const maxValue = Math.max(1, ...points.map((point) => point[valueKey]))
 
   return (
-    <Card className="border bg-background">
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
+    <Card className={cn(panelClass, "h-full")}>
+      <CardHeader className="p-3 pb-2">
+        <CardTitle className="text-sm font-black">{title}</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-3 pt-0">
         {validPoints.length < 2 ? (
-          <div className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-            Graphique disponible après au moins 2 points de données.
+          <div className="rounded-lg border border-dashed p-3 text-sm font-medium text-muted-foreground">
+            Le graphique apparaîtra automatiquement après plusieurs jours d'activité.
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {points.map((point) => (
-              <div key={point.date} className="grid grid-cols-[88px_1fr_90px] items-center gap-3">
+              <div key={point.date} className="grid grid-cols-[72px_1fr_78px] items-center gap-2">
                 <span className="truncate text-xs font-bold text-muted-foreground">{point.label}</span>
-                <div className="h-3 overflow-hidden rounded-full bg-muted">
+                <div className="h-2.5 overflow-hidden rounded-full bg-muted">
                   <div
                     className="h-full rounded-full bg-primary"
                     style={{ width: `${Math.max(4, (point[valueKey] / maxValue) * 100)}%` }}
@@ -629,30 +631,31 @@ function TrendChart({
 
 function AlertActionList({ alerts }: { alerts: Array<{ title: string; description: string; href: string; severity: "high" | "medium" }> }) {
   const searchParams = useSearchParams()
+  const prioritizedAlerts = alerts.slice(0, 3)
 
   if (alerts.length === 0) {
     return (
-      <div className="rounded-xl border border-orange-200 bg-orange-50/80 p-4 text-sm font-semibold text-orange-800 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-200">
-        Aucune action prioritaire détectée avec les données actuelles.
+      <div className="rounded-lg border border-orange-200 bg-background p-3 text-sm font-semibold text-muted-foreground dark:border-orange-400/30 dark:bg-background">
+        Aucune intervention immédiate nécessaire.
       </div>
     )
   }
 
   return (
-    <div className="grid gap-3 md:grid-cols-2">
-      {alerts.map((alert) => (
+    <div className="grid gap-2">
+      {prioritizedAlerts.map((alert) => (
         <Link
           key={`${alert.title}-${alert.href}`}
           href={getHrefWithCurrentQuery(alert.href, searchParams)}
           className={cn(
-            "flex items-start gap-3 rounded-xl border bg-orange-50 p-4 text-orange-800 transition hover:border-primary/40 hover:shadow-md dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-200",
+            "flex items-start gap-2.5 rounded-lg border bg-background p-3 text-orange-800 shadow-sm transition hover:border-primary/40 hover:shadow-md dark:border-orange-400/30 dark:bg-background dark:text-orange-200",
             alert.severity === "high" && "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-500/15 dark:text-red-200"
           )}
         >
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            <span className="block font-black">⚠ {alert.title}</span>
-            <span className="mt-1 block text-sm text-muted-foreground">{alert.description}</span>
+            <span className="block text-sm font-black">{alert.title}</span>
+            <span className="mt-0.5 block text-xs font-medium text-muted-foreground">{alert.description}</span>
           </span>
         </Link>
       ))}
@@ -676,16 +679,16 @@ function RankedList({
   empty: string
 }) {
   return (
-    <Card className="border bg-background">
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
+    <Card className={cn(panelClass, "h-full")}>
+      <CardHeader className="p-3 pb-2">
+        <CardTitle className="text-sm font-black">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-2 p-3 pt-0">
         {items.length === 0 ? (
-          <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">{empty}</p>
+          <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">{empty}</p>
         ) : (
           items.map((item, index) => (
-            <div key={item.key} className="flex items-center justify-between gap-3 rounded-xl border p-3">
+            <div key={item.key} className="flex items-center justify-between gap-3 rounded-lg border p-2.5">
               <span className="min-w-0 truncate text-sm font-black">{index + 1}. {item.label}</span>
               <span className="shrink-0 text-xs font-bold text-muted-foreground">{item.value}</span>
             </div>
@@ -698,18 +701,18 @@ function RankedList({
 
 function InsightsPanel({ insights }: { insights: string[] }) {
   return (
-    <Card className="border bg-background">
-      <CardHeader>
-        <CardTitle className="text-base">Insights automatiques</CardTitle>
+    <Card className={cn(panelClass, "h-full")}>
+      <CardHeader className="p-3 pb-2">
+        <CardTitle className="text-sm font-black">Insights automatiques</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-2 p-3 pt-0">
         {insights.length === 0 ? (
-          <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+          <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
             Insights disponibles dès que la période contient assez de données.
           </p>
         ) : (
           insights.map((insight) => (
-            <p key={insight} className="rounded-xl border bg-muted/30 p-3 text-sm font-semibold">
+            <p key={insight} className="rounded-lg border bg-muted/30 p-2.5 text-sm font-semibold">
               {insight}
             </p>
           ))
@@ -785,15 +788,15 @@ function OwnerCashSessionRequests({
   if (pendingRequests.length === 0) return null
 
   return (
-    <Card className="border bg-background">
-      <CardHeader>
-        <CardTitle className="text-base">Demandes caisse</CardTitle>
+    <Card className={cn(panelClass, "mt-2")}>
+      <CardHeader className="p-3 pb-2">
+        <CardTitle className="text-sm font-black">Demandes caisse</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-2 p-3 pt-0">
         {pendingRequests.map((request: any) => (
-          <div key={request.id} className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div key={request.id} className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-black">{request.cashierName || request.cashierId}</p>
+              <p className="text-sm font-black">{request.cashierName || request.cashierId}</p>
               <p className="text-xs text-muted-foreground">Ouverture de caisse</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -826,10 +829,12 @@ function buildBusinessDashboardData({
   inventoryLogs: OwnerInventoryLog[]
   period: ReturnType<typeof buildPeriodContext>
 }) {
-  const currentOrders = orders.filter((order) => isDateInRange(toDate(order.createdAt), period.current))
-  const previousOrders = orders.filter((order) => isDateInRange(toDate(order.createdAt), period.previous))
-  const currentPayments = payments.filter((payment) => isConfirmedPayment(payment) && isDateInRange(toDate(payment.createdAt), period.current))
-  const previousPayments = payments.filter((payment) => isConfirmedPayment(payment) && isDateInRange(toDate(payment.createdAt), period.previous))
+  const currentPayments = payments.filter((payment) => isConfirmedPaymentInRange(payment, period.current))
+  const previousPayments = payments.filter((payment) => isConfirmedPaymentInRange(payment, period.previous))
+  const confirmedPaymentOrderIds = getConfirmedPaymentOrderIds(payments)
+  const acquiredOrders = orders.filter((order) => isOwnerAcquiredOrder(order, confirmedPaymentOrderIds))
+  const currentOrders = acquiredOrders.filter((order) => isDateInRange(toDate(order.createdAt), period.current))
+  const previousOrders = acquiredOrders.filter((order) => isDateInRange(toDate(order.createdAt), period.previous))
   const currentMovements = cashMovements.filter((movement) => isDateInRange(toDate(movement.createdAt), period.current))
 
   const currentRevenue = sumBy(currentPayments, (payment) => getAmount(payment.amount))
@@ -842,9 +847,9 @@ function buildBusinessDashboardData({
   const previousAverageOrder = previousOrders.length > 0 ? Math.round(previousRevenueValue / previousOrders.length) : 0
 
   const inventory = buildOwnerInventoryOverview(inventoryAlerts, inventoryItems, inventoryLogs, period.current)
-  const live = computeLiveOverview(orders)
+  const live = computeLiveOverview(acquiredOrders)
   const treasury = buildTreasuryOverview(payments, cashMovements, cashSessions, currentMovements)
-  const trend = buildTrendPoints(orders, payments, period.current)
+  const trend = buildTrendPoints(acquiredOrders, payments, period.current)
   const analysis = buildAnalysisOverview(currentOrders)
   const variation = {
     orders: buildVariation(currentOrders.length, previousOrders.length),
@@ -878,21 +883,27 @@ function buildBusinessDashboardData({
 }
 
 function buildTreasuryOverview(payments: any[], cashMovements: any[], cashSessions: any[], currentMovements: any[]) {
-  const summary = getFinancialSummary({
-    movements: cashMovements,
-    payments,
-    scope: { mode: "global", sessionId: null },
-  })
+  const balance = buildValidatedTreasuryBalance(cashMovements)
   const expenses = sumBy(currentMovements.filter((movement) => movement.type === "expense"), (movement) => getAmount(movement.amount))
   const transfers = sumBy(currentMovements.filter((movement) => movement.type === "transfer"), (movement) => getAmount(movement.amount))
-  const openSessions = (cashSessions || []).filter((session) => isOpenCashSession(session.status)).length
+  const openSessionIds = new Set(
+    (cashSessions || [])
+      .filter((session) => isOpenCashSession(session.status))
+      .map((session) => String(session.id || "").trim())
+      .filter(Boolean)
+  )
+  const openSessionSales = sumBy(
+    payments.filter((payment) => isConfirmedPayment(payment) && openSessionIds.has(String(payment.sessionId || "").trim())),
+    (payment) => getAmount(payment.amount)
+  )
 
   return {
-    balance: summary.balance,
+    balance,
     expenses,
     transfers,
-    openSessions,
-    anomalies: summary.anomalies,
+    openSessions: openSessionIds.size,
+    openSessionSales,
+    anomalies: buildTreasuryAnomalies(balance),
   }
 }
 
@@ -987,7 +998,7 @@ function buildTrendPoints(orders: Order[], payments: any[], range: DateRange) {
   const points = days.map((day) => {
     const dayRange = { start: startOfDay(day), end: endOfDay(day) }
     const dayOrders = orders.filter((order) => isDateInRange(toDate(order.createdAt), dayRange))
-    const dayPayments = payments.filter((payment) => isConfirmedPayment(payment) && isDateInRange(toDate(payment.createdAt), dayRange))
+    const dayPayments = payments.filter((payment) => isConfirmedPaymentInRange(payment, dayRange))
     const revenue = sumBy(dayPayments, (payment) => getAmount(payment.amount)) ||
       sumBy(dayOrders, (order) => getAmount((order as any).total ?? (order as any).totalAmount))
     return {
@@ -1322,13 +1333,100 @@ function sumBy<T>(items: T[], selector: (item: T) => number) {
   return items.reduce((total, item) => total + selector(item), 0)
 }
 
-function isConfirmedPayment(payment: any) {
-  if (payment.status && payment.status !== "confirmed") return false
-  const invalidStatus = payment.refundStatus || payment.voidStatus || payment.cancellationStatus
-  if (["refunded", "voided", "cancelled", "canceled"].includes(String(invalidStatus || "").toLowerCase())) {
+function buildValidatedTreasuryBalance(movements: any[]) {
+  return movements.reduce((balance, movement) => {
+    const amount = getAmount(movement.amount)
+    if (!amount) return balance
+
+    const direction = getTreasuryMovementDirection(movement)
+    if (direction === "in") return balance + amount
+    if (direction === "out") return balance - amount
+    return balance
+  }, 0)
+}
+
+function getTreasuryMovementDirection(movement: any): "in" | "out" | "transfer" {
+  if (movement.direction === "in" || movement.direction === "out" || movement.direction === "transfer") {
+    return movement.direction
+  }
+  if (movement.type === "deposit") return "in"
+  if (movement.type === "expense" || movement.type === "withdrawal") return "out"
+  if (movement.type === "transfer") return "transfer"
+  return "out"
+}
+
+function buildTreasuryAnomalies(balance: number) {
+  if (balance >= 0) return []
+  return [{
+    type: "negative_validated_treasury",
+    amount: Math.abs(balance),
+    label: `Solde trésorerie négatif: ${formatMoney(Math.abs(balance))} FCFA à vérifier`,
+  }]
+}
+
+function getConfirmedPaymentOrderIds(payments: any[]) {
+  const orderIds = new Set<string>()
+  for (const payment of payments) {
+    if (!isConfirmedPayment(payment)) continue
+    for (const orderId of getPaymentOrderIds(payment)) {
+      orderIds.add(orderId)
+    }
+  }
+  return orderIds
+}
+
+function getPaymentOrderIds(payment: any) {
+  const candidates = [
+    payment.orderId,
+    payment.order?.id,
+    payment.orderRef,
+    payment.orderReference,
+  ]
+  if (Array.isArray(payment.orderIds)) candidates.push(...payment.orderIds)
+  if (Array.isArray(payment.orders)) {
+    candidates.push(...payment.orders.map((order: any) => typeof order === "string" ? order : order?.id))
+  }
+  return candidates.map((value) => String(value || "").trim()).filter(Boolean)
+}
+
+function isOwnerAcquiredOrder(order: Order, confirmedPaymentOrderIds: Set<string>) {
+  const orderId = String((order as any).id || "").trim()
+  if (orderId && confirmedPaymentOrderIds.has(orderId)) return true
+
+  const paymentStatus = String((order as any).paymentStatus || "").toLowerCase()
+  if (["paid", "validated", "verified", "paye"].includes(paymentStatus)) return true
+  if (["pending", "pending_mobile", "pending_cash", "unpaid", "failed", "non_paye", "pending_verification", "partial"].includes(paymentStatus)) {
     return false
   }
-  return !(payment.refunded === true || payment.voided === true || payment.cancelled === true || payment.canceled === true)
+
+  return Boolean(
+    toDate((order as any).paymentValidatedAt) ||
+    toDate((order as any).paidAt) ||
+    toDate((order as any).paymentPaidAt) ||
+    toDate((order as any).payment?.validatedAt) ||
+    toDate((order as any).payment?.paidAt) ||
+    toDate((order as any).timestamps?.paidAt)
+  )
+}
+
+function isConfirmedPaymentInRange(payment: any, range: DateRange) {
+  if (!isConfirmedPayment(payment)) return false
+  return isDateInRange(getConfirmedPaymentDate(payment), range)
+}
+
+function getConfirmedPaymentDate(payment: any) {
+  const businessDate = typeof payment.businessDate === "string" ? parseInputDate(payment.businessDate.slice(0, 10)) : null
+  return (
+    businessDate ||
+    toDate(payment.confirmedAt) ||
+    toDate(payment.paymentValidatedAt) ||
+    toDate(payment.paidAt) ||
+    toDate(payment.createdAt)
+  )
+}
+
+function isConfirmedPayment(payment: any) {
+  return isConfirmedFinancePayment(payment)
 }
 
 function getOwnerAlertRank(severity: OwnerInventoryAlert["severity"]) {
