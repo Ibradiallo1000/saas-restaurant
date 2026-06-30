@@ -57,6 +57,7 @@ function ClientOrderTrackingContent() {
   const [isMobilePaying, setIsMobilePaying] = React.useState(false)
   const [isConfirming, setIsConfirming] = React.useState(false)
   const [mobilePaymentOpen, setMobilePaymentOpen] = React.useState(false)
+  const [paymentProofSms, setPaymentProofSms] = React.useState("")
   const [paymentMethods, setPaymentMethods] = React.useState<AvailablePaymentMethod[]>([])
   const [paymentMethodsLoading, setPaymentMethodsLoading] = React.useState(false)
   const [highlightedOrderIds, setHighlightedOrderIds] = React.useState<Set<string>>(new Set())
@@ -296,6 +297,7 @@ function ClientOrderTrackingContent() {
   }
 
   const safeOrder = order || mainOrder
+  const paymentProofSmsPlaceholder = buildPaymentProofSmsPlaceholder(restaurant)
   const rawOrderType = (safeOrder as any).type || safeOrder.orderType
   const orderType = normalizeOrderType(safeOrder.orderType) as ClientOrderType
   const isDeliveryOrder = orderType === "delivery"
@@ -389,6 +391,7 @@ function ClientOrderTrackingContent() {
       .catch(console.error)
       .finally(() => {
         setIsMobilePaying(false)
+        setPaymentProofSms("")
         setMobilePaymentOpen(false)
       })
   }
@@ -399,12 +402,20 @@ function ClientOrderTrackingContent() {
       return
     }
     if (!db || !restaurantId || isConfirming) return
+    const proofSms = paymentProofSms.trim()
+    if (!proofSms) {
+      setError("Collez le SMS de confirmation reçu après votre paiement.")
+      return
+    }
     setIsConfirming(true)
     try {
       const paymentRequest = {
         status: "pending_confirmation",
         method: "mobile",
         provider: tableSession?.paymentRequest?.provider || "Mobile Money",
+        paymentProofSms: proofSms,
+        paymentProofSubmittedAt: serverTimestamp(),
+        paymentProofStatus: "submitted",
         confirmedByClientAt: serverTimestamp(),
       }
       await updateDoc(doc(db, "restaurants", restaurantId, "tableSessions", safeOrder.tableSessionId), {
@@ -469,13 +480,22 @@ function ClientOrderTrackingContent() {
                  <p className="font-black text-lg animate-pulse">Un serveur arrive pour encaisser</p>
                </div>
             ) : tableSession?.paymentRequest?.status === "requested" && tableSession?.paymentRequest?.method === "mobile" ? (
-               <div className="mt-5">
+               <div className="mt-5 space-y-3">
+                 <label className="block text-sm font-black text-orange-900 dark:text-orange-100">
+                   Collez le SMS de confirmation reçu après votre paiement.
+                 </label>
+                 <textarea
+                   value={paymentProofSms}
+                   onChange={(event) => setPaymentProofSms(event.target.value)}
+                   placeholder={paymentProofSmsPlaceholder}
+                   className="min-h-28 w-full resize-none rounded-xl border border-orange-300 bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-orange-400/40"
+                 />
                  <button
                    onClick={handleConfirmMobilePayment}
-                   disabled={isConfirming}
+                   disabled={isConfirming || !paymentProofSms.trim()}
                    className="w-full flex items-center justify-center h-14 rounded-xl bg-[var(--color-primary)] text-white text-sm font-black shadow-sm transition active:scale-[0.98] disabled:opacity-60 uppercase"
                  >
-                   {isConfirming ? "..." : "J’ai payé"}
+                   {isConfirming ? "..." : "Envoyer la preuve SMS"}
                  </button>
                </div>
             ) : tableSession?.paymentRequest?.status === "pending_confirmation" ? (
@@ -491,12 +511,12 @@ function ClientOrderTrackingContent() {
                  ) : null}
                  <p className="text-sm font-semibold text-orange-900 dark:text-orange-100">Comment souhaitez-vous payer ?</p>
                  
-                 <div className="flex gap-3 overflow-x-auto pb-2">
+                 <div className="grid grid-cols-3 justify-items-start gap-2 sm:gap-3">
                    <button
                      type="button"
                      onClick={handleCashPaymentSession}
                      disabled={isCashPaying}
-                     className="flex h-14 min-w-[120px] flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-black text-white shadow-sm transition active:scale-[0.98] disabled:opacity-60 whitespace-nowrap"
+                     className="inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-3 text-sm font-black text-white shadow-sm transition active:scale-[0.98] disabled:opacity-60 sm:px-4"
                    >
                      <Banknote className="h-5 w-5" />
                      {isCashPaying ? "..." : "Espèces"}
@@ -508,7 +528,7 @@ function ClientOrderTrackingContent() {
                        type="button"
                        onClick={() => handleMobilePaymentSession(method)}
                        disabled={isMobilePaying || paymentMethodsLoading}
-                       className="flex h-14 min-w-[120px] flex-1 items-center justify-center gap-2 rounded-xl border border-orange-300 bg-background px-4 text-sm font-black text-foreground transition hover:bg-muted active:scale-[0.98] disabled:opacity-60 whitespace-nowrap"
+                       className="inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl border border-orange-300 bg-background px-3 text-sm font-black text-foreground transition hover:bg-muted active:scale-[0.98] disabled:opacity-60 sm:px-4"
                      >
                        {method.logoUrl ? (
                          <img src={method.logoUrl} alt={method.name} className="h-6 object-contain" />
@@ -537,14 +557,14 @@ function ClientOrderTrackingContent() {
             <p className="text-xs font-black uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
               Commande servie
             </p>
-            <p className="mt-2 text-2xl font-black text-emerald-900 dark:text-emerald-100">
-              Merci, votre commande est prête.
+            <p className="mt-2 whitespace-nowrap text-xl font-black text-emerald-900 dark:text-emerald-100">
+              Merci pour votre commande.
             </p>
-            <p className="mt-3 text-sm font-semibold text-emerald-900/80 dark:text-emerald-100/80">
+            <p className="mt-3 text-sm font-semibold text-muted-foreground">
               {prepaidPaymentConfirmed
                 ? isDeliveryOrder
-                  ? "Votre commande est prête. Le livreur vous contactera très prochainement."
-                  : "Paiement confirmé. Votre commande est terminée."
+                  ? "Un livreur vous contactera très bientôt pour effectuer la livraison."
+                  : "Votre commande est prête à être récupérée."
                 : "Paiement déjà initié. La caisse finalise la validation si besoin."}
             </p>
           </section>
@@ -671,6 +691,17 @@ function OrderItemImage({ item }: { item: any }) {
 
 function isDeliveryOrderType(type: string | null | undefined) {
   return type === "delivery" || type === "livraison"
+}
+
+function buildPaymentProofSmsPlaceholder(restaurant: any) {
+  const restaurantName =
+    restaurant?.name ||
+    restaurant?.nom ||
+    restaurant?.displayName ||
+    restaurant?.restaurantName ||
+    "votre restaurant"
+
+  return `Ex: Paiement de 5000 FCFA chez ${restaurantName} effectué avec succès. ID : MPXXXXXX.XXXX.XXXXXX.`
 }
 
 function isPaidPaymentStatus(status: string | null | undefined) {

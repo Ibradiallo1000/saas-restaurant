@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 
 const MOBILE_MANAGER_NAV = [
-  { label: "Analytics", href: "/manager/dashboard", icon: LayoutDashboard },
+  { label: "Dashboard", href: "/manager/dashboard", icon: LayoutDashboard },
   { label: "Commandes", href: "/manager/commandes", icon: ClipboardList, withBadge: true },
   { label: "Caisse", href: "/manager/caisse", icon: Wallet },
 ]

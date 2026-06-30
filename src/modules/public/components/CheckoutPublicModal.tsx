@@ -35,6 +35,7 @@ type OrderFlowState = {
   paymentCode: string
   paymentInstruction: string
   paymentReference: string
+  paymentProofSms: string
 }
 
 interface RestaurantFeatures {
@@ -54,6 +55,7 @@ const DEFAULT_FLOW_STATE: OrderFlowState = {
   paymentCode: "",
   paymentInstruction: "",
   paymentReference: "",
+  paymentProofSms: "",
 }
 
 export default function CheckoutPublicModal({
@@ -83,6 +85,7 @@ export default function CheckoutPublicModal({
     return doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId)
   }, [db, restaurantId])
   const { data: restaurant } = useDocOnce<any>(restaurantRef)
+  const paymentProofSmsPlaceholder = buildPaymentProofSmsPlaceholder(restaurant)
 
   const countryCode = React.useMemo(() => {
     const value = restaurant?.countryCode || restaurant?.country || restaurant?.countryIso
@@ -137,6 +140,7 @@ export default function CheckoutPublicModal({
 
   if (!open) return null
 
+  const currentStepBlocked = isCurrentStepBlocked(flow, items.length)
   const updateFlow = (patch: Partial<OrderFlowState>) => {
     setFlow((current) => ({ ...current, ...patch }))
     setError("")
@@ -255,6 +259,9 @@ export default function CheckoutPublicModal({
         })
       }
 
+      const primaryPhone = cleanPhone(flow.phone)
+      const secondaryPhone = cleanPhone(flow.secondaryPhone)
+
       const order = {
         restaurantId,
         orderType: normalizedOrderType,
@@ -266,10 +273,11 @@ export default function CheckoutPublicModal({
         tableId: null,
         zoneId: null,
         customer: {
-          phone: flow.phone.trim() || null,
+          phone: primaryPhone || null,
           name: null,
         },
-        phoneNumber: flow.phone.trim() || null,
+        phoneNumber: primaryPhone || null,
+        secondaryPhoneNumber: secondaryPhone || null,
         table: null,
         ...(flow.orderType === "delivery" && {
           deliveryAddress: flow.address.trim(),
@@ -287,6 +295,11 @@ export default function CheckoutPublicModal({
         paymentCode: flow.paymentCode || null,
         paymentInstruction: flow.paymentInstruction || null,
         paymentReference: null,
+        ...(flow.paymentMethodCode !== "cash" && {
+          paymentProofSms: flow.paymentProofSms.trim(),
+          paymentProofSubmittedAt: serverTimestamp(),
+          paymentProofStatus: "submitted",
+        }),
         paymentStatus: flow.paymentMethodCode === "cash" ? "pending_cash" : "pending_mobile",
         paidAt: null,
         createdAt: serverTimestamp(),
@@ -339,7 +352,7 @@ export default function CheckoutPublicModal({
             <CartStep
               orderType={flow.orderType}
               restaurantFeatures={restaurantFeatures}
-              onSelect={(orderType) => updateFlow({ orderType, paymentMethodCode: "", paymentCode: "", paymentInstruction: "" })}
+              onSelect={(orderType) => updateFlow({ orderType, paymentMethodCode: "", paymentCode: "", paymentInstruction: "", paymentProofSms: "" })}
             />
           ) : null}
 
@@ -375,6 +388,8 @@ export default function CheckoutPublicModal({
               paymentCode={flow.paymentCode}
               paymentInstruction={flow.paymentInstruction}
               paymentReference={flow.paymentReference}
+              paymentProofSms={flow.paymentProofSms}
+              paymentProofSmsPlaceholder={paymentProofSmsPlaceholder}
               onChange={updateFlow}
             />
           ) : null}
@@ -401,7 +416,7 @@ export default function CheckoutPublicModal({
             <button
               type="button"
               onClick={isPaymentStep ? submitOrder : goNext}
-              disabled={loading || (isPaymentStep && !flow.paymentMethodCode)}
+              disabled={loading || currentStepBlocked}
               className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-black uppercase tracking-wide text-white shadow-[0_8px_24px_var(--color-primary)]/30 transition hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
             >
               {loading ? (
@@ -526,8 +541,10 @@ function DeliveryStep({
         <Phone className="h-5 w-5 shrink-0 text-muted-foreground" />
         <input
           type="tel"
-          value={phone}
-          onChange={(event) => onChange({ phone: event.target.value })}
+          inputMode="numeric"
+          maxLength={11}
+          value={formatPhone(phone)}
+          onChange={(event) => onChange({ phone: cleanPhone(event.target.value) })}
           placeholder="Téléphone *"
           className="h-full min-w-0 flex-1 bg-transparent text-base outline-none"
         />
@@ -536,8 +553,10 @@ function DeliveryStep({
         <Phone className="h-5 w-5 shrink-0 text-muted-foreground" />
         <input
           type="tel"
-          value={secondaryPhone}
-          onChange={(event) => onChange({ secondaryPhone: event.target.value })}
+          inputMode="numeric"
+          maxLength={11}
+          value={formatPhone(secondaryPhone)}
+          onChange={(event) => onChange({ secondaryPhone: cleanPhone(event.target.value) })}
           placeholder="Deuxième numéro de téléphone (optionnel)"
           className="h-full min-w-0 flex-1 bg-transparent text-base outline-none"
         />
@@ -608,7 +627,7 @@ function RecapStep({
             </div>
             <div className="mt-2 flex justify-between">
               <span className="text-muted-foreground">Telephone</span>
-              <span className="font-bold">{phone}</span>
+              <span className="font-bold">{formatPhone(phone)}</span>
             </div>
           </>
         ) : null}
@@ -640,6 +659,8 @@ function PaymentStepCompact({
   paymentMethods,
   loadingPaymentMethods,
   paymentCode,
+  paymentProofSms,
+  paymentProofSmsPlaceholder,
   onChange,
 }: {
   orderType: PublicOrderType | null
@@ -649,17 +670,21 @@ function PaymentStepCompact({
   paymentCode: string
   paymentInstruction: string
   paymentReference: string
+  paymentProofSms: string
+  paymentProofSmsPlaceholder: string
   onChange: (patch: Partial<OrderFlowState>) => void
 }) {
   const selectedMethod = paymentMethods.find((method) => method.code === paymentMethodCode)
   const selectedPaymentCode = selectedMethod?.paymentCode || paymentCode
   const canPayCash = orderType === "pickup"
+  const shouldShowProofSms = Boolean(selectedMethod && selectedMethod.type === "mobile_money")
 
   const selectMethod = (method: ConfiguredPaymentMethod) => {
     onChange({
       paymentMethodCode: method.code,
       paymentCode: method.paymentCode,
       paymentInstruction: "",
+      paymentProofSms: "",
     })
 
     if (method.paymentCodeType === "ussd" && method.paymentCode && typeof window !== "undefined") {
@@ -671,7 +696,7 @@ function PaymentStepCompact({
     <div className="space-y-3">
       <h3 className="font-black">Choisissez un moyen de paiement</h3>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-3 justify-items-start gap-2 sm:gap-3">
         {canPayCash ? (
           <button
             type="button"
@@ -680,9 +705,10 @@ function PaymentStepCompact({
                 paymentMethodCode: "cash",
                 paymentCode: "",
                 paymentInstruction: "",
+                paymentProofSms: "",
               })
             }
-            className={`flex h-12 min-w-[120px] flex-1 items-center justify-center gap-2 rounded-xl border px-4 text-center transition hover:border-orange-500 ${
+            className={`inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl border px-3 text-center transition hover:border-orange-500 sm:px-4 ${
               paymentMethodCode === "cash"
                 ? "border-orange-500 bg-orange-50 text-slate-950"
                 : "border-border bg-card hover:bg-muted"
@@ -706,7 +732,7 @@ function PaymentStepCompact({
                 key={method.code}
                 type="button"
                 onClick={() => selectMethod(method)}
-                className={`flex h-12 min-w-[120px] flex-1 items-center justify-center gap-2 rounded-xl border px-4 text-center transition hover:border-orange-500 ${
+                className={`inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl border px-3 text-center transition hover:border-orange-500 sm:px-4 ${
                   active
                     ? "border-orange-500 bg-orange-50 text-slate-950"
                     : "border-border bg-card hover:bg-muted"
@@ -737,6 +763,20 @@ function PaymentStepCompact({
           <p className="break-all font-mono font-black text-[var(--color-primary)]">
             {selectedPaymentCode}
           </p>
+        </div>
+      ) : null}
+
+      {shouldShowProofSms ? (
+        <div className="space-y-2 rounded-xl border border-border bg-card p-3">
+          <label className="text-sm font-black">
+            Collez le SMS de confirmation reçu après votre paiement.
+          </label>
+          <textarea
+            value={paymentProofSms}
+            onChange={(event) => onChange({ paymentProofSms: event.target.value })}
+            placeholder={paymentProofSmsPlaceholder}
+            className="min-h-28 w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
+          />
         </div>
       ) : null}
     </div>
@@ -901,7 +941,8 @@ function validateCurrentStep(flow: OrderFlowState, itemCount: number) {
 
   if (flow.step === "delivery") {
     if (!flow.address.trim()) return "Adresse de livraison obligatoire."
-    if (!flow.phone.trim()) return "Telephone obligatoire."
+    if (!isPrimaryPhoneValid(flow.phone)) return "Téléphone obligatoire : 8 chiffres."
+    if (!isOptionalPhoneValid(flow.secondaryPhone)) return "Deuxième numéro invalide : 8 chiffres ou vide."
   }
 
   if (flow.step === "payment") {
@@ -909,9 +950,57 @@ function validateCurrentStep(flow: OrderFlowState, itemCount: number) {
     if (flow.paymentMethodCode !== "cash" && !flow.paymentCode) {
       return "Moyen de paiement indisponible."
     }
+    if (flow.paymentMethodCode !== "cash" && !flow.paymentProofSms.trim()) {
+      return "Collez le SMS de confirmation reçu après votre paiement."
+    }
   }
 
   return ""
+}
+
+function isCurrentStepBlocked(flow: OrderFlowState, itemCount: number) {
+  if (itemCount === 0) return true
+  if (flow.step === "cart") return !flow.orderType
+  if (flow.step === "delivery") {
+    return (
+      !flow.address.trim() ||
+      !isPrimaryPhoneValid(flow.phone) ||
+      !isOptionalPhoneValid(flow.secondaryPhone)
+    )
+  }
+  if (flow.step === "payment") {
+    return (
+      !flow.paymentMethodCode ||
+      (flow.paymentMethodCode !== "cash" && (!flow.paymentCode || !flow.paymentProofSms.trim()))
+    )
+  }
+  return false
+}
+
+const cleanPhone = (value: string) =>
+  value.replace(/\D/g, "").slice(0, 8)
+
+const formatPhone = (value: string) =>
+  cleanPhone(value).replace(/(\d{2})(?=\d)/g, "$1 ").trim()
+
+function isPrimaryPhoneValid(phone: string) {
+  return cleanPhone(phone).length === 8
+}
+
+function isOptionalPhoneValid(phone: string) {
+  const length = cleanPhone(phone).length
+  return length === 0 || length === 8
+}
+
+function buildPaymentProofSmsPlaceholder(restaurant: any) {
+  const restaurantName =
+    restaurant?.name ||
+    restaurant?.nom ||
+    restaurant?.displayName ||
+    restaurant?.restaurantName ||
+    "votre restaurant"
+
+  return `Ex: Paiement de 5000 FCFA chez ${restaurantName} effectué avec succès. ID : MPXXXXXX.XXXX.XXXXXX.`
 }
 
 function getStepTitle(step: OrderFlowStep) {

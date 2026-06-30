@@ -20,7 +20,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore"
 
-import { Store, Plus, Search, X, MoreVertical, Edit2, Trash2, Power, PowerOff, Eye, ImageIcon, ArrowLeft, AlertTriangle, Clock, ShieldCheck, Banknote, ReceiptText, Wallet, ClipboardList, BookOpen } from "lucide-react"
+import { Store, Plus, Search, X, MoreVertical, Edit2, Trash2, Power, PowerOff, Eye, ImageIcon, ArrowLeft, AlertTriangle, Clock, ShieldCheck, Banknote, ReceiptText, Wallet, ClipboardList, BookOpen, MapPin, PackageCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -33,6 +33,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { getOptimizedImage } from "@/lib/image"
+import { cn } from "@/lib/utils"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { getOrderDisplayId } from "@/lib/order-display-id"
 import { getFinancialSummary, getSupportedBusinessTimeZone } from "@/lib/finance/financial-summary"
@@ -69,7 +70,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
 import OptionEditor from "@/components/menu/OptionEditor"
 import LinkedOptionsEditor from "@/components/menu/LinkedOptionsEditor"
 import {
@@ -380,6 +381,14 @@ type ManagerMode = "dashboard" | "orders" | "menu"
 
 export default function ManagerDashboard({ mode = "dashboard" }: { mode?: ManagerMode }) {
   const { restaurantId } = useRestaurant()
+
+  if (mode === "dashboard") {
+    return <ManagerDashboardPage restaurantId={restaurantId} />
+  }
+
+  if (mode === "orders") {
+    return <ManagerOrdersPage restaurantId={restaurantId} />
+  }
 
   return (
     <CatalogProvider restaurantId={restaurantId}>
@@ -943,14 +952,6 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   const openPreviewModal = (product: any) => {
     setPreviewProduct(product)
     setIsPreviewOpen(true)
-  }
-
-  if (mode === "dashboard") {
-    return <ManagerDashboardPage restaurantId={restaurantId} />
-  }
-
-  if (mode === "orders") {
-    return <ManagerOrdersPage restaurantId={restaurantId} />
   }
 
   return (
@@ -1619,32 +1620,37 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
   const {
     cashSessionRequests,
     cashSessions,
+    pendingCashValidationCount,
     payments,
   } = useRestaurantLiveData()
-
-  const ordersQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return query(
-      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS),
-      where("createdAt", ">=", Timestamp.fromDate(orderRange.startDate)),
-      where("createdAt", "<=", Timestamp.fromDate(orderRange.endDate)),
-      orderBy("createdAt", "desc"),
-      limit(300)
-    )
-  }, [db, orderRange.endDate, orderRange.startDate, restaurantId])
-  const { data: periodOrders, error: ordersError, isLoading: isLoading } = useCollection<any>(ordersQuery)
+  const {
+    counts: orderCounts,
+    error: ordersError,
+    isLoading,
+  } = useManagerOperationalOrders(db, restaurantId, orderRange, now)
 
   const cashMovementsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
     return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_MOVEMENTS)
   }, [db, restaurantId])
   const { data: cashMovements } = useCollection<any>(cashMovementsQuery)
-
-  const orderedOrders = periodOrders || []
+  const inventoryItemsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryItems")
+  }, [db, restaurantId])
+  const { data: dashboardInventoryItems } = useCollection<any>(inventoryItemsQuery)
+  const inventoryAlertsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryAlerts"),
+      where("resolved", "==", false)
+    )
+  }, [db, restaurantId])
+  const { data: dashboardInventoryAlerts } = useCollection<any>(inventoryAlertsQuery)
 
   React.useEffect(() => {
     if (ordersError) {
-      console.error("Failed to load manager analytics orders for selected period", ordersError)
+      console.error("Failed to load manager dashboard operational orders", ordersError)
     }
   }, [ordersError])
 
@@ -1659,13 +1665,11 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
   )
   const businessTimeZone = getSupportedBusinessTimeZone(restaurant?.timezone)
   const pendingSessionRequests = cashSessionRequests
-  const lateOrders = orderedOrders.filter((order: any) => isLateOrder(order, now))
-  const kitchenProductionStats = getKitchenProductionStats(orderedOrders)
-  const activeOperationalOrders = orderedOrders.filter((order: any) => {
-    const status = getOrderStatus(order)
-    return status === ORDER_OPERATION_STATUS.PENDING || status === ORDER_OPERATION_STATUS.IN_PREPARATION || status === ORDER_OPERATION_STATUS.READY
-  })
-  const unpaidServedOrders = orderedOrders.filter((order: any) => isServedForPaymentAlert(order) && !isOrderPaid(order))
+  const activeOperationalCount = orderCounts.pending + orderCounts.preparing + orderCounts.ready
+  const inventorySummary = React.useMemo(
+    () => getDashboardInventorySummary(dashboardInventoryItems || [], dashboardInventoryAlerts || []),
+    [dashboardInventoryAlerts, dashboardInventoryItems]
+  )
   const financialSummary = React.useMemo(
     () =>
       getFinancialSummary({
@@ -1683,99 +1687,286 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
   }
 
   return (
-    <main className="space-y-3 pb-20 md:space-y-6">
-      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="flex items-center gap-2 text-xl font-black uppercase tracking-tight text-primary md:gap-3 md:text-3xl">
-            <ShieldCheck className="h-6 w-6 md:h-8 md:w-8" />
-            Analytics
-          </h1>
-          <p className="text-xs text-muted-foreground md:text-sm">Production, alertes et finance en temps reel.</p>
-        </div>
-      </div>
-
-      <section className="space-y-3">
-        <SectionTitle title="Production cuisine" />
-        {ordersError ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700 md:text-sm">
-            Impossible de charger les commandes de la periode pour les analytics. Consultez la console pour le detail Firestore.
+    <main className="space-y-4 pb-20 md:pb-6">
+      <section className="rounded-xl border bg-card p-3 shadow-sm md:p-4">
+        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-xl font-black uppercase tracking-tight text-primary md:text-2xl">Dashboard</h1>
+            <p className="text-xs font-semibold text-muted-foreground md:text-sm">
+              Situation du restaurant et points d'intervention.
+            </p>
           </div>
-        ) : null}
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-4">
-          <KitchenProductionCard label="En attente" value={kitchenProductionStats.pending} tone="orange" />
-          <KitchenProductionCard label="Preparation" value={kitchenProductionStats.preparing} tone="blue" />
-          <KitchenProductionCard label="Pret" value={kitchenProductionStats.ready} tone="purple" />
-          <KitchenProductionCard label="Servi" value={kitchenProductionStats.served} tone="green" />
+          <Button asChild variant="outline" className="mt-2 h-9 w-full font-black md:mt-0 md:w-auto">
+            <Link href="/manager/commandes">Ouvrir Commandes</Link>
+          </Button>
         </div>
       </section>
 
-      <section className="space-y-2 rounded-xl border bg-card/95 p-3 shadow-sm md:rounded-2xl md:p-4">
-        <div className="flex items-center justify-between gap-3">
-          <SectionTitle title="Alertes" />
-          <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-black">
-            {lateOrders.length + unpaidServedOrders.length + pendingSessionRequests.length}
-          </span>
+      {ordersError ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700 md:text-sm">
+          Impossible de charger les commandes de la periode. Consultez la console pour le detail Firestore.
         </div>
+      ) : null}
 
-        {lateOrders.length + unpaidServedOrders.length + pendingSessionRequests.length === 0 ? (
-          <div className="rounded-xl border border-dashed p-3 text-xs text-muted-foreground md:text-sm">
-            Aucune alerte critique.
-          </div>
-        ) : (
-          <div className="grid gap-2 md:grid-cols-3">
-            <AlertRow
-              href="/manager/commandes?status=late"
-              label={`${lateOrders.length} commande(s) en retard`}
-              context={lateOrders[0] ? getOrderDisplayId(lateOrders[0]) : "Cuisine a jour"}
-              action="Voir"
-              value={lateOrders.length}
-              danger={lateOrders.length > 0}
-            />
-            <AlertRow
-              href="/manager/caisse?filter=payments"
-              label={`${unpaidServedOrders.length} paiement(s) a verifier`}
-              context={unpaidServedOrders[0] ? getOrderDisplayId(unpaidServedOrders[0]) : "Paiements a jour"}
-              action="Verifier"
-              value={unpaidServedOrders.length}
-              danger={unpaidServedOrders.length > 0}
-            />
-            <AlertRow
-              href="/manager/caisse"
-              label={`${pendingSessionRequests.length} demande(s) caisse`}
-              context={pendingSessionRequests[0]?.cashierName || pendingSessionRequests[0]?.cashierId || "Caisse a jour"}
-              action="Traiter"
-              value={pendingSessionRequests.length}
-              danger={pendingSessionRequests.length > 0}
-            />
-          </div>
-        )}
-      </section>
-
-      <section className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4">
-        <ManagerFinancialCard
-          icon={Wallet}
-          title="Solde"
-          value={financialSummary.balance}
-          priority
-          danger={financialSummary.balance < 0}
-        />
-        <ManagerFinancialCard icon={ReceiptText} title="CA aujourd'hui" value={financialSummary.todayDeposits} />
-        <ManagerFinancialCard icon={Banknote} title="Depenses" value={financialSummary.todayExpenses} danger={financialSummary.todayExpenses > 0} />
-      </section>
-
-      <section className="space-y-2">
-        <SectionTitle title="Analytics secondaire" />
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4">
-          <ManagerMetric href="/manager/commandes?status=late" title="Retard" value={lateOrders.length} danger={lateOrders.length > 0} />
-          <ManagerMetric href="/manager/commandes?status=pending" title="En cours" value={activeOperationalOrders.length} />
+      <DashboardSection title="Activité du restaurant">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <DashboardPilotCard href="/manager/commandes" icon={ClipboardList} label="Commandes actives" value={activeOperationalCount} />
+          <DashboardPilotCard href="/manager/caisse?filter=payments" icon={Wallet} label="À encaisser" value={orderCounts.cash_due} danger={orderCounts.cash_due > 0} />
+          <DashboardPilotCard href="/manager/commandes?status=late" icon={AlertTriangle} label="Retards" value={orderCounts.late} danger={orderCounts.late > 0} />
+          <DashboardPilotCard href="/manager/commandes?status=completed" icon={ShieldCheck} label="Terminées aujourd'hui" value={orderCounts.completed} />
         </div>
-      </section>
+      </DashboardSection>
+
+      <DashboardSection title="Finances">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <DashboardPilotCard href="/manager/caisse" icon={ReceiptText} label="CA du jour" value={`${financialSummary.todayDeposits.toLocaleString()} FCFA`} />
+          <DashboardPilotCard href="/manager/depenses" icon={Banknote} label="Dépenses du jour" value={`${financialSummary.todayExpenses.toLocaleString()} FCFA`} danger={financialSummary.todayExpenses > 0} />
+          <DashboardPilotCard href="/manager/tresorerie" icon={Wallet} label="Solde caisse" value={`${financialSummary.balance.toLocaleString()} FCFA`} danger={financialSummary.balance < 0} />
+        </div>
+      </DashboardSection>
+
+      <DashboardSection title="Inventaire" action={<Button asChild variant="outline" size="sm" className="font-black"><Link href="/manager/inventory">Voir Inventaire</Link></Button>}>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <DashboardPilotCard href="/manager/inventory" icon={PackageCheck} label="Produits en rupture" value={inventorySummary.outOfStockCount} danger={inventorySummary.outOfStockCount > 0} />
+          <DashboardPilotCard href="/manager/inventory" icon={AlertTriangle} label="Stock faible" value={inventorySummary.lowStockCount} danger={inventorySummary.lowStockCount > 0} />
+          <DashboardPilotCard href="/manager/inventory" icon={Banknote} label="Valeur estimée du stock" value={`${inventorySummary.stockValue.toLocaleString()} FCFA`} />
+        </div>
+      </DashboardSection>
+
+      <DashboardSection title="Alertes">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          <DashboardAlert href="/manager/commandes?status=late" label="Commande en retard" value={orderCounts.late} active={orderCounts.late > 0} />
+          <DashboardAlert href="/manager/caisse" label="Demande ouverture caisse" value={pendingSessionRequests.length} active={pendingSessionRequests.length > 0} />
+          <DashboardAlert href="/manager/caisse" label="Caisse à valider" value={pendingCashValidationCount} active={pendingCashValidationCount > 0} />
+          <DashboardAlert href="/manager/inventory" label="Stock faible" value={inventorySummary.lowStockCount} active={inventorySummary.lowStockCount > 0} />
+          <DashboardAlert href="/manager/inventory" label="Rupture stock" value={inventorySummary.outOfStockCount} active={inventorySummary.outOfStockCount > 0} />
+        </div>
+      </DashboardSection>
+
+      <DashboardSection title="Accès rapides">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <DashboardQuickLink href="/manager/commandes" icon={ClipboardList} label="Commandes" />
+          <DashboardQuickLink href="/manager/caisse" icon={Wallet} label="Caisse" />
+          <DashboardQuickLink href="/manager/tresorerie" icon={Banknote} label="Trésorerie" />
+          <DashboardQuickLink href="/manager/depenses" icon={ReceiptText} label="Dépenses" />
+          <DashboardQuickLink href="/manager/inventory" icon={PackageCheck} label="Inventaire" />
+        </div>
+      </DashboardSection>
 
       {isLoading ? (
         <div className="rounded-xl border bg-card p-6 text-center text-muted-foreground md:rounded-2xl md:p-8">Chargement...</div>
       ) : null}
     </main>
   )
+}
+
+function DashboardSection({
+  title,
+  action,
+  children,
+}: {
+  title: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section className="space-y-2 rounded-xl border bg-card/95 p-3 shadow-sm md:p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-black uppercase tracking-tight">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function DashboardPilotCard({
+  href,
+  icon: Icon,
+  label,
+  value,
+  danger,
+}: {
+  href: string
+  icon: React.ElementType
+  label: string
+  value: React.ReactNode
+  danger?: boolean
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "block rounded-xl border bg-background p-3 shadow-sm transition hover:border-primary/40 hover:bg-muted/30",
+        danger && "border-red-300 bg-red-50/80 hover:border-red-400 dark:border-red-900 dark:bg-red-950/20"
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-black uppercase text-muted-foreground">{label}</p>
+          <p className={cn("mt-1 truncate text-xl font-black leading-tight", danger && "text-red-600")}>{value}</p>
+        </div>
+        <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary", danger && "bg-red-100 text-red-600 dark:bg-red-500/15")}>
+          <Icon className="h-5 w-5" />
+        </span>
+      </div>
+    </Link>
+  )
+}
+
+function DashboardAlert({
+  href,
+  label,
+  value,
+  active,
+}: {
+  href: string
+  label: string
+  value: number
+  active: boolean
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex min-h-12 items-center justify-between gap-3 rounded-xl border bg-background px-3 py-2 text-sm font-bold transition hover:border-primary/40 hover:bg-muted/30",
+        active && "border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/20 dark:text-red-300"
+      )}
+    >
+      <span className="min-w-0 truncate">{label}</span>
+      <span className={cn("rounded-full bg-muted px-2.5 py-1 text-xs font-black text-foreground", active && "bg-red-600 text-white")}>
+        {value}
+      </span>
+    </Link>
+  )
+}
+
+function DashboardQuickLink({
+  href,
+  icon: Icon,
+  label,
+}: {
+  href: string
+  icon: React.ElementType
+  label: string
+}) {
+  return (
+    <Button asChild variant="outline" className="h-12 justify-start gap-2 rounded-xl font-black">
+      <Link href={href}>
+        <Icon className="h-4 w-4" />
+        {label}
+      </Link>
+    </Button>
+  )
+}
+
+function getDashboardInventorySummary(items: any[], alerts: any[]) {
+  const outOfStockAlertIds = new Set(
+    alerts
+      .filter((alert) => alert.type === "out_of_stock" || alert.type === "rupture")
+      .map((alert) => alert.itemId)
+      .filter(Boolean)
+  )
+  const lowStockAlertIds = new Set(
+    alerts
+      .filter((alert) => alert.type === "low_stock")
+      .map((alert) => alert.itemId)
+      .filter(Boolean)
+  )
+  const outOfStockCount = items.filter((item) => Number(item.stockEstimated || 0) <= 0 || outOfStockAlertIds.has(item.id)).length
+  const lowStockCount = items.filter((item) => {
+    const stock = Number(item.stockEstimated || 0)
+    const threshold = Number(item.minThreshold || 0)
+    return stock > 0 && ((threshold > 0 && stock <= threshold) || lowStockAlertIds.has(item.id))
+  }).length
+  const stockValue = items.reduce((sum, item) => {
+    return sum + Math.max(0, Number(item.stockEstimated || 0)) * Math.max(0, Number(item.costPerUnit || 0))
+  }, 0)
+
+  return {
+    outOfStockCount,
+    lowStockCount,
+    stockValue: Math.round(stockValue),
+  }
+}
+
+function useManagerOperationalOrders(
+  db: ReturnType<typeof useFirestore>,
+  restaurantId: string | null,
+  orderRange: ManagerOrderDateRange,
+  now: number
+) {
+  const periodOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS),
+      where("createdAt", ">=", Timestamp.fromDate(orderRange.startDate)),
+      where("createdAt", "<=", Timestamp.fromDate(orderRange.endDate)),
+      orderBy("createdAt", "desc"),
+      limit(MANAGER_ORDERS_QUERY_LIMIT)
+    )
+  }, [db, orderRange.endDate, orderRange.startDate, restaurantId])
+  const activeKitchenStatusOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS),
+      where("kitchenStatus", "in", [
+        ORDER_OPERATION_STATUS.PENDING,
+        ORDER_OPERATION_STATUS.IN_PREPARATION,
+        ORDER_OPERATION_STATUS.READY,
+        ORDER_OPERATION_STATUS.SERVED,
+        ORDER_OPERATION_STATUS.PICKED_UP,
+      ]),
+      limit(MANAGER_OPERATIONAL_ORDERS_QUERY_LIMIT)
+    )
+  }, [db, restaurantId])
+  const activeStatusOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS),
+      where("status", "in", [
+        ORDER_OPERATION_STATUS.PENDING,
+        ORDER_OPERATION_STATUS.IN_PREPARATION,
+        ORDER_OPERATION_STATUS.READY,
+        ORDER_OPERATION_STATUS.SERVED,
+        ORDER_OPERATION_STATUS.PICKED_UP,
+      ]),
+      limit(MANAGER_OPERATIONAL_ORDERS_QUERY_LIMIT)
+    )
+  }, [db, restaurantId])
+  const activeOrderStatusOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS),
+      where("orderStatus", "in", [
+        ORDER_OPERATION_STATUS.PENDING,
+        ORDER_OPERATION_STATUS.IN_PREPARATION,
+        ORDER_OPERATION_STATUS.READY,
+        ORDER_OPERATION_STATUS.SERVED,
+        ORDER_OPERATION_STATUS.PICKED_UP,
+      ]),
+      limit(MANAGER_OPERATIONAL_ORDERS_QUERY_LIMIT)
+    )
+  }, [db, restaurantId])
+  const { data: periodOrders, error: periodOrdersError, isLoading: isPeriodLoading } = useCollection<any>(periodOrdersQuery)
+  const { data: activeKitchenStatusOrders, error: activeKitchenStatusOrdersError, isLoading: isActiveKitchenStatusLoading } = useCollection<any>(activeKitchenStatusOrdersQuery)
+  const { data: activeStatusOrders, error: activeStatusOrdersError, isLoading: isActiveStatusLoading } = useCollection<any>(activeStatusOrdersQuery)
+  const { data: activeOrderStatusOrders, error: activeOrderStatusOrdersError, isLoading: isActiveOrderStatusLoading } = useCollection<any>(activeOrderStatusOrdersQuery)
+  const error = periodOrdersError || activeKitchenStatusOrdersError || activeStatusOrdersError || activeOrderStatusOrdersError
+  const isLoading = isPeriodLoading || isActiveKitchenStatusLoading || isActiveStatusLoading || isActiveOrderStatusLoading
+  const mergedOrders = React.useMemo(
+    () => mergeManagerOrders(periodOrders || [], activeKitchenStatusOrders || [], activeStatusOrders || [], activeOrderStatusOrders || []),
+    [activeKitchenStatusOrders, activeOrderStatusOrders, activeStatusOrders, periodOrders]
+  )
+  const orderedOrders = React.useMemo(() => sortManagerOrders(mergedOrders, now, orderRange), [mergedOrders, now, orderRange])
+  const counts = React.useMemo(() => getManagerOrderCountsFromOrders(orderedOrders, now, orderRange), [now, orderedOrders, orderRange])
+
+  return {
+    counts,
+    error,
+    isLoading,
+    orderedOrders,
+  }
 }
 
 function ManagerMetric({
@@ -1998,28 +2189,25 @@ function ManagerOrdersPage({ restaurantId }: { restaurantId: string | null }) {
   const orderRange = React.useMemo(() => getDateRange(filter), [filter])
   const initialTab = normalizeOrderTab(searchParams?.get("status") ?? null)
   const [activeTab, setActiveTab] = React.useState(initialTab)
-  const [expandedOrderId, setExpandedOrderId] = React.useState<string | null>(null)
+  const [selectedOrderDetailId, setSelectedOrderDetailId] = React.useState<string | null>(null)
   const [visibleLimit, setVisibleLimit] = React.useState(MANAGER_ORDERS_PAGE_SIZE)
-  const ordersQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return query(
-      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS),
-      where("createdAt", ">=", Timestamp.fromDate(orderRange.startDate)),
-      where("createdAt", "<=", Timestamp.fromDate(orderRange.endDate)),
-      orderBy("createdAt", "desc"),
-      limit(MANAGER_ORDERS_QUERY_LIMIT)
-    )
-  }, [db, orderRange.endDate, orderRange.startDate, restaurantId])
-  const { data: periodOrders, error: ordersError, isLoading } = useCollection<any>(ordersQuery)
-  const orderedOrders = React.useMemo(() => sortManagerOrders(periodOrders || [], now), [now, periodOrders])
-  const counts = React.useMemo(() => getManagerOrderCountsFromOrders(orderedOrders, now), [now, orderedOrders])
+  const {
+    counts,
+    error: ordersError,
+    isLoading,
+    orderedOrders,
+  } = useManagerOperationalOrders(db, restaurantId, orderRange, now)
   const activeTabOrders = React.useMemo(
-    () => orderedOrders.filter((order) => matchesManagerOrderTab(order, activeTab, now)),
-    [activeTab, now, orderedOrders]
+    () => orderedOrders.filter((order) => matchesManagerOrderTab(order, activeTab, now, orderRange)),
+    [activeTab, now, orderedOrders, orderRange]
   )
   const visibleOrders = React.useMemo(
     () => activeTabOrders.slice(0, visibleLimit),
     [activeTabOrders, visibleLimit]
+  )
+  const selectedOrderDetail = React.useMemo(
+    () => orderedOrders.find((order: any) => order.id === selectedOrderDetailId) ?? null,
+    [orderedOrders, selectedOrderDetailId]
   )
   const hasMore = visibleOrders.length < activeTabOrders.length
 
@@ -2029,12 +2217,12 @@ function ManagerOrdersPage({ restaurantId }: { restaurantId: string | null }) {
 
   React.useEffect(() => {
     setVisibleLimit(MANAGER_ORDERS_PAGE_SIZE)
-    setExpandedOrderId(null)
+    setSelectedOrderDetailId(null)
   }, [activeTab, orderRange.endDate, orderRange.startDate])
 
   React.useEffect(() => {
     if (ordersError) {
-      console.error("Failed to load manager orders for selected period", ordersError)
+      console.error("Failed to load manager operational orders", ordersError)
     }
   }, [ordersError])
 
@@ -2043,38 +2231,32 @@ function ManagerOrdersPage({ restaurantId }: { restaurantId: string | null }) {
   }
 
   return (
-    <main className="space-y-4 pb-20 md:space-y-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-black uppercase tracking-tight text-primary md:text-3xl">
-          <ClipboardList className="h-7 w-7 md:h-8 md:w-8" />
-          Commandes
-        </h1>
-        <p className="text-sm text-muted-foreground">Traitement centralise des commandes terrain.</p>
-      </div>
+    <main className="space-y-4 pb-20 md:pb-6">
+      <p className="text-xs font-bold text-muted-foreground">
+        Commandes nécessitant une action, avec les commandes terminées sur la période sélectionnée.
+      </p>
+
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        <ManagerOrderKpiCard active={activeTab === "pending"} label="En attente" count={counts.pending} tone="orange" onClick={() => setActiveTab("pending")} />
+        <ManagerOrderKpiCard active={activeTab === "preparing"} label="En préparation" count={counts.preparing} tone="amber" onClick={() => setActiveTab("preparing")} />
+        <ManagerOrderKpiCard active={activeTab === "ready"} label="Prêtes" count={counts.ready} tone="sky" onClick={() => setActiveTab("ready")} />
+        <ManagerOrderKpiCard active={activeTab === "cash_due"} label="À encaisser" count={counts.cash_due} tone="indigo" onClick={() => setActiveTab("cash_due")} />
+        <ManagerOrderKpiCard active={activeTab === "completed"} label="Terminées" count={counts.completed} tone="emerald" onClick={() => setActiveTab("completed")} />
+        <ManagerOrderKpiCard active={activeTab === "late"} label="Retard" count={counts.late} tone="red" onClick={() => setActiveTab("late")} />
+      </section>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(normalizeOrderTab(value))} className="space-y-4">
-        <div className="-mx-3 overflow-x-auto px-3">
-          <TabsList className="h-12 w-max justify-start gap-1">
-            <OrderTab value="pending" label="Attente" count={counts.pending} />
-            <OrderTab value="preparing" label="Preparation" count={counts.preparing} />
-            <OrderTab value="ready" label="Pretes" count={counts.ready} />
-            <OrderTab value="served" label="Servies" count={counts.served} />
-            <OrderTab value="delivery" label="Livraison" count={counts.delivery} />
-            <OrderTab value="late" label="Retard" count={counts.late} />
-          </TabsList>
-        </div>
-
         {MANAGER_ORDER_TABS.map((tab) => (
           <TabsContent key={tab} value={tab} className="space-y-3">
             {ordersError ? (
               <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm font-semibold text-red-700">
-                Impossible de charger les commandes de cette periode. Consultez la console pour le detail Firestore.
+                Impossible de charger les commandes operationnelles. Consultez la console pour le detail Firestore.
               </div>
             ) : isLoading ? (
               <div className="rounded-xl border bg-card p-6 text-center text-muted-foreground">Chargement...</div>
             ) : visibleOrders.length === 0 ? (
               <div className="rounded-xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
-                Aucune commande pour cette periode.
+                Aucune commande dans cet etat.
               </div>
             ) : (
               <>
@@ -2084,8 +2266,8 @@ function ManagerOrdersPage({ restaurantId }: { restaurantId: string | null }) {
                       key={order.id}
                       order={order}
                       now={now}
-                      expanded={expandedOrderId === order.id}
-                      onToggleDetails={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}
+                      range={orderRange}
+                      onOpenDetails={() => setSelectedOrderDetailId(order.id)}
                     />
                   ))}
                 </div>
@@ -2106,43 +2288,95 @@ function ManagerOrdersPage({ restaurantId }: { restaurantId: string | null }) {
           </TabsContent>
         ))}
       </Tabs>
+
+      <ManagerOrderDetailDialog
+        order={selectedOrderDetail}
+        now={now}
+        range={orderRange}
+        onClose={() => setSelectedOrderDetailId(null)}
+      />
     </main>
   )
 }
 
-function OrderTab({ value, label, count }: { value: string; label: string; count: number }) {
+function ManagerOrderKpiCard({
+  label,
+  count,
+  tone,
+  active,
+  onClick,
+}: {
+  label: string
+  count: number
+  tone: "orange" | "amber" | "sky" | "indigo" | "emerald" | "red"
+  active: boolean
+  onClick: () => void
+}) {
   return (
-    <TabsTrigger value={value} className="min-h-10 gap-2 px-3 font-black">
-      {label}
-      <span className="rounded-full bg-background px-2 py-0.5 text-[10px] font-black text-muted-foreground">
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-xl border bg-card p-3 text-left shadow-sm transition hover:bg-muted/40",
+        active && "ring-2 ring-primary/30",
+        tone === "orange" && "border-orange-200",
+        tone === "amber" && "border-amber-200",
+        tone === "sky" && "border-sky-200",
+        tone === "indigo" && "border-indigo-200",
+        tone === "emerald" && "border-emerald-200",
+        tone === "red" && "border-red-200"
+      )}
+    >
+      <p className="truncate text-[10px] font-black uppercase text-muted-foreground">{label}</p>
+      <p className={cn(
+        "mt-1 text-2xl font-black leading-none",
+        tone === "orange" && "text-orange-600",
+        tone === "amber" && "text-amber-600",
+        tone === "sky" && "text-sky-600",
+        tone === "indigo" && "text-indigo-600",
+        tone === "emerald" && "text-emerald-600",
+        tone === "red" && "text-red-600"
+      )}>
         {count}
-      </span>
-    </TabsTrigger>
+      </p>
+    </button>
   )
 }
 
-type ManagerOrderTab = "pending" | "preparing" | "ready" | "served" | "delivery" | "late"
+type ManagerOrderTab = "pending" | "preparing" | "ready" | "cash_due" | "completed" | "late"
 
 type ManagerOrderCounts = Record<ManagerOrderTab, number>
 
-const MANAGER_ORDER_TABS: ManagerOrderTab[] = ["pending", "preparing", "ready", "served", "delivery", "late"]
+type ManagerOrderDateRange = {
+  startDate: Date
+  endDate: Date
+}
+
+type ManagerOperationalStateResult = {
+  state: ManagerOrderTab | null
+  label: string
+  eventAtMs: number
+}
+
+const MANAGER_ORDER_TABS: ManagerOrderTab[] = ["pending", "preparing", "ready", "cash_due", "completed", "late"]
 const MANAGER_ORDERS_PAGE_SIZE = 30
 const MANAGER_ORDERS_QUERY_LIMIT = 500
+const MANAGER_OPERATIONAL_ORDERS_QUERY_LIMIT = 500
 
 const EMPTY_MANAGER_ORDER_COUNTS: ManagerOrderCounts = {
   pending: 0,
   preparing: 0,
   ready: 0,
-  served: 0,
-  delivery: 0,
+  cash_due: 0,
+  completed: 0,
   late: 0,
 }
 
-function getManagerOrderCountsFromOrders(orders: any[], now: number): ManagerOrderCounts {
+function getManagerOrderCountsFromOrders(orders: any[], now: number, range: ManagerOrderDateRange): ManagerOrderCounts {
   return orders.reduce(
     (counts, order) => {
       MANAGER_ORDER_TABS.forEach((tab) => {
-        if (matchesManagerOrderTab(order, tab, now)) counts[tab] += 1
+        if (matchesManagerOrderTab(order, tab, now, range)) counts[tab] += 1
       })
       return counts
     },
@@ -2150,51 +2384,66 @@ function getManagerOrderCountsFromOrders(orders: any[], now: number): ManagerOrd
   )
 }
 
-function matchesManagerOrderTab(order: any, tab: ManagerOrderTab, now: number) {
+function matchesManagerOrderTab(order: any, tab: ManagerOrderTab, now: number, range: ManagerOrderDateRange) {
+  if (tab === "late") return isLateOrder(order, now)
+  return getManagerOperationalState(order, now, range).state === tab
+}
+
+function getManagerOperationalState(order: any, now: number, range: ManagerOrderDateRange): ManagerOperationalStateResult {
   const status = getOrderStatus(order)
-  
-  // Make tabs mutually exclusive: "late" and "delivery" are meta-tabs that override status tabs
-  if (tab === "late") {
-    return isLateOrder(order, now)
+  const type = getNormalizedManagerOrderType(order)
+  const paid = isOrderPaid(order)
+  const served = isKitchenServedStatus(status)
+
+  if (served && paid) {
+    const eventAtMs = getManagerCompletedEventMs(order, now)
+    return isWithinManagerRange(eventAtMs, range)
+      ? { state: "completed", label: "Terminée", eventAtMs }
+      : { state: null, label: "Terminée", eventAtMs }
   }
-  
-  if (tab === "delivery") {
-    // Delivery tab should show unserved delivery orders only
-    return getNormalizedManagerOrderType(order) === "delivery" && !isKitchenServedStatus(status)
+
+  if (served && type === "dine_in" && !paid) {
+    return { state: "cash_due", label: "À encaisser", eventAtMs: getManagerCashDueEventMs(order, now) }
   }
-  
-  // Status-based tabs (pending, preparing, ready, served) - only if not late or delivery
-  const isLateOrDelivery = isLateOrder(order, now) || getNormalizedManagerOrderType(order) === "delivery"
-  if (isLateOrDelivery) return false
-  
-  if (tab === "pending") return status === ORDER_OPERATION_STATUS.PENDING
-  if (tab === "preparing") return status === ORDER_OPERATION_STATUS.IN_PREPARATION
-  if (tab === "ready") return status === ORDER_OPERATION_STATUS.READY
-  if (tab === "served") return isKitchenServedStatus(status)
-  
-  return false
+
+  if (status === ORDER_OPERATION_STATUS.PENDING) {
+    return { state: "pending", label: "En attente", eventAtMs: getManagerOperationalEventMs(order, "pending", now) }
+  }
+
+  if (status === ORDER_OPERATION_STATUS.IN_PREPARATION) {
+    return { state: "preparing", label: "En préparation", eventAtMs: getManagerOperationalEventMs(order, "preparing", now) }
+  }
+
+  if (status === ORDER_OPERATION_STATUS.READY) {
+    return { state: "ready", label: "Prête", eventAtMs: getManagerOperationalEventMs(order, "ready", now) }
+  }
+
+  return { state: null, label: formatManagerStatus(status), eventAtMs: getManagerOperationalEventMs(order, "pending", now) }
 }
 
 function ManagerOrderCard({
   order,
   now,
-  expanded,
-  onToggleDetails,
+  range,
+  onOpenDetails,
 }: {
   order: any
   now: number
-  expanded: boolean
-  onToggleDetails: () => void
+  range: ManagerOrderDateRange
+  onOpenDetails: () => void
 }) {
-  const status = getOrderStatus(order)
-  const minutes = getOrderAgeMinutes(order, now)
+  const operationalState = getManagerOperationalState(order, now, range)
+  const minutes = getManagerEventAgeMinutes(operationalState.eventAtMs, now)
   const late = isLateOrder(order, now)
   const nearLate = isNearLateOrder(order, now)
   const items = order.items || []
-  const visibleItems = expanded ? items : items.slice(0, 2)
+  const visibleItems = items.slice(0, 2)
   const hiddenItemsCount = Math.max(0, items.length - visibleItems.length)
   const orderType = getManagerOrderType(order)
   const total = Number(order.total ?? order.totalAmount ?? 0)
+  const itemCount = getManagerOrderItemCount(order)
+  const location = getManagerOrderLocation(order)
+  const preparationFlow = getManagerOrderPreparationFlow(order)
   const cardClassName = [
     "min-w-0 rounded-xl border bg-card p-3 shadow-sm transition",
     late ? "border-red-300 bg-red-50/70 dark:border-red-900 dark:bg-red-950/20" : "",
@@ -2207,9 +2456,6 @@ function ManagerOrderCard({
         <div className="min-w-0 space-y-1">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <h2 className="truncate text-base font-black leading-tight">{getOrderDisplayId(order)}</h2>
-            <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-black leading-none">
-              {formatManagerStatus(status)}
-            </Badge>
           </div>
           <p className="truncate text-[11px] font-bold uppercase leading-tight text-muted-foreground">
             {orderType}
@@ -2221,10 +2467,35 @@ function ManagerOrderCard({
         </div>
       </div>
 
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <Badge variant="outline" className="h-6 px-2 text-[10px] font-black leading-none">
+          {operationalState.label}
+        </Badge>
+        <span className={cn(
+          "inline-flex h-6 items-center rounded-full px-2 text-[10px] font-black uppercase",
+          preparationFlow === "kitchen" && "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-200",
+          preparationFlow === "direct" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
+          preparationFlow === "mixed" && "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200"
+        )}>
+          {formatManagerPreparationFlow(preparationFlow)}
+        </span>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-bold text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <MapPin className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{location}</span>
+        </span>
+        <span className="flex items-center justify-end gap-1.5">
+          <PackageCheck className="h-3.5 w-3.5 shrink-0" />
+          {itemCount} article{itemCount > 1 ? "s" : ""}
+        </span>
+      </div>
+
       {late ? (
         <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] font-bold leading-tight text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">Retard preparation</span>
+          <span className="truncate">Action en retard</span>
         </div>
       ) : null}
 
@@ -2250,29 +2521,88 @@ function ManagerOrderCard({
         ) : null}
       </div>
 
-      {expanded ? (
-        <div className="mt-2 grid gap-1.5 rounded-lg border bg-background p-2 text-[11px] font-bold leading-tight text-muted-foreground sm:grid-cols-2">
-          <span>Statut: {formatManagerStatus(status)}</span>
-          <span>Temps: {minutes} min</span>
-          <span>Paiement: {isOrderPaid(order) ? "Valide" : "Non valide"}</span>
-          <span>Priorite: {order.priority === "high" ? "Haute" : "Normale"}</span>
-        </div>
-      ) : null}
-
       <div className="mt-3 flex items-center justify-between gap-2">
         <span className={`inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-black ${late ? "bg-red-500/10 text-red-600" : nearLate ? "bg-orange-500/10 text-orange-600" : "bg-muted text-muted-foreground"}`}>
           <Clock className="h-3.5 w-3.5" /> {minutes} min
         </span>
         <div className="flex min-w-0 items-center gap-1.5">
-          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs font-black" onClick={onToggleDetails}>
-            {expanded ? "Fermer" : "Detail"}
-          </Button>
-          <Button asChild variant="outline" size="sm" className="h-8 px-2 text-xs font-black">
-            <Link href="/manager/cuisine">Cuisine</Link>
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs font-black" onClick={onOpenDetails}>
+            Détail
           </Button>
         </div>
       </div>
     </article>
+  )
+}
+
+function ManagerOrderDetailDialog({
+  order,
+  now,
+  range,
+  onClose,
+}: {
+  order: any | null
+  now: number
+  range: ManagerOrderDateRange
+  onClose: () => void
+}) {
+  if (!order) return null
+
+  const operationalState = getManagerOperationalState(order, now, range)
+  const items = order.items || []
+  const total = Number(order.total ?? order.totalAmount ?? 0)
+  const minutes = getManagerEventAgeMinutes(operationalState.eventAtMs, now)
+
+  return (
+    <Dialog open={Boolean(order)} onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-black">{getOrderDisplayId(order)}</DialogTitle>
+          <DialogDescription>
+            Détail de supervision opérationnelle.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-2 text-sm sm:grid-cols-2">
+          <ManagerOrderDetailMeta label="Type" value={getManagerOrderType(order)} />
+          <ManagerOrderDetailMeta label="État manager" value={operationalState.label} />
+          <ManagerOrderDetailMeta label="Emplacement" value={getManagerOrderLocation(order)} />
+          <ManagerOrderDetailMeta label="Temps depuis événement" value={`${minutes} min`} />
+          <ManagerOrderDetailMeta label="Paiement" value={isOrderPaid(order) ? "Validé" : "Non validé"} />
+          <ManagerOrderDetailMeta label="Total" value={`${total.toLocaleString()} FCFA`} />
+        </div>
+
+        <section className="mt-4 rounded-xl border bg-muted/20 p-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-black uppercase tracking-tight">Articles</h3>
+            <span className="text-xs font-bold text-muted-foreground">
+              {getManagerOrderItemCount(order)} article{getManagerOrderItemCount(order) > 1 ? "s" : ""}
+            </span>
+          </div>
+          {items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Aucun produit liste</p>
+          ) : (
+            <div className="space-y-2">
+              {items.map((item: any, index: number) => (
+                <div key={`${order.id}-detail-${item.productId || index}-${item.name || item.nameSnapshot}`} className="flex items-center justify-between gap-3 rounded-lg bg-background px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate font-bold">{Number(item.quantity || 1)}x {item.name || item.nameSnapshot || "Article"}</span>
+                  <span className="shrink-0 font-black">{Number(item.total ?? ((item.priceSnapshot ?? item.unitPrice ?? 0) * Number(item.quantity || 1))).toLocaleString()} FCFA</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ManagerOrderDetailMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border bg-background p-3">
+      <p className="text-[10px] font-black uppercase text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-black">{value}</p>
+    </div>
   )
 }
 
@@ -2309,9 +2639,124 @@ function getManagerOrderType(order: any) {
   return "A emporter"
 }
 
+function getManagerOrderLocation(order: any) {
+  const type = getNormalizedManagerOrderType(order)
+  if (type === "delivery") {
+    return order.deliveryAddress || order.address || order.customer?.address || order.customer?.neighborhood || "Quartier non renseigné"
+  }
+
+  if (type === "dine_in") {
+    return order.tableName || order.table || order.tableId || "Table non renseignée"
+  }
+
+  return "Comptoir"
+}
+
+function getManagerOrderItemCount(order: any) {
+  const items = Array.isArray(order.items) ? order.items : []
+  return items.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0)
+}
+
+type ManagerPreparationFlow = "kitchen" | "direct" | "mixed"
+
+function getManagerOrderPreparationFlow(order: any): ManagerPreparationFlow {
+  const items = Array.isArray(order.items) ? order.items : []
+  if (items.length === 0) return "direct"
+
+  const hasKitchen = items.some((item: any) => item.preparationMode === "kitchen")
+  const hasDirect = items.some((item: any) => item.preparationMode !== "kitchen")
+
+  if (hasKitchen && hasDirect) return "mixed"
+  if (hasKitchen) return "kitchen"
+  return "direct"
+}
+
+function formatManagerPreparationFlow(flow: ManagerPreparationFlow) {
+  if (flow === "kitchen") return "Cuisine"
+  if (flow === "mixed") return "Mixte"
+  return "Service direct"
+}
+
 function getNormalizedManagerOrderType(order: any) {
   const orderType = order.orderType || (order.type === "table" ? "dine_in" : order.type)
-  return orderType || "dine_in" // Default to dine_in if not set
+  if (orderType === "dine-in" || orderType === "table") return "dine_in"
+  if (orderType === "takeaway") return "pickup"
+  if (orderType === "delivery") return "delivery"
+  if (orderType === "pickup") return "pickup"
+  return "dine_in"
+}
+
+function mergeManagerOrders(...groups: any[][]) {
+  const byId = new Map<string, any>()
+  groups.flat().forEach((order) => {
+    if (!order?.id) return
+    byId.set(order.id, { ...(byId.get(order.id) || {}), ...order })
+  })
+  return Array.from(byId.values())
+}
+
+function getManagerTimestampMs(value: any): number | null {
+  if (!value) return null
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (value instanceof Date) return value.getTime()
+  if (typeof value === "string") {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  if (typeof value.toMillis === "function") return value.toMillis()
+  if (typeof value.toDate === "function") return value.toDate().getTime()
+  if (typeof value.seconds === "number") return value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1000000)
+  return null
+}
+
+function getFirstManagerTimestampMs(order: any, keys: string[], fallback = Date.now()) {
+  for (const key of keys) {
+    const parts = key.split(".")
+    const value = parts.reduce((current: any, part) => current?.[part], order)
+    const timestamp = getManagerTimestampMs(value)
+    if (timestamp) return timestamp
+  }
+  return fallback
+}
+
+function getManagerOperationalEventMs(order: any, state: ManagerOrderTab, now = Date.now()) {
+  if (state === "preparing") {
+    return getFirstManagerTimestampMs(order, ["timestamps.preparingAt", "preparingAt", "createdAt"], now)
+  }
+  if (state === "ready") {
+    return getFirstManagerTimestampMs(order, ["timestamps.readyAt", "readyAt", "timestamps.preparingAt", "preparingAt", "createdAt"], now)
+  }
+  if (state === "cash_due") {
+    return getManagerCashDueEventMs(order, now)
+  }
+  if (state === "completed") {
+    return getManagerCompletedEventMs(order, now)
+  }
+  return getFirstManagerTimestampMs(order, ["createdAt", "updatedAt"], now)
+}
+
+function getManagerCashDueEventMs(order: any, now = Date.now()) {
+  return getFirstManagerTimestampMs(
+    order,
+    ["timestamps.servedAt", "timestamps.pickedUpAt", "timestamps.completedAt", "servedAt", "pickedUpAt", "completedAt", "createdAt"],
+    now
+  )
+}
+
+function getManagerCompletedEventMs(order: any, now = Date.now()) {
+  return getFirstManagerTimestampMs(
+    order,
+    ["paidAt", "paymentPaidAt", "paymentValidatedAt", "payment.validatedAt", "payment.paidAt", "timestamps.paidAt", "createdAt"],
+    now
+  )
+}
+
+function isWithinManagerRange(timestampMs: number, range: ManagerOrderDateRange) {
+  return timestampMs >= range.startDate.getTime() && timestampMs <= range.endDate.getTime()
+}
+
+function getManagerEventAgeMinutes(eventAtMs: number, now = Date.now()) {
+  return Math.max(0, Math.floor((now - eventAtMs) / 60000))
 }
 
 function useLiveNow(intervalMs = 30000) {
@@ -2335,35 +2780,43 @@ const NEAR_LATE_ORDER_THRESHOLD_MINUTES = 15
 
 function isLateOrder(order: any, now = Date.now()) {
   const status = getOrderStatus(order)
-  return [ORDER_OPERATION_STATUS.PENDING, ORDER_OPERATION_STATUS.IN_PREPARATION].includes(status as any) && getOrderAgeMinutes(order, now) > LATE_ORDER_THRESHOLD_MINUTES
+  return [ORDER_OPERATION_STATUS.PENDING, ORDER_OPERATION_STATUS.IN_PREPARATION, ORDER_OPERATION_STATUS.READY].includes(status as any) && getOrderAgeMinutes(order, now) > LATE_ORDER_THRESHOLD_MINUTES
 }
 
 function isNearLateOrder(order: any, now = Date.now()) {
   const status = getOrderStatus(order)
   const minutes = getOrderAgeMinutes(order, now)
-  return [ORDER_OPERATION_STATUS.PENDING, ORDER_OPERATION_STATUS.IN_PREPARATION].includes(status as any) && minutes >= NEAR_LATE_ORDER_THRESHOLD_MINUTES && minutes <= LATE_ORDER_THRESHOLD_MINUTES
+  return [ORDER_OPERATION_STATUS.PENDING, ORDER_OPERATION_STATUS.IN_PREPARATION, ORDER_OPERATION_STATUS.READY].includes(status as any) && minutes >= NEAR_LATE_ORDER_THRESHOLD_MINUTES && minutes <= LATE_ORDER_THRESHOLD_MINUTES
 }
 
-function sortManagerOrders(orders: any[], now = Date.now()) {
-  return [...orders].sort((a, b) => {
-    const aLate = isLateOrder(a, now)
-    const bLate = isLateOrder(b, now)
-    if (aLate !== bLate) return aLate ? -1 : 1
+function sortManagerOrders(orders: any[], now = Date.now(), range: ManagerOrderDateRange) {
+  const priority: Record<ManagerOrderTab, number> = {
+    late: 0,
+    cash_due: 1,
+    ready: 2,
+    preparing: 3,
+    pending: 4,
+    completed: 5,
+  }
 
-    const aPending = getOrderStatus(a) === ORDER_OPERATION_STATUS.PENDING
-    const bPending = getOrderStatus(b) === ORDER_OPERATION_STATUS.PENDING
-    if (aPending !== bPending) return aPending ? -1 : 1
-
-    return getOrderAgeMinutes(b, now) - getOrderAgeMinutes(a, now)
-  })
+  return [...orders]
+    .filter((order) => getManagerOperationalState(order, now, range).state)
+    .sort((a, b) => {
+      const aState = getManagerOperationalState(a, now, range)
+      const bState = getManagerOperationalState(b, now, range)
+      const aPriority = aState.state ? priority[aState.state] : 99
+      const bPriority = bState.state ? priority[bState.state] : 99
+      if (aPriority !== bPriority) return aPriority - bPriority
+      return bState.eventAtMs - aState.eventAtMs
+    })
 }
 
 function normalizeOrderTab(value: string | null): ManagerOrderTab {
   if (value === "late") return "late"
   if (value === "preparing") return "preparing"
   if (value === "ready") return "ready"
-  if (value === "served") return "served"
-  if (value === "delivery") return "delivery"
+  if (value === "cash_due") return "cash_due"
+  if (value === "completed") return "completed"
   return "pending"
 }
 

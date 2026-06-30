@@ -40,6 +40,7 @@ type PaymentInput = {
   orderId: string
   method: "cash" | "mobile"
   paymentMethod: string
+  paymentProviderName?: string | null
   paymentCode?: string | null
   cashSessionId?: string | null
   amount: number
@@ -78,6 +79,7 @@ export async function processOrderPaymentTransaction({
   orderId,
   method,
   paymentMethod,
+  paymentProviderName = null,
   paymentCode = null,
   cashSessionId = null,
   amount,
@@ -112,7 +114,10 @@ export async function processOrderPaymentTransaction({
       throw new Error("Invalid payment validation")
     }
 
-    const paymentStatus = method === "cash" ? "paid" : ORDER_PAYMENT_STATUS.PENDING_MOBILE
+    const paymentSource = resolvePaymentSource(before)
+    const isImmediatePosMobilePayment = method === "mobile" && paymentSource === "pos"
+    const isConfirmedPayment = method === "cash" || isImmediatePosMobilePayment
+    const paymentStatus = isConfirmedPayment ? "paid" : ORDER_PAYMENT_STATUS.PENDING_MOBILE
     const currentOrderStatus = getOrderStatus(before)
     const closesDineInSession =
       method === "cash" &&
@@ -145,16 +150,20 @@ export async function processOrderPaymentTransaction({
       paymentMethod,
       paymentType,
       paymentStatus,
-      paymentIntentStatus: method === "cash" ? "verified" : "submitted",
+      paymentIntentStatus: isConfirmedPayment ? "verified" : "submitted",
       sessionActive: closesDineInSession ? false : before.sessionActive ?? normalizedType === "dine_in",
       closedAt: closesDineInSession ? serverTimestamp() : before.closedAt ?? null,
       paymentCode,
+      paymentProviderId: method === "mobile" ? paymentMethod : null,
+      paymentProviderName: method === "mobile" ? paymentProviderName || paymentMethod : null,
       cashierId: staff.userId,
       cashSessionId,
-      paidAt: method === "cash" ? serverTimestamp() : null,
-      printedClient: method === "cash" ? printedClient : before.printedClient ?? false,
-      paymentVerificationStatus: method === "mobile" ? "pending_manual_review" : "not_required",
-      paymentVerificationRequestedAt: method === "mobile" ? serverTimestamp() : null,
+      paidAt: isConfirmedPayment ? serverTimestamp() : null,
+      printedClient: isConfirmedPayment ? printedClient : before.printedClient ?? false,
+      paymentVerificationStatus:
+        method === "mobile" && !isImmediatePosMobilePayment ? "pending_manual_review" : "not_required",
+      paymentVerificationRequestedAt:
+        method === "mobile" && !isImmediatePosMobilePayment ? serverTimestamp() : null,
       needsCashCollection: method === "cash" ? false : before.needsCashCollection ?? false,
       updatedAt: serverTimestamp(),
     }
@@ -164,11 +173,11 @@ export async function processOrderPaymentTransaction({
       orderId,
       sessionId: cashSessionId,
       cashierId: staff.userId,
-      source: resolvePaymentSource(before),
+      source: paymentSource,
       type: paymentType,
       provider: paymentProvider,
       amount,
-      status: method === "cash" ? "confirmed" : "pending",
+      status: isConfirmedPayment ? "confirmed" : "pending",
       idempotencyKey,
       orderUpdate: after,
     })
@@ -192,16 +201,23 @@ export async function processOrderPaymentTransaction({
       userId: staff.userId,
       staffId: staff.staffId ?? staff.userId,
       staffName: staff.staffName ?? null,
-      action: method === "cash" ? "order_paid_cash" : "order_mobile_payment_requested",
+      action:
+        method === "cash"
+          ? "order_paid_cash"
+          : isImmediatePosMobilePayment
+            ? "order_paid_mobile_pos"
+            : "order_mobile_payment_requested",
       orderId,
       before: sanitizeAuditPayload(before),
       after: {
         paymentMethod,
         paymentType,
         paymentStatus,
-        paymentIntentStatus: method === "cash" ? "verified" : "submitted",
+        paymentIntentStatus: isConfirmedPayment ? "verified" : "submitted",
         orderStatus: currentOrderStatus,
         paymentCode,
+        paymentProviderId: method === "mobile" ? paymentMethod : null,
+        paymentProviderName: method === "mobile" ? paymentProviderName || paymentMethod : null,
         cashierId: staff.userId,
         cashSessionId,
         paymentLedgerId: idempotencyKey,

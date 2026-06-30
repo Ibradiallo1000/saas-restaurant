@@ -293,7 +293,6 @@ function getCreatedAtMs(order: RestaurantOrder) {
 function shouldShowInTodayKitchen(order: RestaurantOrder) {
   const status = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
   if (status !== ORDER_OPERATION_STATUS.SERVED && status !== ORDER_OPERATION_STATUS.PICKED_UP) return true
-  if ((order as any).sessionActive === true && ((order as any).tableSessionId || (order as any).sessionId)) return true
   return isToday(getKitchenServedAtMs(order) ?? getCreatedAtMs(order))
 }
 

@@ -1,6 +1,5 @@
 import {
   Banknote,
-  ChefHat,
   ClipboardList,
   ImageIcon,
   LayoutDashboard,
@@ -62,10 +61,10 @@ export type OperationalNavigationConfig = {
 }
 
 const bottomNavItemMap: Record<NavigationItemId, OperationalNavItem | null> = {
-  analytics: { id: "analytics", label: "Analytics", href: "/manager/dashboard", icon: LayoutDashboard },
+  analytics: { id: "analytics", label: "Dashboard", href: "/manager/dashboard", icon: LayoutDashboard },
   commandes: { id: "orders", label: "Commandes", href: "/manager/commandes", icon: ClipboardList },
   caisse: { id: "cash", label: "Caisse", href: "/manager/caisse", icon: Wallet },
-  cuisine: { id: "kitchen", label: "Cuisine", href: "/manager/cuisine", icon: ChefHat },
+  cuisine: null,
   plus: null,
   profil: null,
   parametres: null,

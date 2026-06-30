@@ -50,7 +50,7 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
   const pathname = usePathname() ?? ""
   const [isClient, setIsClient] = React.useState(false)
   const enabled = isClient && isOperationalRoute(pathname)
-  const isKitchenRoute = pathname.startsWith("/kitchen") || pathname.startsWith("/manager/cuisine")
+  const isKitchenRoute = pathname.startsWith("/kitchen")
   const db = useFirestore()
   const { restaurantId } = useRestaurant()
   const todayStart = React.useMemo(() => startOfToday(), [])

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { collection, query, where } from "firebase/firestore"
-import { Banknote, ListFilter, ReceiptText, Wallet } from "lucide-react"
+import { Banknote, CreditCard, ListFilter, ReceiptText, Wallet } from "lucide-react"
 
 import { Card, CardContent } from "@/components/ui/card"
 import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
@@ -108,17 +108,8 @@ export default function ManagerTreasuryPage() {
   }
 
   return (
-    <main className="space-y-4 pb-20 md:space-y-6 md:pb-6">
-      <section className="rounded-xl border bg-card p-3 shadow-sm md:rounded-2xl md:p-4">
-        <h1 className="text-2xl font-black uppercase tracking-tight text-primary md:text-3xl">
-          Trésorerie
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Soldes par compte et historique réel des mouvements de trésorerie.
-        </p>
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-3 md:gap-4">
+    <main className="space-y-4 pb-20 md:pb-6">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <TreasuryCard
           icon={Wallet}
           label="Solde total"
@@ -130,43 +121,34 @@ export default function ManagerTreasuryPage() {
         <TreasuryCard icon={Banknote} label="Dépenses totales" value={displayExpenses} danger={displayExpenses > 0} />
       </section>
 
-      <section className="rounded-2xl border bg-card p-4 shadow-sm">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-black uppercase tracking-tight">Répartition par compte</h2>
-            <p className="text-sm text-muted-foreground">
-              Les comptes sont maintenus à partir des nouvelles validations de caisse.
-            </p>
-          </div>
+      <section className="rounded-xl border bg-card p-3 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-black uppercase tracking-tight">Répartition par compte</h2>
           {accountTotal <= 0 && legacySummary.balance > 0 ? (
-            <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-orange-700">
+            <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-[10px] font-black text-orange-700 dark:bg-orange-500/15 dark:text-orange-200">
               Solde historique affiché en fallback
             </span>
           ) : null}
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2">
           {safeAccounts.map((account) => (
-            <article key={account.id} className="rounded-xl border bg-background p-4">
-              <p className="text-xs font-black uppercase text-muted-foreground">{account.name}</p>
-              <p className="mt-2 text-2xl font-black">{formatMoney(account.balance)} FCFA</p>
-              <p className="mt-1 text-xs font-bold text-muted-foreground">{formatAccountKind(account.kind)}</p>
-            </article>
+            <TreasuryAccountCard key={account.id} account={account} />
           ))}
         </div>
       </section>
 
-      <section className="rounded-2xl border bg-card p-4 shadow-sm">
-        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 className="flex items-center gap-2 text-lg font-black uppercase tracking-tight">
-              <ListFilter className="h-5 w-5 text-primary" />
+      <section className="rounded-xl border bg-card p-3 shadow-sm">
+        <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-tight">
+              <ListFilter className="h-4 w-4 text-primary" />
               Historique des mouvements
             </h2>
-            <p className="text-sm text-muted-foreground">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               Source : cashMovements enrichi, compatible avec les anciens mouvements.
             </p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[560px]">
             <FilterSelect label="Type" value={directionFilter} onChange={(value) => setDirectionFilter(value as MovementDirectionFilter)}>
               <option value="all">Tous</option>
               <option value="in">Entrées</option>
@@ -189,51 +171,55 @@ export default function ManagerTreasuryPage() {
         </div>
 
         {filteredMovements.length === 0 ? (
-          <div className="rounded-xl border border-dashed bg-background p-8 text-center text-sm text-muted-foreground">
+          <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-4 text-center text-sm font-semibold text-muted-foreground">
             Aucune donnée pour cette période
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-xl border">
             <table className="w-full min-w-[900px] text-left text-sm">
-              <thead className="border-b text-xs uppercase text-muted-foreground">
+              <thead className="bg-muted/50 text-[10px] uppercase text-muted-foreground">
                 <tr>
-                  <th className="py-3 pr-3">Date</th>
-                  <th className="py-3 pr-3">Type</th>
-                  <th className="py-3 pr-3">Libellé</th>
-                  <th className="py-3 pr-3">Compte</th>
-                  <th className="py-3 pr-3 text-right">Entrée</th>
-                  <th className="py-3 pr-3 text-right">Sortie</th>
-                  <th className="py-3 pr-3">Source</th>
-                  <th className="py-3 pr-3">Utilisateur</th>
+                  <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Type</th>
+                  <th className="px-3 py-2">Libellé</th>
+                  <th className="px-3 py-2">Compte</th>
+                  <th className="px-3 py-2 text-right">Entrée</th>
+                  <th className="px-3 py-2 text-right">Sortie</th>
+                  <th className="px-3 py-2">Source</th>
+                  <th className="px-3 py-2">Utilisateur</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y bg-background">
                 {filteredMovements.map((movement) => {
                   const direction = getMovementDirection(movement)
                   const amount = Number(movement.amount || 0)
                   return (
-                    <tr key={movement.id} className="align-top">
-                      <td className="py-3 pr-3 font-semibold">{formatDateTime(movement.occurredAt || movement.createdAt)}</td>
-                      <td className="py-3 pr-3">
+                    <tr key={movement.id} className="align-middle transition-colors hover:bg-muted/30">
+                      <td className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-muted-foreground">{formatDateTime(movement.occurredAt || movement.createdAt)}</td>
+                      <td className="px-3 py-2.5">
                         <span className={cn(
-                          "rounded-full px-2 py-1 text-xs font-black uppercase",
-                          direction === "in" && "bg-emerald-100 text-emerald-700",
-                          direction === "out" && "bg-orange-100 text-orange-700",
-                          direction === "transfer" && "bg-blue-100 text-blue-700"
+                          "inline-flex rounded-full px-2 py-1 text-[10px] font-black uppercase",
+                          direction === "in" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
+                          direction === "out" && "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-200",
+                          direction === "transfer" && "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200"
                         )}>
                           {formatDirection(direction)}
                         </span>
                       </td>
-                      <td className="py-3 pr-3 font-bold">{getMovementLabel(movement)}</td>
-                      <td className="py-3 pr-3">{getTreasuryAccountLabel(getMovementAccountId(movement))}</td>
-                      <td className="py-3 pr-3 text-right font-black text-emerald-700">
+                      <td className="max-w-[260px] truncate px-3 py-2.5 font-bold">{getMovementLabel(movement)}</td>
+                      <td className="px-3 py-2.5 text-xs font-semibold text-muted-foreground">{getTreasuryAccountLabel(getMovementAccountId(movement))}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-emerald-700 dark:text-emerald-300">
                         {direction === "in" ? `+${formatMoney(amount)} FCFA` : "-"}
                       </td>
-                      <td className="py-3 pr-3 text-right font-black text-orange-700">
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-orange-700 dark:text-orange-300">
                         {direction === "out" ? `-${formatMoney(amount)} FCFA` : "-"}
                       </td>
-                      <td className="py-3 pr-3">{formatSource(movement.source)}</td>
-                      <td className="py-3 pr-3">{movement.createdBy || "-"}</td>
+                      <td className="px-3 py-2.5">
+                        <span className="inline-flex rounded-full bg-muted px-2 py-1 text-[10px] font-black uppercase text-muted-foreground">
+                          {formatSource(movement.source)}
+                        </span>
+                      </td>
+                      <td className="max-w-[180px] truncate px-3 py-2.5 text-xs font-semibold text-muted-foreground">{movement.createdBy || "-"}</td>
                     </tr>
                   )
                 })}
@@ -260,15 +246,40 @@ function TreasuryCard({
   danger?: boolean
 }) {
   return (
-    <Card className={cn(priority && "md:order-first", danger && "border-orange-300")}>
-      <CardContent className={cn("p-4", priority && "md:p-5")}>
-        <Icon className={cn("mb-3 h-5 w-5", danger ? "text-orange-600" : "text-primary")} />
-        <p className="text-xs font-black uppercase text-muted-foreground">{label}</p>
-        <p className={cn("mt-1 font-black", priority ? "text-4xl" : "text-2xl", danger ? "text-orange-600" : "text-foreground")}>
+    <Card className={cn("rounded-xl", priority && "md:order-first", danger && "border-orange-300")}>
+      <CardContent className="flex min-h-24 flex-col justify-between p-3">
+        <Icon className={cn("h-4 w-4", danger ? "text-orange-600" : "text-primary")} />
+        <p className="mt-2 text-[10px] font-black uppercase text-muted-foreground">{label}</p>
+        <p className={cn("mt-0.5 text-lg font-black leading-tight sm:text-xl", danger ? "text-orange-600" : "text-foreground")}>
           {formatMoney(value)} FCFA
         </p>
       </CardContent>
     </Card>
+  )
+}
+
+function TreasuryAccountCard({ account }: { account: TreasuryAccount }) {
+  const isMobile = account.kind === "mobile_money"
+  const Icon = isMobile ? CreditCard : Banknote
+
+  return (
+    <article className="rounded-xl border bg-background p-3 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+            isMobile ? "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
+          )}>
+            <Icon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black">{account.name}</p>
+            <p className="mt-0.5 text-xs font-bold text-muted-foreground">{formatAccountKind(account.kind)}</p>
+          </div>
+        </div>
+        <p className="whitespace-nowrap text-xl font-black">{formatMoney(account.balance)} FCFA</p>
+      </div>
+    </article>
   )
 }
 
@@ -284,12 +295,12 @@ function FilterSelect({
   children: React.ReactNode
 }) {
   return (
-    <label className="space-y-1 text-xs font-black uppercase text-muted-foreground">
+    <label className="space-y-1 text-[10px] font-black uppercase text-muted-foreground">
       <span>{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-md border bg-background px-3 text-sm font-bold normal-case text-foreground"
+        className="h-9 w-full rounded-lg border bg-background px-3 text-xs font-bold normal-case text-foreground"
       >
         {children}
       </select>

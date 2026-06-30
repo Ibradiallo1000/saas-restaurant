@@ -32,8 +32,11 @@ type CartPanelProps = {
   paymentMode: PosPaymentMode | null
   mobilePaymentMethods: any[]
   selectedMobileMethodCode: string | null
+  cashReceivedInput: string
+  cashReceivedAmount: number
   onPaymentModeChange: (mode: PosPaymentMode) => void
   onMobileMethodChange: (code: string) => void
+  onCashReceivedChange: (value: string) => void
   onOrderTypeChange: (type: "dine-in" | "takeaway") => void
   onTableSelect: (tableId: string) => void
   onIncrease: (item: any) => void
@@ -58,8 +61,11 @@ export default function CartPanel({
   paymentMode,
   mobilePaymentMethods,
   selectedMobileMethodCode,
+  cashReceivedInput,
+  cashReceivedAmount,
   onPaymentModeChange,
   onMobileMethodChange,
+  onCashReceivedChange,
   onOrderTypeChange,
   onTableSelect,
   onIncrease,
@@ -70,6 +76,9 @@ export default function CartPanel({
   onDiscount,
   onCheckout,
 }: CartPanelProps) {
+  const cashChangeAmount = Math.max(0, cashReceivedAmount - total)
+  const isCashInsufficient = paymentMode === "cash" && cashReceivedInput.trim().length > 0 && cashReceivedAmount < total
+
   return (
     <aside className="flex h-full flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
       <div className="shrink-0 border-b bg-primary px-4 py-3 text-primary-foreground">
@@ -185,24 +194,70 @@ export default function CartPanel({
           <PaymentButton active={paymentMode === "mobile"} icon={<Smartphone />} label="Mobile Money" onClick={() => onPaymentModeChange("mobile")} />
         </div>
 
+        {paymentMode === "cash" ? (
+          <div className="mt-3 rounded-xl border bg-muted/20 p-3">
+            <label className="text-[10px] font-black uppercase text-muted-foreground" htmlFor="pos-cash-received">
+              Montant reçu
+            </label>
+            <input
+              id="pos-cash-received"
+              type="text"
+              inputMode="numeric"
+              value={cashReceivedInput}
+              onChange={(event) => onCashReceivedChange(event.target.value.replace(/\D/g, ""))}
+              placeholder="Ex: 10000"
+              className="mt-1 h-11 w-full rounded-lg border bg-background px-3 text-right text-lg font-black outline-none ring-primary/30 transition focus:ring-2"
+            />
+            <div className="mt-2 flex items-center justify-between text-sm">
+              <span className="font-bold text-muted-foreground">Monnaie à rendre</span>
+              <span className="font-black text-emerald-700 dark:text-emerald-300">
+                {cashChangeAmount.toLocaleString("fr-FR")} FCFA
+              </span>
+            </div>
+            {isCashInsufficient ? (
+              <p className="mt-2 text-xs font-bold text-red-700 dark:text-red-300">
+                Montant insuffisant pour encaisser cette vente.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         {paymentMode === "mobile" && mobilePaymentMethods.length > 0 ? (
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            {mobilePaymentMethods.slice(0, 4).map((method: any) => (
+          <div className="mt-3 grid grid-cols-3 justify-items-center gap-2">
+            {mobilePaymentMethods.map((method: any) => (
               <button
                 key={method.id || method.code}
                 type="button"
                 onClick={() => onMobileMethodChange(method.code)}
                 className={cn(
-                  "h-9 rounded-md border bg-white text-xs font-black text-zinc-950 transition-colors hover:bg-zinc-50 dark:bg-background dark:text-foreground dark:hover:bg-muted",
+                  "inline-flex h-11 max-w-full items-center justify-center gap-2 rounded-xl border bg-white px-3 text-xs font-black text-zinc-950 transition-colors hover:bg-zinc-50 dark:bg-background dark:text-foreground dark:hover:bg-muted",
                   selectedMobileMethodCode === method.code
                     ? "border-zinc-900 bg-zinc-50 shadow-sm dark:border-zinc-100 dark:bg-muted"
                     : "border-zinc-200 dark:border-border"
                 )}
               >
-                {method.name}
+                {method.logoUrl ? (
+                  <img
+                    src={getOptimizedImage(method.logoUrl, 48)}
+                    alt=""
+                    className="h-6 w-6 shrink-0 rounded-full object-contain"
+                    loading="lazy"
+                  />
+                ) : (
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px]">
+                    {String(method.name || method.code || "?").slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <span className="truncate">{method.name}</span>
               </button>
             ))}
           </div>
+        ) : null}
+
+        {paymentMode === "mobile" && mobilePaymentMethods.length === 0 ? (
+          <p className="mt-2 rounded-lg border border-dashed bg-muted/20 px-3 py-2 text-center text-xs font-bold text-muted-foreground">
+            Aucun moyen Mobile Money configuré.
+          </p>
         ) : null}
 
         <Button
@@ -236,6 +291,7 @@ function CartLine({
 }) {
   const unitPrice = Number(item.unitPrice ?? item.basePrice ?? item.price ?? 0)
   const lineTotal = Math.round(unitPrice) * Number(item.quantity ?? 1)
+  const preparationMode = getCartPreparationMode(item)
 
   return (
     <div
@@ -261,6 +317,14 @@ function CartLine({
         <p className="truncate text-sm font-black">
           {nested && item.linkedGroupTitle ? `+ ${item.name}` : item.name}
         </p>
+        <span
+          className={cn(
+            "mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black",
+            getPreparationModeBadgeClass(preparationMode)
+          )}
+        >
+          {getPreparationModeLabel(preparationMode)}
+        </span>
         {nested && item.linkedGroupTitle ? (
           <p className="text-[10px] font-semibold text-muted-foreground">{item.linkedGroupTitle}</p>
         ) : null}
@@ -294,6 +358,30 @@ function CartLine({
       )}
     </div>
   )
+}
+
+type CartPreparationMode = "kitchen" | "direct" | "bar"
+
+function getCartPreparationMode(item: any): CartPreparationMode {
+  if (item?.preparationMode === "direct" || item?.preparationMode === "service_direct") return "direct"
+  if (item?.preparationMode === "bar" || item?.preparationMode === "counter") return "bar"
+  return "kitchen"
+}
+
+function getPreparationModeLabel(mode: CartPreparationMode) {
+  if (mode === "direct") return "Service direct"
+  if (mode === "bar") return "Bar / Comptoir"
+  return "Cuisine"
+}
+
+function getPreparationModeBadgeClass(mode: CartPreparationMode) {
+  if (mode === "direct") {
+    return "border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-400/40 dark:bg-emerald-500/20 dark:text-emerald-100"
+  }
+  if (mode === "bar") {
+    return "border-indigo-200 bg-indigo-100 text-indigo-800 dark:border-indigo-400/40 dark:bg-indigo-500/25 dark:text-indigo-100"
+  }
+  return "border-orange-200 bg-orange-100 text-orange-800 dark:border-orange-400/40 dark:bg-orange-500/20 dark:text-orange-100"
 }
 
 function ActionButton({

@@ -153,8 +153,10 @@ function POSPageContent() {
   const [turboMode, setTurboMode] = React.useState(false)
   const [discountRate, setDiscountRate] = React.useState(0)
   const [selectedPaymentMode, setSelectedPaymentMode] = React.useState<PosPaymentMode | null>(null)
+  const [cashReceivedInput, setCashReceivedInput] = React.useState("")
   const [closeDialogOpen, setCloseDialogOpen] = React.useState(false)
   const [selectedOrderDetailId, setSelectedOrderDetailId] = React.useState<string | null>(null)
+  const [showAllCompletedOrders, setShowAllCompletedOrders] = React.useState(false)
   const [declaredCashInput, setDeclaredCashInput] = React.useState("")
   const [declaredMobileInput, setDeclaredMobileInput] = React.useState("")
   const [configProduct, setConfigProduct] = React.useState<any | null>(null)
@@ -363,8 +365,8 @@ function POSPageContent() {
         return {
           ...config,
           code: config.methodCode,
-          name: method?.name ?? config.methodCode,
-          logoUrl: method?.logoUrl,
+          name: config.customName || method?.name || config.methodCode,
+          logoUrl: config.customLogo || method?.logoUrl,
         }
       })
       .filter((method: any) => method.code)
@@ -472,13 +474,23 @@ function POSPageContent() {
         return current.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item)
       }
 
-      return [...current, { ...product, quantity: 1 }]
+      const categoryName =
+        safeCategories.find((category: any) => category.id === product.categoryId)?.name || ""
+
+      return [
+        ...current,
+        {
+          ...product,
+          quantity: 1,
+          preparationMode: resolveProductPreparationMode(product, categoryName),
+        },
+      ]
     })
     
     if (!turboMode) {
       toast({ title: "Ajouté", description: product.name, duration: 500 })
     }
-  }, [toast, turboMode])
+  }, [safeCategories, toast, turboMode])
 
   const removeFromCart = (productId: string) => {
     setCart((current) => {
@@ -525,6 +537,7 @@ function POSPageContent() {
   const subtotal = cart.reduce((acc, item) => acc + (getCartItemUnitPrice(item) * item.quantity), 0)
   const discountAmount = Math.round(subtotal * discountRate)
   const total = Math.max(0, subtotal - discountAmount)
+  const cashReceivedAmount = React.useMemo(() => normalizeMoneyInput(cashReceivedInput), [cashReceivedInput])
   const sessionPaidTotal = React.useMemo(() => {
     if (!activeCashSession?.id) return 0
 
@@ -718,6 +731,16 @@ function POSPageContent() {
         linkedGroups,
         catalogProducts: safeProducts,
         mainUnitPrice,
+      }).map((line: any) => {
+        const productId = line.productId ?? line.id
+        const product = safeProducts.find((item: any) => item.id === productId) || line
+        const categoryName =
+          safeCategories.find((category: any) => category.id === product.categoryId)?.name || ""
+
+        return {
+          ...line,
+          preparationMode: line.preparationMode || resolveProductPreparationMode(product, categoryName),
+        }
       })
 
       setCart((current) => [...current, ...bundleLines])
@@ -753,6 +776,10 @@ function POSPageContent() {
           unitPrice: mainUnitPrice,
           quantity: 1,
           selectedOptions,
+          preparationMode: resolveProductPreparationMode(
+            configProduct,
+            safeCategories.find((category: any) => category.id === configProduct.categoryId)?.name || ""
+          ),
         },
       ]
     })
@@ -826,18 +853,9 @@ function POSPageContent() {
       let mobilePaymentCode: string | null = null
 
       if (method === "mobile") {
-        if (!selectedMobileConfig || !countryCode) {
+        if (!selectedMobileConfig) {
           throw new Error("Methode mobile money non configuree")
         }
-
-        const paymentResult = await generatePaymentLinkOrUSSD({
-          methodCode: selectedMobileConfig.code,
-          countryCode,
-          merchant: selectedMobileConfig.merchantNumber,
-          amount: total,
-          db,
-        })
-        mobilePaymentCode = paymentResult.value
       }
 
       const requiresKitchen = orderHasKitchenItems(recalculatedItems)
@@ -888,7 +906,7 @@ function POSPageContent() {
         total,
         totalAmount: total,
         paymentMethod: method === "mobile" ? selectedMobileConfig?.code : "cash",
-        paymentStatus: method === "mobile" ? ORDER_PAYMENT_STATUS.PENDING_MOBILE : ORDER_PAYMENT_STATUS.PAID,
+        paymentStatus: ORDER_PAYMENT_STATUS.PAID,
         kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
         orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
         createdAt: new Date(),
@@ -900,6 +918,7 @@ function POSPageContent() {
         orderId,
         method,
         paymentMethod: method === "mobile" ? selectedMobileConfig?.code : "cash",
+        paymentProviderName: method === "mobile" ? selectedMobileConfig?.name : null,
         paymentCode: mobilePaymentCode,
         cashSessionId: activeCashSession.id,
         amount: total,
@@ -908,12 +927,10 @@ function POSPageContent() {
           staffId: staffSnapshot.staffId,
           staffName: staffSnapshot.staffName,
         },
-        printedClient: method === "cash",
+        printedClient: true,
       })
 
-      if (method === "cash") {
-        await updateActiveCashSessionTotals("cash", total)
-      }
+      await updateActiveCashSessionTotals(method, total)
 
       if (orderHasKitchenItems(recalculatedItems)) {
         const kitchenPrintOrder: PrintableOrder = {
@@ -931,13 +948,15 @@ function POSPageContent() {
         }
         queuePrint(kitchenPrintOrder, "kitchen", { automatic: true })
       }
-      if (method === "cash") {
-        queuePrint(printableOrder, "client", { automatic: true })
-      }
+      queuePrint(printableOrder, "client", { automatic: true })
 
       setCart([])
       setTableNumber(null)
       setOrderType("takeaway")
+      setDiscountRate(0)
+      setCashReceivedInput("")
+      setSelectedPaymentMode(null)
+      setSelectedMobileMethodCode(null)
       toast({ title: "Vente validée", description: `Encaissement ${method.toUpperCase()} terminé.` })
       
       if (window.navigator && window.navigator.vibrate) {
@@ -1069,22 +1088,31 @@ function POSPageContent() {
     try {
       let paymentCode: string | null = null
       let paymentMethod = "cash"
+      let paymentProviderName: string | null = null
 
       if (method === "mobile") {
         const selectedMobileConfig = mobilePaymentMethods.find((item: any) => item.code === selectedMobileMethodCode)
-        if (!selectedMobileConfig || !countryCode) {
+        if (!selectedMobileConfig) {
           throw new Error("Methode mobile money non configuree")
         }
 
-        const result = await generatePaymentLinkOrUSSD({
-          methodCode: selectedMobileConfig.code,
-          countryCode,
-          merchant: selectedMobileConfig.merchantNumber,
-          amount: getOrderComputedTotal(order),
-          db,
-        })
-        paymentCode = result.value
         paymentMethod = selectedMobileConfig.code
+        paymentProviderName = selectedMobileConfig.name
+
+        if (order.source !== "pos") {
+          if (!countryCode) {
+            throw new Error("Methode mobile money non configuree")
+          }
+
+          const result = await generatePaymentLinkOrUSSD({
+            methodCode: selectedMobileConfig.code,
+            countryCode,
+            merchant: selectedMobileConfig.merchantNumber,
+            amount: getOrderComputedTotal(order),
+            db,
+          })
+          paymentCode = result.value
+        }
       }
 
       const beforeOrder = await processOrderPaymentTransaction({
@@ -1093,6 +1121,7 @@ function POSPageContent() {
         orderId: order.id,
         method,
         paymentMethod,
+        paymentProviderName,
         paymentCode,
         cashSessionId: activeCashSession.id,
         amount: getOrderComputedTotal(order),
@@ -1101,11 +1130,11 @@ function POSPageContent() {
           staffId: staffSnapshot.staffId,
           staffName: staffSnapshot.staffName,
         },
-        printedClient: method === "cash" && !order.printedClient,
+        printedClient: !order.printedClient,
       })
 
-      if (method === "cash") {
-        await updateActiveCashSessionTotals("cash", getOrderComputedTotal(order))
+      if (method === "cash" || order.source === "pos") {
+        await updateActiveCashSessionTotals(method, getOrderComputedTotal(order))
         await releaseOrderTableIfNeeded(db, restaurantId, beforeOrder)
         queuePrint(
           {
@@ -1121,7 +1150,7 @@ function POSPageContent() {
 
       setCollectingOrderId(null)
       toast({
-        title: method === "cash" ? "Commande encaissee" : "Paiement mobile genere",
+        title: method === "cash" || order.source === "pos" ? "Commande encaissee" : "Paiement mobile genere",
         description: paymentCode ? `Code: ${paymentCode}` : undefined,
       })
     } catch (error: any) {
@@ -1369,6 +1398,10 @@ function POSPageContent() {
     setSelectedPaymentMode(mode)
     if (mode === "cash") {
       setSelectedMobileMethodCode(null)
+      return
+    }
+    if (mode === "mobile") {
+      setCashReceivedInput("")
     }
   }
 
@@ -1387,6 +1420,9 @@ function POSPageContent() {
     setTableNumber(null)
     setOrderType("takeaway")
     setDiscountRate(0)
+    setCashReceivedInput("")
+    setSelectedPaymentMode(null)
+    setSelectedMobileMethodCode(null)
     toast({ title: "Panier mis en attente", description: "La vente courante a ete retiree de l'ecran caisse." })
   }
 
@@ -1401,6 +1437,14 @@ function POSPageContent() {
     }
 
     if (selectedPaymentMode === "cash") {
+      if (cashReceivedAmount < total) {
+        toast({
+          title: "Montant insuffisant",
+          description: "Le montant reçu doit couvrir le total à payer.",
+          variant: "destructive",
+        })
+        return
+      }
       void handleCheckout("cash")
       return
     }
@@ -1468,20 +1512,10 @@ function POSPageContent() {
             <div className="mb-3 flex shrink-0 items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-muted-foreground">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-black uppercase text-primary">
-                    <span className="h-2 w-2 rounded-full bg-primary" />
-                    Session ouverte
-                  </span>
-                   <span>Début : {formatSessionDateTime(activeCashSession.openedAt)}</span>
-                </div>
-                <div className="mt-1 text-xs font-bold text-muted-foreground">
-                  <span>Caissier : {activeCashSession.staffName || staffSnapshot.staffName}</span>
-                {discountRate > 0 ? (
-                  <>
-                    <span className="mx-2">/</span>
+                  <span>Début : {formatSessionDateTime(activeCashSession.openedAt)}</span>
+                  {discountRate > 0 ? (
                     <span className="text-primary">Remise {Math.round(discountRate * 100)}%</span>
-                  </>
-                ) : null}
+                  ) : null}
                 </div>
               </div>
               <div className="relative hidden min-w-56 max-w-sm flex-1 lg:block">
@@ -1569,6 +1603,7 @@ function POSPageContent() {
               Boolean(activeCashSession) &&
               cart.length > 0 &&
               Boolean(selectedPaymentMode) &&
+              !(selectedPaymentMode === "cash" && cashReceivedAmount < total) &&
               !(selectedPaymentMode === "mobile" && !selectedMobileMethodCode) &&
               !(orderType === "dine-in" && !tableNumber)
             }
@@ -1578,8 +1613,11 @@ function POSPageContent() {
             paymentMode={selectedPaymentMode}
             mobilePaymentMethods={mobilePaymentMethods}
             selectedMobileMethodCode={selectedMobileMethodCode}
+            cashReceivedInput={cashReceivedInput}
+            cashReceivedAmount={cashReceivedAmount}
             onPaymentModeChange={handlePaymentModeChange}
             onMobileMethodChange={setSelectedMobileMethodCode}
+            onCashReceivedChange={setCashReceivedInput}
             onOrderTypeChange={handleOrderTypeChange}
             onTableSelect={handleTableSelect}
             onIncrease={increaseCartItem}
@@ -1592,6 +1630,9 @@ function POSPageContent() {
             onClear={() => {
               setCart([])
               setDiscountRate(0)
+              setCashReceivedInput("")
+              setSelectedPaymentMode(null)
+              setSelectedMobileMethodCode(null)
             }}
             onHold={handleHoldCart}
             onDiscount={handleApplyDiscount}
@@ -1618,6 +1659,11 @@ function POSPageContent() {
               {posColumns.map((column) => {
                 const columnOrders = posOrders[column.id] ?? []
                 const isServedColumn = column.id === ORDER_OPERATION_STATUS.SERVED
+                const isCompletedColumn = column.id === ORDER_OPERATION_STATUS.COMPLETED
+                const visibleColumnOrders =
+                  isCompletedColumn && !showAllCompletedOrders
+                    ? columnOrders.slice(0, 3)
+                    : columnOrders
                 const displayedCount = isServedColumn ? servedTableSessionGroups.length : columnOrders.length
 
                 return (
@@ -1631,11 +1677,14 @@ function POSPageContent() {
                       {isServedColumn ? servedTableSessionGroups.map((group: any) => {
                         const paymentSession = group.paymentSession
                         const paymentRequestStatus = paymentSession?.paymentRequest?.status
+                        const paymentProofSms = getPaymentProofSms(paymentSession, group.orders)
+                        const mobilePaymentNeedsProof = paymentSession?.paymentRequest?.method === "mobile" && !paymentProofSms
+                        const paymentMethodLabel = getConfiguredPaymentMethodLabel(group.orders[0], paymentSession, mobilePaymentMethods)
                         const hasSessionPaymentRequest =
                           paymentRequestStatus === "requested" ||
                           paymentRequestStatus === "pending_confirmation"
                         const isMobilePayment = paymentSession?.paymentRequest?.method === "mobile"
-                        const canVerifyPayment = Boolean(hasSessionPaymentRequest)
+                        const canVerifyPayment = Boolean(hasSessionPaymentRequest) && !mobilePaymentNeedsProof
                         const paymentLabel = paymentRequestStatus === "requested"
                           ? "Client veut payer"
                           : paymentRequestStatus === "pending_confirmation"
@@ -1700,13 +1749,27 @@ function POSPageContent() {
                                   {paymentSession?.paymentRequest?.method === "cash"
                                     ? "Espèces"
                                     : isMobilePayment
-                                      ? paymentSession?.paymentRequest?.provider || "Mobile Money"
+                                      ? paymentMethodLabel
                                       : "Non initié"}
                                 </span>
                               </div>
                               <p className={cn("text-right text-[10px] font-black", canVerifyPayment ? "text-amber-600" : "text-muted-foreground")}>
                                 {paymentLabel}
                               </p>
+                              {isMobilePayment ? (
+                                <div className={cn(
+                                  "rounded-full px-2 py-1 text-center text-[9px] font-black uppercase",
+                                  paymentProofSms ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                                )}>
+                                  {paymentProofSms ? "Preuve reçue" : "Preuve manquante"}
+                                </div>
+                              ) : null}
+                              {paymentProofSms ? (
+                                <div className="rounded-md border bg-background p-2 text-[9px] font-semibold text-foreground">
+                                  <p className="font-black uppercase text-muted-foreground">SMS client</p>
+                                  <p className="mt-1 whitespace-pre-wrap break-words">{paymentProofSms}</p>
+                                </div>
+                              ) : null}
                               <Button
                                 className="mt-2 h-7 w-full bg-primary text-[9px] font-black hover:bg-primary/90"
                                 disabled={processing || !canVerifyPayment || !paymentSession}
@@ -1720,14 +1783,17 @@ function POSPageContent() {
                             </div>
                           </div>
                         )
-                      }) : columnOrders.map((order: any) => {
+                      }) : visibleColumnOrders.map((order: any) => {
                         const paymentSession = getPaymentSessionForOrder(order, safeTableSessions)
                         const paymentRequestStatus = paymentSession?.paymentRequest?.status
+                        const paymentProofSms = getPaymentProofSms(paymentSession, [order])
+                        const paymentMethodLabel = getConfiguredPaymentMethodLabel(order, paymentSession, mobilePaymentMethods)
                         const hasSessionPaymentRequest =
                           paymentRequestStatus === "requested" ||
                           paymentRequestStatus === "pending_confirmation"
                         const isPaid = isOrderPaid(order) || paymentRequestStatus === "validated"
                         const isMobilePayment = isMobileMoneyOrder(order) || paymentSession?.paymentRequest?.method === "mobile"
+                        const mobilePaymentNeedsProof = isMobilePayment && !paymentProofSms
                         const isPendingMobilePayment = (order.paymentStatus === "pending_mobile" || order.paymentStatus === "pending") && isMobilePayment
                         const isPaymentVisible =
                           hasSessionPaymentRequest ||
@@ -1736,10 +1802,13 @@ function POSPageContent() {
                           order.paymentStatus === "pending_cash" ||
                           isPaid
                         const canVerifyPayment =
-                          hasSessionPaymentRequest ||
-                          order.paymentStatus === "pending_verification" ||
-                          isPendingMobilePayment ||
-                          order.paymentStatus === "pending_cash"
+                          !mobilePaymentNeedsProof &&
+                          (
+                            hasSessionPaymentRequest ||
+                            order.paymentStatus === "pending_verification" ||
+                            isPendingMobilePayment ||
+                            order.paymentStatus === "pending_cash"
+                          )
                         const paymentLabel = paymentRequestStatus === "requested"
                           ? "Client veut payer"
                           : paymentRequestStatus === "pending_confirmation"
@@ -1837,7 +1906,7 @@ function POSPageContent() {
                                       {paymentSession?.paymentRequest?.method === "cash"
                                         ? "Espèces"
                                         : isMobilePayment
-                                          ? paymentSession?.paymentRequest?.provider || "Mobile Money"
+                                          ? paymentMethodLabel
                                           : "Cash"}
                                     </span>
                                   </div>
@@ -1845,6 +1914,20 @@ function POSPageContent() {
                                 <p className={cn("text-right text-[10px] font-black", canVerifyPayment ? "text-amber-600" : "text-muted-foreground")}>
                                   {paymentLabel}
                                 </p>
+                                {isMobilePayment ? (
+                                  <div className={cn(
+                                    "rounded-full px-2 py-1 text-center text-[9px] font-black uppercase",
+                                    paymentProofSms ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                                  )}>
+                                    {paymentProofSms ? "Preuve reçue" : "Preuve manquante"}
+                                  </div>
+                                ) : null}
+                                {paymentProofSms ? (
+                                  <div className="rounded-md border bg-background p-2 text-[9px] font-semibold text-foreground">
+                                    <p className="font-black uppercase text-muted-foreground">SMS client</p>
+                                    <p className="mt-1 whitespace-pre-wrap break-words">{paymentProofSms}</p>
+                                  </div>
+                                ) : null}
 
                                 {isPaymentVisible ? (
                                   <Button
@@ -1884,6 +1967,16 @@ function POSPageContent() {
                           </div>
                         )
                       })}
+                      {isCompletedColumn && columnOrders.length > 3 ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 w-full text-[10px] font-black"
+                          onClick={() => setShowAllCompletedOrders((current) => !current)}
+                        >
+                          {showAllCompletedOrders ? "Voir moins" : "Voir plus"}
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 )
@@ -1897,6 +1990,7 @@ function POSPageContent() {
     <CashierOrderDetailDialog
       order={selectedOrderDetail}
       paymentSession={selectedOrderPaymentSession}
+      paymentMethods={mobilePaymentMethods}
       tables={tables}
       processing={processing}
       onClose={() => setSelectedOrderDetailId(null)}
@@ -2007,6 +2101,7 @@ function DiffAmount({ label, value, strong }: { label: string; value: number; st
 function CashierOrderDetailDialog({
   order,
   paymentSession,
+  paymentMethods,
   tables,
   processing,
   onClose,
@@ -2015,6 +2110,7 @@ function CashierOrderDetailDialog({
 }: {
   order: any | null
   paymentSession: any | null
+  paymentMethods: any[]
   tables: RestaurantTableRecord[]
   processing: boolean
   onClose: () => void
@@ -2030,8 +2126,13 @@ function CashierOrderDetailDialog({
   const paymentRequestStatus = paymentSession?.paymentRequest?.status
   const isPaid = isOrderPaid(order) || paymentRequestStatus === "validated"
   const isMobilePayment = isMobileMoneyOrder(order) || paymentSession?.paymentRequest?.method === "mobile"
+  const paymentProofSms = getPaymentProofSms(paymentSession, [order])
+  const paymentProofSubmittedAt = getPaymentProofSubmittedAt(paymentSession, [order])
+  const paymentMethodLabel = getConfiguredPaymentMethodLabel(order, paymentSession, paymentMethods)
+  const mobilePaymentNeedsProof = isMobilePayment && !paymentProofSms
   const canValidatePayment =
     !isPaid &&
+    !mobilePaymentNeedsProof &&
     (
       paymentRequestStatus === "requested" ||
       paymentRequestStatus === "pending_confirmation" ||
@@ -2078,13 +2179,28 @@ function CashierOrderDetailDialog({
             <DetailMeta label="Type" value={getCashierOrderTypeLabel(order)} />
             <DetailMeta label="Paiement" value={formatCashierPaymentStatus(order, paymentSession)} />
             <DetailMeta label="Préparation" value={formatCashierOrderStatus(order)} />
-            <DetailMeta label="Mode paiement" value={formatCashierPaymentMethod(order.paymentMethod || paymentSession?.paymentRequest?.method)} />
+            <DetailMeta label="Mode paiement" value={paymentMethodLabel} />
           </div>
 
           {(phone || deliveryAddress) ? (
             <div className="mt-3 rounded-lg border bg-muted/30 p-3 text-sm">
               {phone ? <p><span className="font-black">Téléphone:</span> {phone}</p> : null}
               {deliveryAddress ? <p className="mt-1"><span className="font-black">Adresse:</span> {deliveryAddress}</p> : null}
+            </div>
+          ) : null}
+
+          {isMobilePayment ? (
+            <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+              <p className="font-black uppercase">Preuve de paiement</p>
+              <div className="mt-2 space-y-1">
+                <p><span className="font-black">Moyen :</span> {paymentMethodLabel}</p>
+                {paymentProofSubmittedAt ? <p><span className="font-black">Envoyée le :</span> {formatSessionDateTime(paymentProofSubmittedAt)}</p> : null}
+              </div>
+              {paymentProofSms ? (
+                <p className="mt-3 whitespace-pre-wrap break-words rounded-md bg-white/70 p-2 font-semibold">{paymentProofSms}</p>
+              ) : (
+                <p className="mt-3 rounded-md bg-red-100 p-2 font-black text-red-700">Preuve manquante</p>
+              )}
             </div>
           ) : null}
 
@@ -2365,6 +2481,45 @@ function getPaymentSessionForOrder(order: any, tableSessions: any[]) {
   if (!sessionId) return null
 
   return tableSessions.find((session) => session.id === sessionId) ?? null
+}
+
+function getPaymentProofSms(paymentSession: any | null, orders: any[]) {
+  const sessionProof = paymentSession?.paymentRequest?.paymentProofSms
+  if (typeof sessionProof === "string" && sessionProof.trim()) return sessionProof.trim()
+
+  const orderWithProof = orders.find((order: any) => {
+    return typeof order?.paymentProofSms === "string" && order.paymentProofSms.trim()
+  })
+
+  return orderWithProof?.paymentProofSms?.trim() || ""
+}
+
+function getPaymentProofSubmittedAt(paymentSession: any | null, orders: any[]) {
+  if (paymentSession?.paymentRequest?.paymentProofSubmittedAt) {
+    return paymentSession.paymentRequest.paymentProofSubmittedAt
+  }
+
+  const orderWithProofDate = orders.find((order: any) => order?.paymentProofSubmittedAt)
+  return orderWithProofDate?.paymentProofSubmittedAt ?? null
+}
+
+function getConfiguredPaymentMethodLabel(order: any, paymentSession: any | null, paymentMethods: any[]) {
+  const sessionProvider = paymentSession?.paymentRequest?.provider
+  if (sessionProvider && sessionProvider !== "mobile_money") return formatCashierPaymentMethod(sessionProvider)
+
+  const code =
+    order?.paymentMethodCode ||
+    order?.paymentProvider ||
+    order?.paymentMethod ||
+    paymentSession?.paymentRequest?.provider ||
+    paymentSession?.paymentRequest?.method
+
+  const configuredMethod = paymentMethods.find((method: any) => {
+    return method.code === code || method.methodCode === code || method.name === code
+  })
+
+  if (configuredMethod?.name) return configuredMethod.name
+  return formatCashierPaymentMethod(code)
 }
 
 function buildServedTableSessionGroups(orders: any[], tableSessions: any[], tables: RestaurantTableRecord[]) {

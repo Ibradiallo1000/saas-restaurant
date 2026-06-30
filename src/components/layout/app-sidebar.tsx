@@ -123,10 +123,9 @@ const AppSidebarComponent = () => {
     }
 
     if (role === ROLES.MANAGER) {
-      items.push({ name: "Analytics", href: "/manager/dashboard", icon: Store })
+      items.push({ name: "Dashboard", href: "/manager/dashboard", icon: Store })
       items.push({ name: "Commandes", href: "/manager/commandes", icon: ListOrdered })
       items.push({ name: "Caisse", href: "/manager/caisse", icon: Wallet })
-      items.push({ name: "Cuisine", href: "/manager/cuisine", icon: ChefHat })
       items.push({ name: "Menu", href: "/manager/menu", icon: Store })
       items.push({ name: "Tables", href: "/manager/tables", icon: Table2 })
       items.push({ name: "Images", href: "/manager/images", icon: ImageIcon })

@@ -5,7 +5,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { signOut } from "firebase/auth"
 import {
   Banknote,
-  ChefHat,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -48,7 +47,7 @@ import { useIsMobile } from "@/hooks/useIsMobile"
 import { RestaurantLiveDataProvider, useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 
 const MANAGER_NAV = [
-  { label: "Analytics", href: "/manager/dashboard", icon: LayoutDashboard },
+  { label: "Dashboard", href: "/manager/dashboard", icon: LayoutDashboard },
   { label: "Commandes", href: "/manager/commandes", icon: ClipboardList, withBadge: true },
   { label: "Caisse", href: "/manager/caisse", icon: Wallet },
   { label: "Trésorerie", href: "/manager/tresorerie", icon: Banknote },
@@ -58,7 +57,6 @@ const MANAGER_NAV = [
   { label: "Images", href: "/manager/images", icon: ImageIcon },
   { label: "Inventaire", href: "/manager/inventory", icon: Package },
   { label: "Fournisseurs", href: "/manager/suppliers", icon: UserRound },
-  { label: "Cuisine", href: "/manager/cuisine", icon: ChefHat },
 ]
 
 const MOBILE_MANAGER_DRAWER_NAV: typeof MANAGER_NAV = []
