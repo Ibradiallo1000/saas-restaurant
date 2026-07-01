@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Download, Share2, X } from "lucide-react"
+import { Chrome, Download, X } from "lucide-react"
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -14,9 +14,8 @@ const DISMISS_DURATION_MS = 1000 * 60 * 60 * 24 * 7
 export default function PWAInstallPrompt() {
   const [installPrompt, setInstallPrompt] = React.useState<BeforeInstallPromptEvent | null>(null)
   const [visible, setVisible] = React.useState(false)
-  const [isIos, setIsIos] = React.useState(false)
+  const [isChromeAndroid, setIsChromeAndroid] = React.useState(false)
   const [isStandalone, setIsStandalone] = React.useState(false)
-  const [showIosHelp, setShowIosHelp] = React.useState(false)
   const [showManualHelp, setShowManualHelp] = React.useState(false)
 
   React.useEffect(() => {
@@ -24,29 +23,29 @@ export default function PWAInstallPrompt() {
 
     const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean }
     const userAgent = window.navigator.userAgent.toLowerCase()
-    const ios = /iphone|ipad|ipod/.test(userAgent)
-    const androidChrome = /android/.test(userAgent) && /chrome|crios/.test(userAgent)
+    const chromeAndroid = isGoogleChromeAndroid(userAgent)
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       navigatorWithStandalone.standalone === true
 
-    setIsIos(ios)
+    setIsChromeAndroid(chromeAndroid)
     setIsStandalone(standalone)
 
     if (standalone || wasRecentlyDismissed()) return
 
-    if (ios) {
-      const timer = window.setTimeout(() => setVisible(true), 1800)
+    if (!chromeAndroid) {
+      const timer = window.setTimeout(() => {
+        setShowManualHelp(true)
+        setVisible(true)
+      }, 1800)
       return () => window.clearTimeout(timer)
     }
 
     let fallbackTimer: number | null = null
-    if (androidChrome) {
-      fallbackTimer = window.setTimeout(() => {
-        setShowManualHelp(true)
-        setVisible(true)
-      }, 3000)
-    }
+    fallbackTimer = window.setTimeout(() => {
+      setShowManualHelp(true)
+      setVisible(true)
+    }, 3000)
 
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault()
@@ -72,12 +71,7 @@ export default function PWAInstallPrompt() {
   }, [])
 
   const handleInstall = async () => {
-    if (isIos) {
-      setShowIosHelp(true)
-      return
-    }
-
-    if (!installPrompt) {
+    if (!isChromeAndroid || !installPrompt) {
       setShowManualHelp(true)
       return
     }
@@ -95,24 +89,26 @@ export default function PWAInstallPrompt() {
     setVisible(false)
   }
 
-  if (isStandalone || !visible || (!installPrompt && !isIos && !showManualHelp)) return null
+  if (isStandalone || !visible || (!installPrompt && !showManualHelp)) return null
+
+  const canPromptInstall = isChromeAndroid && installPrompt && !showManualHelp
 
   return (
     <div className="fixed bottom-24 left-3 right-3 z-[70] mx-auto max-w-sm md:bottom-6 md:left-auto md:right-6 md:mx-0">
       <div className="rounded-2xl border bg-background/95 p-3 text-foreground shadow-2xl backdrop-blur">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
-            {isIos ? <Share2 className="h-5 w-5" /> : <Download className="h-5 w-5" />}
+            {canPromptInstall ? <Download className="h-5 w-5" /> : <Chrome className="h-5 w-5" />}
           </div>
 
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-black">Installer l'application</p>
+            <p className="text-sm font-black">
+              {canPromptInstall ? "Installer l'application" : "Ouvrir dans Google Chrome"}
+            </p>
             <p className="mt-0.5 text-xs font-semibold leading-5 text-muted-foreground">
-              {showIosHelp
-                ? "Sur iPhone : appuie sur Partager, puis sur Sur l'ecran d'accueil."
-                : showManualHelp
-                ? "Ouvrez le menu ⋮ de Chrome, puis choisissez Ajouter à l'écran d'accueil."
-                : "Accede plus vite au restaurant depuis ton ecran d'accueil."}
+              {canPromptInstall
+                ? "Accede plus vite au restaurant depuis ton ecran d'accueil."
+                : "Pour installer l'application sans alerte de sécurité, ouvrez ce site dans Google Chrome puis choisissez Ajouter à l'écran d'accueil."}
             </p>
 
             <div className="mt-3 flex gap-2">
@@ -121,7 +117,7 @@ export default function PWAInstallPrompt() {
                 onClick={handleInstall}
                 className="h-10 flex-1 rounded-xl bg-[var(--color-primary)] px-4 text-xs font-black uppercase text-white transition active:scale-[0.98]"
               >
-                {isIos || showManualHelp ? "Voir comment" : "Installer"}
+                {canPromptInstall ? "Installer" : "Compris"}
               </button>
               <button
                 type="button"
@@ -151,4 +147,15 @@ function wasRecentlyDismissed() {
   const value = window.localStorage.getItem(DISMISS_KEY)
   const dismissedAt = Number(value || 0)
   return Number.isFinite(dismissedAt) && Date.now() - dismissedAt < DISMISS_DURATION_MS
+}
+
+function isGoogleChromeAndroid(userAgent: string) {
+  return (
+    userAgent.includes("android") &&
+    userAgent.includes("chrome/") &&
+    !userAgent.includes("samsungbrowser") &&
+    !userAgent.includes("edg/") &&
+    !userAgent.includes("opr/") &&
+    !userAgent.includes("firefox/")
+  )
 }

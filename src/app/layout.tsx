@@ -5,10 +5,10 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: {
-    default: "SaaS Restaurant",
-    template: "%s | SaaS Restaurant",
+    default: "Oordera",
+    template: "%s | Oordera",
   },
-  description: "Application de gestion restaurant, POS, cuisine, caisse et inventaire.",
+  description: "Commandez et suivez vos commandes restaurant avec Oordera.",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "SaaS Restaurant",
+    title: "Oordera",
   },
 }
 

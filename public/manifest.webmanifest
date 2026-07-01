@@ -1,6 +1,6 @@
 {
-  "name": "SaaS Restaurant",
-  "short_name": "Restaurant",
+  "name": "Oordera",
+  "short_name": "Oordera",
   "description": "Gestion restaurant, POS, cuisine, caisse et inventaire.",
   "start_url": "/",
   "scope": "/",
