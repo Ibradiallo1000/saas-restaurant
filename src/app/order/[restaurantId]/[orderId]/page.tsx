@@ -2,7 +2,21 @@
 
 import * as React from "react"
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore"
-import { Banknote, CheckCircle, CreditCard, Phone, Utensils } from "lucide-react"
+import {
+  Banknote,
+  Bell,
+  CheckCircle,
+  CheckCircle2,
+  ChefHat,
+  ClipboardList,
+  Clock,
+  CreditCard,
+  Info,
+  PackageCheck,
+  Phone,
+  Utensils,
+  type LucideIcon,
+} from "lucide-react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 
 import { OrderStepper } from "@/components/OrderStepper"
@@ -377,6 +391,12 @@ function ClientOrderTrackingContent() {
   const orderDisplayId = getOrderDisplayId(safeOrder)
   const orderPhone = safeOrder.customer?.phone?.trim()
   const shouldShowPhone = isDeliveryOrderType(rawOrderType) || Boolean(orderPhone)
+  const statusSummary = getTrackingStatusSummary({
+    order: mainOrder,
+    orderType: rawOrderType,
+    step,
+    label,
+  })
   const canContinueOrdering =
     Boolean(slug) &&
     isQrTableOrder &&
@@ -484,23 +504,18 @@ function ClientOrderTrackingContent() {
       onHome={canContinueOrdering ? continueOrdering : goHome}
     >
       <div className="mx-auto max-w-md space-y-4">
-        <section className="rounded-2xl border bg-card px-5 py-4 text-card-foreground shadow-sm">
-          <h1 className="text-[30px] font-bold leading-tight text-foreground sm:text-[32px]">
-            Suivez votre commande
-          </h1>
-          <p className="mt-2 text-lg font-semibold text-foreground sm:text-xl">
-            Commande n° {orderDisplayId}
-          </p>
-          {shouldShowPhone && orderPhone ? (
-            <p className="mt-1.5 flex items-center gap-2 text-[15px] font-medium text-muted-foreground sm:text-base">
-              <Phone className="h-4 w-4 shrink-0" />
-              <span>{orderPhone}</span>
-            </p>
-          ) : null}
-        </section>
+        <TrackingHeaderCard
+          orderDisplayId={orderDisplayId}
+          orderPhone={shouldShowPhone ? orderPhone : ""}
+        />
+
+        <TrackingStatusCard summary={statusSummary} />
 
         {mainOrder && (
-          <section className="rounded-2xl border bg-card p-3 text-card-foreground shadow-sm">
+          <section className="rounded-2xl border bg-card px-4 py-5 text-card-foreground shadow-sm">
+            <h2 className="mb-5 text-lg font-black text-foreground">
+              Évolution de votre commande
+            </h2>
             <OrderStepper 
               orderType={mainOrder.orderType} 
               kitchenStatus={mainOrder.kitchenStatus} 
@@ -510,6 +525,8 @@ function ClientOrderTrackingContent() {
             />
           </section>
         )}
+
+        <TrackingInfoCard />
 
         {shouldShowPostServicePayment ? (
           <section className="rounded-2xl border-2 border-orange-200 bg-orange-50 p-5 text-orange-950 shadow-lg dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-100">
@@ -635,6 +652,239 @@ function getOrderTotal(order: any) {
   if (Number.isFinite(explicit) && explicit > 0) return explicit
 
   return (order?.items || []).reduce((sum: number, item: any) => sum + getItemTotal(item), 0)
+}
+
+type TrackingStatusSummary = {
+  title: string
+  description: string
+  icon: LucideIcon
+  remainingLabel: string
+  readyAtLabel: string
+}
+
+function getTrackingStatusSummary({
+  order,
+  orderType,
+  step,
+  label,
+}: {
+  order: any
+  orderType?: string | null
+  step: number
+  label: string
+}): TrackingStatusSummary {
+  const createdAt = toTrackingDate(order?.createdAt)
+  const now = Date.now()
+  const estimatedReadyAt = getEstimatedReadyAt(order, createdAt, step)
+  const remainingMinutes = estimatedReadyAt
+    ? Math.max(0, Math.ceil((estimatedReadyAt.getTime() - now) / 60000))
+    : getFallbackRemainingMinutes(step)
+  const readyAtLabel = estimatedReadyAt ? formatTrackingTime(estimatedReadyAt) : "--:--"
+
+  if (step <= 1) {
+    return {
+      title: "Commande reçue",
+      description: "Votre commande a bien été transmise au restaurant.",
+      icon: ClipboardList,
+      remainingLabel: `${remainingMinutes} min`,
+      readyAtLabel,
+    }
+  }
+
+  if (step === 2) {
+    return {
+      title: "Préparation en cours",
+      description: "Nos cuisiniers préparent actuellement votre commande avec soin.",
+      icon: ChefHat,
+      remainingLabel: `${remainingMinutes} min`,
+      readyAtLabel,
+    }
+  }
+
+  if (step === 3) {
+    return {
+      title: "Commande prête",
+      description: getReadyDescription(orderType),
+      icon: Bell,
+      remainingLabel: `${remainingMinutes} min`,
+      readyAtLabel,
+    }
+  }
+
+  return {
+    title: getFinalStatusTitle(orderType, label),
+    description: "Votre commande est finalisée. Merci pour votre confiance.",
+    icon: CheckCircle2,
+    remainingLabel: "0 min",
+    readyAtLabel,
+  }
+}
+
+function TrackingHeaderCard({
+  orderDisplayId,
+  orderPhone,
+}: {
+  orderDisplayId: string
+  orderPhone?: string | null
+}) {
+  return (
+    <section className="rounded-2xl border bg-card px-5 py-5 text-card-foreground shadow-sm">
+      <div className="flex items-start gap-4">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-orange-200 bg-orange-50 text-orange-600 shadow-sm dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300">
+          <ClipboardList className="h-7 w-7" />
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <h1 className="text-[30px] font-bold leading-tight text-foreground sm:text-[32px]">
+            Suivez votre commande
+          </h1>
+          <p className="mt-2 text-lg font-semibold text-muted-foreground sm:text-xl">
+            Commande n° <span className="text-orange-600 dark:text-orange-300">{orderDisplayId}</span>
+          </p>
+          {orderPhone ? (
+            <p className="mt-2 flex items-center gap-2 text-[15px] font-medium text-muted-foreground sm:text-base">
+              <Phone className="h-4 w-4 shrink-0" />
+              <span>{orderPhone}</span>
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TrackingStatusCard({ summary }: { summary: TrackingStatusSummary }) {
+  const Icon = summary.icon
+
+  return (
+    <section className="rounded-2xl border border-orange-200 bg-orange-50/70 px-5 py-6 text-orange-950 shadow-sm dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-100">
+      <div className="flex items-start gap-5">
+        <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-white text-orange-600 shadow-[0_16px_35px_rgba(15,23,42,0.12)] dark:bg-slate-950/80 dark:text-orange-300">
+          <Icon className="h-9 w-9" />
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <h2 className="text-2xl font-black leading-tight text-orange-600 dark:text-orange-300">
+            {summary.title}
+          </h2>
+          <p className="mt-3 text-lg leading-8 text-foreground">
+            {summary.description}
+          </p>
+        </div>
+      </div>
+
+      <div className="my-5 h-px bg-orange-200/80 dark:bg-orange-400/20" />
+
+      <div className="grid grid-cols-2 gap-4">
+        <TrackingMetric
+          icon={Clock}
+          label="Temps estimé"
+          value={summary.remainingLabel}
+          suffix="restantes"
+        />
+        <TrackingMetric
+          icon={PackageCheck}
+          label="Préparée vers"
+          value={summary.readyAtLabel}
+        />
+      </div>
+    </section>
+  )
+}
+
+function TrackingMetric({
+  icon: Icon,
+  label,
+  value,
+  suffix,
+}: {
+  icon: LucideIcon
+  label: string
+  value: string
+  suffix?: string
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300">
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-muted-foreground">{label}</span>
+        <span className="mt-1 block text-2xl font-black leading-none text-orange-600 dark:text-orange-300">{value}</span>
+        {suffix ? <span className="mt-1 block text-sm font-medium text-muted-foreground">{suffix}</span> : null}
+      </span>
+    </div>
+  )
+}
+
+function TrackingInfoCard() {
+  return (
+    <section className="rounded-2xl border border-orange-200 bg-orange-50/50 px-5 py-4 text-card-foreground shadow-sm dark:border-orange-400/25 dark:bg-orange-500/10">
+      <div className="flex items-center gap-4">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300">
+          <Info className="h-5 w-5" />
+        </span>
+        <div>
+          <h2 className="text-base font-black text-foreground">Merci pour votre commande !</h2>
+          <p className="mt-1 text-sm font-medium text-muted-foreground">
+            Nous vous tiendrons informé à chaque étape.
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function getEstimatedReadyAt(order: any, createdAt: Date | null, step: number) {
+  const explicit =
+    toTrackingDate(order?.estimatedReadyAt) ||
+    toTrackingDate(order?.estimatedPickupAt) ||
+    toTrackingDate(order?.estimatedDeliveryAt) ||
+    toTrackingDate(order?.readyAt) ||
+    toTrackingDate(order?.timestamps?.readyAt)
+
+  if (explicit) return explicit
+
+  const base = createdAt || new Date()
+  const fallbackMinutes = step <= 1 ? 18 : step === 2 ? 12 : step === 3 ? 3 : 0
+  return new Date(base.getTime() + fallbackMinutes * 60000)
+}
+
+function getFallbackRemainingMinutes(step: number) {
+  if (step <= 1) return 18
+  if (step === 2) return 12
+  if (step === 3) return 3
+  return 0
+}
+
+function getReadyDescription(orderType: string | null | undefined) {
+  return isDeliveryOrderType(orderType)
+    ? "Votre commande est prête et sera bientôt prise en charge."
+    : "Votre commande est prête. Vous pouvez la récupérer."
+}
+
+function getFinalStatusTitle(orderType: string | null | undefined, label: string) {
+  if (isDeliveryOrderType(orderType)) return "Commande livrée"
+  if (label.toLowerCase().includes("serv")) return "Commande servie"
+  if (label.toLowerCase().includes("récup") || label.toLowerCase().includes("recup")) return "Commande récupérée"
+  return "Commande terminée"
+}
+
+function toTrackingDate(value: unknown): Date | null {
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+  if (typeof value === "object" && value && "toDate" in value && typeof value.toDate === "function") {
+    return value.toDate()
+  }
+  return null
+}
+
+function formatTrackingTime(date: Date) {
+  return date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
 }
 
 function PaymentConfirmedPanel() {
