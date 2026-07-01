@@ -79,7 +79,7 @@ export default function Header({
           {/* NAME */}
           <p
             className={`
-              max-w-[48vw] truncate text-sm font-extrabold transition-colors duration-300 sm:max-w-[55vw] sm:text-base lg:max-w-none
+              max-w-[50vw] truncate text-base font-extrabold transition-colors duration-300 sm:max-w-[55vw] sm:text-lg lg:max-w-none
               ${scrolled ? "text-[var(--public-text-main)]" : "text-white"}
             `}
           >
@@ -93,11 +93,11 @@ export default function Header({
           {/* THEME */}
           <div
             className={`
-              flex h-9 w-9 items-center justify-center rounded-lg
+              flex h-9 w-9 items-center justify-center rounded-full
               transition-all duration-300
               ${scrolled
-                ? "border border-[var(--public-card-border)] bg-[var(--public-orange-soft)] text-[var(--public-text-main)]"
-                : "border border-white/20 bg-white/[0.12] text-white backdrop-blur"
+                ? "border border-[var(--public-card-border)] bg-white/80 text-slate-900 shadow-sm backdrop-blur dark:bg-slate-800/80 dark:text-slate-50"
+                : "border border-white/25 bg-white/[0.16] text-white shadow-lg backdrop-blur dark:bg-slate-900/45"
               }
             `}
           >
