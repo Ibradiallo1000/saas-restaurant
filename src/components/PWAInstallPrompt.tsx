@@ -17,6 +17,7 @@ export default function PWAInstallPrompt() {
   const [isIos, setIsIos] = React.useState(false)
   const [isStandalone, setIsStandalone] = React.useState(false)
   const [showIosHelp, setShowIosHelp] = React.useState(false)
+  const [showManualHelp, setShowManualHelp] = React.useState(false)
 
   React.useEffect(() => {
     if (typeof window === "undefined") return
@@ -24,6 +25,7 @@ export default function PWAInstallPrompt() {
     const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean }
     const userAgent = window.navigator.userAgent.toLowerCase()
     const ios = /iphone|ipad|ipod/.test(userAgent)
+    const androidChrome = /android/.test(userAgent) && /chrome|crios/.test(userAgent)
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       navigatorWithStandalone.standalone === true
@@ -38,8 +40,18 @@ export default function PWAInstallPrompt() {
       return () => window.clearTimeout(timer)
     }
 
+    let fallbackTimer: number | null = null
+    if (androidChrome) {
+      fallbackTimer = window.setTimeout(() => {
+        setShowManualHelp(true)
+        setVisible(true)
+      }, 3000)
+    }
+
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault()
+      if (fallbackTimer) window.clearTimeout(fallbackTimer)
+      setShowManualHelp(false)
       setInstallPrompt(event as BeforeInstallPromptEvent)
       setVisible(true)
     }
@@ -55,6 +67,7 @@ export default function PWAInstallPrompt() {
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt)
       window.removeEventListener("appinstalled", handleAppInstalled)
+      if (fallbackTimer) window.clearTimeout(fallbackTimer)
     }
   }, [])
 
@@ -64,7 +77,10 @@ export default function PWAInstallPrompt() {
       return
     }
 
-    if (!installPrompt) return
+    if (!installPrompt) {
+      setShowManualHelp(true)
+      return
+    }
 
     await installPrompt.prompt()
     const choice = await installPrompt.userChoice
@@ -79,7 +95,7 @@ export default function PWAInstallPrompt() {
     setVisible(false)
   }
 
-  if (isStandalone || !visible || (!installPrompt && !isIos)) return null
+  if (isStandalone || !visible || (!installPrompt && !isIos && !showManualHelp)) return null
 
   return (
     <div className="fixed bottom-24 left-3 right-3 z-[70] mx-auto max-w-sm md:bottom-6 md:left-auto md:right-6 md:mx-0">
@@ -94,6 +110,8 @@ export default function PWAInstallPrompt() {
             <p className="mt-0.5 text-xs font-semibold leading-5 text-muted-foreground">
               {showIosHelp
                 ? "Sur iPhone : appuie sur Partager, puis sur Sur l'ecran d'accueil."
+                : showManualHelp
+                ? "Ouvrez le menu ⋮ de Chrome, puis choisissez Ajouter à l'écran d'accueil."
                 : "Accede plus vite au restaurant depuis ton ecran d'accueil."}
             </p>
 
@@ -103,7 +121,7 @@ export default function PWAInstallPrompt() {
                 onClick={handleInstall}
                 className="h-10 flex-1 rounded-xl bg-[var(--color-primary)] px-4 text-xs font-black uppercase text-white transition active:scale-[0.98]"
               >
-                {isIos ? "Voir comment" : "Installer"}
+                {isIos || showManualHelp ? "Voir comment" : "Installer"}
               </button>
               <button
                 type="button"
