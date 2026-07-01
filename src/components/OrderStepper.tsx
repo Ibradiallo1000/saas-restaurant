@@ -52,7 +52,7 @@ export function OrderStepper({
         style={{ width: `calc(75% * ${Math.max(0, currentIndex) / 3})` }}
       />
 
-      <div className="relative grid grid-cols-4 gap-1">
+      <div className="relative grid grid-cols-4 gap-0.5">
         {steps.map((step, index) => {
           const Icon = step.icon
           const isCompleted = index < currentIndex
@@ -60,7 +60,7 @@ export function OrderStepper({
           const isFuture = index > currentIndex
 
           return (
-            <div key={step.key} className="flex min-w-0 flex-col items-center gap-2 text-center">
+            <div key={step.key} className="flex min-w-0 flex-col items-center gap-1.5 text-center">
               <div
                 className={cn(
                   "flex h-9 w-9 items-center justify-center rounded-full border shadow-sm transition-all duration-500 ease-out",
@@ -70,19 +70,19 @@ export function OrderStepper({
               >
                 {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
               </div>
-              <div>
+              <div className="min-w-0">
                 <p
                   className={cn(
-                    "whitespace-nowrap text-[10px] font-black leading-tight sm:text-xs",
+                    "whitespace-nowrap text-[12px] font-black leading-tight sm:text-[13px]",
                     isFuture ? "text-muted-foreground" : "text-orange-600 dark:text-orange-300"
                   )}
                 >
                   {step.label}
                 </p>
-                <p className="mt-2 text-[10px] font-semibold leading-tight text-muted-foreground">
+                <p className="mt-1 text-[11px] font-semibold leading-tight text-muted-foreground sm:text-xs">
                   {step.at ? formatTime(step.at) : "--:--"}
                   {step.deltaMs !== null ? (
-                    <span className="block text-[9px] font-medium text-muted-foreground/80">
+                    <span className="block text-[10px] font-medium text-muted-foreground/80">
                       +{formatStepDelta(step.deltaMs)}
                     </span>
                   ) : null}

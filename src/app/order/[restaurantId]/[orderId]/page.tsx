@@ -9,10 +9,8 @@ import {
   CheckCircle2,
   ChefHat,
   ClipboardList,
-  Clock,
   CreditCard,
   Info,
-  PackageCheck,
   Phone,
   Utensils,
   type LucideIcon,
@@ -503,7 +501,7 @@ function ClientOrderTrackingContent() {
       setCartOpen={setCartOpen}
       onHome={canContinueOrdering ? continueOrdering : goHome}
     >
-      <div className="mx-auto max-w-md space-y-4">
+      <div className="mx-auto max-w-md space-y-2.5">
         <TrackingHeaderCard
           orderDisplayId={orderDisplayId}
           orderPhone={shouldShowPhone ? orderPhone : ""}
@@ -512,8 +510,8 @@ function ClientOrderTrackingContent() {
         <TrackingStatusCard summary={statusSummary} />
 
         {mainOrder && (
-          <section className="rounded-2xl border bg-card px-4 py-5 text-card-foreground shadow-sm">
-            <h2 className="mb-5 text-lg font-black text-foreground">
+          <section className="rounded-2xl border bg-card px-3.5 py-3 text-card-foreground shadow-sm">
+            <h2 className="mb-3 text-base font-black text-foreground">
               Évolution de votre commande
             </h2>
             <OrderStepper 
@@ -684,7 +682,7 @@ function getTrackingStatusSummary({
   if (step <= 1) {
     return {
       title: "Commande reçue",
-      description: "Votre commande a bien été transmise au restaurant.",
+      description: "Commande transmise au restaurant.",
       icon: ClipboardList,
       remainingLabel: `${remainingMinutes} min`,
       readyAtLabel,
@@ -694,7 +692,7 @@ function getTrackingStatusSummary({
   if (step === 2) {
     return {
       title: "Préparation en cours",
-      description: "Nos cuisiniers préparent actuellement votre commande avec soin.",
+      description: "Votre commande est en cuisine.",
       icon: ChefHat,
       remainingLabel: `${remainingMinutes} min`,
       readyAtLabel,
@@ -713,7 +711,7 @@ function getTrackingStatusSummary({
 
   return {
     title: getFinalStatusTitle(orderType, label),
-    description: "Votre commande est finalisée. Merci pour votre confiance.",
+    description: "Commande finalisée.",
     icon: CheckCircle2,
     remainingLabel: "0 min",
     readyAtLabel,
@@ -728,22 +726,22 @@ function TrackingHeaderCard({
   orderPhone?: string | null
 }) {
   return (
-    <section className="rounded-2xl border bg-card px-5 py-5 text-card-foreground shadow-sm">
-      <div className="flex items-start gap-4">
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-orange-200 bg-orange-50 text-orange-600 shadow-sm dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300">
-          <ClipboardList className="h-7 w-7" />
+    <section className="rounded-2xl border bg-card px-3.5 py-3 text-card-foreground shadow-sm">
+      <div className="flex items-start gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-orange-200 bg-orange-50 text-orange-600 shadow-sm dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300">
+          <ClipboardList className="h-5 w-5" />
         </span>
 
         <div className="min-w-0 flex-1">
-          <h1 className="text-[30px] font-bold leading-tight text-foreground sm:text-[32px]">
+          <h1 className="whitespace-nowrap text-[22px] font-bold leading-tight text-foreground sm:text-2xl">
             Suivez votre commande
           </h1>
-          <p className="mt-2 text-lg font-semibold text-muted-foreground sm:text-xl">
+          <p className="mt-1 text-base font-semibold text-muted-foreground sm:text-lg">
             Commande n° <span className="text-orange-600 dark:text-orange-300">{orderDisplayId}</span>
           </p>
           {orderPhone ? (
-            <p className="mt-2 flex items-center gap-2 text-[15px] font-medium text-muted-foreground sm:text-base">
-              <Phone className="h-4 w-4 shrink-0" />
+            <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-muted-foreground sm:text-[15px]">
+              <Phone className="h-3.5 w-3.5 shrink-0" />
               <span>{orderPhone}</span>
             </p>
           ) : null}
@@ -757,76 +755,35 @@ function TrackingStatusCard({ summary }: { summary: TrackingStatusSummary }) {
   const Icon = summary.icon
 
   return (
-    <section className="rounded-2xl border border-orange-200 bg-orange-50/70 px-5 py-6 text-orange-950 shadow-sm dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-100">
-      <div className="flex items-start gap-5">
-        <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-white text-orange-600 shadow-[0_16px_35px_rgba(15,23,42,0.12)] dark:bg-slate-950/80 dark:text-orange-300">
-          <Icon className="h-9 w-9" />
+    <section className="rounded-2xl border border-orange-200 bg-orange-50/70 px-3.5 py-3 text-orange-950 shadow-sm dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-100">
+      <div className="flex items-center gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-orange-600 shadow-[0_10px_24px_rgba(15,23,42,0.10)] dark:bg-slate-950/80 dark:text-orange-300">
+          <Icon className="h-5 w-5" />
         </span>
 
         <div className="min-w-0 flex-1">
-          <h2 className="text-2xl font-black leading-tight text-orange-600 dark:text-orange-300">
+          <h2 className="text-xl font-black leading-tight text-orange-600 dark:text-orange-300 sm:text-2xl">
             {summary.title}
           </h2>
-          <p className="mt-3 text-lg leading-8 text-foreground">
+          <p className="mt-1 text-sm font-medium leading-5 text-foreground sm:text-base">
             {summary.description}
           </p>
         </div>
-      </div>
-
-      <div className="my-5 h-px bg-orange-200/80 dark:bg-orange-400/20" />
-
-      <div className="grid grid-cols-2 gap-4">
-        <TrackingMetric
-          icon={Clock}
-          label="Temps estimé"
-          value={summary.remainingLabel}
-          suffix="restantes"
-        />
-        <TrackingMetric
-          icon={PackageCheck}
-          label="Préparée vers"
-          value={summary.readyAtLabel}
-        />
       </div>
     </section>
   )
 }
 
-function TrackingMetric({
-  icon: Icon,
-  label,
-  value,
-  suffix,
-}: {
-  icon: LucideIcon
-  label: string
-  value: string
-  suffix?: string
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300">
-        <Icon className="h-5 w-5" />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-sm font-medium text-muted-foreground">{label}</span>
-        <span className="mt-1 block text-2xl font-black leading-none text-orange-600 dark:text-orange-300">{value}</span>
-        {suffix ? <span className="mt-1 block text-sm font-medium text-muted-foreground">{suffix}</span> : null}
-      </span>
-    </div>
-  )
-}
-
 function TrackingInfoCard() {
   return (
-    <section className="rounded-2xl border border-orange-200 bg-orange-50/50 px-5 py-4 text-card-foreground shadow-sm dark:border-orange-400/25 dark:bg-orange-500/10">
-      <div className="flex items-center gap-4">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300">
-          <Info className="h-5 w-5" />
+    <section className="rounded-2xl border border-orange-200 bg-orange-50/50 px-3.5 py-2.5 text-card-foreground shadow-sm dark:border-orange-400/25 dark:bg-orange-500/10">
+      <div className="flex items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300">
+          <Info className="h-4 w-4" />
         </span>
-        <div>
-          <h2 className="text-base font-black text-foreground">Merci pour votre commande !</h2>
-          <p className="mt-1 text-sm font-medium text-muted-foreground">
+        <div className="min-w-0">
+          <h2 className="text-sm font-black leading-tight text-foreground">Merci pour votre commande !</h2>
+          <p className="mt-0.5 text-xs font-medium leading-4 text-muted-foreground">
             Nous vous tiendrons informé à chaque étape.
           </p>
         </div>
