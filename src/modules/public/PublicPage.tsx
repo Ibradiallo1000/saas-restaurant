@@ -13,6 +13,7 @@ import DishCard from "./components/DishCard"
 import Header from "./components/Header"
 import HeroSection from "./components/HeroSection"
 import ProductModal from "./components/ProductModal"
+import PublicSectionTitle from "./components/PublicSectionTitle"
 import PublicProductConfigurator from "./components/PublicProductConfigurator"
 import { productNeedsConfigurator } from "@/lib/linked-option-groups"
 import StickyCartBar from "./components/StickyCartBar"
@@ -50,6 +51,7 @@ function PublicPageContent({
   const [activeTableSession, setActiveTableSession] = React.useState<ActiveTableSession | null>(null)
   const [activeCategoryId, setActiveCategoryId] = React.useState<string>("")
   const [selectedProduct, setSelectedProduct] = React.useState<any | null>(null)
+  const categoriesSectionRef = React.useRef<HTMLDivElement>(null)
   const isDineInContinuation = mode === "dine_in" && Boolean(tableId)
 
   React.useEffect(() => {
@@ -285,9 +287,18 @@ function PublicPageContent({
     setSelectedProduct(product)
   }
 
+  const scrollToCategoriesSection = React.useCallback(() => {
+    const section = categoriesSectionRef.current
+    if (!section) return
+
+    const y = section.getBoundingClientRect().top + window.scrollY - 80
+    window.scrollTo({ top: Math.max(0, y), behavior: "smooth" })
+  }, [])
+
   function handleAddToCartGlobal(item: any) {
     addItem(item)
     setSelectedProduct(null)
+    scrollToCategoriesSection()
   }
 
   if (isRestaurantLoading && !loadTimedOut) {
@@ -316,7 +327,7 @@ function PublicPageContent({
         />
         <HeroSection restaurant={restaurant} table={tableContext} />
 
-        <main className="relative z-10 -mt-5 rounded-t-[1.75rem] border-t border-[var(--public-card-border)] bg-[var(--public-bg-soft)] pt-5 shadow-[0_-18px_48px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:-mt-8 sm:rounded-t-[2rem] sm:pt-6 lg:-mt-10 lg:mx-auto lg:max-w-7xl lg:rounded-[2rem] lg:border lg:shadow-[0_20px_70px_rgba(15,23,42,0.12)]">
+        <main className="relative z-10 -mt-5 rounded-t-[1.75rem] border-t border-[var(--public-card-border)] bg-transparent pt-5 sm:-mt-8 sm:rounded-t-[2rem] sm:pt-6 lg:-mt-10 lg:mx-auto lg:max-w-7xl lg:rounded-[2rem] lg:border">
           <MainContent
             categories={visibleCategories}
             isLoading={isMenuLoading}
@@ -324,8 +335,10 @@ function PublicPageContent({
             productsByCategory={productsByCategory}
             tableError={tableSessionError}
             activeCategoryId={activeCategoryId}
+            categoriesSectionRef={categoriesSectionRef}
             onCategorySelect={handleCategorySelect}
             onOpenProduct={handleOpenProduct}
+            onAddedToCart={scrollToCategoriesSection}
           />
         </main>
 
@@ -357,7 +370,10 @@ function PublicPageContent({
           product={selectedProduct}
           catalogProducts={products || []}
           onClose={() => setSelectedProduct(null)}
-          onAdded={() => setSelectedProduct(null)}
+          onAdded={() => {
+            setSelectedProduct(null)
+            scrollToCategoriesSection()
+          }}
         />
       ) : null}
 
@@ -421,8 +437,10 @@ function MainContent({
   productsByCategory,
   tableError,
   activeCategoryId,
+  categoriesSectionRef,
   onCategorySelect,
   onOpenProduct,
+  onAddedToCart,
 }: any) {
 
   // AUTO-SÉLECTION DE LA PREMIÈRE CATÉGORIE
@@ -476,7 +494,7 @@ function MainContent({
       <TableContextError error={tableError} />
 
       {/* CATÉGORIES BAR */}
-      <div className="mb-4">
+      <div ref={categoriesSectionRef} className="mb-4 scroll-mt-20">
         <CategoriesBar
           categories={categories}
           activeId={activeCategoryId}
@@ -487,9 +505,9 @@ function MainContent({
       {/* PRODUITS (UNE SEULE CATÉGORIE) */}
       {currentCategory && (
         <div className="mb-6 px-4 sm:px-6 lg:px-8">
-          <h2 className="mb-3 text-xl font-black text-[var(--public-orange)] sm:text-2xl">
-            {currentCategory.name}
-          </h2>
+          <div className="mb-3">
+            <PublicSectionTitle title={currentCategory.name} />
+          </div>
 
           <div className="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
             {(productsByCategory[currentCategory.id] || []).map((product: any) => (
@@ -497,6 +515,7 @@ function MainContent({
                 key={product.id}
                 product={product}
                 onOpenDetails={() => onOpenProduct(product)}
+                onAddedToCart={onAddedToCart}
               />
             ))}
           </div>

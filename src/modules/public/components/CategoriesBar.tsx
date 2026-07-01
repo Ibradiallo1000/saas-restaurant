@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
+
 import { getOptimizedImage } from "@/lib/image"
+import PublicSectionTitle from "./PublicSectionTitle"
 
 export default function CategoriesBar({
   categories,
@@ -35,13 +37,11 @@ export default function CategoriesBar({
   }, [activeId])
 
   return (
-    <div className="mb-6">
+    <div className="mb-5">
 
       {/* HEADER */}
       <div className="mb-3 flex items-center justify-between px-4 sm:px-6 lg:px-8">
-        <h2 className="text-lg font-black text-[var(--public-text-main)] sm:text-xl">
-          Catégories
-        </h2>
+        <PublicSectionTitle title="Catégories" />
 
         <button className="hidden text-sm font-bold text-[var(--public-orange)] sm:inline-flex">
           Voir tout
@@ -51,7 +51,7 @@ export default function CategoriesBar({
       {/* LIST */}
       <div
         ref={containerRef}
-        className="no-scrollbar flex gap-3 overflow-x-auto px-4 py-2 sm:gap-4 sm:px-6 lg:px-8"
+        className="no-scrollbar flex gap-3 overflow-x-auto px-4 py-2.5 sm:gap-4 sm:px-6 lg:px-8"
         style={{ overflowY: "visible" }}
       >
         {categories.map((cat) => {
@@ -65,17 +65,23 @@ export default function CategoriesBar({
               onClick={() => onSelect(cat.id)}
               className={`
                 relative z-10 flex flex-col items-center shrink-0
-                min-w-[92px] rounded-[1.5rem] border p-2.5 transition-all duration-200 sm:min-w-[108px] sm:p-3
+                min-w-[98px] rounded-[1.5rem] border p-2 transition-all duration-200 sm:min-w-[112px] sm:p-2.5
                 ${
                   isActive
-                    ? "scale-[1.03] border-[var(--public-orange)] bg-gradient-to-b from-[var(--public-orange-soft)] to-[var(--public-card-bg)] text-[var(--public-orange)] shadow-[0_16px_35px_rgba(249,115,22,0.18)]"
-                    : "border-[var(--public-card-border)] bg-[var(--public-card-bg)] text-[var(--public-text-muted)] shadow-[0_10px_28px_rgba(15,23,42,0.06)] hover:border-[var(--public-orange)]/40"
+                    ? "scale-[1.03] border-[var(--public-orange)] bg-gradient-to-br from-[#fb923c] to-[#f97316] text-white shadow-[0_18px_38px_rgba(249,115,22,0.26)]"
+                    : "border-[var(--public-orange)]/25 bg-[var(--public-card-bg)] text-[var(--public-text-main)] shadow-[0_10px_28px_rgba(15,23,42,0.06)] hover:border-[var(--public-orange)]/45"
                 }
                 backdrop-blur-xl
               `}
             >
               {/* IMAGE */}
-              <div className="h-14 w-14 overflow-hidden rounded-full border border-white/60 bg-[var(--public-orange-soft)] shadow-inner sm:h-16 sm:w-16 dark:border-white/10">
+              <div
+                className={`h-[76px] w-[76px] overflow-hidden rounded-full bg-[var(--public-orange-soft)] shadow-inner sm:h-20 sm:w-20 ${
+                  isActive
+                    ? "border-2 border-white"
+                    : "border border-[var(--public-orange)]/15"
+                }`}
+              >
                 {image ? (
                   <img
                     src={image}
@@ -90,11 +96,11 @@ export default function CategoriesBar({
               {/* LABEL */}
               <span
                 className={`
-                  mt-2 max-w-[74px] text-center text-xs font-black leading-tight line-clamp-2 sm:max-w-[88px]
+                  mt-2.5 max-w-[82px] text-center text-[13px] font-black leading-tight line-clamp-2 sm:max-w-[94px] sm:text-sm
                   ${
                     isActive
-                      ? "text-[var(--public-orange)]"
-                      : "text-[var(--public-text-muted)]"
+                      ? "text-white"
+                      : "text-[var(--public-text-main)]"
                   }
                 `}
               >
