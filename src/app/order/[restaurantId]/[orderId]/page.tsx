@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore"
-import { Banknote, CheckCircle, CreditCard, Utensils } from "lucide-react"
+import { Banknote, CheckCircle, CreditCard, Phone, Utensils } from "lucide-react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 
 import { OrderStepper } from "@/components/OrderStepper"
@@ -483,17 +483,19 @@ function ClientOrderTrackingContent() {
       setCartOpen={setCartOpen}
       onHome={canContinueOrdering ? continueOrdering : goHome}
     >
-      <div className="mx-auto max-w-md space-y-5">
-        <section className={TRACKING_CARD_CLASS}>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-primary)]">
-            Suivi commande
-          </p>
-          <h1 className="mt-1 text-2xl font-bold">
-            Suivi de commande
+      <div className="mx-auto max-w-md space-y-4">
+        <section className="rounded-2xl border bg-card px-5 py-4 text-card-foreground shadow-sm">
+          <h1 className="text-[30px] font-bold leading-tight text-foreground sm:text-[32px]">
+            Suivez votre commande
           </h1>
-          <p className="mt-2 text-sm font-black text-muted-foreground">{orderDisplayId}</p>
+          <p className="mt-2 text-lg font-semibold text-foreground sm:text-xl">
+            Commande n° {orderDisplayId}
+          </p>
           {shouldShowPhone && orderPhone ? (
-            <p className="mt-1 text-sm text-muted-foreground">Téléphone : {orderPhone}</p>
+            <p className="mt-1.5 flex items-center gap-2 text-[15px] font-medium text-muted-foreground sm:text-base">
+              <Phone className="h-4 w-4 shrink-0" />
+              <span>{orderPhone}</span>
+            </p>
           ) : null}
         </section>
 
