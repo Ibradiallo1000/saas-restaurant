@@ -19,6 +19,11 @@ import CartDrawer from "@/modules/public/components/CartDrawer"
 import Header from "@/modules/public/components/Header"
 import PaymentModal from "@/modules/public/components/PaymentModal"
 import { PublicBottomNavigation } from "@/modules/public/PublicPage"
+import {
+  isCurrentTrackedOrderExpired,
+  rememberTrackedOrder,
+  TRACKING_RETENTION_HOURS,
+} from "@/modules/public/orderTrackingStorage"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
 import {
   getAvailablePaymentMethods,
@@ -57,6 +62,7 @@ function ClientOrderTrackingContent() {
   const [isMobilePaying, setIsMobilePaying] = React.useState(false)
   const [isConfirming, setIsConfirming] = React.useState(false)
   const [mobilePaymentOpen, setMobilePaymentOpen] = React.useState(false)
+  const [trackingExpired, setTrackingExpired] = React.useState(false)
   const [paymentProofSms, setPaymentProofSms] = React.useState("")
   const [paymentMethods, setPaymentMethods] = React.useState<AvailablePaymentMethod[]>([])
   const [paymentMethodsLoading, setPaymentMethodsLoading] = React.useState(false)
@@ -137,10 +143,21 @@ function ClientOrderTrackingContent() {
           return
         }
 
-        setOrder({
+        const nextOrder = {
           ...(docSnap.data() as Omit<RestaurantOrder, "id">),
           id: docSnap.id,
+        }
+        const isCompleted = isClientTrackingComplete(nextOrder)
+
+        rememberTrackedOrder({
+          restaurantId,
+          orderId: docSnap.id,
+          tableSessionId: (nextOrder as any).tableSessionId,
+          isCompleted,
         })
+
+        setTrackingExpired(isCompleted && isCurrentTrackedOrderExpired(restaurantId, docSnap.id))
+        setOrder(nextOrder)
         setIsLoading(false)
       },
       (snapshotError) => {
@@ -276,6 +293,34 @@ function ClientOrderTrackingContent() {
   const orders = tableSessionOrders
   const mainOrder = orders[0] || (order as any)
   
+  if (trackingExpired) {
+    return (
+      <PublicTrackingLayout
+        restaurant={restaurant}
+        restaurantId={restaurantId}
+        count={count}
+        cartOpen={cartOpen}
+        setCartOpen={setCartOpen}
+        onHome={goHome}
+      >
+        <div className={`${TRACKING_CARD_CLASS} mx-auto max-w-md p-6 text-center`}>
+          <CheckCircle className="mx-auto h-10 w-10 text-emerald-500" />
+          <h1 className="mt-3 text-lg font-semibold">Suivi terminé</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Cette commande finalisée reste disponible pendant {TRACKING_RETENTION_HOURS}h, puis elle est masquée sur cet appareil.
+          </p>
+          <button
+            type="button"
+            onClick={goHome}
+            className="mt-5 h-11 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-black text-white shadow-sm transition active:scale-[0.98]"
+          >
+            Retour au menu
+          </button>
+        </div>
+      </PublicTrackingLayout>
+    )
+  }
+
   if (error || !mainOrder) {
     return (
       <PublicTrackingLayout
@@ -453,7 +498,7 @@ function ClientOrderTrackingContent() {
         </section>
 
         {mainOrder && (
-          <section className={TRACKING_CARD_CLASS}>
+          <section className="rounded-2xl border bg-card p-3 text-card-foreground shadow-sm">
             <OrderStepper 
               orderType={mainOrder.orderType} 
               kitchenStatus={mainOrder.kitchenStatus} 
@@ -691,6 +736,28 @@ function OrderItemImage({ item }: { item: any }) {
 
 function isDeliveryOrderType(type: string | null | undefined) {
   return type === "delivery" || type === "livraison"
+}
+
+function isClientTrackingComplete(order: any) {
+  if (getClientOrderStep(order) === 4) return true
+
+  const finalStatuses = new Set([
+    "served",
+    "picked_up",
+    "delivered",
+    "completed",
+    "complete",
+    "closed",
+  ])
+
+  return [
+    order?.status,
+    order?.kitchenStatus,
+    order?.orderStatus,
+    order?.deliveryStatus,
+    order?.pickupStatus,
+    order?.fulfillmentStatus,
+  ].some((status) => finalStatuses.has(String(status || "").toLowerCase()))
 }
 
 function buildPaymentProofSmsPlaceholder(restaurant: any) {

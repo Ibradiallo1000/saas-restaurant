@@ -17,6 +17,7 @@ import PublicSectionTitle from "./components/PublicSectionTitle"
 import PublicProductConfigurator from "./components/PublicProductConfigurator"
 import { productNeedsConfigurator } from "@/lib/linked-option-groups"
 import StickyCartBar from "./components/StickyCartBar"
+import { getLatestTrackedOrder } from "./orderTrackingStorage"
 import { useCart } from "./cart/CartContext"
 import {
   type ActiveTableSession,
@@ -265,12 +266,11 @@ function PublicPageContent({
     setActiveNav("tracking")
     if (!restaurantId) return
 
-    const latestOrderId = window.localStorage.getItem(`restaurant_latest_order_${restaurantId}`)
+    const latestTracking = getLatestTrackedOrder(restaurantId)
 
-    if (latestOrderId) {
-      const latestTableSessionId = window.localStorage.getItem(`restaurant_latest_table_session_${restaurantId}`)
+    if (latestTracking?.orderId) {
       router.push(
-        `/order/${restaurantId}/${latestOrderId}${latestTableSessionId ? `?tableSessionId=${latestTableSessionId}` : ""}`
+        `/order/${restaurantId}/${latestTracking.orderId}${latestTracking.tableSessionId ? `?tableSessionId=${latestTracking.tableSessionId}` : ""}`
       )
       return
     }

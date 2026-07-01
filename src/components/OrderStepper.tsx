@@ -49,23 +49,22 @@ export function OrderStepper({
 
   const normalizedType = normalizeTrackingOrderType(orderType)
   const step = currentStep ?? getClientOrderStep({ kitchenStatus, status: legacyStatus })
-  const progress = Math.min(100, Math.max(25, step * 25))
   const currentIndex = Math.min(3, Math.max(0, step - 1))
   const statusLabel = currentStatusLabel ?? getClientStatusLabel({ kitchenStatus, status: legacyStatus })
   const createdDate = toDate(createdAt)
   const steps = getTrackingSteps(normalizedType, createdDate, timestamps)
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border bg-background p-3">
+    <div className="space-y-3">
+      <div className="rounded-2xl border bg-background p-3 shadow-sm">
         <div className="relative">
-          <div className="absolute left-[12.5%] right-[12.5%] top-5 h-1 rounded-full bg-muted" />
+          <div className="absolute left-[12.5%] right-[12.5%] top-[18px] h-0.5 rounded-full bg-muted" />
           <div
-            className="absolute left-[12.5%] top-5 h-1 rounded-full bg-green-500 transition-all"
+            className="absolute left-[12.5%] top-[18px] h-0.5 rounded-full bg-green-500 transition-all duration-500 ease-out"
             style={{ width: `calc(75% * ${Math.max(0, currentIndex) / 3})` }}
           />
 
-          <div className="relative grid grid-cols-4 gap-2">
+          <div className="relative grid grid-cols-4 gap-1">
             {steps.map((step, index) => {
               const Icon = step.icon
               const isCompleted = index < currentIndex
@@ -73,55 +72,50 @@ export function OrderStepper({
               const isFuture = index > currentIndex
 
               return (
-                <div key={step.key} className="flex min-w-0 flex-col items-center gap-2 text-center">
+                <div key={step.key} className="flex min-w-0 flex-col items-center gap-1.5 text-center">
                   <div
                     className={cn(
-                      "flex h-11 w-11 items-center justify-center rounded-full border-2 shadow-sm transition",
+                      "flex h-9 w-9 items-center justify-center rounded-full border shadow-sm transition-all duration-500 ease-out",
                       isCompleted && "border-green-500 bg-green-500 text-white",
                       isCurrent && "border-orange-500 bg-orange-500 text-white",
                       isFuture && "border-muted bg-muted text-muted-foreground"
                     )}
                   >
-                    {isCompleted ? <CheckCircle2 className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+                    {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
                   </div>
-                  <div className="min-h-[54px]">
+                  <div className="min-h-[42px]">
                     <p
                       className={cn(
-                        "text-[10px] font-black leading-tight sm:text-xs",
+                        "whitespace-nowrap text-[10px] font-black leading-tight sm:text-xs",
                         isFuture ? "text-muted-foreground" : "text-foreground"
                       )}
                     >
                       {step.label}
                     </p>
-                    {step.at ? (
-                      <p className="mt-1 text-[10px] font-semibold leading-tight text-muted-foreground">
-                        {formatTime(step.at)}
-                        {step.deltaMs !== null ? <span className="block">+{formatDuration(step.deltaMs)}</span> : null}
-                      </p>
-                    ) : null}
+                    <p className="mt-0.5 text-[10px] font-semibold leading-tight text-muted-foreground">
+                      {step.at ? formatTime(step.at) : "--:--"}
+                      {step.deltaMs !== null ? (
+                        <span className="block text-[9px] font-medium text-muted-foreground/80">
+                          +{formatStepDelta(step.deltaMs)}
+                        </span>
+                      ) : null}
+                    </p>
                   </div>
                 </div>
               )
             })}
           </div>
         </div>
-
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-orange-500 transition-all"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-background px-3 py-2 text-sm font-black">
-        <span className="inline-flex items-center gap-1.5">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          {createdDate ? formatDuration(now - createdDate.getTime()) : "Temps non disponible"}
+      <div className="flex items-center justify-between gap-2 rounded-2xl border bg-background px-3 py-2 text-xs font-black shadow-sm">
+        <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-muted-foreground">
+          <Clock className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{createdDate ? formatElapsed(now - createdDate.getTime()) : "Temps indisponible"}</span>
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
-          {statusLabel}
+        <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-orange-500/10 px-2.5 py-1 text-orange-700 dark:text-orange-300">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-orange-500" />
+          <span className="truncate">{shortenStatusLabel(statusLabel)}</span>
         </span>
       </div>
     </div>
@@ -140,14 +134,14 @@ function getTrackingSteps(
   const steps: TrackingStep[] = [
     {
       key: "pending",
-      label: "Commande reçue",
+      label: "Reçue",
       icon: ReceiptText,
       at: createdAt,
       deltaMs: null,
     },
     {
       key: "preparing",
-      label: "En préparation",
+      label: "Préparation",
       icon: ChefHat,
       at: preparingAt,
       deltaMs: createdAt && preparingAt ? preparingAt.getTime() - createdAt.getTime() : null,
@@ -205,12 +199,33 @@ function formatTime(date: Date) {
   return date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
 }
 
-function formatDuration(ms: number) {
+function formatStepDelta(ms: number) {
+  const totalMinutes = Math.max(0, Math.floor(ms / 60000))
+
+  if (totalMinutes < 1) return "<1 min"
+  return `${totalMinutes} min`
+}
+
+function formatElapsed(ms: number) {
   const totalMinutes = Math.max(0, Math.floor(ms / 60000))
   const hours = Math.floor(totalMinutes / 60)
   const minutes = totalMinutes % 60
 
-  if (hours > 0) return `${hours}h ${minutes}min`
-  if (minutes > 0) return `${minutes}min`
-  return "moins d'une minute"
+  if (hours > 0) return `${hours} h ${minutes} min`
+  if (minutes > 0) return `${minutes} min`
+  return "<1 min"
+}
+
+function shortenStatusLabel(label: string) {
+  const normalized = label.trim().toLowerCase()
+
+  if (normalized.includes("reçue") || normalized.includes("recu")) return "Reçue"
+  if (normalized.includes("préparation") || normalized.includes("preparation")) return "Préparation"
+  if (normalized.includes("prête") || normalized.includes("prete")) return "Prête"
+  if (normalized.includes("récupérée") || normalized.includes("recuperee")) return "Récupérée"
+  if (normalized.includes("servie")) return "Servie"
+  if (normalized.includes("livrée") || normalized.includes("livree")) return "Livrée"
+  if (normalized.includes("terminée") || normalized.includes("terminee")) return "Terminée"
+
+  return label
 }

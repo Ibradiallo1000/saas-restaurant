@@ -18,6 +18,7 @@ import {
   type AvailablePaymentMethod,
 } from "@/services/payment-methods.service"
 import { useCart } from "../cart/CartContext"
+import { rememberTrackedOrder } from "../orderTrackingStorage"
 
 type OrderFlowStep = "cart" | "delivery" | "recap" | "payment"
 type PublicOrderType = "pickup" | "delivery"
@@ -312,7 +313,10 @@ export default function CheckoutPublicModal({
       onClose()
 
       if (orderRef.id) {
-        window.localStorage.setItem(`restaurant_latest_order_${restaurantId}`, orderRef.id)
+        rememberTrackedOrder({
+          restaurantId,
+          orderId: orderRef.id,
+        })
       }
 
       router.push(`/order/${restaurantId}/${orderRef.id}`)

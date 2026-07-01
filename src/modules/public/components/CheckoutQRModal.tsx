@@ -18,6 +18,7 @@ import {
   resolveProductPreparationMode,
 } from "@/utils/preparation-logic"
 import { useCart } from "../cart/CartContext"
+import { rememberTrackedOrder } from "../orderTrackingStorage"
 
 export default function CheckoutQRModal({
   open,
@@ -189,14 +190,11 @@ export default function CheckoutQRModal({
       onClose()
 
       if (orderRef.id) {
-        window.localStorage.setItem(
-          `restaurant_latest_order_${restaurantId}`,
-          orderRef.id
-        )
-        window.localStorage.setItem(
-          `restaurant_latest_table_session_${restaurantId}`,
-          tableSessionId
-        )
+        rememberTrackedOrder({
+          restaurantId,
+          orderId: orderRef.id,
+          tableSessionId,
+        })
       }
 
       router.push(

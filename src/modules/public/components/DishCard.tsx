@@ -75,19 +75,20 @@ export default function DishCard({
   return (
     <article
       className="
-        flex min-h-[104px] items-center gap-3
+        grid w-full max-w-full grid-cols-[88px_minmax(0,1fr)_auto] items-center gap-3 overflow-hidden
+        min-h-[104px]
         rounded-[1.35rem] border border-[var(--public-card-border)]
         bg-[var(--public-card-bg)] p-2.5 shadow-[0_12px_30px_rgba(15,23,42,0.08)]
         backdrop-blur-xl
         transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--public-orange)]/35 hover:shadow-[0_18px_42px_rgba(15,23,42,0.12)]
-        sm:min-h-[116px] sm:gap-3.5 sm:p-3
+        sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:min-h-[116px] sm:gap-3.5 sm:p-3
         md:h-full
       "
     >
       {/* IMAGE */}
       <div
         onClick={onOpenDetails}
-        className="relative h-24 w-24 shrink-0 overflow-hidden rounded-[1.35rem] bg-[var(--public-orange-soft)] shadow-inner"
+        className="relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-[1.35rem] bg-[var(--public-orange-soft)] shadow-inner sm:h-24 sm:w-24"
       >
         {hasImage ? (
           <img
@@ -137,7 +138,7 @@ export default function DishCard({
       <button
         onClick={handleQuickAdd}
         className={`
-          min-h-11 shrink-0 rounded-full px-3 py-2 text-xs font-black
+          min-h-11 max-w-[84px] shrink-0 rounded-full px-3 py-2 text-xs font-black
           shadow-lg transition-all duration-200 active:scale-95 sm:px-4
           ${
             added
