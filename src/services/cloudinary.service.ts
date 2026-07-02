@@ -2,9 +2,22 @@
 
 interface CloudinaryUploadResponse {
   secure_url?: string
+  public_id?: string
+  format?: string
+  width?: number
+  height?: number
   error?: {
     message?: string
   }
+}
+
+export type CloudinaryUploadResult = {
+  url: string
+  secureUrl: string
+  publicId: string
+  format?: string
+  width?: number
+  height?: number
 }
 
 export class CloudinaryConfigurationError extends Error {
@@ -23,9 +36,10 @@ const CLOUDINARY_PLACEHOLDERS = new Set([
   "abcd1234",
 ])
 
-export const uploadImage = async (file: File): Promise<string> => {
+export const uploadImage = async (file: File): Promise<CloudinaryUploadResult> => {
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME?.trim()
   const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET?.trim()
+  const folder = process.env.NEXT_PUBLIC_CLOUDINARY_FOLDER?.trim()
   const cloudinaryConfigured =
     cloudName &&
     uploadPreset &&
@@ -41,6 +55,9 @@ export const uploadImage = async (file: File): Promise<string> => {
   const formData = new FormData()
   formData.append("file", file)
   formData.append("upload_preset", uploadPreset!)
+  if (folder) {
+    formData.append("folder", folder)
+  }
 
   let res: Response
 
@@ -62,5 +79,12 @@ export const uploadImage = async (file: File): Promise<string> => {
     throw new Error(data.error?.message || "Upload Cloudinary echoue")
   }
 
-  return data.secure_url
+  return {
+    url: data.secure_url,
+    secureUrl: data.secure_url,
+    publicId: data.public_id || "",
+    format: data.format,
+    width: data.width,
+    height: data.height,
+  }
 }

@@ -68,6 +68,28 @@ export default function PlatformSettingsPage() {
     }
   }
 
+  const handleSetPlatformLogo = async (logoUrl: string) => {
+    const nextSettings = {
+      ...settings,
+      ...formData,
+      logoUrl,
+    }
+
+    setFormData((current) => ({ ...current, logoUrl }))
+    await updateSettings(nextSettings)
+  }
+
+  const handleClearPlatformLogo = async () => {
+    const nextSettings = {
+      ...settings,
+      ...formData,
+      logoUrl: "",
+    }
+
+    setFormData((current) => ({ ...current, logoUrl: "" }))
+    await updateSettings(nextSettings)
+  }
+
   if (isLoading) {
     return (
       <div className="flex justify-center p-20">
@@ -110,6 +132,9 @@ export default function PlatformSettingsPage() {
                 description="Utilisé globalement dans l'interface d'administration."
                 value={formData.logoUrl}
                 onChange={(logoUrl) => setFormData({ ...formData, logoUrl: logoUrl ?? "" })}
+                activeUrl={settings.logoUrl}
+                onSetActive={(media) => handleSetPlatformLogo(media.url)}
+                onDeleteActive={handleClearPlatformLogo}
               />
             </div>
 
