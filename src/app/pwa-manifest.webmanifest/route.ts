@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 
+import { firebaseConfig } from "@/firebase/config"
+import { DEFAULT_BRAND_PRIMARY, getBrandPrimary } from "@/lib/brand-theme"
+
 const RESERVED_SEGMENTS = new Set([
   "",
   "api",
@@ -27,9 +30,10 @@ const RESERVED_SEGMENTS = new Set([
 
 export const dynamic = "force-dynamic"
 
-export function GET(request: NextRequest) {
+export async function GET(request: NextRequest) {
   const slug = sanitizeSlug(request.nextUrl.searchParams.get("slug"))
   const startUrl = slug ? `/${slug}?source=pwa` : "/?source=pwa"
+  const themeColor = await getPlatformThemeColor()
 
   return NextResponse.json(
     {
@@ -41,7 +45,7 @@ export function GET(request: NextRequest) {
       display: "standalone",
       orientation: "portrait-primary",
       background_color: "#ffffff",
-      theme_color: "#f97316",
+      theme_color: themeColor,
       categories: ["food", "business", "productivity"],
       icons: [
         {
@@ -71,6 +75,34 @@ export function GET(request: NextRequest) {
       },
     }
   )
+}
+
+async function getPlatformThemeColor() {
+  const projectId = firebaseConfig.projectId
+  const apiKey = firebaseConfig.apiKey
+
+  if (!projectId || !apiKey) return DEFAULT_BRAND_PRIMARY
+
+  try {
+    const response = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/platformSettings/default?key=${apiKey}`,
+      { cache: "no-store" }
+    )
+
+    if (!response.ok) return DEFAULT_BRAND_PRIMARY
+
+    const payload = (await response.json()) as {
+      fields?: {
+        primaryColor?: {
+          stringValue?: string
+        }
+      }
+    }
+
+    return getBrandPrimary(payload.fields?.primaryColor?.stringValue)
+  } catch {
+    return DEFAULT_BRAND_PRIMARY
+  }
 }
 
 function sanitizeSlug(value: string | null) {

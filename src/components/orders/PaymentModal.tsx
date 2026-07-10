@@ -72,7 +72,7 @@ export default function PaymentModal({
   const getPaymentMeta = (code: string) => {
     switch (code) {
       case "cash": return { name: "Espèces", icon: Banknote, color: "bg-emerald-500" }
-      case "orange_money": return { name: "Orange Money", icon: Smartphone, color: "bg-orange-500" }
+      case "orange_money": return { name: "Orange Money", icon: Smartphone, color: "bg-amber-500" }
       case "mtn_money": return { name: "MTN Money", icon: Smartphone, color: "bg-yellow-500" }
       case "wave": return { name: "Wave", icon: Smartphone, color: "bg-blue-500" }
       default: return { name: "Mobile Money", icon: Smartphone, color: "bg-blue-600" }
@@ -318,7 +318,7 @@ export default function PaymentModal({
         </div>
       </div>
 
-      <div className="bg-orange-500/10 text-orange-600 p-4 rounded-2xl text-sm font-medium border border-orange-500/20">
+      <div className="bg-amber-50 text-amber-700 p-4 rounded-2xl text-sm font-medium border border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-900">
         ⚠️ La validation de votre paiement sera effectuée par la caisse une fois le code composé.
       </div>
 

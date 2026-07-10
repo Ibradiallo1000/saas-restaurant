@@ -14,7 +14,7 @@ export default function CategoryCard({ category, onSelect }: CategoryCardProps) 
       onClick={() => onSelect(category)}
       className="flex min-w-0 flex-col items-center rounded-[1.5rem] border border-[var(--public-card-border)] bg-[var(--public-card-bg)] p-3 text-center shadow-[0_14px_35px_rgba(15,23,42,0.08)] backdrop-blur-xl transition active:scale-95"
     >
-      <div className="relative h-24 w-24 overflow-hidden rounded-full border-4 border-[var(--public-orange)]/70 bg-[var(--public-orange-soft)] shadow-sm">
+      <div className="relative h-24 w-24 overflow-hidden rounded-full border-4 border-[var(--brand-primary)]/70 bg-[var(--brand-primary-soft)] shadow-sm">
         {category.imageUrl ? (
           <img
             src={category.imageUrl}

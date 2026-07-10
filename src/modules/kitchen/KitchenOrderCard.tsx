@@ -54,8 +54,8 @@ const actionLabels: Record<string, string> = {
 }
 
 const statusColors: Record<string, string> = {
-  pending: "border-orange-500/40 bg-orange-500/10 text-orange-700 dark:text-orange-300",
-  preparing: "border-orange-500/40 bg-orange-500/10 text-orange-700 dark:text-orange-300",
+  pending: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  preparing: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   ready: "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300",
   served: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   picked_up: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
@@ -305,7 +305,7 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
           isPaymentDelayed && "border-red-500/50 ring-1 ring-red-500/20",
           isPaidNonTableOrder && "border-emerald-500/40 ring-1 ring-emerald-500/20",
           isPaymentJustVerified && "animate-pulse border-emerald-500 ring-2 ring-emerald-500/50",
-          isRecentActivity && "border-orange-500 ring-2 ring-orange-500/50 animate-pulse bg-orange-500/5"
+          isRecentActivity && "border-amber-500 ring-2 ring-amber-500/50 animate-pulse bg-amber-500/5"
         )}
       >
         <div className="flex items-start justify-between gap-2">
@@ -332,13 +332,13 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
             ) : null}
             
             {(order as any).notes || (order as any).customerNote || (order as any).customerNotes ? (
-              <div className="mt-2 rounded bg-orange-500/10 px-2 py-1 text-[10px] font-semibold italic text-orange-700 dark:text-orange-300">
+              <div className="mt-2 rounded bg-amber-500/10 px-2 py-1 text-[10px] font-semibold italic text-amber-700 dark:text-amber-300">
                 Note : {(order as any).notes || (order as any).customerNote || (order as any).customerNotes}
               </div>
             ) : null}
 
             {isRecentActivity && (
-              <p className="mt-1.5 text-[10px] font-black text-orange-600 dark:text-orange-400">
+              <p className="mt-1.5 text-[10px] font-black text-amber-600 dark:text-amber-400">
                 {isNewOrder ? "🆕 Nouvelle commande" : "🆕 Ajout à la commande"}
               </p>
             )}
@@ -387,7 +387,7 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
               className={cn(
                 "flex flex-col gap-1 rounded-md px-2 py-1.5 text-xs leading-tight",
                 itemStatus === ORDER_ITEM_STATUS.SERVED && "bg-muted text-muted-foreground line-through opacity-70",
-                itemStatus === ORDER_ITEM_STATUS.PENDING && "bg-orange-500/10 text-card-foreground ring-1 ring-orange-500/20",
+                itemStatus === ORDER_ITEM_STATUS.PENDING && "bg-amber-500/10 text-card-foreground ring-1 ring-amber-500/20",
                 itemStatus !== ORDER_ITEM_STATUS.SERVED &&
                   itemStatus !== ORDER_ITEM_STATUS.PENDING &&
                   "text-card-foreground"
@@ -409,7 +409,7 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
               ) : null}
 
               {extras.length > 0 ? (
-                <div className="text-[10px] font-semibold text-orange-600 dark:text-orange-400 space-y-0.5">
+                <div className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 space-y-0.5">
                   {extras.map((ext, idx) => (
                     <div key={idx}>+ {ext.name}</div>
                   ))}
@@ -558,7 +558,7 @@ function OrderItemDetail({ item }: { item: RestaurantOrder["items"][number] }) {
       className={cn(
         "rounded-lg border border-border bg-muted p-3",
         itemStatus === ORDER_ITEM_STATUS.SERVED && "opacity-60",
-        itemStatus === ORDER_ITEM_STATUS.PENDING && "border-orange-500/30 bg-orange-500/10"
+        itemStatus === ORDER_ITEM_STATUS.PENDING && "border-amber-500/30 bg-amber-500/10"
       )}
     >
       <div className="flex justify-between gap-3">
@@ -579,7 +579,7 @@ function OrderItemDetail({ item }: { item: RestaurantOrder["items"][number] }) {
       ) : null}
 
       {extras.length > 0 ? (
-        <div className="mt-1.5 space-y-0.5 text-xs font-semibold text-orange-600 dark:text-orange-400">
+        <div className="mt-1.5 space-y-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
           {extras.map((ext, idx) => (
              <div key={idx}>+ {ext.name}</div>
           ))}
@@ -617,7 +617,7 @@ function OrderNotes({ order }: { order: RestaurantOrder }) {
       <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-muted-foreground">
         Notes client
       </h3>
-      <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-3 text-sm font-semibold text-orange-700 dark:text-orange-200">
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm font-semibold text-amber-700 dark:text-amber-200">
         {note}
       </div>
     </div>

@@ -55,8 +55,6 @@ export default function RestaurantSettingsPage() {
     name: "",
     logoUrl: "",
     coverImage: "",
-    primary: "#f97316",
-    secondary: "#1f2937",
   })
   const [newStaff, setNewStaff] = React.useState({
     nomComplet: "",
@@ -97,8 +95,6 @@ export default function RestaurantSettingsPage() {
       name: restaurant.name || "",
       logoUrl: restaurant.logoUrl || "",
       coverImage: restaurant.coverImage || "",
-      primary: restaurant.theme?.primary || "#f97316",
-      secondary: restaurant.theme?.secondary || "#1f2937",
     })
   }, [restaurant])
 
@@ -143,10 +139,6 @@ export default function RestaurantSettingsPage() {
         name: brandData.name.trim(),
         logoUrl: brandData.logoUrl.trim(),
         coverImage: brandData.coverImage.trim(),
-        theme: {
-          primary: brandData.primary,
-          secondary: brandData.secondary,
-        },
         updatedAt: serverTimestamp(),
       })
       toast({ title: "Personnalisation mise a jour", description: "L'identite visuelle du restaurant a ete enregistree." })
@@ -428,7 +420,7 @@ export default function RestaurantSettingsPage() {
                             <p className="text-xs text-muted-foreground">{member.telephone || member.email || "Contact non renseigne"}</p>
                             <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">{member.role}</p>
                             {incomplete ? (
-                              <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-black uppercase text-orange-600">
+                              <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-black uppercase text-[var(--brand-primary)]">
                                 <AlertTriangle className="h-3 w-3" /> Profil incomplet
                               </p>
                             ) : null}
@@ -570,7 +562,7 @@ export default function RestaurantSettingsPage() {
                 <Palette className="h-6 w-6 text-primary" /> Personnalisation
               </CardTitle>
               <CardDescription>
-                Personnalisez les couleurs et la marque sans changer la structure de l'interface.
+                Personnalisez l'identité visuelle du restaurant. La couleur de marque reste pilotée par les paramètres SaaS.
               </CardDescription>
             </CardHeader>
 
@@ -605,33 +597,6 @@ export default function RestaurantSettingsPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Couleur primaire</Label>
-                    <div className="flex h-12 items-center gap-3 rounded-xl bg-secondary/30 px-3">
-                      <Input
-                        type="color"
-                        value={brandData.primary}
-                        onChange={(e) => setBrandData({ ...brandData, primary: e.target.value })}
-                        className="h-8 w-10 border-none bg-transparent p-0"
-                      />
-                      <span className="text-sm font-black uppercase">{brandData.primary}</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Couleur secondaire</Label>
-                    <div className="flex h-12 items-center gap-3 rounded-xl bg-secondary/30 px-3">
-                      <Input
-                        type="color"
-                        value={brandData.secondary}
-                        onChange={(e) => setBrandData({ ...brandData, secondary: e.target.value })}
-                        className="h-8 w-10 border-none bg-transparent p-0"
-                      />
-                      <span className="text-sm font-black uppercase">{brandData.secondary}</span>
-                    </div>
-                  </div>
-                </div>
               </div>
             </CardContent>
 

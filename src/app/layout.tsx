@@ -1,5 +1,6 @@
 // app/layout.tsx
 import type { Metadata, Viewport } from 'next'
+import { DEFAULT_BRAND_PRIMARY } from '@/lib/brand-theme'
 import Providers from './providers'
 import './globals.css'
 
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
     template: "%s | Oordera",
   },
   description: "Commandez et suivez vos commandes restaurant avec Oordera.",
-  manifest: "/manifest.webmanifest",
+  manifest: "/pwa-manifest.webmanifest",
   icons: {
     icon: [
       { url: "/favicon.ico" },
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: "#f97316",
+  themeColor: DEFAULT_BRAND_PRIMARY,
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -41,8 +42,9 @@ export default function RootLayout({
     <html lang="fr" suppressHydrationWarning>
       <head>
         <meta charSet="UTF-8" />
-        <link rel="manifest" href="/manifest.webmanifest" />
-        <meta name="theme-color" content="#f97316" />
+        <link rel="manifest" href="/pwa-manifest.webmanifest" />
+        <meta name="theme-color" content={DEFAULT_BRAND_PRIMARY} />
+        <meta name="msapplication-TileColor" content={DEFAULT_BRAND_PRIMARY} />
       </head>
       <body suppressHydrationWarning>
         <Providers>

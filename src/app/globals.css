@@ -9,8 +9,11 @@
     --bg-secondary: #eef2f7;
     --bg-card: #ffffff;
     --border: #e2e8f0;
+    --brand-primary: #10B981;
+    --brand-primary-rgb: 16 185 129;
+    --brand-primary-soft: rgb(var(--brand-primary-rgb) / 0.10);
     --app-background:
-      radial-gradient(circle at top left, rgb(249 115 22 / 0.08), transparent 28rem),
+      radial-gradient(circle at top left, rgb(var(--brand-primary-rgb) / 0.08), transparent 28rem),
       linear-gradient(180deg, #ffffff 0%, #f8fafc 44%, #eef2f7 100%);
     --header-background: rgb(255 255 255 / 0.78);
     --surface-shadow: 0 16px 38px rgb(15 23 42 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.85);
@@ -21,7 +24,7 @@
     --text-secondary: #334155;
     --text-muted: #64748b;
 
-    --primary: #f59e0b;
+    --primary: var(--brand-primary);
     --primary-foreground: #ffffff;
 
     --bg-main-rgb: 248 250 252;
@@ -31,7 +34,7 @@
     --text-primary-rgb: 15 23 42;
     --text-secondary-rgb: 51 65 85;
     --text-muted-rgb: 100 116 139;
-    --primary-rgb: 245 158 11;
+    --primary-rgb: var(--brand-primary-rgb);
     --primary-foreground-rgb: 255 255 255;
 
     --color-primary: var(--primary);
@@ -53,7 +56,7 @@
     --input: var(--border);
     --ring: var(--primary);
     --radius: 1rem;
-    --chart-1: 38 92% 50%;
+    --chart-1: 160 84% 39%;
     --chart-2: 24 30% 20%;
     --chart-3: 33 43% 91%;
     --sidebar-background: var(--bg-secondary);
@@ -69,12 +72,10 @@
     --public-bg-main: #fff7ed;
     --public-bg-soft: #fffaf4;
     --public-card-bg: rgb(255 255 255 / 0.82);
-    --public-card-border: rgb(249 115 22 / 0.14);
+    --public-card-border: rgb(var(--brand-primary-rgb) / 0.14);
     --public-text-main: #1f2933;
     --public-text-muted: #6b7280;
-    --public-orange: #f97316;
-    --public-orange-soft: rgb(249 115 22 / 0.08);
-    --public-pattern-color: rgb(234 88 12);
+    --public-pattern-color: rgb(var(--brand-primary-rgb));
     --public-pattern-opacity: 0.10;
     --public-shadow-soft: 0 18px 45px rgb(15 23 42 / 0.10);
   }
@@ -85,7 +86,7 @@
     --bg-card: #1f2937;
     --border: #334155;
     --app-background:
-      radial-gradient(circle at top left, rgb(245 158 11 / 0.10), transparent 24rem),
+      radial-gradient(circle at top left, rgb(var(--brand-primary-rgb) / 0.10), transparent 24rem),
       linear-gradient(180deg, #0b0f14 0%, #111827 52%, #0b0f14 100%);
     --header-background: rgb(11 15 20 / 0.78);
     --surface-shadow: 0 18px 45px rgb(0 0 0 / 0.24), inset 0 1px 0 rgb(255 255 255 / 0.04);
@@ -131,9 +132,7 @@
     --public-card-border: rgb(255 255 255 / 0.10);
     --public-text-main: #f8fafc;
     --public-text-muted: #cbd5e1;
-    --public-orange: #fb923c;
-    --public-orange-soft: rgb(251 146 60 / 0.12);
-    --public-pattern-color: rgb(71 85 105);
+    --public-pattern-color: rgb(var(--brand-primary-rgb));
     --public-pattern-opacity: 0.12;
     --public-shadow-soft: 0 18px 45px rgb(0 0 0 / 0.28);
   }
@@ -188,8 +187,8 @@
     overflow-x: hidden;
     color: var(--public-text-main);
     background:
-      radial-gradient(circle at top left, rgb(249 115 22 / 0.12), transparent 34rem),
-      radial-gradient(circle at 88% 22%, rgb(251 191 36 / 0.10), transparent 24rem),
+      radial-gradient(circle at top left, rgb(var(--brand-primary-rgb) / 0.12), transparent 34rem),
+      radial-gradient(circle at 88% 22%, rgb(var(--brand-primary-rgb) / 0.08), transparent 24rem),
       linear-gradient(180deg, var(--public-bg-main) 0%, var(--public-bg-soft) 100%);
     background-attachment: fixed;
   }
@@ -197,7 +196,7 @@
   .dark .public-menu-page,
   .public-menu-page[data-theme="dark"] {
     background:
-      radial-gradient(circle at top left, rgb(251 146 60 / 0.08), transparent 34rem),
+      radial-gradient(circle at top left, rgb(var(--brand-primary-rgb) / 0.08), transparent 34rem),
       radial-gradient(circle at 82% 16%, rgb(30 41 59 / 0.32), transparent 24rem),
       linear-gradient(180deg, var(--public-bg-main) 0%, var(--public-bg-soft) 58%, #07090d 100%);
   }

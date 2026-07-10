@@ -140,7 +140,7 @@ export default function ManagerSuppliersPage() {
                 </div>
                 <div className="text-right">
                   <p className="text-xs font-black uppercase text-muted-foreground">Dette</p>
-                  <p className="text-xl font-black text-orange-600">{formatMoney(balance)} FCFA</p>
+                  <p className="text-xl font-black text-[var(--brand-primary)]">{formatMoney(balance)} FCFA</p>
                 </div>
               </div>
 

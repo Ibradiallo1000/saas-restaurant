@@ -69,7 +69,7 @@ function CategoryButton({
         "flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-black transition-colors active:scale-[0.99]",
         active
           ? "bg-primary text-primary-foreground shadow-sm"
-          : "text-foreground hover:bg-orange-50 hover:text-orange-700 dark:hover:bg-orange-950/30"
+          : "text-foreground hover:bg-[var(--brand-primary-soft)] hover:text-[var(--brand-primary)] dark:hover:bg-[var(--brand-primary-soft)]"
       )}
     >
       <span

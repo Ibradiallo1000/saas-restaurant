@@ -23,7 +23,6 @@ export default function CategoriesBar({
 
     if (activeEl && containerRef.current) {
       const container = containerRef.current
-
       const offset =
         activeEl.offsetLeft -
         container.clientWidth / 2 +
@@ -37,21 +36,14 @@ export default function CategoriesBar({
   }, [activeId])
 
   return (
-    <div className="mb-5">
-
-      {/* HEADER */}
+    <div className="mb-4">
       <div className="mb-3 flex items-center justify-between px-4 sm:px-6 lg:px-8">
         <PublicSectionTitle title="Catégories" />
-
-        <button className="hidden text-sm font-bold text-[var(--public-orange)] sm:inline-flex">
-          Voir tout
-        </button>
       </div>
 
-      {/* LIST */}
       <div
         ref={containerRef}
-        className="no-scrollbar flex gap-3 overflow-x-auto px-4 py-2.5 sm:gap-4 sm:px-6 lg:px-8"
+        className="no-scrollbar flex gap-4 overflow-x-auto px-4 py-2.5 sm:px-6 lg:px-8"
         style={{ overflowY: "visible" }}
       >
         {categories.map((cat) => {
@@ -64,22 +56,20 @@ export default function CategoriesBar({
               data-active={isActive}
               onClick={() => onSelect(cat.id)}
               className={`
-                relative z-10 flex flex-col items-center shrink-0
-                min-w-[98px] rounded-[1.5rem] border p-2 transition-all duration-200 sm:min-w-[112px] sm:p-2.5
+                relative z-10 flex h-[58px] min-w-[135px] shrink-0 items-center gap-3
+                rounded-full border bg-white px-2.5 py-2 pr-4 transition-all duration-200 ease-out
                 ${
                   isActive
-                    ? "scale-[1.03] border-[var(--public-orange)] bg-gradient-to-br from-[#fb923c] to-[#f97316] text-white shadow-[0_18px_38px_rgba(249,115,22,0.26)]"
-                    : "border-[var(--public-orange)]/25 bg-[var(--public-card-bg)] text-[var(--public-text-main)] shadow-[0_10px_28px_rgba(15,23,42,0.06)] hover:border-[var(--public-orange)]/45"
+                    ? "scale-[1.01] border-[var(--brand-primary)] bg-[var(--brand-primary-soft)] text-[var(--brand-primary)] shadow-[0_12px_26px_rgba(15,23,42,0.10)]"
+                    : "border-slate-200 text-slate-900 shadow-[0_8px_22px_rgba(15,23,42,0.07)] hover:border-[var(--brand-primary)]/30 hover:shadow-[0_10px_26px_rgba(15,23,42,0.09)]"
                 }
-                backdrop-blur-xl
               `}
             >
-              {/* IMAGE */}
               <div
-                className={`h-[76px] w-[76px] overflow-hidden rounded-full bg-[var(--public-orange-soft)] shadow-inner sm:h-20 sm:w-20 ${
+                className={`h-[42px] w-[42px] shrink-0 overflow-hidden rounded-full bg-[var(--brand-primary-soft)] shadow-inner ${
                   isActive
-                    ? "border-2 border-white"
-                    : "border border-[var(--public-orange)]/15"
+                    ? "border border-[var(--brand-primary)]/30"
+                    : "border border-slate-100"
                 }`}
               >
                 {image ? (
@@ -93,16 +83,12 @@ export default function CategoriesBar({
                 )}
               </div>
 
-              {/* LABEL */}
               <span
-                className={`
-                  mt-2.5 max-w-[82px] text-center text-[13px] font-black leading-tight line-clamp-2 sm:max-w-[94px] sm:text-sm
-                  ${
-                    isActive
-                      ? "text-white"
-                      : "text-[var(--public-text-main)]"
-                  }
-                `}
+                className={`whitespace-nowrap text-[15px] font-semibold leading-none ${
+                  isActive
+                    ? "text-[var(--brand-primary)]"
+                    : "text-slate-900"
+                }`}
               >
                 {cat.name}
               </span>

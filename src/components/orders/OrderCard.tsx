@@ -171,7 +171,7 @@ function statusClass(status: string) {
     case ORDER_OPERATION_STATUS.PENDING:
       return "bg-secondary text-white"
     case ORDER_OPERATION_STATUS.IN_PREPARATION:
-      return "bg-orange-500 text-white"
+      return "bg-amber-500 text-white"
     case ORDER_OPERATION_STATUS.READY:
       return "bg-blue-600 text-white"
     case ORDER_OPERATION_STATUS.SERVED:
@@ -186,7 +186,7 @@ function statusClass(status: string) {
 function statusBorder(status: string) {
   switch (status) {
     case ORDER_OPERATION_STATUS.IN_PREPARATION:
-      return "border-orange-500"
+      return "border-amber-500"
     case ORDER_OPERATION_STATUS.READY:
       return "border-blue-600"
     default:

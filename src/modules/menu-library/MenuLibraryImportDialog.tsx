@@ -468,14 +468,14 @@ function ImportPreview({ preview }: { preview: ReturnType<typeof buildImportPrev
         <Badge>{preview.categoriesToCreate.length} categorie(s) a creer</Badge>
         <Badge>{preview.productsToCreate.length} produit(s) a creer</Badge>
         {duplicateCount > 0 ? (
-          <Badge variant="outline" className="border-orange-300 text-orange-700">
+          <Badge variant="outline" className="border-[var(--brand-primary)]/30 text-[var(--brand-primary)]">
             <AlertTriangle className="mr-1 h-3 w-3" />
             {duplicateCount} doublon(s) ignores
           </Badge>
         ) : null}
       </div>
       {duplicateCount > 0 ? (
-        <div className="rounded-xl border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-100">
+        <div className="rounded-xl border border-[var(--brand-primary)]/20 bg-[var(--brand-primary-soft)] p-3 text-sm text-[var(--brand-primary)] dark:border-[var(--brand-primary)]/30 dark:bg-[var(--brand-primary-soft)] dark:text-[var(--brand-primary)]">
           Les doublons sont detectes par nom normalise. Ils seront ignores, sans fusion ni ecrasement.
         </div>
       ) : null}

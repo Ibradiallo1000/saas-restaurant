@@ -135,14 +135,6 @@ function PublicPageContent({
     }
   }, [restaurantId, tableContext?.id])
 
-  React.useEffect(() => {
-    const primary = restaurant?.theme?.primary || "#f97316"
-    const secondary = restaurant?.theme?.secondary || "#1f2937"
-
-    document.documentElement.style.setProperty("--color-primary", primary)
-    document.documentElement.style.setProperty("--color-secondary", secondary)
-  }, [restaurant?.theme?.primary, restaurant?.theme?.secondary])
-
   const productsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
     return query(
@@ -327,7 +319,7 @@ function PublicPageContent({
         />
         <HeroSection restaurant={restaurant} table={tableContext} />
 
-        <main className="relative z-10 -mt-5 rounded-t-[1.75rem] border-t border-[var(--public-card-border)] bg-transparent pt-5 sm:-mt-8 sm:rounded-t-[2rem] sm:pt-6 lg:-mt-10 lg:mx-auto lg:max-w-7xl lg:rounded-[2rem] lg:border">
+        <main className="relative z-10 -mt-3 rounded-t-[1.5rem] border-t border-[var(--public-card-border)] bg-transparent pt-3 sm:-mt-5 sm:rounded-t-[1.75rem] sm:pt-4 lg:-mt-7 lg:mx-auto lg:max-w-7xl lg:rounded-[1.75rem] lg:border">
           <MainContent
             categories={visibleCategories}
             isLoading={isMenuLoading}
@@ -494,7 +486,7 @@ function MainContent({
       <TableContextError error={tableError} />
 
       {/* CATÉGORIES BAR */}
-      <div ref={categoriesSectionRef} className="mb-4 scroll-mt-20">
+      <div ref={categoriesSectionRef} className="mb-2 scroll-mt-20 pt-5 sm:pt-6">
         <CategoriesBar
           categories={categories}
           activeId={activeCategoryId}
@@ -504,12 +496,12 @@ function MainContent({
 
       {/* PRODUITS (UNE SEULE CATÉGORIE) */}
       {currentCategory && (
-        <div className="mb-6 px-4 sm:px-6 lg:px-8">
-          <div className="mb-3">
+        <div className="mb-5 px-4 sm:px-6 lg:px-8">
+          <div className="mb-2.5">
             <PublicSectionTitle title={currentCategory.name} />
           </div>
 
-          <div className="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="flex flex-col gap-2.5 sm:gap-3">
             {(productsByCategory[currentCategory.id] || []).map((product: any) => (
               <DishCard
                 key={product.id}
@@ -589,10 +581,10 @@ export function PublicBottomNavigation({
               value={searchValue}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Rechercher un plat..."
-              className="h-12 w-full rounded-2xl border border-[var(--public-card-border)] bg-[var(--public-card-bg)] pl-4 pr-11 text-sm font-semibold text-[var(--public-text-main)] outline-none backdrop-blur focus:border-[var(--public-orange)] focus:ring-4 focus:ring-[var(--public-orange)]/10"
+              className="h-12 w-full rounded-2xl border border-[var(--public-card-border)] bg-[var(--public-card-bg)] pl-4 pr-11 text-sm font-semibold text-[var(--public-text-main)] outline-none backdrop-blur focus:border-[var(--brand-primary)] focus:ring-4 focus:ring-[var(--brand-primary)]/10"
               autoFocus
             />
-            <Search className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--public-orange)]" />
+            <Search className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--brand-primary)]" />
           </div>
         </div>
       )}
@@ -614,8 +606,8 @@ export function PublicBottomNavigation({
               onClick={item.onClick}
               className={`relative flex h-full flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-black transition-all ${
                 isActive
-                  ? "bg-[var(--public-orange-soft)] text-[var(--public-orange)]"
-                  : "text-[var(--public-text-muted)] hover:bg-[var(--public-orange-soft)] hover:text-[var(--public-text-main)]"
+                  ? "bg-[var(--brand-primary-soft)] text-[var(--brand-primary)]"
+                  : "text-[var(--public-text-muted)] hover:bg-[var(--brand-primary-soft)] hover:text-[var(--public-text-main)]"
               }`}
             >
               <Icon className="h-4 w-4" />
@@ -624,8 +616,8 @@ export function PublicBottomNavigation({
                 <span
                   className={`absolute -top-1 right-3 min-w-[18px] rounded-full px-1 py-0.5 text-[9px] font-black sm:right-5 ${
                     isActive
-                      ? "bg-white text-[var(--public-orange)] dark:bg-[#24170d]"
-                      : "bg-[var(--public-orange)] text-white"
+                      ? "bg-white text-[var(--brand-primary)] dark:bg-slate-950/80"
+                      : "bg-[var(--brand-primary)] text-white"
                   }`}
                 >
                   {count > 99 ? "99+" : count}

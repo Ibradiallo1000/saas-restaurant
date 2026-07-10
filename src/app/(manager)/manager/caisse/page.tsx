@@ -505,17 +505,17 @@ export default function ManagerCaissePage() {
       </section>
 
       {pendingSessions.length > 0 ? (
-        <section className="rounded-xl border border-orange-300 bg-orange-50 p-3 shadow-sm dark:border-orange-900 dark:bg-orange-950/30">
+        <section className="rounded-xl border border-amber-300 bg-amber-50 p-3 shadow-sm dark:border-amber-900 dark:bg-amber-950/30">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-600 text-white">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-600 text-white">
                 <AlertTriangle className="h-4 w-4" />
               </div>
               <div>
-                <h2 className="text-sm font-black uppercase text-orange-700 dark:text-orange-200">
+                <h2 className="text-sm font-black uppercase text-amber-700 dark:text-amber-200">
                   Caisse POS à valider
                 </h2>
-                <p className="text-xs font-semibold text-orange-900/80 dark:text-orange-100/80">
+                <p className="text-xs font-semibold text-amber-900/80 dark:text-amber-100/80">
                   {pendingSessions.length} session{pendingSessions.length > 1 ? "s" : ""} clôturée{pendingSessions.length > 1 ? "s" : ""} attend{pendingSessions.length > 1 ? "ent" : ""} une validation manager.
                 </p>
               </div>
@@ -530,10 +530,10 @@ export default function ManagerCaissePage() {
       {pendingPaymentSessions.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-black uppercase tracking-tight text-orange-600">
+            <h2 className="text-sm font-black uppercase tracking-tight text-amber-600">
               Demandes de paiement table
             </h2>
-            <span className="rounded-full bg-orange-600 px-2.5 py-0.5 text-[10px] font-black text-white">
+            <span className="rounded-full bg-amber-600 px-2.5 py-0.5 text-[10px] font-black text-white">
               {pendingPaymentSessions.length}
             </span>
           </div>
@@ -675,12 +675,12 @@ function TableSessionPaymentRequestCard({
   const orderPreview = orders.slice(0, 3)
 
   return (
-    <article className="relative overflow-hidden rounded-xl border border-orange-300 bg-orange-50 p-3 shadow-sm dark:bg-orange-950/20">
-      <div className="absolute left-0 top-0 h-full w-1 bg-orange-500" />
+    <article className="relative overflow-hidden rounded-xl border border-amber-300 bg-amber-50 p-3 shadow-sm dark:border-amber-900 dark:bg-amber-950/20">
+      <div className="absolute left-0 top-0 h-full w-1 bg-amber-500" />
       <div className="flex items-start justify-between gap-3 pl-2">
         <div>
-          <h3 className="text-base font-black uppercase text-orange-600">{session.tableName || session.tableId || "Table"}</h3>
-          <p className="mt-1 text-xs font-bold text-orange-800/80 dark:text-orange-200/80">
+          <h3 className="text-base font-black uppercase text-amber-600">{session.tableName || session.tableId || "Table"}</h3>
+          <p className="mt-1 text-xs font-bold text-amber-800/80 dark:text-amber-200/80">
             {requestStatus === "pending_confirmation" && (
               <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-[10px] mr-2 uppercase animate-pulse">À vérifier</span>
             )}
@@ -691,34 +691,34 @@ function TableSessionPaymentRequestCard({
             ) : null}
             {getTableSessionPaymentStatusLabel(session)}
           </p>
-          <p className="mt-1 text-xs font-bold text-orange-900/70 dark:text-orange-100/70">
+          <p className="mt-1 text-xs font-bold text-amber-900/70 dark:text-amber-100/70">
             {session.orderCount || 0} commande{session.orderCount > 1 ? "s" : ""} · {session.itemCount || 0} article{session.itemCount > 1 ? "s" : ""}
           </p>
         </div>
-        <p className="whitespace-nowrap text-xl font-black text-orange-600">{Number(session.payableAmount || 0).toLocaleString()} FCFA</p>
+        <p className="whitespace-nowrap text-xl font-black text-amber-600">{Number(session.payableAmount || 0).toLocaleString()} FCFA</p>
       </div>
 
       <div className="mt-3 space-y-2 pl-2">
         {orderPreview.map((order: any) => (
-          <div key={order.id} className="rounded-xl border border-orange-200 bg-white/70 px-3 py-2 text-xs font-semibold text-orange-950 dark:border-orange-900 dark:bg-background/40 dark:text-orange-100">
+          <div key={order.id} className="rounded-xl border border-amber-200 bg-white/70 px-3 py-2 text-xs font-semibold text-amber-950 dark:border-amber-900 dark:bg-background/40 dark:text-amber-100">
             <div className="flex items-center justify-between gap-3">
               <span className="font-black">{getShortOrderLabel(order)}</span>
               <span>{getOrderComputedTotal(order).toLocaleString()} FCFA</span>
             </div>
-            <p className="mt-1 line-clamp-2 text-orange-900/75 dark:text-orange-100/75">
+            <p className="mt-1 line-clamp-2 text-amber-900/75 dark:text-amber-100/75">
               {summarizeOrderItems(order)}
             </p>
           </div>
         ))}
         {orders.length > orderPreview.length ? (
-          <p className="text-xs font-bold text-orange-900/70 dark:text-orange-100/70">
+          <p className="text-xs font-bold text-amber-900/70 dark:text-amber-100/70">
             +{orders.length - orderPreview.length} commande{orders.length - orderPreview.length > 1 ? "s" : ""} dans cette session
           </p>
         ) : null}
       </div>
 
       {paymentProofSms ? (
-        <div className="mt-4 rounded-xl border border-orange-300 bg-white/80 p-3 text-xs text-orange-950 dark:border-orange-900 dark:bg-background/50 dark:text-orange-100">
+        <div className="mt-4 rounded-xl border border-amber-300 bg-white/80 p-3 text-xs text-amber-950 dark:border-amber-900 dark:bg-background/50 dark:text-amber-100">
           <p className="font-black uppercase">SMS de confirmation client</p>
           <p className="mt-2 whitespace-pre-wrap break-words font-semibold">{paymentProofSms}</p>
         </div>
@@ -771,7 +771,7 @@ function CashOpeningRequestCard({
   onActivate: () => void
 }) {
   return (
-    <article className="rounded-xl border border-orange-300 bg-orange-50/60 p-3 shadow-sm dark:border-orange-900 dark:bg-orange-950/20">
+    <article className="rounded-xl border border-amber-300 bg-amber-50/60 p-3 shadow-sm dark:border-amber-900 dark:bg-amber-950/20">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-black">{request.staffName || request.cashierName || "Caissier"}</h3>
@@ -782,7 +782,7 @@ function CashOpeningRequestCard({
             <p className="text-xs font-semibold text-muted-foreground">{request.staffPhone}</p>
           ) : null}
         </div>
-        <div className="rounded-full bg-orange-500/10 px-3 py-1 text-xs font-black text-orange-700 dark:text-orange-300">
+        <div className="rounded-full bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-700 dark:text-amber-300">
           En attente
         </div>
       </div>
@@ -820,7 +820,7 @@ function SessionValidationCard({
   const isAlreadyCounted = session.depositCreated
 
   return (
-    <article className={cn("rounded-xl border bg-card p-3 shadow-sm", hasDifference && "border-orange-300")}>
+    <article className={cn("rounded-xl border bg-card p-3 shadow-sm", hasDifference && "border-amber-300")}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-black">{session.cashierLabel}</h3>
@@ -888,7 +888,7 @@ function AmountBlock({ label, value, danger }: { label: string; value: number; d
   return (
     <div className="rounded-lg bg-muted p-2.5">
       <p className="text-[10px] font-black uppercase text-muted-foreground">{label}</p>
-      <p className={cn("mt-1 text-base font-black", danger ? "text-orange-600" : "text-foreground")}>
+      <p className={cn("mt-1 text-base font-black", danger ? "text-amber-600" : "text-foreground")}>
         {value.toLocaleString()} FCFA
       </p>
     </div>
@@ -909,9 +909,9 @@ function KpiCard({
   return (
     <Card className="rounded-xl">
       <CardContent className="flex min-h-24 flex-col justify-between p-3">
-        <Icon className={cn("h-4 w-4", danger ? "text-orange-600" : "text-primary")} />
+        <Icon className={cn("h-4 w-4", danger ? "text-amber-600" : "text-primary")} />
         <p className="mt-2 text-[10px] font-black uppercase text-muted-foreground">{label}</p>
-        <p className={cn("mt-0.5 text-lg font-black leading-tight sm:text-xl", danger ? "text-orange-600" : "text-foreground")}>
+        <p className={cn("mt-0.5 text-lg font-black leading-tight sm:text-xl", danger ? "text-amber-600" : "text-foreground")}>
           {value.toLocaleString()} FCFA
         </p>
       </CardContent>

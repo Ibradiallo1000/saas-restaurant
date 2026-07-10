@@ -88,7 +88,7 @@ export default function PaymentModal({
                         window.location.href = `tel:${encodeURIComponent(method.paymentCode)}`
                       }
                     }}
-                    className={`flex min-h-14 items-center gap-2 rounded-xl border p-3 text-left transition hover:border-orange-500 ${
+                    className={`flex min-h-14 items-center gap-2 rounded-xl border p-3 text-left transition hover:border-[var(--brand-primary)] ${
                       active
                         ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
                         : "bg-card hover:bg-muted"

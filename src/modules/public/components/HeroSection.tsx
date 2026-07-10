@@ -21,13 +21,13 @@ export default function HeroSection({
   const serviceTime =
     restaurant?.serviceTime ||
     restaurant?.deliveryTime ||
-    restaurant?.estimatedTime ||
-    "25-35 min"
+    restaurant?.estimatedTime
 
-  const rating = Number(restaurant?.rating || restaurant?.averageRating || 4.8)
+  const rawRating = restaurant?.rating || restaurant?.averageRating
+  const rating = rawRating !== undefined && rawRating !== null ? Number(rawRating) : null
 
   return (
-    <section className="relative h-[170px] w-full overflow-hidden sm:h-[270px] lg:h-[350px]">
+    <section className="relative h-[120px] w-full overflow-hidden sm:h-[190px] lg:h-[245px]">
 
       {/* IMAGE */}
       <img
@@ -49,16 +49,16 @@ export default function HeroSection({
         <div className="absolute inset-0 bg-gradient-to-t from-black/78 via-black/18 to-transparent" />
 
         {/* accent chaud discret */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_88%,rgba(249,115,22,0.32),transparent_32rem)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_88%,rgb(var(--brand-primary-rgb)/0.28),transparent_32rem)]" />
       </div>
 
       {/* INFOS */}
-      <div className="absolute bottom-5 left-4 right-4 mx-auto max-w-6xl sm:bottom-8 sm:px-6 lg:px-8">
+      <div className="absolute bottom-3 left-4 right-4 mx-auto max-w-6xl sm:bottom-5 sm:px-6 lg:px-8">
 
-        <div className="flex flex-wrap gap-2 sm:gap-3">
+        <div className="flex flex-wrap gap-1.5 sm:gap-2.5">
 
           {/* STATUS */}
-          <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
+          <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-2.5 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-3.5 sm:py-1.5 sm:text-sm">
             <span
               className={`h-2 w-2 rounded-full ${
                 isOpen
@@ -71,23 +71,27 @@ export default function HeroSection({
 
           {/* TABLE */}
           {table ? (
-            <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
+            <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-2.5 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-3.5 sm:py-1.5 sm:text-sm">
               <MapPin className="h-3 w-3 text-white/80" />
               {table.name || table.id}
             </div>
           ) : null}
 
           {/* TIME */}
-          <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
-            <Clock className="h-3 w-3 text-white/80" />
-            {serviceTime}
-          </div>
+          {serviceTime ? (
+            <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-2.5 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-3.5 sm:py-1.5 sm:text-sm">
+              <Clock className="h-3 w-3 text-white/80" />
+              {serviceTime}
+            </div>
+          ) : null}
 
           {/* RATING */}
-          <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-4 sm:py-2 sm:text-sm">
-            <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-            {Number.isFinite(rating) ? rating.toFixed(1) : "4.8"}
-          </div>
+          {rating !== null && Number.isFinite(rating) ? (
+            <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.14] px-2.5 py-1.5 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md sm:px-3.5 sm:py-1.5 sm:text-sm">
+              <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+              {rating.toFixed(1)}
+            </div>
+          ) : null}
 
         </div>
 

@@ -8,7 +8,7 @@ export type PreparationModeConfig = {
 };
 
 export const PREPARATION_MODES: PreparationModeConfig[] = [
-  { value: 'kitchen', label: 'Cuisine', color: 'bg-orange-500', badgeClass: 'bg-orange-100 text-orange-700' },
+  { value: 'kitchen', label: 'Cuisine', color: 'bg-amber-500', badgeClass: 'bg-amber-100 text-amber-800' },
   { value: 'direct', label: 'Service direct', color: 'bg-green-500', badgeClass: 'bg-green-100 text-green-800' },
   { value: 'bar', label: 'Bar / Comptoir', color: 'bg-blue-500', badgeClass: 'bg-blue-100 text-blue-800' },
 ];

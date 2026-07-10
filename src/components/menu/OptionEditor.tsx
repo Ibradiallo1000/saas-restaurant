@@ -177,7 +177,7 @@ export default function OptionEditor({ options, setOptions, inventoryItems = [] 
                   </div>
 
                   {(choice.recipe || []).length > 0 ? (
-                    <p className="text-xs font-bold text-orange-700">⚠️ Ce supplément consomme du stock</p>
+                    <p className="text-xs font-bold text-amber-700">⚠️ Ce supplément consomme du stock</p>
                   ) : (
                     <p className="text-xs font-medium text-muted-foreground">ℹ️ Aucun impact sur le stock</p>
                   )}
@@ -247,13 +247,13 @@ function MultiplierHint({ multiplier }: { multiplier: unknown }) {
       {value === 1 ? (
         <p className="text-xs font-medium text-muted-foreground">ℹ️ Consommation normale</p>
       ) : value > 1 ? (
-        <p className="text-xs font-bold text-orange-700">⚠️ Consomme {value}x les ingrédients</p>
+        <p className="text-xs font-bold text-amber-700">⚠️ Consomme {value}x les ingrédients</p>
       ) : (
-        <p className="text-xs font-bold text-orange-700">⚠️ Consomme moins que la normale ({value}x)</p>
+        <p className="text-xs font-bold text-amber-700">⚠️ Consomme moins que la normale ({value}x)</p>
       )}
 
       {value > 3 && value <= 5 ? (
-        <p className="text-xs font-bold text-orange-700">⚠️ Valeur élevée, vérifier</p>
+        <p className="text-xs font-bold text-amber-700">⚠️ Valeur élevée, vérifier</p>
       ) : null}
     </div>
   )

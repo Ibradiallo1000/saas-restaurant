@@ -329,7 +329,7 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
 
           <div className="flex gap-1 flex-wrap">
             {isComplexConsumption ? (
-              <Badge variant="secondary" className="text-[10px] bg-orange-100 text-orange-700">
+              <Badge variant="secondary" className="text-[10px] bg-amber-100 text-amber-700">
                 🔥 Consommation variable
               </Badge>
             ) : null}
@@ -1392,7 +1392,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
                   💰 Coût estimé : {Math.round(draftEstimatedCost)} FCFA
                 </Badge>
                 {draftHasComplexConsumption ? (
-                  <Badge variant="secondary" className="bg-orange-100 text-orange-700">
+                  <Badge variant="secondary" className="bg-amber-100 text-amber-700">
                     🔥 Consommation variable
                   </Badge>
                 ) : null}
@@ -2070,7 +2070,7 @@ function RecipeEditor({
       </div>
 
       {recipe.length === 0 ? (
-        <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs font-bold text-orange-700">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-700">
           ⚠ aucune recette → inventaire non suivi
         </div>
       ) : (
@@ -2164,10 +2164,10 @@ function KitchenProductionCard({
 }: {
   label: string
   value: number
-  tone: "orange" | "blue" | "purple" | "green"
+  tone: "amber" | "blue" | "purple" | "green"
 }) {
   const toneClassName = {
-    orange: "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300",
+    amber: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300",
     blue: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-400/30 dark:bg-blue-500/10 dark:text-blue-300",
     purple: "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-400/30 dark:bg-purple-500/10 dark:text-purple-300",
     green: "border-green-200 bg-green-50 text-green-700 dark:border-green-400/30 dark:bg-green-500/10 dark:text-green-300",
@@ -2237,7 +2237,7 @@ function ManagerOrdersPage({ restaurantId }: { restaurantId: string | null }) {
       </p>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        <ManagerOrderKpiCard active={activeTab === "pending"} label="En attente" count={counts.pending} tone="orange" onClick={() => setActiveTab("pending")} />
+        <ManagerOrderKpiCard active={activeTab === "pending"} label="En attente" count={counts.pending} tone="amber" onClick={() => setActiveTab("pending")} />
         <ManagerOrderKpiCard active={activeTab === "preparing"} label="En préparation" count={counts.preparing} tone="amber" onClick={() => setActiveTab("preparing")} />
         <ManagerOrderKpiCard active={activeTab === "ready"} label="Prêtes" count={counts.ready} tone="sky" onClick={() => setActiveTab("ready")} />
         <ManagerOrderKpiCard active={activeTab === "cash_due"} label="À encaisser" count={counts.cash_due} tone="indigo" onClick={() => setActiveTab("cash_due")} />
@@ -2308,7 +2308,7 @@ function ManagerOrderKpiCard({
 }: {
   label: string
   count: number
-  tone: "orange" | "amber" | "sky" | "indigo" | "emerald" | "red"
+  tone: "amber" | "sky" | "indigo" | "emerald" | "red"
   active: boolean
   onClick: () => void
 }) {
@@ -2319,7 +2319,6 @@ function ManagerOrderKpiCard({
       className={cn(
         "rounded-xl border bg-card p-3 text-left shadow-sm transition hover:bg-muted/40",
         active && "ring-2 ring-primary/30",
-        tone === "orange" && "border-orange-200",
         tone === "amber" && "border-amber-200",
         tone === "sky" && "border-sky-200",
         tone === "indigo" && "border-indigo-200",
@@ -2330,7 +2329,6 @@ function ManagerOrderKpiCard({
       <p className="truncate text-[10px] font-black uppercase text-muted-foreground">{label}</p>
       <p className={cn(
         "mt-1 text-2xl font-black leading-none",
-        tone === "orange" && "text-orange-600",
         tone === "amber" && "text-amber-600",
         tone === "sky" && "text-sky-600",
         tone === "indigo" && "text-indigo-600",
@@ -2447,7 +2445,7 @@ function ManagerOrderCard({
   const cardClassName = [
     "min-w-0 rounded-xl border bg-card p-3 shadow-sm transition",
     late ? "border-red-300 bg-red-50/70 dark:border-red-900 dark:bg-red-950/20" : "",
-    !late && nearLate ? "border-orange-300 bg-orange-50/70 dark:border-orange-900 dark:bg-orange-950/20" : "",
+    !late && nearLate ? "border-amber-300 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-950/20" : "",
   ].filter(Boolean).join(" ")
 
   return (
@@ -2473,7 +2471,7 @@ function ManagerOrderCard({
         </Badge>
         <span className={cn(
           "inline-flex h-6 items-center rounded-full px-2 text-[10px] font-black uppercase",
-          preparationFlow === "kitchen" && "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-200",
+          preparationFlow === "kitchen" && "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200",
           preparationFlow === "direct" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
           preparationFlow === "mixed" && "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200"
         )}>
@@ -2500,7 +2498,7 @@ function ManagerOrderCard({
       ) : null}
 
       {!late && nearLate ? (
-        <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-2 py-1.5 text-[11px] font-bold leading-tight text-orange-700 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-300">
+        <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] font-bold leading-tight text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
           <Clock className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">Proche retard</span>
         </div>
@@ -2522,7 +2520,7 @@ function ManagerOrderCard({
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-2">
-        <span className={`inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-black ${late ? "bg-red-500/10 text-red-600" : nearLate ? "bg-orange-500/10 text-orange-600" : "bg-muted text-muted-foreground"}`}>
+        <span className={`inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-black ${late ? "bg-red-500/10 text-red-600" : nearLate ? "bg-amber-500/10 text-amber-600" : "bg-muted text-muted-foreground"}`}>
           <Clock className="h-3.5 w-3.5" /> {minutes} min
         </span>
         <div className="flex min-w-0 items-center gap-1.5">
@@ -2620,11 +2618,11 @@ function ManagerFinancialCard({
   danger?: boolean
 }) {
   return (
-    <Card className={danger ? "border-orange-300" : undefined}>
+    <Card className={danger ? "border-amber-300" : undefined}>
       <CardContent className="p-3">
-        <Icon className={`mb-2 h-4 w-4 ${danger ? "text-orange-600" : "text-primary"}`} />
+        <Icon className={`mb-2 h-4 w-4 ${danger ? "text-amber-600" : "text-primary"}`} />
         <p className="text-xs font-black uppercase text-muted-foreground">{title}</p>
-        <p className={`mt-1 font-black leading-tight ${priority ? "text-2xl md:text-4xl" : "text-xl md:text-2xl"} ${danger ? "text-orange-600" : "text-foreground"}`}>
+        <p className={`mt-1 font-black leading-tight ${priority ? "text-2xl md:text-4xl" : "text-xl md:text-2xl"} ${danger ? "text-amber-600" : "text-foreground"}`}>
           {value.toLocaleString()} FCFA
         </p>
       </CardContent>

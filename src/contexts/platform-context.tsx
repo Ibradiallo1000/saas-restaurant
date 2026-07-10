@@ -4,6 +4,15 @@ import * as React from "react"
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore"
 
 import { useFirestore } from "@/firebase"
+import {
+  DEFAULT_BRAND_PRIMARY,
+  DEFAULT_BRAND_SECONDARY,
+  getBrandPrimary,
+  getBrandSecondary,
+  hexToHslString,
+  hexToRgbString,
+  sanitizeHexColor,
+} from "@/lib/brand-theme"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import type { PlatformSettings } from "@/types"
 
@@ -13,8 +22,8 @@ const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
   name: "Plateforme",
   logoUrl: "",
   faviconUrl: "",
-  primaryColor: "#f97316",
-  secondaryColor: "#f5f1e8",
+  primaryColor: DEFAULT_BRAND_PRIMARY,
+  secondaryColor: DEFAULT_BRAND_SECONDARY,
   supportEmail: "",
   supportPhone: "",
   supportWhatsapp: "",
@@ -38,21 +47,26 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
 
   const applyBranding = React.useCallback((nextSettings: PlatformSettings) => {
     const root = document.documentElement
-    const primary = sanitizeHexColor(nextSettings.primaryColor) ?? DEFAULT_PLATFORM_SETTINGS.primaryColor
+    const primary = getBrandPrimary(nextSettings.primaryColor)
     const primaryRgb = hexToRgbString(primary)
-    const secondary = sanitizeHexColor(nextSettings.secondaryColor) ?? DEFAULT_PLATFORM_SETTINGS.secondaryColor
+    const secondary = getBrandSecondary(nextSettings.secondaryColor)
 
+    root.style.setProperty("--brand-primary", primary)
+    root.style.setProperty("--brand-primary-rgb", primaryRgb)
+    root.style.setProperty("--brand-primary-soft", `rgb(${primaryRgb} / 0.10)`)
     root.style.setProperty("--color-primary", primary)
     root.style.setProperty("--primary", primary)
-
-    if (primaryRgb) {
-      root.style.setProperty("--primary-rgb", primaryRgb)
-      root.style.setProperty("--ring", primary)
-      root.style.setProperty("--sidebar-primary", primary)
-      root.style.setProperty("--sidebar-ring", primary)
-    }
-
+    root.style.setProperty("--primary-rgb", primaryRgb)
+    root.style.setProperty("--ring", primary)
+    root.style.setProperty("--sidebar-primary", primary)
+    root.style.setProperty("--sidebar-ring", primary)
+    root.style.setProperty("--chart-1", hexToHslString(primary))
     root.style.setProperty("--color-secondary", secondary)
+
+    root.style.setProperty("--public-card-border", `rgb(${primaryRgb} / 0.14)`)
+    root.style.setProperty("--public-pattern-color", `rgb(${primaryRgb})`)
+
+    updateThemeColorMeta(primary)
   }, [])
 
   const refreshSettings = React.useCallback(async () => {
@@ -156,31 +170,6 @@ export function usePlatform() {
   return context
 }
 
-function sanitizeHexColor(hex: string): string | null {
-  const normalized = hex.trim().replace("#", "")
-  const fullHex =
-    normalized.length === 3
-      ? normalized
-          .split("")
-          .map((char) => `${char}${char}`)
-          .join("")
-      : normalized
-
-  return /^[0-9a-fA-F]{6}$/.test(fullHex) ? `#${fullHex}` : null
-}
-
-function hexToRgbString(hex: string): string | null {
-  const normalized = sanitizeHexColor(hex)
-
-  if (!normalized) return null
-
-  return [
-    Number.parseInt(normalized.slice(1, 3), 16),
-    Number.parseInt(normalized.slice(3, 5), 16),
-    Number.parseInt(normalized.slice(5, 7), 16),
-  ].join(" ")
-}
-
 function normalizeGraceDays(value: number) {
   return Number.isFinite(value) && value >= 0 ? value : DEFAULT_PLATFORM_SETTINGS.defaultGraceDays
 }
@@ -192,8 +181,19 @@ function normalizePlatformSettings(settings: Partial<PlatformSettings>): Platfor
     name: settings.name?.trim() || DEFAULT_PLATFORM_SETTINGS.name,
     logoUrl: settings.logoUrl || "",
     faviconUrl: settings.faviconUrl || "",
-    primaryColor: sanitizeHexColor(settings.primaryColor || "") ?? DEFAULT_PLATFORM_SETTINGS.primaryColor,
-    secondaryColor: sanitizeHexColor(settings.secondaryColor || "") ?? DEFAULT_PLATFORM_SETTINGS.secondaryColor,
+    primaryColor: sanitizeHexColor(settings.primaryColor || "") ?? DEFAULT_BRAND_PRIMARY,
+    secondaryColor: sanitizeHexColor(settings.secondaryColor || "") ?? DEFAULT_BRAND_SECONDARY,
     defaultGraceDays: normalizeGraceDays(settings.defaultGraceDays ?? DEFAULT_PLATFORM_SETTINGS.defaultGraceDays),
   }
+}
+
+function updateThemeColorMeta(color: string) {
+  const selectors = [
+    'meta[name="theme-color"]',
+    'meta[name="msapplication-TileColor"]',
+  ]
+
+  selectors.forEach((selector) => {
+    document.querySelector<HTMLMetaElement>(selector)?.setAttribute("content", color)
+  })
 }

@@ -144,7 +144,7 @@ export default function CashierSessionPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {latestClosedSession ? (
-                <div className="rounded-xl border border-orange-300 bg-orange-500/10 p-3 text-sm font-bold text-orange-700">
+                <div className="rounded-xl border border-[var(--brand-primary)]/30 bg-[var(--brand-primary-soft)] p-3 text-sm font-bold text-[var(--brand-primary)]">
                   <p>Statut : en attente de validation manager</p>
                   <p className="mt-1 text-xs">Session #{latestClosedSession.id.slice(-6).toUpperCase()}</p>
                 </div>

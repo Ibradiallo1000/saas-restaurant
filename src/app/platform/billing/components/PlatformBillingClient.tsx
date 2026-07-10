@@ -210,7 +210,7 @@ function PlatformStatCard({ icon: Icon, title, value, description, variant = "de
   return (
     <Card className={cn(
       "shadow-lg",
-      variant === "warning" && "bg-orange-50"
+      variant === "warning" && "bg-amber-50"
     )}>
       <CardHeader className="flex justify-between">
         <span className="text-xs">{title}</span>

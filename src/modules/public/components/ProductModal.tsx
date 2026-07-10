@@ -143,11 +143,6 @@ export default function ProductModal({
               </div>
             )}
           </div>
-          {product?.isPopular || product?.popular ? (
-            <div className="absolute left-4 top-4 rounded-full bg-white/95 px-3 py-1 text-xs font-black uppercase tracking-wide text-[var(--color-primary)] shadow-sm backdrop-blur">
-              Populaire
-            </div>
-          ) : null}
           <button
             type="button"
             onClick={onClose}

@@ -347,7 +347,7 @@ export default function ManagerExpensesPage() {
                 Trésorerie impactée maintenant : {formatMoney(effectivePaidAmount)} FCFA
               </p>
               {paymentStatus !== "unpaid" && safeTreasuryAccounts.length === 0 ? (
-                <div className="rounded-lg border border-orange-300 bg-orange-50 p-3 text-orange-900">
+                <div className="rounded-lg border border-[var(--brand-primary)]/30 bg-[var(--brand-primary-soft)] p-3 text-[var(--brand-primary)]">
                   <p className="text-sm font-black">Configuration trésorerie requise</p>
                   <p className="mt-1 text-sm font-semibold">
                     Avant d'enregistrer une dépense payée, il faut créer les comptes qui représentent l'argent du restaurant : Cash physique et Mobile Money.

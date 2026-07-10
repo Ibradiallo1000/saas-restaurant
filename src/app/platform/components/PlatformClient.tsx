@@ -153,14 +153,14 @@ function PlatformStatCard({ icon: Icon, title, value, description, variant = "de
   return (
     <Card className={cn(
       "border-none shadow-lg",
-      variant === "warning" ? "bg-orange-500/5 ring-1 ring-orange-500/20" : ""
+      variant === "warning" ? "bg-amber-500/5 ring-1 ring-amber-500/20" : ""
     )}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-xs font-black uppercase tracking-widest text-muted-foreground">{title}</CardTitle>
-        <Icon className={cn("h-4 w-4", variant === "warning" ? "text-orange-500" : "text-primary")} />
+        <Icon className={cn("h-4 w-4", variant === "warning" ? "text-amber-500" : "text-primary")} />
       </CardHeader>
       <CardContent>
-        <div className={cn("text-2xl font-black italic", variant === "warning" ? "text-orange-500" : "text-primary")}>{value}</div>
+        <div className={cn("text-2xl font-black italic", variant === "warning" ? "text-amber-500" : "text-primary")}>{value}</div>
         <p className="text-[10px] font-medium text-muted-foreground mt-1">{description}</p>
       </CardContent>
     </Card>

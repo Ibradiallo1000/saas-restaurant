@@ -206,7 +206,7 @@ export default function OwnerTresoreriePage() {
                         <span className={cn(
                           "rounded-full px-2 py-1 text-xs font-black uppercase",
                           direction === "in" && "bg-emerald-100 text-emerald-700",
-                          direction === "out" && "bg-orange-100 text-orange-700",
+                          direction === "out" && "bg-amber-100 text-amber-700",
                           direction === "transfer" && "bg-blue-100 text-blue-700"
                         )}>
                           {formatDirection(direction)}
@@ -217,7 +217,7 @@ export default function OwnerTresoreriePage() {
                       <td className="py-3 pr-3 text-right font-black text-emerald-700">
                         {direction === "in" ? `+${formatMoney(amount)} FCFA` : "-"}
                       </td>
-                      <td className="py-3 pr-3 text-right font-black text-orange-700">
+                      <td className="py-3 pr-3 text-right font-black text-amber-700">
                         {direction === "out" ? `-${formatMoney(amount)} FCFA` : "-"}
                       </td>
                       <td className="py-3 pr-3">{formatSource(movement.source)}</td>
@@ -248,11 +248,11 @@ function TreasuryCard({
   danger?: boolean
 }) {
   return (
-    <Card className={cn(priority && "md:col-span-1", danger && "border-orange-300")}>
+    <Card className={cn(priority && "md:col-span-1", danger && "border-amber-300")}>
       <CardContent className="p-4">
-        <Icon className={cn("mb-3 h-5 w-5", danger ? "text-orange-600" : "text-primary")} />
+        <Icon className={cn("mb-3 h-5 w-5", danger ? "text-amber-600" : "text-primary")} />
         <p className="text-xs font-black uppercase text-muted-foreground">{label}</p>
-        <p className={cn("mt-1 font-black", priority ? "text-3xl" : "text-2xl", danger ? "text-orange-600" : "text-foreground")}>
+        <p className={cn("mt-1 font-black", priority ? "text-3xl" : "text-2xl", danger ? "text-amber-600" : "text-foreground")}>
           {formatMoney(value)} FCFA
         </p>
       </CardContent>
@@ -271,7 +271,7 @@ function BusinessHealthBadge({ pending, negativeBalance }: { pending: number; ne
   }
   if (pending > 0) {
     return (
-      <span className="inline-flex items-center gap-2 rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-orange-700">
+      <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700">
         <AlertTriangle className="h-4 w-4" />
         Validation à suivre
       </span>
@@ -292,7 +292,7 @@ function ControlRow({ label, value, tone }: { label: string; value: number; tone
       <span className={cn(
         "text-lg font-black",
         tone === "good" && "text-emerald-700",
-        tone === "warning" && "text-orange-700"
+        tone === "warning" && "text-amber-700"
       )}>
         {value}
       </span>

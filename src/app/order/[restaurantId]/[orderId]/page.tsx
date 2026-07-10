@@ -131,14 +131,6 @@ function ClientOrderTrackingContent() {
   const localTableUserId = getLocalTableUserId()
 
   React.useEffect(() => {
-    const primary = restaurant?.theme?.primary || "#f97316"
-    const secondary = restaurant?.theme?.secondary || "#1f2937"
-
-    document.documentElement.style.setProperty("--color-primary", primary)
-    document.documentElement.style.setProperty("--color-secondary", secondary)
-  }, [restaurant?.theme?.primary, restaurant?.theme?.secondary])
-
-  React.useEffect(() => {
     if (!db || !restaurantId || !orderId) return
 
     setIsLoading(true)
@@ -527,30 +519,30 @@ function ClientOrderTrackingContent() {
         <TrackingInfoCard />
 
         {shouldShowPostServicePayment ? (
-          <section className="rounded-2xl border-2 border-orange-200 bg-orange-50 p-5 text-orange-950 shadow-lg dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-100">
-            <p className="text-xs font-black uppercase tracking-wide text-orange-700 dark:text-orange-300">
+          <section className="rounded-2xl border-2 border-[var(--brand-primary)]/25 bg-[var(--brand-primary-soft)] p-5 text-card-foreground shadow-lg">
+            <p className="text-xs font-black uppercase tracking-wide text-[var(--brand-primary)]">
               Total à payer
             </p>
-            <p className="mt-2 text-4xl font-black text-orange-900 dark:text-orange-100">
+            <p className="mt-2 text-4xl font-black text-[var(--brand-primary)]">
               {formatMoney(sessionTotal)} FCFA
             </p>
 
             {sessionPaymentConfirmed ? (
               <PaymentConfirmedPanel />
             ) : tableSession?.paymentRequest?.status === "requested" && tableSession?.paymentRequest?.method === "cash" ? (
-               <div className="mt-5 rounded-xl border border-orange-300 bg-orange-100 p-4 text-center text-orange-800 dark:bg-orange-950/30 dark:text-orange-300">
+               <div className="mt-5 rounded-xl border border-[var(--brand-primary)]/30 bg-[var(--brand-primary-soft)] p-4 text-center text-[var(--brand-primary)]">
                  <p className="font-black text-lg animate-pulse">Un serveur arrive pour encaisser</p>
                </div>
             ) : tableSession?.paymentRequest?.status === "requested" && tableSession?.paymentRequest?.method === "mobile" ? (
                <div className="mt-5 space-y-3">
-                 <label className="block text-sm font-black text-orange-900 dark:text-orange-100">
+                 <label className="block text-sm font-black text-[var(--brand-primary)]">
                    Collez le SMS de confirmation reçu après votre paiement.
                  </label>
                  <textarea
                    value={paymentProofSms}
                    onChange={(event) => setPaymentProofSms(event.target.value)}
                    placeholder={paymentProofSmsPlaceholder}
-                   className="min-h-28 w-full resize-none rounded-xl border border-orange-300 bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-orange-400/40"
+                   className="min-h-28 w-full resize-none rounded-xl border border-[var(--brand-primary)]/30 bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/30"
                  />
                  <button
                    onClick={handleConfirmMobilePayment}
@@ -561,7 +553,7 @@ function ClientOrderTrackingContent() {
                  </button>
                </div>
             ) : tableSession?.paymentRequest?.status === "pending_confirmation" ? (
-               <div className="mt-5 rounded-xl border border-orange-300 bg-orange-100 p-4 text-center text-orange-800 dark:bg-orange-950/30 dark:text-orange-300">
+               <div className="mt-5 rounded-xl border border-[var(--brand-primary)]/30 bg-[var(--brand-primary-soft)] p-4 text-center text-[var(--brand-primary)]">
                  <p className="font-black text-lg animate-pulse">Paiement effectué, en attente de validation</p>
                </div>
             ) : (
@@ -571,7 +563,7 @@ function ClientOrderTrackingContent() {
                       Paiement refusé, veuillez réessayer.
                     </div>
                  ) : null}
-                 <p className="text-sm font-semibold text-orange-900 dark:text-orange-100">Comment souhaitez-vous payer ?</p>
+                 <p className="text-sm font-semibold text-[var(--brand-primary)]">Comment souhaitez-vous payer ?</p>
                  
                  <div className="grid grid-cols-3 justify-items-start gap-2 sm:gap-3">
                    <button
@@ -590,12 +582,12 @@ function ClientOrderTrackingContent() {
                        type="button"
                        onClick={() => handleMobilePaymentSession(method)}
                        disabled={isMobilePaying || paymentMethodsLoading}
-                       className="inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl border border-orange-300 bg-background px-3 text-sm font-black text-foreground transition hover:bg-muted active:scale-[0.98] disabled:opacity-60 sm:px-4"
+                       className="inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-primary)]/30 bg-background px-3 text-sm font-black text-foreground transition hover:bg-muted active:scale-[0.98] disabled:opacity-60 sm:px-4"
                      >
                        {method.logoUrl ? (
                          <img src={method.logoUrl} alt={method.name} className="h-6 object-contain" />
                        ) : (
-                         <CreditCard className="h-5 w-5 text-orange-600" />
+                         <CreditCard className="h-5 w-5 text-[var(--brand-primary)]" />
                        )}
                        <span>{method.name}</span>
                      </button>
@@ -608,7 +600,7 @@ function ClientOrderTrackingContent() {
               <button
                 type="button"
                 onClick={continueOrdering}
-                className="mt-5 flex h-12 w-full items-center justify-center rounded-xl border border-orange-300 bg-background px-4 text-sm font-black uppercase text-orange-900 shadow-sm transition hover:bg-orange-100 active:scale-[0.98] dark:text-orange-100 dark:hover:bg-orange-500/10"
+                className="mt-5 flex h-12 w-full items-center justify-center rounded-xl border border-[var(--brand-primary)]/30 bg-background px-4 text-sm font-black uppercase text-[var(--brand-primary)] shadow-sm transition hover:bg-[var(--brand-primary-soft)] active:scale-[0.98]"
               >
                 Commander encore
               </button>
@@ -728,7 +720,7 @@ function TrackingHeaderCard({
   return (
     <section className="rounded-2xl border bg-card px-3.5 py-3 text-card-foreground shadow-sm">
       <div className="flex items-start gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-orange-200 bg-orange-50 text-orange-600 shadow-sm dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--brand-primary)]/20 bg-[var(--brand-primary-soft)] text-[var(--brand-primary)] shadow-sm">
           <ClipboardList className="h-5 w-5" />
         </span>
 
@@ -737,7 +729,7 @@ function TrackingHeaderCard({
             Suivez votre commande
           </h1>
           <p className="mt-1 text-base font-semibold text-muted-foreground sm:text-lg">
-            Commande n° <span className="text-orange-600 dark:text-orange-300">{orderDisplayId}</span>
+            Commande n° <span className="text-[var(--brand-primary)]">{orderDisplayId}</span>
           </p>
           {orderPhone ? (
             <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-muted-foreground sm:text-[15px]">
@@ -755,14 +747,14 @@ function TrackingStatusCard({ summary }: { summary: TrackingStatusSummary }) {
   const Icon = summary.icon
 
   return (
-    <section className="rounded-2xl border border-orange-200 bg-orange-50/70 px-3.5 py-3 text-orange-950 shadow-sm dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-100">
+    <section className="rounded-2xl border border-[var(--brand-primary)]/20 bg-[var(--brand-primary-soft)] px-3.5 py-3 text-card-foreground shadow-sm">
       <div className="flex items-center gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-orange-600 shadow-[0_10px_24px_rgba(15,23,42,0.10)] dark:bg-slate-950/80 dark:text-orange-300">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[var(--brand-primary)] shadow-[0_10px_24px_rgba(15,23,42,0.10)] dark:bg-slate-950/80">
           <Icon className="h-5 w-5" />
         </span>
 
         <div className="min-w-0 flex-1">
-          <h2 className="text-xl font-black leading-tight text-orange-600 dark:text-orange-300 sm:text-2xl">
+          <h2 className="text-xl font-black leading-tight text-[var(--brand-primary)] sm:text-2xl">
             {summary.title}
           </h2>
           <p className="mt-1 text-sm font-medium leading-5 text-foreground sm:text-base">
@@ -776,9 +768,9 @@ function TrackingStatusCard({ summary }: { summary: TrackingStatusSummary }) {
 
 function TrackingInfoCard() {
   return (
-    <section className="rounded-2xl border border-orange-200 bg-orange-50/50 px-3.5 py-2.5 text-card-foreground shadow-sm dark:border-orange-400/25 dark:bg-orange-500/10">
+    <section className="rounded-2xl border border-[var(--brand-primary)]/20 bg-[var(--brand-primary-soft)] px-3.5 py-2.5 text-card-foreground shadow-sm">
       <div className="flex items-center gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--brand-primary)]/20 bg-white text-[var(--brand-primary)] dark:bg-slate-950/80">
           <Info className="h-4 w-4" />
         </span>
         <div className="min-w-0">

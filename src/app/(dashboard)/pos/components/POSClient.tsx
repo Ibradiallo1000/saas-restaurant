@@ -206,7 +206,7 @@ function POSPageContent() {
     }
   }, [profile, user?.displayName, user?.email, user?.uid])
   const posColumns = React.useMemo(() => [
-    { id: ORDER_OPERATION_STATUS.PENDING, color: "border-orange-500" },
+    { id: ORDER_OPERATION_STATUS.PENDING, color: "border-amber-500" },
     { id: ORDER_OPERATION_STATUS.IN_PREPARATION, color: "border-blue-500" },
     { id: ORDER_OPERATION_STATUS.READY, color: "border-primary" },
     { id: ORDER_OPERATION_STATUS.SERVED, color: "border-indigo-500" },
@@ -2089,9 +2089,9 @@ function DiffAmount({ label, value, strong }: { label: string; value: number; st
   const hasDiff = value !== 0
 
   return (
-    <div className={cn("rounded-lg border p-2", hasDiff ? "border-orange-300 bg-orange-500/10" : "bg-muted/40")}>
+    <div className={cn("rounded-lg border p-2", hasDiff ? "border-amber-300 bg-amber-500/10" : "bg-muted/40")}>
       <p className="text-[10px] font-black uppercase text-muted-foreground">{label}</p>
-      <p className={cn("mt-1 font-black", strong ? "text-base" : "text-sm", hasDiff ? "text-orange-600" : "text-foreground")}>
+      <p className={cn("mt-1 font-black", strong ? "text-base" : "text-sm", hasDiff ? "text-amber-600" : "text-foreground")}>
         {value.toLocaleString("fr-FR")} FCFA
       </p>
     </div>

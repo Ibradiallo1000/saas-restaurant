@@ -342,11 +342,11 @@ function CartLine({
 
       {showControls ? (
       <div className="flex items-center justify-end gap-1">
-        <button type="button" onClick={onDecrease} className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted hover:bg-orange-100">
+        <button type="button" onClick={onDecrease} className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted hover:bg-[var(--brand-primary-soft)]">
           <Minus className="h-4 w-4" />
         </button>
         <span className="w-7 text-center text-base font-black">{item.quantity}</span>
-        <button type="button" onClick={onIncrease} className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted hover:bg-orange-100">
+        <button type="button" onClick={onIncrease} className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted hover:bg-[var(--brand-primary-soft)]">
           <Plus className="h-4 w-4" />
         </button>
         <button type="button" onClick={onRemove} className="flex h-9 w-9 items-center justify-center rounded-lg text-red-600 hover:bg-red-50">
@@ -381,7 +381,7 @@ function getPreparationModeBadgeClass(mode: CartPreparationMode) {
   if (mode === "bar") {
     return "border-indigo-200 bg-indigo-100 text-indigo-800 dark:border-indigo-400/40 dark:bg-indigo-500/25 dark:text-indigo-100"
   }
-  return "border-orange-200 bg-orange-100 text-orange-800 dark:border-orange-400/40 dark:bg-orange-500/20 dark:text-orange-100"
+  return "border-[var(--brand-primary)]/20 bg-[var(--brand-primary-soft)] text-[var(--brand-primary)] dark:border-[var(--brand-primary)]/30 dark:bg-[var(--brand-primary-soft)] dark:text-[var(--brand-primary)]"
 }
 
 function ActionButton({

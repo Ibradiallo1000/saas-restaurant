@@ -44,10 +44,10 @@ const KITCHEN_COLUMNS: Array<{
   title: string
   accent: string
 }> = [
-  { status: ORDER_OPERATION_STATUS.PENDING, title: "EN ATTENTE", accent: "border-t-orange-500" },
-  { status: ORDER_OPERATION_STATUS.IN_PREPARATION, title: "EN PR\u00c9PARATION", accent: "border-t-orange-500" },
-  { status: ORDER_OPERATION_STATUS.READY, title: "PR\u00caTES", accent: "border-t-orange-500" },
-  { status: ORDER_OPERATION_STATUS.SERVED, title: "SERVIES", accent: "border-t-orange-500" },
+  { status: ORDER_OPERATION_STATUS.PENDING, title: "EN ATTENTE", accent: "border-t-[var(--brand-primary)]" },
+  { status: ORDER_OPERATION_STATUS.IN_PREPARATION, title: "EN PR\u00c9PARATION", accent: "border-t-[var(--brand-primary)]" },
+  { status: ORDER_OPERATION_STATUS.READY, title: "PR\u00caTES", accent: "border-t-[var(--brand-primary)]" },
+  { status: ORDER_OPERATION_STATUS.SERVED, title: "SERVIES", accent: "border-t-[var(--brand-primary)]" },
 ]
 
 export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {

@@ -90,7 +90,7 @@ function getFreshnessBadge(item: InventoryItem) {
   if (freshness === "expired") {
     return {
       label: "> 48h",
-      className: "border-orange-200 bg-orange-100 text-orange-700",
+      className: "border-amber-200 bg-amber-100 text-amber-700",
     }
   }
   return {
@@ -263,7 +263,7 @@ export default function ManagerInventoryPage() {
     <main className="space-y-4 pb-20">
       {!focusMode ? (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className={cn(reliability === "Élevée" ? "border-emerald-300 bg-emerald-50/60 dark:border-emerald-500/60 dark:bg-emerald-950/30" : reliability === "Moyenne" ? "border-orange-300 bg-orange-50/60 dark:border-orange-500/60 dark:bg-orange-950/30" : "border-red-300 bg-red-50/60 dark:border-red-500/60 dark:bg-red-950/30")}>
+        <Card className={cn(reliability === "Élevée" ? "border-emerald-300 bg-emerald-50/60 dark:border-emerald-500/60 dark:bg-emerald-950/30" : reliability === "Moyenne" ? "border-amber-300 bg-amber-50/60 dark:border-amber-500/60 dark:bg-amber-950/30" : "border-red-300 bg-red-50/60 dark:border-red-500/60 dark:bg-red-950/30")}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-black uppercase text-muted-foreground flex items-center gap-2">
               <AlertTriangle className="h-4 w-4" />
@@ -292,7 +292,7 @@ export default function ManagerInventoryPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-black text-orange-600">{neverVerifiedCount + expiredCount}</p>
+            <p className="text-2xl font-black text-amber-600">{neverVerifiedCount + expiredCount}</p>
             <p className="text-xs font-bold text-muted-foreground mt-1">
               {neverVerifiedCount} jamais, {expiredCount} {'>'} 48h
             </p>
@@ -470,7 +470,7 @@ export default function ManagerInventoryPage() {
           <div className="rounded-lg border bg-background p-3">
             <p className="text-xs font-black uppercase text-muted-foreground">Top plats rentables</p>
             {marginSummary.ignoredCount > 0 ? (
-              <p className="mt-1 text-xs font-bold text-orange-700">
+              <p className="mt-1 text-xs font-bold text-amber-700">
                 {marginSummary.ignoredCount} vente(s) ignorée(s): coût non défini.
               </p>
             ) : null}
@@ -714,9 +714,9 @@ function InventoryRow({
             "flex cursor-pointer flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between",
             focused && "bg-primary/5",
             alert.level === "critical" && "bg-red-50/30",
-            alert.level === "warning" && "bg-orange-50/30",
+            alert.level === "warning" && "bg-amber-50/30",
             freshness === "never" && "bg-red-50/70 dark:bg-red-950/20",
-            freshness === "expired" && "bg-orange-50/70 dark:bg-orange-950/20"
+            freshness === "expired" && "bg-amber-50/70 dark:bg-amber-950/20"
           )}
         >
           <div className="flex flex-col gap-1">
@@ -732,7 +732,7 @@ function InventoryRow({
                 </span>
               )}
               {hasMissingCost(item) ? (
-                <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black uppercase text-orange-700">
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-700">
                   Coût non défini
                 </span>
               ) : null}
@@ -910,7 +910,7 @@ function InventoryActionDialog({
         </div>
 
         {action === "mode" && value !== (item.trackingMode || "auto") && (
-          <div className="rounded-md bg-orange-50 p-3 text-sm text-orange-800">
+          <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
             ⚠️ Attention : Changer le mode de suivi ne recalcule pas l'historique. L'état actuel servira de nouvelle base de référence.
           </div>
         )}
@@ -1030,7 +1030,7 @@ function getInventoryAlert(item: InventoryItem) {
   }
 
   if (daysLeft !== null && daysLeft < 4) {
-    return { level: "warning" as const, label: "🟠 Bientôt fini", className: "bg-orange-100 text-orange-700" }
+    return { level: "warning" as const, label: "🟠 Bientôt fini", className: "bg-amber-100 text-amber-700" }
   }
 
   return { level: "ok" as const, label: "🟢 OK", className: "bg-emerald-100 text-emerald-700" }
@@ -1096,7 +1096,7 @@ function getSeverityRank(severity: InventoryAlert["severity"]) {
 
 function getAlertTone(severity: InventoryAlert["severity"]) {
   if (severity === "high") return "text-red-700"
-  if (severity === "medium") return "text-orange-700"
+  if (severity === "medium") return "text-amber-700"
   return "text-muted-foreground"
 }
 

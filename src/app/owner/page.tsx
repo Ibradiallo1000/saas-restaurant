@@ -109,12 +109,12 @@ const sectionStyles = {
     icon: "text-sky-700 dark:text-sky-200",
   },
   alerts: {
-    wrapper: "border-orange-300 bg-orange-100/80 dark:border-orange-400/40 dark:bg-orange-500/15",
-    icon: "text-orange-700 dark:text-orange-200",
+    wrapper: "border-amber-300 bg-amber-100/80 dark:border-amber-400/40 dark:bg-amber-500/15",
+    icon: "text-amber-700 dark:text-amber-200",
   },
   impact: {
-    wrapper: "border-orange-200 bg-orange-50/70 dark:border-orange-400/30 dark:bg-orange-500/10",
-    icon: "text-orange-700 dark:text-orange-200",
+    wrapper: "border-amber-200 bg-amber-50/70 dark:border-amber-400/30 dark:bg-amber-500/10",
+    icon: "text-amber-700 dark:text-amber-200",
   },
   treasury: {
     wrapper: "border-green-200 bg-green-50/70 dark:border-green-400/30 dark:bg-green-500/10",
@@ -396,14 +396,14 @@ function BusinessStatusBadge({ status }: { status: BusinessStatus }) {
       ? "border-emerald-300 bg-emerald-50 text-emerald-700"
       : status.tone === "bad"
         ? "border-red-300 bg-red-50 text-red-700"
-        : "border-orange-300 bg-orange-50 text-orange-700"
+        : "border-amber-300 bg-amber-50 text-amber-700"
 
   return (
     <div className={cn("inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-black", tone)}>
       <span className={cn(
         "h-2 w-2 rounded-full",
         status.tone === "good" && "bg-emerald-500",
-        status.tone === "watch" && "bg-orange-500",
+        status.tone === "watch" && "bg-amber-500",
         status.tone === "bad" && "bg-red-500"
       )} />
       {status.label}
@@ -567,14 +567,14 @@ function VariationBadge({ variation }: { variation: Variation }) {
       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
       : variation.trend === "down"
         ? "border-red-200 bg-red-50 text-red-700"
-        : "border-orange-200 bg-orange-50 text-orange-700"
+        : "border-amber-200 bg-amber-50 text-amber-700"
   const sign = variation.absolute > 0 ? "+" : ""
   const dot =
     variation.trend === "up"
       ? "bg-emerald-500"
       : variation.trend === "down"
         ? "bg-red-500"
-        : "bg-orange-500"
+        : "bg-amber-500"
 
   return (
     <div className={cn("mt-2 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-black", tone)}>
@@ -635,7 +635,7 @@ function AlertActionList({ alerts }: { alerts: Array<{ title: string; descriptio
 
   if (alerts.length === 0) {
     return (
-      <div className="rounded-lg border border-orange-200 bg-background p-3 text-sm font-semibold text-muted-foreground dark:border-orange-400/30 dark:bg-background">
+      <div className="rounded-lg border border-amber-200 bg-background p-3 text-sm font-semibold text-muted-foreground dark:border-amber-400/30 dark:bg-background">
         Aucune intervention immédiate nécessaire.
       </div>
     )
@@ -648,7 +648,7 @@ function AlertActionList({ alerts }: { alerts: Array<{ title: string; descriptio
           key={`${alert.title}-${alert.href}`}
           href={getHrefWithCurrentQuery(alert.href, searchParams)}
           className={cn(
-            "flex items-start gap-2.5 rounded-lg border bg-background p-3 text-orange-800 shadow-sm transition hover:border-primary/40 hover:shadow-md dark:border-orange-400/30 dark:bg-background dark:text-orange-200",
+            "flex items-start gap-2.5 rounded-lg border bg-background p-3 text-amber-800 shadow-sm transition hover:border-primary/40 hover:shadow-md dark:border-amber-400/30 dark:bg-background dark:text-amber-200",
             alert.severity === "high" && "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-500/15 dark:text-red-200"
           )}
         >
@@ -1225,7 +1225,7 @@ function getVariationInterpretation(variation: Variation) {
   if (variation.percent < -5) {
     return { label: "Activité en baisse", className: "text-red-700" }
   }
-  return { label: "Niveau stable", className: "text-orange-700" }
+  return { label: "Niveau stable", className: "text-amber-700" }
 }
 
 function getLiveActivityMessage(activeOrders: number) {

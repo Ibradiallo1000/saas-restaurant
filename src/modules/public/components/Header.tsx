@@ -59,7 +59,7 @@ export default function Header({
                 h-10 w-10 rounded-full overflow-hidden sm:h-11 sm:w-11
                 transition-all duration-300
                 ${scrolled
-                  ? "border border-[var(--public-card-border)] bg-[var(--public-orange-soft)] shadow-sm"
+                  ? "border border-[var(--public-card-border)] bg-[var(--brand-primary-soft)] shadow-sm"
                   : "border border-white/20 bg-white/[0.12] shadow-lg backdrop-blur"
                 }
               `}
@@ -71,7 +71,7 @@ export default function Header({
               />
             </div>
           ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--public-orange)] text-sm font-black text-white shadow-lg shadow-orange-500/20 sm:h-11 sm:w-11">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--brand-primary)] text-sm font-black text-white shadow-lg shadow-black/15 sm:h-11 sm:w-11">
               {initial}
             </div>
           )}
@@ -111,7 +111,7 @@ export default function Header({
               relative flex h-9 w-9 items-center justify-center rounded-lg
               transition-all duration-300
               ${scrolled
-                ? "bg-[var(--public-orange-soft)] text-[var(--public-orange)]"
+                ? "bg-[var(--brand-primary-soft)] text-[var(--brand-primary)]"
                 : "border border-white/20 bg-white/[0.12] text-white backdrop-blur"
               }
               active:scale-95
@@ -126,7 +126,7 @@ export default function Header({
                   h-4 min-w-[16px]
                   flex items-center justify-center
                   rounded-full
-                  bg-[var(--public-orange)]
+                  bg-[var(--brand-primary)]
                   text-[9px] font-black text-white px-1
                 "
               >

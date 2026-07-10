@@ -125,7 +125,7 @@ export default function ManagerTreasuryPage() {
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-sm font-black uppercase tracking-tight">Répartition par compte</h2>
           {accountTotal <= 0 && legacySummary.balance > 0 ? (
-            <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-[10px] font-black text-orange-700 dark:bg-orange-500/15 dark:text-orange-200">
+            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-black text-amber-700 dark:bg-amber-500/15 dark:text-amber-200">
               Solde historique affiché en fallback
             </span>
           ) : null}
@@ -200,7 +200,7 @@ export default function ManagerTreasuryPage() {
                         <span className={cn(
                           "inline-flex rounded-full px-2 py-1 text-[10px] font-black uppercase",
                           direction === "in" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
-                          direction === "out" && "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-200",
+                          direction === "out" && "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200",
                           direction === "transfer" && "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200"
                         )}>
                           {formatDirection(direction)}
@@ -211,7 +211,7 @@ export default function ManagerTreasuryPage() {
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-emerald-700 dark:text-emerald-300">
                         {direction === "in" ? `+${formatMoney(amount)} FCFA` : "-"}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-orange-700 dark:text-orange-300">
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-amber-700 dark:text-amber-300">
                         {direction === "out" ? `-${formatMoney(amount)} FCFA` : "-"}
                       </td>
                       <td className="px-3 py-2.5">
@@ -246,11 +246,11 @@ function TreasuryCard({
   danger?: boolean
 }) {
   return (
-    <Card className={cn("rounded-xl", priority && "md:order-first", danger && "border-orange-300")}>
+    <Card className={cn("rounded-xl", priority && "md:order-first", danger && "border-amber-300")}>
       <CardContent className="flex min-h-24 flex-col justify-between p-3">
-        <Icon className={cn("h-4 w-4", danger ? "text-orange-600" : "text-primary")} />
+        <Icon className={cn("h-4 w-4", danger ? "text-amber-600" : "text-primary")} />
         <p className="mt-2 text-[10px] font-black uppercase text-muted-foreground">{label}</p>
-        <p className={cn("mt-0.5 text-lg font-black leading-tight sm:text-xl", danger ? "text-orange-600" : "text-foreground")}>
+        <p className={cn("mt-0.5 text-lg font-black leading-tight sm:text-xl", danger ? "text-amber-600" : "text-foreground")}>
           {formatMoney(value)} FCFA
         </p>
       </CardContent>

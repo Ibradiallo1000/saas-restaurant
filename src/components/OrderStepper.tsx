@@ -48,7 +48,7 @@ export function OrderStepper({
     <div className="relative">
       <div className="absolute left-[12.5%] right-[12.5%] top-[18px] h-0.5 rounded-full bg-muted" />
       <div
-        className="absolute left-[12.5%] top-[18px] h-0.5 rounded-full bg-orange-500 transition-all duration-500 ease-out"
+        className="absolute left-[12.5%] top-[18px] h-0.5 rounded-full bg-[var(--brand-primary)] transition-all duration-500 ease-out"
         style={{ width: `calc(75% * ${Math.max(0, currentIndex) / 3})` }}
       />
 
@@ -64,7 +64,7 @@ export function OrderStepper({
               <div
                 className={cn(
                   "flex h-9 w-9 items-center justify-center rounded-full border shadow-sm transition-all duration-500 ease-out",
-                  (isCompleted || isCurrent) && "border-orange-500 bg-orange-500 text-white",
+                  (isCompleted || isCurrent) && "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white",
                   isFuture && "border-muted bg-background text-muted-foreground"
                 )}
               >
@@ -74,7 +74,7 @@ export function OrderStepper({
                 <p
                   className={cn(
                     "whitespace-nowrap text-[12px] font-black leading-tight sm:text-[13px]",
-                    isFuture ? "text-muted-foreground" : "text-orange-600 dark:text-orange-300"
+                    isFuture ? "text-muted-foreground" : "text-[var(--brand-primary)]"
                   )}
                 >
                   {step.label}

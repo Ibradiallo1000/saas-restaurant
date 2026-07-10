@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChefHat, Flame } from "lucide-react"
+import { ChefHat } from "lucide-react"
 
 import { productNeedsConfigurator } from "@/lib/linked-option-groups"
 import { getOptimizedImage } from "@/lib/image"
@@ -23,9 +23,6 @@ export default function DishCard({
   const hasImage = Boolean(product?.imageUrl && !imgError)
 
   const hasOptions = productNeedsConfigurator(product)
-
-  // ✅ POPULARITÉ PLUS PROPRE
-  const isPopular = (product?.orderCount || 0) > 10
 
   // ✅ PRIX
   const price = React.useMemo(() => {
@@ -75,20 +72,19 @@ export default function DishCard({
   return (
     <article
       className="
-        grid w-full max-w-full grid-cols-[88px_minmax(0,1fr)_auto] items-center gap-3 overflow-hidden
-        min-h-[104px]
-        rounded-[1.35rem] border border-[var(--public-card-border)]
-        bg-[var(--public-card-bg)] p-2.5 shadow-[0_12px_30px_rgba(15,23,42,0.08)]
+        grid w-full max-w-full grid-cols-[94px_minmax(0,1fr)_auto] items-center gap-3 overflow-hidden
+        min-h-[108px]
+        rounded-[1.4rem] border border-[var(--public-card-border)]
+        bg-[var(--public-card-bg)] p-2 shadow-[0_10px_26px_rgba(15,23,42,0.07)]
         backdrop-blur-xl
-        transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--public-orange)]/35 hover:shadow-[0_18px_42px_rgba(15,23,42,0.12)]
-        sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:min-h-[116px] sm:gap-3.5 sm:p-3
-        md:h-full
+        transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--brand-primary)]/35 hover:shadow-[0_18px_42px_rgba(15,23,42,0.12)]
+        sm:grid-cols-[102px_minmax(0,1fr)_auto] sm:min-h-[118px] sm:gap-3.5 sm:p-2.5
       "
     >
       {/* IMAGE */}
       <div
         onClick={onOpenDetails}
-        className="relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-[1.35rem] bg-[var(--public-orange-soft)] shadow-inner sm:h-24 sm:w-24"
+        className="relative h-[94px] w-[94px] shrink-0 overflow-hidden rounded-[1.25rem] bg-[var(--brand-primary-soft)] shadow-inner sm:h-[102px] sm:w-[102px]"
       >
         {hasImage ? (
           <img
@@ -103,29 +99,24 @@ export default function DishCard({
           </div>
         )}
 
-        {/* BADGE */}
-        {isPopular && (
-          <div className="absolute left-1 top-1 flex items-center gap-1 rounded-full bg-[var(--public-orange)] px-2 py-0.5 text-[9px] font-black text-white shadow-lg shadow-orange-500/20">
-            <Flame className="h-3 w-3" />
-            Populaire
-          </div>
-        )}
       </div>
 
       {/* CONTENT */}
       <div
         onClick={onOpenDetails}
-        className="min-w-0 flex-1 cursor-pointer"
+        className="min-w-0 flex-1 cursor-pointer py-1"
       >
-        <h3 className="truncate text-lg font-black leading-tight text-[var(--public-text-main)] sm:text-xl">
+        <h3 className="truncate text-base font-black leading-tight text-[var(--public-text-main)] sm:text-lg">
           {product.name}
         </h3>
 
-        <p className="mt-1 line-clamp-2 text-xs leading-4 text-[var(--public-text-muted)] sm:text-sm sm:leading-5">
-          {product.description || "Spécialité du restaurant"}
-        </p>
+        {product.description ? (
+          <p className="mt-1 line-clamp-2 text-xs leading-4 text-[var(--public-text-muted)] sm:text-sm sm:leading-5">
+            {product.description}
+          </p>
+        ) : null}
 
-        <p className="mt-1.5 whitespace-nowrap text-sm font-black text-[var(--public-orange)] sm:text-base">
+        <p className="mt-2 whitespace-nowrap text-base font-black leading-none text-[var(--brand-primary)] sm:text-lg">
           {price > 0
             ? hasOptions
               ? `Dès ${price.toLocaleString()} FCFA`
@@ -138,12 +129,12 @@ export default function DishCard({
       <button
         onClick={handleQuickAdd}
         className={`
-          min-h-11 max-w-[84px] shrink-0 rounded-full px-3 py-2 text-xs font-black
+          min-h-10 max-w-[78px] shrink-0 rounded-full px-3 py-2 text-[11px] font-black
           shadow-lg transition-all duration-200 active:scale-95 sm:px-4
           ${
             added
               ? "bg-green-500 text-white shadow-green-500/20"
-              : "bg-gradient-to-br from-[#fb923c] to-[#f97316] text-white shadow-orange-500/25"
+              : "bg-[var(--brand-primary)] text-white shadow-[0_10px_24px_rgba(15,23,42,0.16)]"
           }
         `}
       >

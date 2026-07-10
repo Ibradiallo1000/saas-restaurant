@@ -712,9 +712,9 @@ function PaymentStepCompact({
                 paymentProofSms: "",
               })
             }
-            className={`inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl border px-3 text-center transition hover:border-orange-500 sm:px-4 ${
+            className={`inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl border px-3 text-center transition hover:border-[var(--brand-primary)] sm:px-4 ${
               paymentMethodCode === "cash"
-                ? "border-orange-500 bg-orange-50 text-slate-950"
+                ? "border-[var(--brand-primary)] bg-[var(--brand-primary-soft)] text-slate-950"
                 : "border-border bg-card hover:bg-muted"
             }`}
           >
@@ -736,9 +736,9 @@ function PaymentStepCompact({
                 key={method.code}
                 type="button"
                 onClick={() => selectMethod(method)}
-                className={`inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl border px-3 text-center transition hover:border-orange-500 sm:px-4 ${
+                className={`inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl border px-3 text-center transition hover:border-[var(--brand-primary)] sm:px-4 ${
                   active
-                    ? "border-orange-500 bg-orange-50 text-slate-950"
+                    ? "border-[var(--brand-primary)] bg-[var(--brand-primary-soft)] text-slate-950"
                     : "border-border bg-card hover:bg-muted"
                 }`}
               >
@@ -843,7 +843,7 @@ function PaymentStep({
             paymentCode: "",
             paymentInstruction: "Reglez en especes au comptoir.",
           })}
-          className={`flex min-h-14 items-center gap-2 rounded-xl border p-3 text-left transition hover:border-orange-500 ${
+          className={`flex min-h-14 items-center gap-2 rounded-xl border p-3 text-left transition hover:border-[var(--brand-primary)] ${
             paymentMethodCode === 'cash'
               ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
               : "border-border bg-card hover:bg-muted"
@@ -896,7 +896,7 @@ function PaymentStep({
                 key={method.code}
                 type="button"
                 onClick={() => selectMethod(method)}
-                className={`flex min-h-14 items-center gap-2 rounded-xl border p-3 text-left transition hover:border-orange-500 ${
+                className={`flex min-h-14 items-center gap-2 rounded-xl border p-3 text-left transition hover:border-[var(--brand-primary)] ${
                   active
                     ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
                     : "border-border bg-card hover:bg-muted"

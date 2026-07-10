@@ -535,7 +535,7 @@ function statusLabel(order: RestaurantOrder | string) {
 function statusBadgeClass(order: RestaurantOrder | string) {
   const normalized = typeof order === "string" ? order : getOrderStatus(order);
   if (normalized === ORDER_OPERATION_STATUS.PENDING) return "bg-secondary text-white";
-  if (normalized === ORDER_OPERATION_STATUS.IN_PREPARATION) return "bg-orange-500 text-white";
+  if (normalized === ORDER_OPERATION_STATUS.IN_PREPARATION) return "bg-amber-500 text-white";
   if (normalized === ORDER_OPERATION_STATUS.READY) return "bg-blue-600 text-white";
   if (normalized === ORDER_OPERATION_STATUS.SERVED) return "bg-green-600 text-white";
   return "bg-muted text-muted-foreground";
@@ -544,7 +544,7 @@ function statusBadgeClass(order: RestaurantOrder | string) {
 function statusDotClass(status: string) {
   const normalized = status;
   if (normalized === ORDER_OPERATION_STATUS.PENDING) return "bg-secondary";
-  if (normalized === ORDER_OPERATION_STATUS.IN_PREPARATION) return "bg-orange-500";
+  if (normalized === ORDER_OPERATION_STATUS.IN_PREPARATION) return "bg-amber-500";
   if (normalized === ORDER_OPERATION_STATUS.READY) return "bg-blue-600";
   if (normalized === ORDER_OPERATION_STATUS.SERVED) return "bg-green-600";
   return "bg-muted";

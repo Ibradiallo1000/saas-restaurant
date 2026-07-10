@@ -86,7 +86,7 @@ export default function PlatformInitPage() {
       <div className="flex items-center justify-center min-h-screen p-4">
         <Card className="max-w-md w-full border-none shadow-2xl text-center">
           <CardHeader>
-            <AlertTriangle className="h-12 w-12 text-orange-500 mx-auto mb-4" />
+            <AlertTriangle className="h-12 w-12 text-[var(--brand-primary)] mx-auto mb-4" />
             <CardTitle>Connexion Requise</CardTitle>
             <CardDescription>Vous devez être connecté pour initialiser la plateforme.</CardDescription>
           </CardHeader>
