@@ -18,12 +18,12 @@ export default function CategorySidebar({
   onSelectCategory,
 }: CategorySidebarProps) {
   return (
-    <aside className="h-full overflow-hidden rounded-xl border bg-card shadow-sm">
-      <div className="border-b px-3 py-3">
-        <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">Catégories</p>
+    <aside className="h-full overflow-hidden rounded-[1.35rem] border bg-card/95 shadow-[0_18px_45px_rgba(15,23,42,0.07)] backdrop-blur">
+      <div className="border-b px-4 py-3">
+        <p className="text-[11px] font-black uppercase tracking-wide text-muted-foreground">Catégories</p>
       </div>
 
-      <div className="h-[calc(100%-45px)] overflow-y-auto p-2">
+      <div className="h-[calc(100%-45px)] overflow-y-auto p-2.5">
         <CategoryButton
           active={!selectedCategoryId}
           icon={<Grid3X3 className="h-5 w-5" />}
@@ -66,16 +66,16 @@ function CategoryButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-black transition-colors active:scale-[0.99]",
+        "flex h-12 w-full items-center gap-3 rounded-full border px-2.5 text-left text-sm font-black transition-all active:scale-[0.99]",
         active
-          ? "bg-primary text-primary-foreground shadow-sm"
-          : "text-foreground hover:bg-[var(--brand-primary-soft)] hover:text-[var(--brand-primary)] dark:hover:bg-[var(--brand-primary-soft)]"
+          ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white shadow-[0_12px_26px_rgba(15,23,42,0.14)]"
+          : "border-transparent text-foreground hover:border-[var(--brand-primary)]/20 hover:bg-[var(--brand-primary-soft)] hover:text-[var(--brand-primary)]"
       )}
     >
       <span
         className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg",
-          active ? "bg-white/20" : "bg-muted text-muted-foreground"
+          "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full",
+          active ? "bg-white/20 ring-1 ring-white/25" : "bg-muted text-muted-foreground"
         )}
       >
         {imageUrl ? (
@@ -89,7 +89,7 @@ function CategoryButton({
           icon
         )}
       </span>
-      <span className="min-w-0 truncate">{label}</span>
+      <span className="min-w-0 truncate leading-none">{label}</span>
     </button>
   )
 }

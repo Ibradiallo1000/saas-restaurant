@@ -3,7 +3,6 @@
 import * as React from "react"
 import { Plus, ShoppingCart } from "lucide-react"
 
-import { PreparationBadge } from "@/components/PreparationBadge"
 import { getOptimizedImage } from "@/lib/image"
 import { cn } from "@/lib/utils"
 
@@ -17,20 +16,15 @@ type ProductGridProps = {
 
 function ProductGrid({
   products,
-  categories = [],
   loading = false,
   formatPrice,
   onProductClick,
 }: ProductGridProps) {
-  const categoriesById = React.useMemo(() => {
-    return new Map(categories.map((category: any) => [category.id, category.name || ""]))
-  }, [categories])
-
   if (loading) {
     return (
-      <div className="grid h-full min-h-0 grid-cols-2 content-start gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <div className="grid h-full min-h-0 grid-cols-2 content-start gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {Array.from({ length: 10 }).map((_, index) => (
-          <div key={index} className="h-[210px] animate-pulse rounded-xl bg-muted" />
+          <div key={index} className="h-[198px] animate-pulse rounded-[1.2rem] bg-muted" />
         ))}
       </div>
     )
@@ -38,28 +32,26 @@ function ProductGrid({
 
   if (products.length === 0) {
     return (
-      <div className="flex h-full min-h-[360px] items-center justify-center rounded-xl border border-dashed bg-card text-sm font-bold text-muted-foreground">
+      <div className="flex h-full min-h-[360px] items-center justify-center rounded-[1.35rem] border border-dashed bg-card/90 text-sm font-bold text-muted-foreground">
         Aucun produit dans cette catégorie
       </div>
     )
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-2 content-start gap-3 md:grid-cols-3 xl:grid-cols-5 2xl:auto-rows-fr">
+    <div className="grid h-full min-h-0 grid-cols-2 content-start gap-3 pr-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
       {products.map((product: any) => {
-        const categoryName = categoriesById.get(product.categoryId) || ""
-
         return (
           <button
             key={product.id}
             type="button"
             onClick={() => onProductClick(product)}
             className={cn(
-              "group flex h-[210px] flex-col overflow-hidden rounded-xl border bg-card text-left shadow-sm transition-all 2xl:h-[198px]",
-              "hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md active:translate-y-0 active:border-primary active:bg-primary/10"
+              "group relative flex h-[198px] flex-col rounded-[1.2rem] border bg-white p-2.5 text-center shadow-[0_12px_32px_rgba(15,23,42,0.06)] transition-all dark:bg-card",
+              "hover:-translate-y-0.5 hover:border-[var(--brand-primary)]/35 hover:shadow-[0_18px_42px_rgba(15,23,42,0.10)] active:translate-y-0 active:border-[var(--brand-primary)]"
             )}
           >
-            <div className="relative h-24 w-full shrink-0 bg-muted 2xl:h-20">
+            <div className="relative mx-auto h-[94px] w-[94px] shrink-0 overflow-hidden rounded-[1rem] bg-muted shadow-inner">
               {product.imageUrl ? (
                 <img
                   src={getOptimizedImage(product.imageUrl, 260)}
@@ -72,24 +64,16 @@ function ProductGrid({
                   <ShoppingCart className="h-7 w-7 text-muted-foreground" />
                 </div>
               )}
-              <span className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-                <Plus className="h-4 w-4" />
-              </span>
             </div>
+            <span className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-primary)] text-white shadow-[0_10px_24px_rgba(15,23,42,0.18)] transition group-hover:scale-105">
+              <Plus className="h-4 w-4" />
+            </span>
 
-            <div className="flex min-h-0 flex-1 flex-col justify-between p-3">
-              <div className="min-h-0 space-y-2">
-                <p className="line-clamp-2 text-sm font-black leading-tight text-foreground">
-                  {product.name}
-                </p>
-                <PreparationBadge
-                  item={{
-                    preparationMode: product.preparationMode,
-                    categoryName,
-                  }}
-                />
-              </div>
-              <p className="mt-2 whitespace-nowrap text-base font-black text-primary">{formatPrice(product)}</p>
+            <div className="flex min-h-0 flex-1 flex-col items-center pt-2.5">
+              <p className="line-clamp-2 h-9 w-full text-center text-[13px] font-semibold leading-tight text-foreground">
+                {product.name}
+              </p>
+              <p className="mt-2 h-6 whitespace-nowrap text-center text-[15px] font-semibold leading-6 text-[var(--brand-primary)]">{formatPrice(product)}</p>
             </div>
           </button>
         )

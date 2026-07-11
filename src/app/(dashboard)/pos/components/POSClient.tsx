@@ -13,7 +13,13 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  Search
+  Search,
+  Grid2X2,
+  Rows3,
+  Clock3,
+  Ticket,
+  Percent,
+  UserRound
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -103,6 +109,7 @@ const STATUS_LABELS = {
 } as const
 
 const warnedMissingKitchenStatusOrders = new Set<string>()
+const POS_PRODUCT_ROWS_PER_PAGE = 2
 
 export default function POSPage() {
   const { restaurantId } = useRestaurant()
@@ -1509,49 +1516,64 @@ function POSPageContent() {
       center={
         activeTab === "cashier" && activeCashSession ? (
           <div className="flex h-full min-h-0 flex-col">
-            <div className="mb-3 flex shrink-0 items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-muted-foreground">
-                  <span>Début : {formatSessionDateTime(activeCashSession.openedAt)}</span>
-                  {discountRate > 0 ? (
-                    <span className="text-primary">Remise {Math.round(discountRate * 100)}%</span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="relative hidden min-w-56 max-w-sm flex-1 lg:block">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <div className="mb-3 flex shrink-0 items-center gap-3 rounded-[1.35rem] border bg-card/95 px-3 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.06)] backdrop-blur">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={productSearch}
                   onChange={(event) => setProductSearch(event.target.value)}
-                  placeholder="Rechercher un produit"
-                  className="h-9 rounded-md pl-9 text-sm font-semibold"
+                  placeholder="Rechercher un produit..."
+                  className="h-12 rounded-full border-transparent bg-muted/60 pl-12 pr-4 text-sm font-semibold shadow-inner focus-visible:ring-[var(--brand-primary)]/25"
                 />
               </div>
               <Button
                 variant={turboMode ? "default" : "outline"}
                 size="sm"
                 onClick={() => setTurboMode(!turboMode)}
-                className="h-9 shrink-0 rounded-md px-3 text-xs font-black"
+                className={cn(
+                  "h-12 shrink-0 rounded-full px-4 text-xs font-black",
+                  turboMode
+                    ? "bg-[var(--brand-primary)] text-white hover:bg-[var(--brand-primary)] hover:brightness-95"
+                    : "border-border bg-background hover:bg-muted"
+                )}
               >
                 <Zap className="h-4 w-4" />
                 {turboMode ? "Turbo" : "Normal"}
               </Button>
+              <div className="flex h-12 shrink-0 items-center gap-1 rounded-full border bg-background p-1 shadow-sm">
+                <button
+                  type="button"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-primary)] text-white shadow-sm"
+                  aria-label="Vue grille"
+                >
+                  <Grid2X2 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label="Vue liste"
+                >
+                  <Rows3 className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
-            <ProductGrid
-              products={paginatedProducts}
-              categories={safeCategories}
-              loading={isLoadingVisible}
-              formatPrice={formatDisplayPrice}
-              onProductClick={openProductSelector}
-            />
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <ProductGrid
+                products={paginatedProducts}
+                categories={safeCategories}
+                loading={isLoadingVisible}
+                formatPrice={formatDisplayPrice}
+                onProductClick={openProductSelector}
+              />
+            </div>
 
             {totalPages > 1 ? (
-              <div className="mt-3 flex shrink-0 items-center justify-center gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
+              <div className="mt-3 flex shrink-0 items-center justify-center gap-3 rounded-full border bg-card/95 px-3 py-2 shadow-sm">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-9 gap-1 rounded-md px-3 text-xs font-black"
+                  className="h-9 gap-1 rounded-full px-3 text-xs font-black"
                   disabled={safeCurrentPage === 0}
                   onClick={() => setCurrentPage((page) => page - 1)}
                 >
@@ -1564,7 +1586,7 @@ function POSPageContent() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-9 gap-1 rounded-md px-3 text-xs font-black"
+                  className="h-9 gap-1 rounded-full px-3 text-xs font-black"
                   disabled={safeCurrentPage === totalPages - 1}
                   onClick={() => setCurrentPage((page) => page + 1)}
                 >
@@ -1573,6 +1595,13 @@ function POSPageContent() {
                 </Button>
               </div>
             ) : null}
+
+            <div className="mt-3 grid shrink-0 grid-cols-4 gap-3">
+              <POSFooterCard icon={<Clock3 />} label="Début" value={formatSessionDateTime(activeCashSession.openedAt)} />
+              <POSFooterCard icon={<Ticket />} label="Ticket" value={`${cart.length} article${cart.length > 1 ? "s" : ""}`} />
+              <POSFooterCard icon={<Percent />} label="Remise" value={discountRate > 0 ? `${Math.round(discountRate * 100)}%` : "0%"} />
+              <POSFooterCard icon={<UserRound />} label="Caissier" value={staffSnapshot.staffName} />
+            </div>
 
             {configProduct ? (
               <ProductConfiguratorModal
@@ -2085,6 +2114,28 @@ function CloseAmount({ label, value, strong }: { label: string; value: number; s
   )
 }
 
+function POSFooterCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactElement<{ className?: string }>
+  label: string
+  value: React.ReactNode
+}) {
+  return (
+    <div className="flex min-h-16 items-center gap-3 rounded-[1.05rem] border bg-card/95 px-3 py-2 shadow-sm">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--brand-primary-soft)] text-[var(--brand-primary)]">
+        {React.cloneElement(icon, { className: "h-4 w-4" })}
+      </span>
+      <div className="min-w-0">
+        <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="truncate text-xs font-black text-foreground">{value}</p>
+      </div>
+    </div>
+  )
+}
+
 function DiffAmount({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
   const hasDiff = value !== 0
 
@@ -2588,13 +2639,16 @@ function usePOSProductsPerPage() {
 
   React.useEffect(() => {
     const updateProductsPerPage = () => {
-      const canShowLargePage = window.innerWidth >= 1536 && window.innerHeight >= 860
-      setProductsPerPage(canShowLargePage ? 15 : 10)
+      const width = window.innerWidth
+      const columns = width >= 1200 ? 5 : width >= 1024 ? 4 : width >= 768 ? 3 : 2
+      setProductsPerPage(columns * POS_PRODUCT_ROWS_PER_PAGE)
     }
 
     updateProductsPerPage()
     window.addEventListener("resize", updateProductsPerPage)
-    return () => window.removeEventListener("resize", updateProductsPerPage)
+    return () => {
+      window.removeEventListener("resize", updateProductsPerPage)
+    }
   }, [])
 
   return productsPerPage

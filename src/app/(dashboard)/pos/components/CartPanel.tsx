@@ -8,8 +8,12 @@ import {
   PauseCircle,
   Percent,
   Plus,
+  ReceiptText,
+  ShoppingBag,
+  ShoppingCart,
   Smartphone,
   Trash2,
+  Utensils,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -80,14 +84,19 @@ export default function CartPanel({
   const isCashInsufficient = paymentMode === "cash" && cashReceivedInput.trim().length > 0 && cashReceivedAmount < total
 
   return (
-    <aside className="flex h-full flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
-      <div className="shrink-0 border-b bg-primary px-4 py-3 text-primary-foreground">
+    <aside className="flex h-full flex-col overflow-hidden rounded-[1.35rem] border bg-card/95 shadow-[0_18px_45px_rgba(15,23,42,0.08)] backdrop-blur">
+      <div className="shrink-0 border-b bg-[var(--brand-primary)] px-4 py-3 text-white">
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-wide opacity-80">Ticket en cours</p>
-            <p className="text-lg font-black">{cart.length} article{cart.length > 1 ? "s" : ""}</p>
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
+              <ShoppingCart className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide opacity-80">Ticket en cours</p>
+              <p className="text-lg font-black">{cart.length} article{cart.length > 1 ? "s" : ""}</p>
+            </div>
           </div>
-          <div className="rounded-xl bg-white/15 px-3 py-2 text-right ring-1 ring-white/20">
+          <div className="rounded-2xl bg-white/15 px-3 py-2 text-right ring-1 ring-white/20">
             <p className="text-[10px] font-black uppercase tracking-wide opacity-80">À encaisser</p>
             <p className="whitespace-nowrap text-2xl font-black">{total.toLocaleString("fr-FR")}</p>
           </div>
@@ -100,20 +109,26 @@ export default function CartPanel({
             type="button"
             onClick={() => onOrderTypeChange("takeaway")}
             className={cn(
-              "h-11 rounded-lg text-sm font-black transition-colors",
-              orderType === "takeaway" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+              "inline-flex h-11 items-center justify-center gap-2 rounded-full border text-sm font-black transition-colors",
+              orderType === "takeaway"
+                ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white shadow-sm"
+                : "border-transparent bg-muted text-foreground hover:bg-[var(--brand-primary-soft)]"
             )}
           >
+            <ShoppingBag className="h-4 w-4" />
             À emporter
           </button>
           <button
             type="button"
             onClick={() => onOrderTypeChange("dine-in")}
             className={cn(
-              "h-11 rounded-lg text-sm font-black transition-colors",
-              orderType === "dine-in" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+              "inline-flex h-11 items-center justify-center gap-2 rounded-full border text-sm font-black transition-colors",
+              orderType === "dine-in"
+                ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white shadow-sm"
+                : "border-transparent bg-muted text-foreground hover:bg-[var(--brand-primary-soft)]"
             )}
           >
+            <Utensils className="h-4 w-4" />
             Sur place
           </button>
         </div>
@@ -126,9 +141,9 @@ export default function CartPanel({
                 type="button"
                 onClick={() => onTableSelect(table.id)}
                 className={cn(
-                  "h-9 rounded-md text-xs font-black transition-colors",
+                  "h-9 rounded-full text-xs font-black transition-colors",
                   tableNumber === table.id
-                    ? "bg-primary text-primary-foreground"
+                    ? "bg-[var(--brand-primary)] text-white"
                     : table.status === "occupied"
                       ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-200"
                       : "bg-muted text-foreground"
@@ -141,10 +156,16 @@ export default function CartPanel({
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
         {cart.length === 0 ? (
-          <div className="flex h-full min-h-[260px] items-center justify-center rounded-xl border border-dashed bg-muted/20 text-center text-sm font-bold text-muted-foreground">
-            Sélectionnez un produit pour commencer.
+          <div className="flex h-full min-h-[260px] flex-col items-center justify-center rounded-[1.25rem] border border-dashed bg-muted/20 px-6 text-center">
+            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--brand-primary-soft)] text-[var(--brand-primary)]">
+              <ReceiptText className="h-8 w-8" />
+            </span>
+            <p className="mt-4 text-base font-black text-foreground">Votre ticket est vide</p>
+            <p className="mt-1 max-w-56 text-sm font-semibold text-muted-foreground">
+              Sélectionnez des produits pour commencer la commande.
+            </p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -167,8 +188,8 @@ export default function CartPanel({
         )}
       </div>
 
-      <div className="shrink-0 border-t bg-background p-3 pb-4">
-        <div className="space-y-1 text-sm">
+      <div className="shrink-0 border-t bg-background/95 p-3 pb-4">
+        <div className="space-y-1.5 text-sm">
           <div className="flex justify-between text-muted-foreground">
             <span>Sous-total</span>
             <span className="font-bold">{subtotal.toLocaleString("fr-FR")} FCFA</span>
@@ -177,9 +198,9 @@ export default function CartPanel({
             <span>Remise</span>
             <span className="font-bold">-{discountAmount.toLocaleString("fr-FR")} FCFA</span>
           </div>
-          <div className="mt-3 flex items-end justify-between rounded-xl bg-primary/10 px-3 py-3">
-            <span className="text-sm font-black uppercase text-primary">Total à payer</span>
-            <span className="whitespace-nowrap text-3xl font-black text-primary">{total.toLocaleString("fr-FR")} FCFA</span>
+          <div className="mt-3 flex items-end justify-between gap-3 rounded-[1.15rem] border border-[var(--brand-primary)]/20 bg-[var(--brand-primary-soft)] px-3 py-3">
+            <span className="text-sm font-black uppercase text-[var(--brand-primary)]">Total à payer</span>
+            <span className="whitespace-nowrap text-3xl font-black text-[var(--brand-primary)]">{total.toLocaleString("fr-FR")} FCFA</span>
           </div>
         </div>
 
@@ -262,7 +283,7 @@ export default function CartPanel({
 
         <Button
           type="button"
-          className="mt-3 h-14 w-full rounded-xl bg-primary text-lg font-black text-primary-foreground shadow-sm hover:bg-primary/90"
+          className="mt-3 h-14 w-full rounded-full bg-[var(--brand-primary)] text-lg font-black text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] hover:bg-[var(--brand-primary)] hover:brightness-95"
           disabled={!canCheckout || processing}
           onClick={onCheckout}
         >
@@ -296,7 +317,7 @@ function CartLine({
   return (
     <div
       className={cn(
-        "grid grid-cols-[52px_minmax(0,1fr)_112px] gap-2 rounded-xl border bg-background p-2 shadow-sm",
+        "grid grid-cols-[52px_minmax(0,1fr)_112px] gap-2 rounded-[1.05rem] border bg-background p-2 shadow-sm",
         nested && "ml-4 border-dashed bg-muted/20"
       )}
     >
@@ -342,14 +363,14 @@ function CartLine({
 
       {showControls ? (
       <div className="flex items-center justify-end gap-1">
-        <button type="button" onClick={onDecrease} className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted hover:bg-[var(--brand-primary-soft)]">
+        <button type="button" onClick={onDecrease} className="flex h-9 w-9 items-center justify-center rounded-full bg-muted hover:bg-[var(--brand-primary-soft)]">
           <Minus className="h-4 w-4" />
         </button>
         <span className="w-7 text-center text-base font-black">{item.quantity}</span>
-        <button type="button" onClick={onIncrease} className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted hover:bg-[var(--brand-primary-soft)]">
+        <button type="button" onClick={onIncrease} className="flex h-9 w-9 items-center justify-center rounded-full bg-muted hover:bg-[var(--brand-primary-soft)]">
           <Plus className="h-4 w-4" />
         </button>
-        <button type="button" onClick={onRemove} className="flex h-9 w-9 items-center justify-center rounded-lg text-red-600 hover:bg-red-50">
+        <button type="button" onClick={onRemove} className="flex h-9 w-9 items-center justify-center rounded-full text-red-600 hover:bg-red-50">
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
@@ -381,7 +402,7 @@ function getPreparationModeBadgeClass(mode: CartPreparationMode) {
   if (mode === "bar") {
     return "border-indigo-200 bg-indigo-100 text-indigo-800 dark:border-indigo-400/40 dark:bg-indigo-500/25 dark:text-indigo-100"
   }
-  return "border-[var(--brand-primary)]/20 bg-[var(--brand-primary-soft)] text-[var(--brand-primary)] dark:border-[var(--brand-primary)]/30 dark:bg-[var(--brand-primary-soft)] dark:text-[var(--brand-primary)]"
+  return "border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-400/40 dark:bg-amber-500/20 dark:text-amber-100"
 }
 
 function ActionButton({
@@ -400,7 +421,7 @@ function ActionButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex h-10 items-center justify-center gap-2 rounded-lg border bg-card text-xs font-black transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+      className="flex h-10 items-center justify-center gap-2 rounded-full border bg-card text-xs font-black transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
     >
       {React.cloneElement(icon, { className: "h-4 w-4" })}
       {label}
@@ -424,8 +445,10 @@ function PaymentButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-12 items-center justify-center gap-2 rounded-lg border text-sm font-black transition-colors active:scale-[0.99]",
-        active ? "border-zinc-900 bg-zinc-100 text-zinc-950 dark:border-zinc-100 dark:bg-muted dark:text-foreground" : "bg-card hover:bg-muted"
+        "flex h-14 items-center justify-center gap-2 rounded-[1.05rem] border text-sm font-black transition-colors active:scale-[0.99]",
+        active
+          ? "border-[var(--brand-primary)] bg-[var(--brand-primary-soft)] text-[var(--brand-primary)] shadow-sm"
+          : "bg-card hover:bg-muted"
       )}
     >
       {React.cloneElement(icon, { className: "h-4 w-4" })}
