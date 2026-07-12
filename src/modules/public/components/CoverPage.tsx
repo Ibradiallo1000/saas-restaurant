@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Clock, ShoppingBag } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 import { getOptimizedImage } from "@/lib/image"
 
@@ -16,7 +17,9 @@ export default function CoverPage({
   isExiting,
   onEnterMenu,
 }: CoverPageProps) {
+  const router = useRouter()
   const [imageFailed, setImageFailed] = React.useState(false)
+  const [teamDialogOpen, setTeamDialogOpen] = React.useState(false)
   const buttonRef = React.useRef<HTMLButtonElement>(null)
 
   const name = restaurant?.name || "Restaurant"
@@ -140,6 +143,50 @@ export default function CoverPage({
           </div>
         </div>
       </div>
+
+      <div className="absolute bottom-[max(1.15rem,env(safe-area-inset-bottom))] left-0 right-0 z-20 flex justify-center px-5">
+        <button
+          type="button"
+          onClick={() => setTeamDialogOpen(true)}
+          className="group rounded-full border border-white/10 bg-white/[0.08] px-4 py-2 text-center text-white/72 shadow-[0_10px_28px_rgba(0,0,0,0.14)] backdrop-blur-md transition hover:border-white/20 hover:bg-white/[0.12] hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/20"
+        >
+          <span className="block text-xs font-black leading-tight">
+            🔒 Espace équipe
+          </span>
+          <span className="mt-0.5 block text-[10px] font-semibold leading-tight text-white/55 group-hover:text-white/70">
+            Accès réservé au personnel
+          </span>
+        </button>
+      </div>
+
+      {teamDialogOpen ? (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/45 px-5 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-[1.6rem] border border-white/15 bg-slate-950/92 p-5 text-white shadow-[0_24px_70px_rgba(0,0,0,0.38)]">
+            <h3 className="text-lg font-black">Connexion personnel</h3>
+            <p className="mt-2 text-sm font-medium leading-6 text-white/72">
+              Cet espace est réservé aux administrateurs, gérants, caissiers,
+              cuisiniers et autres membres du personnel du restaurant.
+            </p>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setTeamDialogOpen(false)}
+                className="h-11 rounded-full border border-white/15 bg-white/[0.08] text-sm font-black text-white/82 transition hover:bg-white/[0.12]"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/login")}
+                className="h-11 rounded-full bg-white text-sm font-black text-slate-950 transition hover:brightness-95"
+              >
+                Continuer
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }

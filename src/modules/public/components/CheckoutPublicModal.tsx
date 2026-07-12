@@ -3,10 +3,11 @@
 import * as React from "react"
 import { addDoc, doc, getDoc, serverTimestamp } from "firebase/firestore"
 import { useRouter } from "next/navigation"
-import { ArrowRight, Banknote, CheckCircle, ChevronLeft, CreditCard, MapPin, Phone, ShoppingBag, Truck, X } from "lucide-react"
+import { ArrowRight, Banknote, CheckCircle, ChefHat, ChevronLeft, CreditCard, MapPin, Phone, ShoppingBag, Truck, X } from "lucide-react"
 
 import { useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { COLLECTION_NAMES } from "@/lib/constants"
+import { getOptimizedImage } from "@/lib/image"
 import { recalculateConfiguredUnitPrice } from "@/lib/order-pricing"
 import { ORDER_PAYMENT_STATUS } from "@/lib/order-lifecycle"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
@@ -170,6 +171,25 @@ export default function CheckoutPublicModal({
         paymentMethodCode: flow.paymentMethodCode,
       })
     }
+  }
+
+  const selectOrderType = (orderType: PublicOrderType) => {
+    if (items.length === 0) {
+      setError("Commande vide.")
+      return
+    }
+
+    updateFlow({
+      orderType,
+      paymentMethodCode: "",
+      paymentCode: "",
+      paymentInstruction: "",
+      paymentProofSms: "",
+    })
+
+    window.setTimeout(() => {
+      updateFlow({ step: orderType === "delivery" ? "delivery" : "recap" })
+    }, 180)
   }
 
   const goBack = () => {
@@ -337,9 +357,6 @@ export default function CheckoutPublicModal({
       <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-background text-foreground shadow-2xl ring-1 ring-border">
         <div className="flex items-center justify-between border-b border-border bg-card/70 p-5">
           <div className="min-w-0">
-            <p className="text-xs font-black uppercase tracking-wide text-[var(--color-primary)]">
-              Commande
-            </p>
             <h2 className="text-xl font-black">{title}</h2>
           </div>
           <button
@@ -356,7 +373,7 @@ export default function CheckoutPublicModal({
             <CartStep
               orderType={flow.orderType}
               restaurantFeatures={restaurantFeatures}
-              onSelect={(orderType) => updateFlow({ orderType, paymentMethodCode: "", paymentCode: "", paymentInstruction: "", paymentProofSms: "" })}
+              onSelect={selectOrderType}
             />
           ) : null}
 
@@ -378,6 +395,7 @@ export default function CheckoutPublicModal({
               orderType={flow.orderType}
               address={flow.address}
               phone={flow.phone}
+              secondaryPhone={flow.secondaryPhone}
               customerNote={flow.customerNote}
               onChange={updateFlow}
             />
@@ -405,6 +423,7 @@ export default function CheckoutPublicModal({
           ) : null}
         </div>
 
+        {flow.step !== "cart" ? (
         <div className="border-t border-border bg-background/95 p-5">
           <div className="flex gap-3">
             {canGoBack ? (
@@ -441,6 +460,7 @@ export default function CheckoutPublicModal({
             </button>
           </div>
         </div>
+        ) : null}
       </div>
     </div>
   )
@@ -495,7 +515,7 @@ function CartStep({
               key={mode.id}
               type="button"
               onClick={() => onSelect(mode.id)}
-              className={`flex h-14 items-center justify-center rounded-xl border-2 px-3 text-center transition ${
+              className={`flex h-16 items-center justify-center rounded-xl border-2 px-3 text-center transition duration-200 active:scale-[0.98] ${
                 active
                   ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
                   : "border-border bg-card hover:bg-muted"
@@ -577,6 +597,7 @@ function RecapStep({
   orderType,
   address,
   phone,
+  secondaryPhone,
   customerNote,
   onChange,
 }: {
@@ -587,53 +608,83 @@ function RecapStep({
   orderType: PublicOrderType | null
   address: string
   phone: string
+  secondaryPhone: string
   customerNote: string
   onChange: (patch: Partial<OrderFlowState>) => void
 }) {
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
-        <label className="text-sm font-black">Ajouter une note pour la cuisine</label>
-        <textarea
-          value={customerNote}
-          onChange={(event) => onChange({ customerNote: event.target.value })}
-          placeholder="Ex: sans piment, allergie arachide..."
-          className="min-h-20 w-full resize-none rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
-        />
-      </div>
       <div className="rounded-2xl bg-muted/60 p-4">
         <p className="text-sm font-black">Votre commande</p>
-        <div className="mt-3 space-y-3">
+        <div className="mt-3 divide-y divide-border/60">
           {items.map((item) => (
-            <div key={item.id} className="flex justify-between gap-3 text-sm">
-              <div>
-                <p className="font-bold">{item.quantity}x {item.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {Number(item.unitPrice ?? 0).toLocaleString()} FCFA
+            <div key={item.id} className="grid grid-cols-[58px_minmax(0,1fr)_auto] gap-3 py-3 first:pt-0 last:pb-0">
+              <CheckoutLineImage src={item.imageUrl} alt={item.name} />
+
+              <div className="min-w-0">
+                <p className="line-clamp-2 text-sm font-black leading-tight">
+                  {item.quantity} × {item.name}
                 </p>
+                {item.selectedOptions?.map((option: any, index: number) => (
+                  <p
+                    key={`${item.id}-recap-option-${index}`}
+                    className="truncate text-[11px] font-semibold text-muted-foreground"
+                  >
+                    {option.optionName}: {option.choiceName}
+                  </p>
+                ))}
+                {item.selections &&
+                  Object.entries(item.selections).map(([option, values]: [string, any]) => (
+                    <p
+                      key={`${item.id}-recap-selection-${option}`}
+                      className="truncate text-[11px] font-semibold text-muted-foreground"
+                    >
+                      {Array.isArray(values) ? values.join(", ") : String(values)}
+                    </p>
+                  ))}
               </div>
-              <span className="font-black">{Number(item.total ?? 0).toLocaleString()} FCFA</span>
+
+              <span className="shrink-0 whitespace-nowrap text-right text-sm font-black">
+                {Number(item.total ?? 0).toLocaleString()} FCFA
+              </span>
             </div>
           ))}
         </div>
       </div>
 
+      <div className="space-y-2">
+        <label className="text-sm font-black">Ajouter une note pour la cuisine</label>
+        <textarea
+          value={customerNote}
+          onChange={(event) => onChange({ customerNote: event.target.value })}
+          placeholder="Ex. : sans piment, allergie arachide..."
+          className="min-h-16 w-full resize-none rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
+          rows={3}
+        />
+      </div>
+
       <div className="rounded-2xl border border-border bg-card p-4 text-sm">
-        <div className="flex justify-between">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4">
           <span className="text-muted-foreground">Mode</span>
           <span className="font-bold">{orderType === "delivery" ? "Livraison" : "A emporter"}</span>
         </div>
         {orderType === "delivery" ? (
           <>
-            <div className="mt-2 flex justify-between gap-4">
+            <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-4">
               <span className="text-muted-foreground">Adresse</span>
               <span className="text-right font-bold">{address}</span>
             </div>
-            <div className="mt-2 flex justify-between">
-              <span className="text-muted-foreground">Telephone</span>
-              <span className="font-bold">{formatPhone(phone)}</span>
-            </div>
           </>
+        ) : null}
+        <div className={`mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-4 ${phone ? "" : "hidden"}`}>
+          <span className="text-muted-foreground">Téléphone</span>
+          <span className="font-bold">{formatPhone(phone)}</span>
+        </div>
+        {secondaryPhone ? (
+          <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-4">
+            <span className="text-muted-foreground">Second téléphone</span>
+            <span className="font-bold">{formatPhone(secondaryPhone)}</span>
+          </div>
         ) : null}
       </div>
 
@@ -644,7 +695,7 @@ function RecapStep({
         </div>
         {orderType === "delivery" ? (
           <div className="mt-2 flex justify-between text-sm">
-            <span className="text-muted-foreground">Frais livraison</span>
+            <span className="text-muted-foreground">Frais de livraison</span>
             <span className="font-bold">{deliveryFee.toLocaleString()} FCFA</span>
           </div>
         ) : null}
@@ -653,6 +704,26 @@ function RecapStep({
           <span className="text-[var(--color-primary)]">{total.toLocaleString()} FCFA</span>
         </div>
       </div>
+    </div>
+  )
+}
+
+function CheckoutLineImage({ src, alt }: { src?: string; alt?: string }) {
+  const [failed, setFailed] = React.useState(false)
+  const hasImage = Boolean(src && !failed)
+
+  return (
+    <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted text-muted-foreground">
+      {hasImage ? (
+        <img
+          src={getOptimizedImage(src || "", 160)}
+          alt={alt || "Produit"}
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <ChefHat className="h-5 w-5 opacity-45" />
+      )}
     </div>
   )
 }
@@ -1010,6 +1081,6 @@ function buildPaymentProofSmsPlaceholder(restaurant: any) {
 function getStepTitle(step: OrderFlowStep) {
   if (step === "cart") return "Mode de commande"
   if (step === "delivery") return "Adresse de livraison"
-  if (step === "recap") return "Recapitulatif"
+  if (step === "recap") return "Récapitulatif de commande"
   return "Paiement"
 }

@@ -640,7 +640,7 @@ function MenuWelcomeWithTable({ table }: { table?: RestaurantTableRecord | null 
 
         {table ? (
           <span className="shrink-0 rounded-full border border-[var(--brand-primary)]/15 bg-[var(--brand-primary-soft)] px-2.5 py-1 text-[11px] font-black leading-none text-[var(--brand-primary)]">
-            🪑 Table {table.name || table.id}
+            🪑 {table.name || table.id}
           </span>
         ) : null}
       </div>
@@ -734,7 +734,7 @@ export function PublicBottomNavigation({
       <div className="mx-auto grid h-12 max-w-md grid-cols-4 gap-1">
         {[
           { id: "home" as const, label: "Menu", icon: Utensils, onClick: onHome },
-          { id: "order" as const, label: "Commande", icon: ShoppingBag, onClick: onOrder },
+          { id: "order" as const, label: "Panier", icon: ShoppingBag, onClick: onOrder },
           { id: "tracking" as const, label: "Suivi", icon: ClipboardList, onClick: onTracking },
           { id: "search" as const, label: "Recherche", icon: Search, onClick: onSearch },
         ].map((item) => {
