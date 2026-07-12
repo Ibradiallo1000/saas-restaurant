@@ -36,14 +36,14 @@ export default function CategoriesBar({
   }, [activeId])
 
   return (
-    <div className="mb-4">
-      <div className="mb-3 flex items-center justify-between px-4 sm:px-6 lg:px-8">
+    <div className="mb-2">
+      <div className="mb-2 flex items-center justify-between px-4 sm:px-6 lg:px-8">
         <PublicSectionTitle title="Catégories" />
       </div>
 
       <div
         ref={containerRef}
-        className="no-scrollbar flex gap-4 overflow-x-auto px-4 py-2.5 sm:px-6 lg:px-8"
+        className="no-scrollbar flex gap-2.5 overflow-x-auto px-4 py-1.5 sm:gap-3 sm:px-6 lg:px-8"
         style={{ overflowY: "visible" }}
       >
         {categories.map((cat) => {
@@ -56,20 +56,20 @@ export default function CategoriesBar({
               data-active={isActive}
               onClick={() => onSelect(cat.id)}
               className={`
-                relative z-10 flex h-[58px] min-w-[135px] shrink-0 items-center gap-3
-                rounded-full border bg-white px-2.5 py-2 pr-4 transition-all duration-200 ease-out
+                relative z-10 flex h-[108px] w-[78px] shrink-0 flex-col items-center justify-center gap-1.5
+                rounded-[1.05rem] border px-2 py-2 text-center transition-all duration-200 ease-out sm:h-[116px] sm:w-[86px]
                 ${
                   isActive
-                    ? "scale-[1.01] border-[var(--brand-primary)] bg-[var(--brand-primary-soft)] text-[var(--brand-primary)] shadow-[0_12px_26px_rgba(15,23,42,0.10)]"
-                    : "border-slate-200 text-slate-900 shadow-[0_8px_22px_rgba(15,23,42,0.07)] hover:border-[var(--brand-primary)]/30 hover:shadow-[0_10px_26px_rgba(15,23,42,0.09)]"
+                    ? "scale-[1.015] border-[var(--brand-primary)] bg-[var(--brand-primary-soft)] text-[var(--brand-primary)] shadow-[0_8px_18px_rgba(15,23,42,0.09)] dark:shadow-[0_8px_20px_rgba(0,0,0,0.24)]"
+                    : "border-[var(--public-card-border)] bg-[var(--bg-card)] text-[var(--public-text-main)] shadow-[0_5px_14px_rgba(15,23,42,0.055)] hover:border-[var(--brand-primary)]/30 dark:shadow-[0_6px_16px_rgba(0,0,0,0.20)]"
                 }
               `}
             >
               <div
-                className={`h-[42px] w-[42px] shrink-0 overflow-hidden rounded-full bg-[var(--brand-primary-soft)] shadow-inner ${
+                className={`h-[56px] w-[56px] shrink-0 overflow-hidden rounded-[0.9rem] bg-[var(--brand-primary-soft)] shadow-inner sm:h-[62px] sm:w-[62px] ${
                   isActive
                     ? "border border-[var(--brand-primary)]/30"
-                    : "border border-slate-100"
+                    : "border border-[var(--public-card-border)]"
                 }`}
               >
                 {image ? (
@@ -84,10 +84,10 @@ export default function CategoriesBar({
               </div>
 
               <span
-                className={`whitespace-nowrap text-[15px] font-semibold leading-none ${
+                className={`line-clamp-2 min-h-[30px] w-full text-xs font-black leading-[15px] sm:text-[13px] sm:leading-4 ${
                   isActive
                     ? "text-[var(--brand-primary)]"
-                    : "text-slate-900"
+                    : "text-[var(--public-text-main)]"
                 }`}
               >
                 {cat.name}

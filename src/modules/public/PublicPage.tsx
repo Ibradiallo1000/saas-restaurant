@@ -9,14 +9,13 @@ import { useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase } from "@/
 import { getOptimizedImage } from "@/lib/image"
 import CartDrawer from "./components/CartDrawer"
 import CategoriesBar from "./components/CategoriesBar"
+import CoverPage from "./components/CoverPage"
 import DishCard from "./components/DishCard"
-import Header from "./components/Header"
-import HeroSection from "./components/HeroSection"
 import ProductModal from "./components/ProductModal"
 import PublicSectionTitle from "./components/PublicSectionTitle"
 import PublicProductConfigurator from "./components/PublicProductConfigurator"
+import PublicMenuHeader from "./components/PublicMenuHeader"
 import { productNeedsConfigurator } from "@/lib/linked-option-groups"
-import StickyCartBar from "./components/StickyCartBar"
 import { getLatestTrackedOrder } from "./orderTrackingStorage"
 import { useCart } from "./cart/CartContext"
 import {
@@ -25,6 +24,8 @@ import {
 } from "@/services/table-session.service"
 
 const PUBLIC_MENU_CACHE_TTL_MS = 5 * 60 * 1000
+const COVER_TRANSITION_MS = 720
+const COVER_REDUCED_MOTION_MS = 180
 
 function PublicPageContent({
   slug,
@@ -52,8 +53,12 @@ function PublicPageContent({
   const [activeTableSession, setActiveTableSession] = React.useState<ActiveTableSession | null>(null)
   const [activeCategoryId, setActiveCategoryId] = React.useState<string>("")
   const [selectedProduct, setSelectedProduct] = React.useState<any | null>(null)
+  const [coverState, setCoverState] = React.useState<"checking" | "visible" | "exiting" | "hidden">("checking")
+  const [hasRetriedRestaurantLookup, setHasRetriedRestaurantLookup] = React.useState(false)
   const categoriesSectionRef = React.useRef<HTMLDivElement>(null)
+  const menuStartRef = React.useRef<HTMLDivElement>(null)
   const isDineInContinuation = mode === "dine_in" && Boolean(tableId)
+  const coverStorageKey = React.useMemo(() => `oordera:cover-seen:${slug}`, [slug])
 
   React.useEffect(() => {
     setClientReady(true)
@@ -70,6 +75,10 @@ function PublicPageContent({
     return () => window.clearTimeout(timeout)
   }, [clientReady, slug])
 
+  React.useEffect(() => {
+    setHasRetriedRestaurantLookup(false)
+  }, [slug])
+
   const restaurantQuery = useMemoFirebase(() => {
     if (!db || !slug) return null
     return query(collection(db, "restaurants"), where("slug", "==", slug), limit(1))
@@ -79,10 +88,36 @@ function PublicPageContent({
     data: restaurants,
     isLoading: isRestaurantDocLoading,
     error: restaurantError,
+    refetch: refetchRestaurant,
   } = useCollectionOnce(restaurantQuery, PUBLIC_MENU_CACHE_TTL_MS)
   const restaurant = restaurants?.[0] ?? null
 
   const restaurantId = restaurant?.id
+
+  const shouldRetryRestaurantLookup =
+    !isRestaurantDocLoading &&
+    !restaurantError &&
+    restaurants !== null &&
+    restaurants.length === 0 &&
+    !hasRetriedRestaurantLookup
+
+  React.useEffect(() => {
+    if (!shouldRetryRestaurantLookup) return
+
+    setHasRetriedRestaurantLookup(true)
+    refetchRestaurant()
+  }, [refetchRestaurant, shouldRetryRestaurantLookup])
+
+  React.useLayoutEffect(() => {
+    if (!restaurant) return
+
+    try {
+      const hasSeenCover = window.sessionStorage.getItem(coverStorageKey) === "true"
+      setCoverState(hasSeenCover ? "hidden" : "visible")
+    } catch {
+      setCoverState("visible")
+    }
+  }, [coverStorageKey, restaurant])
 
   const tableRef = useMemoFirebase(() => {
     if (!db || !restaurantId || !tableId) return null
@@ -164,7 +199,8 @@ function PublicPageContent({
   const isRestaurantLoading =
     !clientReady ||
     isRestaurantDocLoading ||
-    restaurants === null
+    restaurants === null ||
+    shouldRetryRestaurantLookup
 
   const isMenuLoading =
     Boolean(restaurantId) &&
@@ -279,6 +315,26 @@ function PublicPageContent({
     setSelectedProduct(product)
   }
 
+  const handleEnterMenu = React.useCallback(() => {
+    if (coverState !== "visible") return
+
+    try {
+      window.sessionStorage.setItem(coverStorageKey, "true")
+    } catch {
+      // sessionStorage can be unavailable in some private browsing contexts.
+    }
+
+    setCoverState("exiting")
+
+    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    const delay = prefersReducedMotion ? COVER_REDUCED_MOTION_MS : COVER_TRANSITION_MS
+
+    window.setTimeout(() => {
+      setCoverState("hidden")
+      menuStartRef.current?.focus({ preventScroll: true })
+    }, delay)
+  }, [coverState, coverStorageKey])
+
   const scrollToCategoriesSection = React.useCallback(() => {
     const section = categoriesSectionRef.current
     if (!section) return
@@ -292,6 +348,17 @@ function PublicPageContent({
     setSelectedProduct(null)
     scrollToCategoriesSection()
   }
+
+  React.useEffect(() => {
+    if (coverState !== "visible" && coverState !== "exiting") return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [coverState])
 
   if (isRestaurantLoading && !loadTimedOut) {
     return <PublicLoadingSkeleton />
@@ -309,17 +376,37 @@ function PublicPageContent({
     return <PublicFallbackMessage message="Slug non trouve" />
   }
 
-  return (
-    <div id="app-root" className="public-menu-page min-h-screen pb-36 md:pb-32">
-      <div id="main-content" className="public-menu-content">
-        <Header
-          restaurant={restaurant}
-          cartCount={count}
-          onCartClick={() => setCartOpen(true)}
-        />
-        <HeroSection restaurant={restaurant} table={tableContext} />
+  const coverIsMounted = coverState === "visible" || coverState === "exiting"
+  const menuIsOpening = coverState === "exiting"
+  const menuIsCovered = coverState === "visible" || coverState === "checking"
 
-        <main className="relative z-10 -mt-3 rounded-t-[1.5rem] border-t border-[var(--public-card-border)] bg-transparent pt-3 sm:-mt-5 sm:rounded-t-[1.75rem] sm:pt-4 lg:-mt-7 lg:mx-auto lg:max-w-7xl lg:rounded-[1.75rem] lg:border">
+  return (
+    <div
+      id="app-root"
+      className="public-menu-page min-h-screen pb-[calc(5.5rem+env(safe-area-inset-bottom))]"
+    >
+      <PublicMenuHeader
+        restaurant={restaurant}
+        cartCount={count}
+        onCartClick={() => setCartOpen(true)}
+      />
+
+      <div
+        id="main-content"
+        ref={menuStartRef}
+        tabIndex={-1}
+        aria-hidden={coverIsMounted ? true : undefined}
+        inert={coverIsMounted ? true : undefined}
+        className={`public-menu-content public-cover-transition pt-[calc(3.75rem+env(safe-area-inset-top))] outline-none transition-[opacity,transform,filter] motion-reduce:translate-y-0 motion-reduce:blur-0 ${
+          menuIsOpening
+            ? "translate-y-0 opacity-100 blur-0"
+            : menuIsCovered
+            ? "translate-y-8 opacity-80 blur-[2px]"
+            : "translate-y-0 opacity-100 blur-0"
+        }`}
+      >
+        <main className="relative z-10 bg-transparent pt-2 sm:pt-3 lg:mx-auto lg:max-w-7xl">
+          <MenuWelcomeWithTable table={tableContext} />
           <MainContent
             categories={visibleCategories}
             isLoading={isMenuLoading}
@@ -334,19 +421,18 @@ function PublicPageContent({
           />
         </main>
 
-        <StickyCartBar onClick={() => setCartOpen(true)} />
-
-        <PublicBottomNavigation
-          active={activeNav}
-          count={count}
-          searchValue={homeSearch}
-          onHome={handleHomeClick}
-          onSearch={handleSearchClick}
-          onSearchChange={setHomeSearch}
-          onOrder={handleOrderClick}
-          onTracking={handleTrackingClick}
-        />
       </div>
+
+      <PublicBottomNavigation
+        active={activeNav}
+        count={count}
+        searchValue={homeSearch}
+        onHome={handleHomeClick}
+        onSearch={handleSearchClick}
+        onSearchChange={setHomeSearch}
+        onOrder={handleOrderClick}
+        onTracking={handleTrackingClick}
+      />
 
       <CartDrawer
         open={cartOpen}
@@ -374,6 +460,14 @@ function PublicPageContent({
           product={selectedProduct}
           onAddToCart={handleAddToCartGlobal}
           onClose={() => setSelectedProduct(null)}
+        />
+      ) : null}
+
+      {coverIsMounted ? (
+        <CoverPage
+          restaurant={restaurant}
+          isExiting={coverState === "exiting"}
+          onEnterMenu={handleEnterMenu}
         />
       ) : null}
     </div>
@@ -481,12 +575,12 @@ function MainContent({
   const currentCategory = filteredCategories[0]
 
   return (
-    <div className="mx-auto w-full max-w-6xl pb-28 sm:pb-32 lg:pb-36">
+    <div className="mx-auto w-full max-w-6xl pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pb-[calc(6.5rem+env(safe-area-inset-bottom))]">
       
       <TableContextError error={tableError} />
 
       {/* CATÉGORIES BAR */}
-      <div ref={categoriesSectionRef} className="mb-2 scroll-mt-20 pt-5 sm:pt-6">
+      <div ref={categoriesSectionRef} className="mb-1 scroll-mt-24 pt-3 sm:pt-4">
         <CategoriesBar
           categories={categories}
           activeId={activeCategoryId}
@@ -496,12 +590,12 @@ function MainContent({
 
       {/* PRODUITS (UNE SEULE CATÉGORIE) */}
       {currentCategory && (
-        <div className="mb-5 px-4 sm:px-6 lg:px-8">
-          <div className="mb-2.5">
+        <div className="mb-4 px-4 sm:px-6 lg:px-8">
+          <div className="mb-2">
             <PublicSectionTitle title={currentCategory.name} />
           </div>
 
-          <div className="flex flex-col gap-2.5 sm:gap-3">
+          <div className="flex flex-col gap-2 sm:gap-2.5">
             {(productsByCategory[currentCategory.id] || []).map((product: any) => (
               <DishCard
                 key={product.id}
@@ -520,6 +614,40 @@ function MainContent({
         </div>
       )}
     </div>
+  )
+}
+
+function MenuWelcome() {
+  return (
+    <section className="mx-auto w-full max-w-6xl px-4 pb-0 sm:px-6 lg:px-8">
+      <p className="text-[22px] font-black leading-tight text-[var(--public-text-main)] sm:text-[23px]">
+        Bonjour 👋
+      </p>
+      <p className="mt-0.5 text-[13.5px] font-semibold leading-snug text-[var(--public-text-muted)] sm:text-[15px]">
+        Qu&apos;avez-vous envie de manger aujourd&apos;hui ?
+      </p>
+    </section>
+  )
+}
+
+function MenuWelcomeWithTable({ table }: { table?: RestaurantTableRecord | null }) {
+  return (
+    <section className="mx-auto w-full max-w-6xl px-4 pb-0 sm:px-6 lg:px-8">
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 text-[22px] font-black leading-tight text-[var(--public-text-main)] sm:text-[23px]">
+          Bonjour 👋
+        </p>
+
+        {table ? (
+          <span className="shrink-0 rounded-full border border-[var(--brand-primary)]/15 bg-[var(--brand-primary-soft)] px-2.5 py-1 text-[11px] font-black leading-none text-[var(--brand-primary)]">
+            🪑 Table {table.name || table.id}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-0.5 text-[13.5px] font-semibold leading-snug text-[var(--public-text-muted)] sm:text-[15px]">
+        Qu&apos;avez-vous envie de manger aujourd&apos;hui ?
+      </p>
+    </section>
   )
 }
 
@@ -572,8 +700,22 @@ export function PublicBottomNavigation({
   onOrder: () => void
   onTracking: () => void
 }) {
+  const [badgePulse, setBadgePulse] = React.useState(false)
+  const previousCountRef = React.useRef(count)
+
+  React.useEffect(() => {
+    if (count > previousCountRef.current) {
+      setBadgePulse(true)
+      const timeout = window.setTimeout(() => setBadgePulse(false), 450)
+      previousCountRef.current = count
+      return () => window.clearTimeout(timeout)
+    }
+
+    previousCountRef.current = count
+  }, [count])
+
   return (
-    <nav className="fixed bottom-4 left-4 right-4 z-50 rounded-[1.75rem] border border-[var(--public-card-border)] bg-[var(--public-card-bg)] px-3 pb-[max(0.65rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_18px_45px_rgba(15,23,42,0.16)] backdrop-blur-xl md:bottom-5 md:left-1/2 md:right-auto md:w-[min(32rem,calc(100vw-2rem))] md:-translate-x-1/2 md:px-4">
+    <nav className="fixed inset-x-0 bottom-0 z-50 w-full rounded-t-2xl border-t border-[var(--public-card-border)] bg-[var(--bg-card)] px-3 pb-[env(safe-area-inset-bottom)] pt-2 shadow-[0_-6px_18px_rgba(15,23,42,0.07)] md:px-4">
       {active === "search" && (
         <div className="mx-auto mb-2 max-w-md">
           <div className="relative">
@@ -614,7 +756,9 @@ export function PublicBottomNavigation({
               <span>{item.label}</span>
               {item.id === "order" && count > 0 && (
                 <span
-                  className={`absolute -top-1 right-3 min-w-[18px] rounded-full px-1 py-0.5 text-[9px] font-black sm:right-5 ${
+                  className={`absolute -top-1 right-3 min-w-[18px] rounded-full px-1 py-0.5 text-[9px] font-black transition-transform duration-300 sm:right-5 ${
+                    badgePulse ? "scale-125" : "scale-100"
+                  } ${
                     isActive
                       ? "bg-white text-[var(--brand-primary)] dark:bg-slate-950/80"
                       : "bg-[var(--brand-primary)] text-white"

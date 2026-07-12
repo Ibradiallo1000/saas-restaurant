@@ -12,17 +12,46 @@ import CheckoutPublicModal from "./CheckoutPublicModal"
 export default function CartDrawer({ open, onClose, restaurantId, tableContext, activeTableSession, activeOrderId }: any) {
   const { items, total, updateQty, removeItem } = useCart()
   const [checkoutOpen, setCheckoutOpen] = React.useState(false)
+  const [shouldRender, setShouldRender] = React.useState(open)
+  const [isClosing, setIsClosing] = React.useState(false)
 
-  if (!open) return null
+  React.useEffect(() => {
+    if (open) {
+      setShouldRender(true)
+      setIsClosing(false)
+      return
+    }
+
+    if (!shouldRender) return
+
+    setIsClosing(true)
+    const timeout = window.setTimeout(() => {
+      setShouldRender(false)
+      setIsClosing(false)
+    }, 180)
+
+    return () => window.clearTimeout(timeout)
+  }, [open, shouldRender])
+
+  if (!shouldRender) return null
 
   return (
     <div className="fixed inset-0 z-50">
 
       {/* BACKDROP */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose} />
+      <div
+        className={`absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-200 ${
+          isClosing ? "opacity-0" : "opacity-100"
+        }`}
+        onClick={onClose}
+      />
 
       {/* DRAWER */}
-      <div className="absolute bottom-0 left-0 right-0 flex max-h-[88vh] flex-col overflow-hidden rounded-t-[2rem] bg-background text-foreground shadow-[0_-20px_40px_rgba(0,0,0,0.15)] ring-1 ring-white/10 animate-in slide-in-from-bottom duration-300 ease-out sm:left-1/2 sm:right-auto sm:max-h-[86vh] sm:w-[min(34rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:rounded-[2rem] sm:bottom-4">
+      <div
+        className={`absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-5 right-5 flex max-h-[84vh] flex-col overflow-hidden rounded-[2rem] bg-background text-foreground shadow-[0_-14px_34px_rgba(0,0,0,0.14)] ring-1 ring-white/10 transition-all duration-300 ease-out sm:left-1/2 sm:right-auto sm:max-h-[84vh] sm:w-[min(34rem,calc(100vw-3rem))] sm:-translate-x-1/2 ${
+          isClosing ? "translate-y-6 scale-[0.985] opacity-0" : "translate-y-0 scale-100 opacity-100"
+        }`}
+      >
 
         {/* 🔥 HEADER FIXE */}
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 bg-background/95 px-5 py-4 backdrop-blur-md sm:px-6">
