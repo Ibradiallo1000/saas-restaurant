@@ -9,8 +9,8 @@
     --bg-secondary: #eef2f7;
     --bg-card: #ffffff;
     --border: #e2e8f0;
-    --brand-primary: #10B981;
-    --brand-primary-rgb: 16 185 129;
+    --brand-primary: #f97316;
+    --brand-primary-rgb: 249 115 22;
     --brand-primary-soft: rgb(var(--brand-primary-rgb) / 0.10);
     --app-background:
       radial-gradient(circle at top left, rgb(var(--brand-primary-rgb) / 0.08), transparent 28rem),

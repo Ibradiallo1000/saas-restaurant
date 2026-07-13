@@ -1,5 +1,14 @@
-export const DEFAULT_BRAND_PRIMARY = "#10B981"
+export const BRAND_PRIMARY_STORAGE_KEY = "oordera:brand-primary"
+export const DEFAULT_BRAND_PRIMARY = "#f97316"
 export const DEFAULT_BRAND_SECONDARY = "#FFFFFF"
+
+const LEGACY_BRAND_STORAGE_KEYS = [
+  "oordera-brand-primary",
+  "oordera:primary-color",
+  "oordera:primaryColor",
+  "oordera:theme-primary",
+  "oordera:brandColor",
+]
 
 export function sanitizeHexColor(value: unknown): string | null {
   if (typeof value !== "string") return null
@@ -61,4 +70,74 @@ export function hexToHslString(value: unknown): string {
   }
 
   return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`
+}
+
+export function readCachedBrandPrimary(): string | null {
+  if (typeof window === "undefined") return null
+
+  try {
+    return sanitizeHexColor(window.localStorage.getItem(BRAND_PRIMARY_STORAGE_KEY))
+  } catch {
+    return null
+  }
+}
+
+export function cacheBrandPrimary(value: unknown) {
+  if (typeof window === "undefined") return
+
+  const color = getBrandPrimary(value)
+
+  try {
+    window.localStorage.setItem(BRAND_PRIMARY_STORAGE_KEY, color)
+    LEGACY_BRAND_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key))
+  } catch {
+    // localStorage can be unavailable in private browsing contexts.
+  }
+}
+
+export function applyBrandTheme(value: unknown, options: { persist?: boolean } = {}) {
+  if (typeof document === "undefined") return getBrandPrimary(value)
+
+  const primary = getBrandPrimary(value)
+  const primaryRgb = hexToRgbString(primary)
+  const root = document.documentElement
+
+  root.style.setProperty("--brand-primary", primary)
+  root.style.setProperty("--brand-primary-rgb", primaryRgb)
+  root.style.setProperty("--brand-primary-soft", `rgb(${primaryRgb} / 0.10)`)
+  root.style.setProperty("--color-primary", primary)
+  root.style.setProperty("--primary", primary)
+  root.style.setProperty("--primary-rgb", primaryRgb)
+  root.style.setProperty("--ring", primary)
+  root.style.setProperty("--sidebar-primary", primary)
+  root.style.setProperty("--sidebar-ring", primary)
+  root.style.setProperty("--chart-1", hexToHslString(primary))
+  root.style.setProperty("--public-card-border", `rgb(${primaryRgb} / 0.14)`)
+  root.style.setProperty("--public-pattern-color", `rgb(${primaryRgb})`)
+  root.dataset.themeReady = "true"
+
+  updateThemeColorMeta(primary)
+
+  if (options.persist) {
+    cacheBrandPrimary(primary)
+  }
+
+  return primary
+}
+
+export function updateThemeColorMeta(color: unknown) {
+  if (typeof document === "undefined") return
+
+  const primary = getBrandPrimary(color)
+  const selectors = [
+    'meta[name="theme-color"]',
+    'meta[name="msapplication-TileColor"]',
+    'meta[name="apple-mobile-web-app-status-bar-style"]',
+  ]
+
+  selectors.forEach((selector) => {
+    document.querySelectorAll<HTMLMetaElement>(selector).forEach((element) => {
+      element.setAttribute("content", primary)
+    })
+  })
 }
