@@ -7,6 +7,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { useCollection, useFirestore, useMemoFirebase, useAuth } from "@/firebase"
 import { 
   Banknote, 
+  CheckCircle2,
   ShoppingCart, 
   Zap, 
   Loader2,
@@ -17,8 +18,12 @@ import {
   Grid2X2,
   Rows3,
   Clock3,
+  CookingPot,
+  Inbox,
+  PackageCheck,
   Ticket,
   Percent,
+  Utensils,
   UserRound
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -106,6 +111,44 @@ const STATUS_LABELS = {
   ready: "Pr\u00eates",
   served: "Servies",
   completed: "Termin\u00e9es",
+} as const
+
+const POS_COLUMN_UI = {
+  pending: {
+    icon: Clock3,
+    shell: "border-slate-200/80 bg-slate-50/90 dark:border-slate-700/70 dark:bg-slate-900/45",
+    iconClass: "bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+    badgeClass: "bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-100",
+    emptyText: "Les nouvelles commandes apparaîtront ici.",
+  },
+  preparing: {
+    icon: CookingPot,
+    shell: "border-orange-200/70 bg-orange-50/55 dark:border-orange-500/20 dark:bg-orange-500/10",
+    iconClass: "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
+    badgeClass: "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-200",
+    emptyText: "Les commandes en préparation apparaîtront ici.",
+  },
+  ready: {
+    icon: Utensils,
+    shell: "border-emerald-200/70 bg-emerald-50/55 dark:border-emerald-500/20 dark:bg-emerald-500/10",
+    iconClass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+    badgeClass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
+    emptyText: "Les commandes prêtes à servir apparaîtront ici.",
+  },
+  served: {
+    icon: PackageCheck,
+    shell: "border-sky-200/70 bg-sky-50/55 dark:border-sky-500/20 dark:bg-sky-500/10",
+    iconClass: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
+    badgeClass: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200",
+    emptyText: "Les commandes servies en attente de paiement apparaîtront ici.",
+  },
+  completed: {
+    icon: CheckCircle2,
+    shell: "border-zinc-200/80 bg-zinc-50/90 dark:border-zinc-700/70 dark:bg-zinc-900/45",
+    iconClass: "bg-zinc-200/80 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
+    badgeClass: "bg-zinc-200/80 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-100",
+    emptyText: "Les commandes encaissées apparaîtront ici.",
+  },
 } as const
 
 const warnedMissingKitchenStatusOrders = new Set<string>()
@@ -1684,26 +1727,69 @@ function POSPageContent() {
           ) : null}
 
           <div className={cn("flex-1 flex flex-col min-h-0", activeTab !== "orders" && "hidden")}>
-            <div className="grid grid-cols-5 gap-4 h-full p-4">
+            <div className="grid h-full min-h-0 grid-cols-1 gap-5 overflow-y-auto p-4 xl:grid-cols-5 xl:overflow-hidden">
               {posColumns.map((column) => {
                 const columnOrders = posOrders[column.id] ?? []
                 const isServedColumn = column.id === ORDER_OPERATION_STATUS.SERVED
                 const isCompletedColumn = column.id === ORDER_OPERATION_STATUS.COMPLETED
+                const columnUi = getPOSColumnUi(column.id)
+                const ColumnIcon = columnUi.icon
                 const visibleColumnOrders =
                   isCompletedColumn && !showAllCompletedOrders
                     ? columnOrders.slice(0, 3)
                     : columnOrders
                 const displayedCount = isServedColumn ? servedTableSessionGroups.length : columnOrders.length
+                const visibleCardsCount = isServedColumn ? servedTableSessionGroups.length : visibleColumnOrders.length
 
                 return (
-                  <div key={column.id} className="bg-card rounded-xl p-3 flex flex-col h-full min-h-0 border">
-                    <div className="flex justify-between items-center mb-2">
-                      <h3 className="font-semibold text-xs uppercase">{STATUS_LABELS[column.id as keyof typeof STATUS_LABELS]}</h3>
-                      <span className="text-xs">{displayedCount}</span>
+                  <div
+                    key={column.id}
+                    className={cn(
+                      "flex h-full min-h-[460px] flex-col overflow-hidden rounded-[20px] border p-3.5 text-card-foreground shadow-[0_18px_42px_rgba(15,23,42,0.08)] ring-1 ring-white/60 backdrop-blur dark:shadow-[0_18px_42px_rgba(0,0,0,0.24)] dark:ring-white/5 xl:min-h-0",
+                      columnUi.shell
+                    )}
+                  >
+                    <div className="mb-3 flex shrink-0 items-center justify-between gap-3 border-b border-white/70 pb-3 dark:border-white/10">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span
+                          className={cn(
+                            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-sm",
+                            columnUi.iconClass
+                          )}
+                        >
+                          <ColumnIcon className="h-5 w-5" />
+                        </span>
+                        <h3 className="truncate text-sm font-semibold uppercase tracking-wide text-foreground">
+                          {STATUS_LABELS[column.id as keyof typeof STATUS_LABELS]}
+                        </h3>
+                      </div>
+                      <span
+                        className={cn(
+                          "flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full px-2 text-sm font-black shadow-sm",
+                          columnUi.badgeClass
+                        )}
+                      >
+                        {displayedCount}
+                      </span>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto space-y-2">
-                      {isServedColumn ? servedTableSessionGroups.map((group: any) => {
+                    <div className="min-h-0 flex-1 overflow-y-auto space-y-3.5">
+                      {visibleCardsCount === 0 ? (
+                        <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-[18px] border border-dashed border-foreground/10 bg-white/45 px-5 text-center shadow-inner dark:bg-black/10">
+                          <span
+                            className={cn(
+                              "flex h-16 w-16 items-center justify-center rounded-full",
+                              columnUi.iconClass
+                            )}
+                          >
+                            <Inbox className="h-7 w-7" />
+                          </span>
+                          <p className="mt-4 text-base font-semibold text-foreground">Aucune commande</p>
+                          <p className="mt-1 max-w-[14rem] text-sm font-medium leading-5 text-muted-foreground">
+                            {columnUi.emptyText}
+                          </p>
+                        </div>
+                      ) : isServedColumn ? servedTableSessionGroups.map((group: any) => {
                         const paymentSession = group.paymentSession
                         const paymentRequestStatus = paymentSession?.paymentRequest?.status
                         const paymentProofSms = getPaymentProofSms(paymentSession, group.orders)
@@ -1722,14 +1808,13 @@ function POSPageContent() {
                         const sessionStatusLabel = paymentSession?.status === "active" || !paymentSession?.status
                           ? "Session active"
                           : "Session"
-
                         return (
                           <div
                             key={group.id}
-                            className="rounded-lg border bg-background p-2 text-left transition hover:border-primary/50 hover:bg-primary/5"
+                            className="animate-in fade-in slide-in-from-bottom-2 rounded-[18px] border border-border/70 bg-card/95 p-3.5 text-left shadow-[0_10px_26px_rgba(15,23,42,0.07)] transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-[0_16px_34px_rgba(15,23,42,0.12)] dark:shadow-[0_12px_28px_rgba(0,0,0,0.24)]"
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <p className="text-xs font-black">
                                   Table {group.tableLabel || "-"} / {sessionStatusLabel}
                                 </p>
@@ -1739,7 +1824,7 @@ function POSPageContent() {
                               </p>
                             </div>
 
-                            <div className="mt-2 rounded-md bg-muted/40 p-2">
+                            <div className="mt-3 rounded-2xl bg-muted/40 p-3">
                               <div className="flex items-center justify-between gap-2 text-[9px] font-bold text-muted-foreground">
                                 <span>{group.orderCount} commande(s)</span>
                                 <span>{group.itemCount} article(s)</span>
@@ -1749,7 +1834,7 @@ function POSPageContent() {
                                   <button
                                     key={order.id}
                                     type="button"
-                                    className="block w-full rounded border border-transparent px-1 py-1 text-left hover:border-primary/30 hover:bg-background"
+                                    className="block w-full rounded-xl border border-transparent px-2 py-1.5 text-left transition hover:border-primary/30 hover:bg-background"
                                     onClick={(event) => {
                                       event.stopPropagation()
                                       setSelectedOrderDetailId(order.id)
@@ -1771,7 +1856,7 @@ function POSPageContent() {
                               </div>
                             </div>
 
-                            <div className="mt-3 space-y-2 rounded-md bg-muted/50 p-2">
+                            <div className="mt-3 space-y-2 rounded-2xl bg-muted/50 p-3">
                               <div className="flex items-center justify-between">
                                 <span className="text-[10px] font-semibold text-muted-foreground">Paiement:</span>
                                 <span className="text-[10px] font-black">
@@ -1794,13 +1879,13 @@ function POSPageContent() {
                                 </div>
                               ) : null}
                               {paymentProofSms ? (
-                                <div className="rounded-md border bg-background p-2 text-[9px] font-semibold text-foreground">
+                                <div className="rounded-xl border bg-background p-2 text-[9px] font-semibold text-foreground">
                                   <p className="font-black uppercase text-muted-foreground">SMS client</p>
                                   <p className="mt-1 whitespace-pre-wrap break-words">{paymentProofSms}</p>
                                 </div>
                               ) : null}
                               <Button
-                                className="mt-2 h-7 w-full bg-primary text-[9px] font-black hover:bg-primary/90"
+                                className="mt-2 h-9 w-full rounded-full bg-primary text-[10px] font-black hover:bg-primary/90"
                                 disabled={processing || !canVerifyPayment || !paymentSession}
                                 onClick={(event) => {
                                   event.stopPropagation()
@@ -1866,12 +1951,21 @@ function POSPageContent() {
                           .map((item: any) => `${item.quantity}x ${item.name || item.nameSnapshot}`)
                           .join(" · ")
 
+                        const orderMetaLabel = getPOSOrderMetaLabel(normalizedType, tableLabel)
+                        const orderDateLabel = formatPOSOrderDateTime(order.createdAt)
+                        const productLines = previewItems.map(
+                          (item: any) => `${Number(item.quantity ?? 1)}x ${item.name || item.nameSnapshot || "Article"}`
+                        )
+
                         return (
                           <div
                             key={order.id}
                             role="button"
                             tabIndex={0}
-                            className="rounded-lg border bg-background p-2 text-left transition hover:border-primary/50 hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            className={cn(
+                              "animate-in fade-in slide-in-from-bottom-2 rounded-[18px] border border-border/70 bg-card/95 p-3.5 text-left shadow-[0_10px_26px_rgba(15,23,42,0.07)] transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-[0_16px_34px_rgba(15,23,42,0.12)] focus:outline-none focus:ring-2 focus:ring-primary/35 dark:shadow-[0_12px_28px_rgba(0,0,0,0.24)]",
+                              isCompletedColumn && "bg-background/95"
+                            )}
                             onClick={() => setSelectedOrderDetailId(order.id)}
                             onKeyDown={(event) => {
                               if (event.key === "Enter" || event.key === " ") {
@@ -1881,31 +1975,46 @@ function POSPageContent() {
                             }}
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-xs font-black">{getOrderDisplayId(order)}</p>
-                                <p className="text-[9px] font-bold uppercase text-muted-foreground">
-                                  {normalizedType === "dine_in"
-                                    ? `SUR PLACE${tableLabel ? ` · TABLE ${tableLabel}` : ""}`
-                                    : normalizedType === "delivery"
-                                      ? "LIVRAISON"
-                                      : "A EMPORTER"}
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-black leading-tight">{getOrderDisplayId(order)}</p>
+                                <p className="mt-1 line-clamp-1 text-[11px] font-bold text-muted-foreground">
+                                  {orderMetaLabel}
                                 </p>
+                                {isCompletedColumn ? (
+                                  <p className="mt-0.5 text-[10px] font-semibold text-muted-foreground">
+                                    {orderDateLabel}
+                                  </p>
+                                ) : null}
                               </div>
-                              <p className="shrink-0 text-xs font-black text-primary">
+                              <p className="shrink-0 text-right text-sm font-black text-primary">
                                 {getOrderComputedTotal(order).toLocaleString()} FCFA
                               </p>
                             </div>
 
-                            <p className="mt-2 line-clamp-1 text-[10px] font-semibold text-muted-foreground">
-                              {oneLineProducts || "Aucun produit"}
-                            </p>
-                            <div className="mt-1 flex items-center justify-between gap-2">
+                            {isCompletedColumn ? (
+                              <div className="mt-3 space-y-1 text-xs font-semibold leading-4 text-foreground">
+                                {productLines.length > 0 ? (
+                                  productLines.map((line: string) => (
+                                    <p key={line} className="line-clamp-1">
+                                      {line}
+                                    </p>
+                                  ))
+                                ) : (
+                                  <p className="text-muted-foreground">Aucun produit</p>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="mt-3 line-clamp-2 text-[11px] font-semibold leading-4 text-muted-foreground">
+                                {oneLineProducts || "Aucun produit"}
+                              </p>
+                            )}
+                            <div className="mt-3 flex items-center justify-between gap-2">
                               <span className="text-[9px] font-bold text-muted-foreground">
                                 {hiddenItemsCount > 0 ? `+ ${hiddenItemsCount} article(s)` : `${orderItems.length} article(s)`}
                               </span>
                               <button
                                 type="button"
-                                className="text-[9px] font-black uppercase text-primary underline-offset-2 hover:underline"
+                                className="inline-flex h-7 items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2.5 text-[9px] font-black uppercase text-primary transition hover:border-primary/35 hover:bg-primary/10"
                                 onClick={(event) => {
                                   event.stopPropagation()
                                   setSelectedOrderDetailId(order.id)
@@ -1917,7 +2026,7 @@ function POSPageContent() {
 
                             <Button
                               variant="outline"
-                              className="mt-2 h-7 w-full text-[9px] font-black"
+                              className="mt-3 h-8 w-full rounded-full text-[9px] font-black"
                               onClick={(event) => {
                                 event.stopPropagation()
                                 queuePrint(order, "client")
@@ -1927,7 +2036,7 @@ function POSPageContent() {
                             </Button>
 
                             {!isPaid ? (
-                              <div className="mt-3 space-y-2 rounded-md bg-muted/50 p-2">
+                              <div className="mt-3 space-y-2 rounded-2xl bg-muted/50 p-3">
                                 {isPaymentVisible ? (
                                   <div className="flex items-center justify-between">
                                     <span className="text-[10px] font-semibold text-muted-foreground">Mode:</span>
@@ -1952,7 +2061,7 @@ function POSPageContent() {
                                   </div>
                                 ) : null}
                                 {paymentProofSms ? (
-                                  <div className="rounded-md border bg-background p-2 text-[9px] font-semibold text-foreground">
+                                  <div className="rounded-xl border bg-background p-2 text-[9px] font-semibold text-foreground">
                                     <p className="font-black uppercase text-muted-foreground">SMS client</p>
                                     <p className="mt-1 whitespace-pre-wrap break-words">{paymentProofSms}</p>
                                   </div>
@@ -1960,7 +2069,7 @@ function POSPageContent() {
 
                                 {isPaymentVisible ? (
                                   <Button
-                                    className="mt-2 h-7 w-full bg-primary text-[9px] font-black hover:bg-primary/90"
+                                    className="mt-2 h-8 w-full rounded-full bg-primary text-[9px] font-black hover:bg-primary/90"
                                     disabled={processing || !canVerifyPayment}
                                     onClick={(event) => {
                                       event.stopPropagation()
@@ -1972,18 +2081,18 @@ function POSPageContent() {
                                 ) : null}
                               </div>
                             ) : isPaid && normalizedType !== "dine_in" && currentOrderStatus === ORDER_OPERATION_STATUS.PENDING ? (
-                              <div className="mt-2 rounded-md bg-muted px-2 py-1 text-center text-[9px] font-black uppercase text-foreground">
+                              <div className="mt-3 rounded-full bg-emerald-500/10 px-3 py-1.5 text-center text-[9px] font-black uppercase text-emerald-700 dark:text-emerald-300">
                                 Payée - en attente de préparation
                               </div>
                             ) : isPaid ? (
-                              <div className="mt-2 rounded-md bg-muted px-2 py-1 text-center text-[9px] font-black uppercase text-foreground">
+                              <div className="mt-3 rounded-full bg-emerald-500/10 px-3 py-1.5 text-center text-[9px] font-black uppercase text-emerald-700 dark:text-emerald-300">
                                 Paiement confirmé
                               </div>
                             ) : null}
 
                             {canComplete ? (
                               <Button
-                                className="mt-2 h-7 w-full text-[9px] font-black"
+                                className="mt-2 h-8 w-full rounded-full text-[9px] font-black"
                                 disabled={processing}
                                 onClick={(event) => {
                                   event.stopPropagation()
@@ -1997,14 +2106,16 @@ function POSPageContent() {
                         )
                       })}
                       {isCompletedColumn && columnOrders.length > 3 ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-8 w-full text-[10px] font-black"
-                          onClick={() => setShowAllCompletedOrders((current) => !current)}
-                        >
-                          {showAllCompletedOrders ? "Voir moins" : "Voir plus"}
-                        </Button>
+                        <div className="flex justify-center pt-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-9 rounded-full px-5 text-[10px] font-black"
+                            onClick={() => setShowAllCompletedOrders((current) => !current)}
+                          >
+                            {showAllCompletedOrders ? "Voir moins" : "Voir plus"}
+                          </Button>
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -2124,13 +2235,13 @@ function POSFooterCard({
   value: React.ReactNode
 }) {
   return (
-    <div className="flex min-h-16 items-center gap-3 rounded-[1.05rem] border bg-card/95 px-3 py-2 shadow-sm">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--brand-primary-soft)] text-[var(--brand-primary)]">
+    <div className="flex min-h-16 items-center gap-3 rounded-[1.15rem] border border-border/70 bg-card/95 px-3 py-2.5 shadow-[0_10px_26px_rgba(15,23,42,0.07)] ring-1 ring-white/60 dark:ring-white/5">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--brand-primary-soft)] text-[var(--brand-primary)] shadow-sm">
         {React.cloneElement(icon, { className: "h-4 w-4" })}
       </span>
       <div className="min-w-0">
         <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p className="truncate text-xs font-black text-foreground">{value}</p>
+        <p className="mt-0.5 truncate text-sm font-black text-foreground">{value}</p>
       </div>
     </div>
   )
@@ -2632,6 +2743,29 @@ function summarizeCashierOrderItems(order: any) {
   const hiddenCount = Math.max(0, items.length - visibleItems.length)
 
   return hiddenCount > 0 ? `${summary}, + ${hiddenCount} article(s)` : summary
+}
+
+function getPOSColumnUi(status: string) {
+  return POS_COLUMN_UI[status as keyof typeof POS_COLUMN_UI] ?? POS_COLUMN_UI.pending
+}
+
+function getPOSOrderMetaLabel(type: string, tableLabel?: string | null) {
+  if (type === "dine_in") return `Sur place${tableLabel ? ` • Table ${tableLabel}` : ""}`
+  if (type === "delivery") return "Livraison"
+  return "A emporter"
+}
+
+function formatPOSOrderDateTime(value: any) {
+  const date = value?.toDate?.() ?? (value ? new Date(value) : null)
+  if (!date || Number.isNaN(date.getTime())) return "-"
+
+  return date.toLocaleString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
 }
 
 function usePOSProductsPerPage() {

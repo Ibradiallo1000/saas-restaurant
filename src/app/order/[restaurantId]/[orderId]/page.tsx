@@ -374,6 +374,7 @@ function ClientOrderTrackingContent() {
       ? "paid"
       : safeOrder.paymentStatus
   const isProductionComplete = step === 4
+  const isTrackingComplete = isClientTrackingComplete(mainOrder) || allServed
   const orderWithPaymentVerification = safeOrder as RestaurantOrder & {
     paymentIntentStatus?: string | null
     paymentVerificationStatus?: string | null
@@ -516,7 +517,7 @@ function ClientOrderTrackingContent() {
           </section>
         )}
 
-        <TrackingInfoCard />
+        {!isTrackingComplete ? <TrackingInfoCard /> : null}
 
         {shouldShowPostServicePayment ? (
           <section className="rounded-2xl border-2 border-[var(--brand-primary)]/25 bg-[var(--brand-primary-soft)] p-5 text-card-foreground shadow-lg">
@@ -608,10 +609,7 @@ function ClientOrderTrackingContent() {
            </section>
         ) : shouldShowPrepaidCompletion ? (
           <section className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-5 text-emerald-950 shadow-lg dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-100">
-            <p className="text-xs font-black uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
-              Commande servie
-            </p>
-            <p className="mt-2 whitespace-nowrap text-xl font-black text-emerald-900 dark:text-emerald-100">
+            <p className="whitespace-nowrap text-xl font-black text-emerald-900 dark:text-emerald-100">
               Merci pour votre commande.
             </p>
             <p className="mt-3 text-sm font-semibold text-muted-foreground">

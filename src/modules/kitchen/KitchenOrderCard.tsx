@@ -300,7 +300,7 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
           }
         }}
         className={cn(
-          "cursor-pointer rounded-xl border border-border bg-card p-3 text-card-foreground shadow-sm outline-none ring-primary/40 transition focus:ring-2",
+          "animate-in fade-in slide-in-from-bottom-2 cursor-pointer rounded-[18px] border border-border/70 bg-card/95 p-3.5 text-card-foreground shadow-[0_10px_26px_rgba(15,23,42,0.07)] outline-none ring-primary/40 transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] hover:border-primary/25 hover:shadow-[0_16px_34px_rgba(15,23,42,0.12)] active:translate-y-0 active:scale-[0.99] focus:ring-2 dark:shadow-[0_12px_28px_rgba(0,0,0,0.24)]",
           isPaymentLocked && "cursor-not-allowed opacity-50",
           isPaymentDelayed && "border-red-500/50 ring-1 ring-red-500/20",
           isPaidNonTableOrder && "border-emerald-500/40 ring-1 ring-emerald-500/20",
@@ -385,7 +385,7 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
             <li
               key={`${order.id}-${item.productId ?? index}-${item.name}`}
               className={cn(
-                "flex flex-col gap-1 rounded-md px-2 py-1.5 text-xs leading-tight",
+                "flex flex-col gap-1 rounded-xl px-2.5 py-2 text-xs leading-tight",
                 itemStatus === ORDER_ITEM_STATUS.SERVED && "bg-muted text-muted-foreground line-through opacity-70",
                 itemStatus === ORDER_ITEM_STATUS.PENDING && "bg-amber-500/10 text-card-foreground ring-1 ring-amber-500/20",
                 itemStatus !== ORDER_ITEM_STATUS.SERVED &&
@@ -436,7 +436,7 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
               type="button"
               onClick={handleAction}
               disabled={isUpdating}
-              className="h-8 rounded-lg bg-primary px-3 text-[10px] font-black uppercase text-primary-foreground shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-8 rounded-full bg-primary px-3.5 text-[10px] font-black uppercase text-primary-foreground shadow-sm transition hover:bg-primary/90 hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isUpdating ? "..." : nextAction.label}
             </button>
