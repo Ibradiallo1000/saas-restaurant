@@ -183,6 +183,7 @@ export default function PublicProductConfigurator({
       onClose={onClose}
       onAdd={handleAdd}
       validationError={validationError}
+      publicCommerceShell
     />
   )
 }

@@ -5,13 +5,40 @@
 
 @layer base {
   :root {
-    --bg-main: #f8fafc;
-    --bg-secondary: #eef2f7;
-    --bg-card: #ffffff;
-    --border: #e2e8f0;
+    --bg-main: var(--surface-2);
+    --bg-secondary: var(--surface-3);
+    --bg-card: var(--surface-1);
+    --border: var(--border-default);
     --brand-primary: #f97316;
     --brand-primary-rgb: 249 115 22;
     --brand-primary-soft: rgb(var(--brand-primary-rgb) / 0.10);
+
+    /* Functional color architecture */
+    --action-primary-bg: var(--brand-primary);
+    --action-primary-fg: #0b0f14;
+    --action-primary-fg-rgb: 11 15 20;
+    --action-primary-hover: #e66b16;
+    --action-primary-active: #d86516;
+
+    --surface-1: #ffffff;
+    --surface-2: #f8fafc;
+    --surface-3: #eef2f7;
+    --surface-overlay: rgb(2 6 23 / 0.60);
+
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --text-inverse: #ffffff;
+
+    --border-subtle: #eef2f7;
+    --border-default: #e2e8f0;
+    --border-strong: #cbd5e1;
+
+    --success: #15803d;
+    --warning: #b45309;
+    --danger: #dc2626;
+    --info: #0369a1;
+    --focus-ring: #ea580c;
     --app-background:
       radial-gradient(circle at top left, rgb(var(--brand-primary-rgb) / 0.08), transparent 28rem),
       linear-gradient(180deg, #ffffff 0%, #f8fafc 44%, #eef2f7 100%);
@@ -20,12 +47,9 @@
     --surface-shadow-hover: 0 20px 48px rgb(15 23 42 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.95);
     --surface-border-hover: #cbd5e1;
 
-    --text-primary: #0f172a;
-    --text-secondary: #334155;
-    --text-muted: #64748b;
-
-    --primary: var(--brand-primary);
-    --primary-foreground: #ffffff;
+    /* Transitional aliases retained until the public color migration is complete. */
+    --primary: var(--action-primary-bg);
+    --primary-foreground: var(--action-primary-fg);
 
     --bg-main-rgb: 248 250 252;
     --bg-secondary-rgb: 238 242 247;
@@ -35,11 +59,11 @@
     --text-secondary-rgb: 51 65 85;
     --text-muted-rgb: 100 116 139;
     --primary-rgb: var(--brand-primary-rgb);
-    --primary-foreground-rgb: 255 255 255;
+    --primary-foreground-rgb: var(--action-primary-fg-rgb);
 
-    --color-primary: var(--primary);
-    --color-secondary: var(--bg-secondary);
-    --background: var(--bg-main);
+    --color-primary: var(--action-primary-bg);
+    --color-secondary: var(--surface-3);
+    --background: var(--surface-2);
     --foreground: var(--text-primary);
     --card: var(--bg-card);
     --card-foreground: var(--text-primary);
@@ -54,7 +78,7 @@
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     --input: var(--border);
-    --ring: var(--primary);
+    --ring: var(--focus-ring);
     --radius: 1rem;
     --chart-1: 160 84% 39%;
     --chart-2: 24 30% 20%;
@@ -78,13 +102,133 @@
     --public-pattern-color: rgb(var(--brand-primary-rgb));
     --public-pattern-opacity: 0.10;
     --public-shadow-soft: 0 18px 45px rgb(15 23 42 / 0.10);
+
+    /* Public Design System foundations — declared for progressive migration. */
+    --space-0: 0px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-10: 40px;
+    --space-12: 48px;
+    --space-16: 64px;
+    --space-24: 96px;
+
+    --radius-public-sm: 8px;
+    --radius-public-md: 12px;
+    --radius-public-lg: 16px;
+    --radius-public-xl: 20px;
+    --radius-public-2xl: 24px;
+    --radius-public-full: 9999px;
+
+    --shadow-public-xs: 0 1px 2px rgb(15 23 42 / 0.05);
+    --shadow-public-sm: 0 4px 12px rgb(15 23 42 / 0.07);
+    --shadow-public-md: 0 10px 28px rgb(15 23 42 / 0.10);
+    --shadow-public-lg: 0 20px 50px rgb(15 23 42 / 0.16);
+    --shadow-public-top: 0 -8px 24px rgb(15 23 42 / 0.09);
+
+    --border-public-subtle: var(--border-subtle);
+    --border-public-default: var(--border-default);
+    --border-public-strong: var(--border-strong);
+    --border-public-control: var(--text-muted);
+
+    --surface-public-canvas: var(--surface-2);
+    --surface-public-card: var(--surface-1);
+    --surface-public-muted: var(--surface-3);
+    --surface-public-elevated: var(--surface-1);
+    --surface-public-translucent: var(--public-card-bg);
+
+    --overlay-modal: var(--surface-overlay);
+    --overlay-photo: rgb(0 0 0 / 0.45);
+    --text-inverse-primary: #ffffff;
+    --text-inverse-muted: rgb(255 255 255 / 0.72);
+    --text-inverse-subtle: rgb(255 255 255 / 0.56);
+    --pattern-opacity-light: 0.10;
+    --pattern-opacity-dark: 0.12;
+
+    /* Public typography foundations — consumed progressively by public UI. */
+    --font-public-body: "PT Sans", Arial, sans-serif;
+    --font-public-headline: "Playfair Display", Georgia, serif;
+
+    --text-public-xs: 12px;
+    --leading-public-xs: 16px;
+    --text-public-sm: 14px;
+    --leading-public-sm: 20px;
+    --text-public-md: 16px;
+    --leading-public-md: 24px;
+    --text-public-lg: 18px;
+    --leading-public-lg: 26px;
+
+    --heading-public-3: 18px;
+    --leading-heading-public-3: 24px;
+    --heading-public-2: 22px;
+    --leading-heading-public-2: 28px;
+    --heading-public-1: 28px;
+    --leading-heading-public-1: 34px;
+
+    --display-public-sm: 36px;
+    --leading-display-public-sm: 40px;
+    --display-public-lg: 48px;
+    --leading-display-public-lg: 52px;
+
+    --price-public-sm: 14px;
+    --leading-price-public-sm: 20px;
+    --price-public-lg: 24px;
+    --leading-price-public-lg: 28px;
+
+    --label-public: 12px;
+    --leading-label-public: 16px;
+
+    --weight-public-regular: 400;
+    --weight-public-medium: 500;
+    --weight-public-semibold: 600;
+    --weight-public-bold: 700;
+    --weight-public-extrabold: 800;
+
+    /* Public responsive and accessibility foundations — opt-in until migration. */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+
+    --public-gutter-x: 16px;
+    --public-section-y: 16px;
+    --public-max-transaction: 480px;
+    --public-max-list: 720px;
+    --public-max-marketing: 1200px;
+    --public-max-modal: 576px;
+    --public-max-sheet: 576px;
+    --public-header-height: 56px;
+    --public-navigation-height: 56px;
+    --public-sticky-action-height: 64px;
+
+    --target-public-min: 40px;
+    --target-public-recommended: 44px;
+    --field-public-min: 48px;
+
+    --focus-public-width: 2px;
+    --focus-public-offset: 2px;
+
+    --motion-public-micro: 150ms;
+    --motion-public-standard: 200ms;
+    --motion-public-modal: 250ms;
+    --motion-public-sheet: 250ms;
+    --motion-public-landing: 300ms;
+    --motion-public-cover: 720ms;
+    --motion-public-ease: cubic-bezier(0.2, 0, 0, 1);
+    --motion-public-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+    --motion-public-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+    --motion-public-ease-emphasized: cubic-bezier(0.2, 0, 0, 1.2);
   }
 
   .dark {
-    --bg-main: #0b0f14;
-    --bg-secondary: #111827;
-    --bg-card: #1f2937;
-    --border: #334155;
+    --bg-main: var(--surface-2);
+    --bg-secondary: var(--surface-3);
+    --bg-card: var(--surface-1);
+    --border: var(--border-default);
     --app-background:
       radial-gradient(circle at top left, rgb(var(--brand-primary-rgb) / 0.10), transparent 24rem),
       linear-gradient(180deg, #0b0f14 0%, #111827 52%, #0b0f14 100%);
@@ -93,10 +237,26 @@
     --surface-shadow-hover: 0 22px 55px rgb(0 0 0 / 0.30), inset 0 1px 0 rgb(255 255 255 / 0.06);
     --surface-border-hover: #475569;
 
+    --surface-1: #1f2937;
+    --surface-2: #0b0f14;
+    --surface-3: #111827;
+    --surface-overlay: rgb(0 0 0 / 0.68);
+
     --text-primary: #ffffff;
     --text-secondary: #d1d5db;
     --text-muted: #9ca3af;
-    --primary-foreground: #ffffff;
+    --text-inverse: #0b0f14;
+
+    --border-subtle: #1f2937;
+    --border-default: #334155;
+    --border-strong: #475569;
+
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --danger: #f87171;
+    --info: #38bdf8;
+
+    --primary-foreground: var(--action-primary-fg);
 
     --bg-main-rgb: 11 15 20;
     --bg-secondary-rgb: 17 24 39;
@@ -105,7 +265,7 @@
     --text-primary-rgb: 255 255 255;
     --text-secondary-rgb: 209 213 219;
     --text-muted-rgb: 156 163 175;
-    --primary-foreground-rgb: 255 255 255;
+    --primary-foreground-rgb: var(--action-primary-fg-rgb);
     --sidebar-primary-foreground: var(--primary-foreground);
 
     --background: var(--bg-main);
@@ -123,7 +283,7 @@
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     --input: var(--border);
-    --ring: var(--primary);
+    --ring: var(--focus-ring);
     color-scheme: dark;
 
     --public-bg-main: #07090d;
@@ -135,6 +295,33 @@
     --public-pattern-color: rgb(var(--brand-primary-rgb));
     --public-pattern-opacity: 0.12;
     --public-shadow-soft: 0 18px 45px rgb(0 0 0 / 0.28);
+
+    --shadow-public-xs: 0 1px 2px rgb(0 0 0 / 0.18);
+    --shadow-public-sm: 0 4px 12px rgb(0 0 0 / 0.22);
+    --shadow-public-md: 0 10px 28px rgb(0 0 0 / 0.26);
+    --shadow-public-lg: 0 20px 50px rgb(0 0 0 / 0.32);
+    --shadow-public-top: 0 -8px 24px rgb(0 0 0 / 0.24);
+  }
+}
+
+@media (min-width: 320px) and (max-width: 359px) {
+  :root {
+    --public-gutter-x: 12px;
+    --public-section-y: 12px;
+  }
+}
+
+@media (min-width: 640px) {
+  :root {
+    --public-gutter-x: 24px;
+    --public-section-y: 24px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --public-gutter-x: 32px;
+    --public-section-y: 32px;
   }
 }
 
@@ -146,9 +333,6 @@
     @apply bg-background text-foreground font-body;
     background: var(--app-background);
     background-attachment: fixed;
-  }
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-headline;
   }
 }
 
@@ -179,6 +363,47 @@
     border-bottom: 1px solid var(--border);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
+  }
+
+  .public-tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .public-container {
+    width: 100%;
+    max-width: var(--public-max-marketing);
+    margin-inline: auto;
+    padding-inline: calc(var(--public-gutter-x) + var(--safe-left)) calc(var(--public-gutter-x) + var(--safe-right));
+  }
+
+  .public-container-transaction {
+    width: 100%;
+    max-width: var(--public-max-transaction);
+    margin-inline: auto;
+  }
+
+  .public-container-list {
+    width: 100%;
+    max-width: var(--public-max-list);
+    margin-inline: auto;
+  }
+
+  .public-container-marketing {
+    width: 100%;
+    max-width: var(--public-max-marketing);
+    margin-inline: auto;
+  }
+
+  .public-safe-top { padding-top: var(--safe-top); }
+  .public-safe-bottom { padding-bottom: var(--safe-bottom); }
+  .public-safe-inline {
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
+  }
+
+  .public-focus-visible:focus-visible {
+    outline: var(--focus-public-width) solid var(--focus-ring);
+    outline-offset: var(--focus-public-offset);
   }
 
   .public-menu-page {
@@ -219,8 +444,8 @@
   }
 
   .public-cover-transition {
-    transition-duration: 720ms;
-    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    transition-duration: var(--motion-public-cover);
+    transition-timing-function: var(--motion-public-ease);
   }
 
   @keyframes cover-button-shimmer {
@@ -240,7 +465,7 @@
   @media (prefers-reduced-motion: reduce) {
     .public-cover-transition {
       transition-duration: 180ms;
-      transition-timing-function: ease-out;
+      transition-timing-function: var(--motion-public-ease);
     }
   }
 
@@ -255,5 +480,15 @@
     box-shadow: var(--public-shadow-soft);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-reduced-motion {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
   }
 }

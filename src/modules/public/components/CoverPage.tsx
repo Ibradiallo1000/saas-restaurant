@@ -1,9 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { Clock, ShoppingBag } from "lucide-react"
+import { Clock, LockKeyhole, ShoppingBag } from "lucide-react"
 import { useRouter } from "next/navigation"
 
+import { PublicBadge, PublicButton } from "@/components/public-ui"
 import { getOptimizedImage } from "@/lib/image"
 
 type CoverPageProps = {
@@ -12,177 +13,193 @@ type CoverPageProps = {
   onEnterMenu: () => void
 }
 
-export default function CoverPage({
-  restaurant,
-  isExiting,
-  onEnterMenu,
-}: CoverPageProps) {
+export default function CoverPage({ restaurant, isExiting, onEnterMenu }: CoverPageProps) {
   const router = useRouter()
   const [imageFailed, setImageFailed] = React.useState(false)
+  const [logoFailed, setLogoFailed] = React.useState(false)
   const [teamDialogOpen, setTeamDialogOpen] = React.useState(false)
-  const buttonRef = React.useRef<HTMLButtonElement>(null)
+  const menuButtonRef = React.useRef<HTMLButtonElement>(null)
+  const teamButtonRef = React.useRef<HTMLButtonElement>(null)
+  const cancelButtonRef = React.useRef<HTMLButtonElement>(null)
+  const continueButtonRef = React.useRef<HTMLButtonElement>(null)
 
   const name = restaurant?.name || "Restaurant"
   const logo = restaurant?.logoUrl || restaurant?.logo
   const coverImage = restaurant?.coverImage || restaurant?.coverImageUrl || ""
   const hasCoverImage = Boolean(coverImage && !imageFailed)
+  const hasLogo = Boolean(logo && !logoFailed)
   const isOpen = restaurant?.isOpen !== false && restaurant?.status !== "closed"
-  const serviceTime =
-    restaurant?.serviceTime ||
-    restaurant?.deliveryTime ||
-    restaurant?.estimatedTime
-  const serviceLabel =
-    restaurant?.serviceType ||
-    restaurant?.serviceMode ||
-    restaurant?.orderType ||
-    restaurant?.type
-  const description =
-    restaurant?.welcomeMessage ||
-    restaurant?.description ||
-    restaurant?.shortDescription ||
-    restaurant?.tagline
+  const serviceTime = restaurant?.serviceTime || restaurant?.deliveryTime || restaurant?.estimatedTime
+  const serviceLabel = restaurant?.serviceType || restaurant?.serviceMode || restaurant?.orderType || restaurant?.type
+  const description = restaurant?.welcomeMessage || restaurant?.description || restaurant?.shortDescription || restaurant?.tagline
   const initial = name.charAt(0).toUpperCase()
 
+  React.useEffect(() => setImageFailed(false), [coverImage])
+  React.useEffect(() => setLogoFailed(false), [logo])
+
   React.useEffect(() => {
-    buttonRef.current?.focus()
+    menuButtonRef.current?.focus()
   }, [])
+
+  const closeTeamDialog = React.useCallback(() => {
+    setTeamDialogOpen(false)
+    window.requestAnimationFrame(() => teamButtonRef.current?.focus())
+  }, [])
+
+  React.useEffect(() => {
+    if (!teamDialogOpen) return
+
+    const frame = window.requestAnimationFrame(() => cancelButtonRef.current?.focus())
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeTeamDialog()
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [closeTeamDialog, teamDialogOpen])
 
   return (
     <section
-      className={`public-cover-transition fixed inset-0 z-[80] h-[100dvh] min-h-[100svh] w-screen overflow-hidden bg-slate-950 text-white transition-[opacity,transform,filter] ${
+      className={`public-cover-transition fixed inset-0 z-[80] h-[100dvh] min-h-[100svh] w-screen overflow-y-auto bg-[var(--surface-overlay)] text-[var(--text-inverse-primary)] transition-[opacity,transform] ${
         isExiting
-          ? "-translate-y-full scale-[0.98] opacity-0 blur-sm motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:blur-0"
-          : "translate-y-0 scale-100 opacity-100 blur-0"
+          ? "-translate-y-full opacity-0 motion-reduce:translate-y-0"
+          : "translate-y-0 opacity-100"
       }`}
       aria-label={`Couverture de ${name}`}
     >
       {hasCoverImage ? (
         <img
           src={getOptimizedImage(coverImage, 1400)}
-          alt={`Image de couverture de ${name}`}
-          className="absolute inset-0 h-full w-full object-cover object-center"
+          alt=""
+          aria-hidden="true"
+          className="fixed inset-0 size-full object-cover object-center"
           onError={() => setImageFailed(true)}
         />
       ) : (
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgb(var(--brand-primary-rgb)/0.42),transparent_28rem),linear-gradient(160deg,#0f172a,#111827_48%,#020617)]" />
+        <div className="fixed inset-0 bg-[var(--surface-overlay)]" aria-hidden="true" />
       )}
 
-      <div className="absolute inset-0 bg-black/45" />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/65 via-black/20 to-black/85" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_78%,rgb(var(--brand-primary-rgb)/0.32),transparent_24rem)]" />
+      <div className="fixed inset-0 bg-[var(--overlay-photo)]" aria-hidden="true" />
+      <div className="fixed inset-0 bg-gradient-to-b from-black/35 via-transparent to-black/75" aria-hidden="true" />
 
-      <div className="relative z-10 mx-auto flex h-full w-full max-w-3xl flex-col px-5 pb-[max(1.4rem,env(safe-area-inset-bottom))] pt-[max(1.4rem,env(safe-area-inset-top))] sm:px-8">
-        <div className="flex min-h-0 flex-1 flex-col justify-center gap-7 sm:gap-8">
-          <div className="-translate-y-14 text-center sm:-translate-y-16">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-white/25 bg-white/15 text-2xl font-black text-white shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-md sm:h-24 sm:w-24">
-              {logo ? (
+      <div
+        aria-hidden={teamDialogOpen ? true : undefined}
+        inert={teamDialogOpen ? true : undefined}
+        className="relative z-10 mx-auto flex min-h-full w-full max-w-3xl flex-col pl-[calc(var(--space-5)+var(--safe-left))] pr-[calc(var(--space-5)+var(--safe-right))] pt-[calc(var(--space-5)+var(--safe-top))] pb-[calc(var(--space-4)+var(--safe-bottom))] sm:pl-[calc(var(--space-8)+var(--safe-left))] sm:pr-[calc(var(--space-8)+var(--safe-right))]"
+      >
+        <div className="flex flex-1 items-center justify-center py-[var(--space-4)]">
+          <div className="mx-auto flex w-full max-w-lg flex-col items-center text-center">
+            <div className="flex size-20 items-center justify-center overflow-hidden rounded-[var(--radius-public-full)] border border-white/25 bg-white/15 text-2xl font-public-extrabold text-white shadow-[var(--shadow-public-md)] backdrop-blur-md sm:size-24">
+              {hasLogo ? (
                 <img
-                  src={getOptimizedImage(logo, 180)}
-                  alt={`Logo ${name}`}
-                  className="h-full w-full object-cover"
+                  src={getOptimizedImage(logo, 192)}
+                  alt={`Logo de ${name}`}
+                  className="size-full object-cover"
+                  onError={() => setLogoFailed(true)}
                 />
               ) : (
-                initial
+                <span aria-label={`Initiale de ${name}`}>{initial}</span>
               )}
             </div>
-            <h1 className="mx-auto mt-4 max-w-[18rem] text-balance text-3xl font-black leading-tight sm:max-w-xl sm:text-5xl">
+
+            <h1 className="mt-3 line-clamp-2 max-w-xl break-words font-publicDisplay text-[28px] font-public-extrabold leading-[34px] text-white sm:mt-4 sm:text-[40px] sm:leading-[46px]">
               {name}
             </h1>
-          </div>
 
-          <div className="mx-auto w-full max-w-md text-center">
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-white/70">
-              Bienvenue
+            <p className="mt-2 line-clamp-2 max-w-md text-lg font-public-semibold leading-6 text-[var(--text-inverse-secondary)] sm:text-xl sm:leading-7">
+              {description || "Découvrez notre menu"}
             </p>
-            <h2 className="mt-2 text-3xl font-black leading-tight sm:text-4xl">
-              Découvrez notre menu
-            </h2>
-            {description ? (
-              <p className="mx-auto mt-2 line-clamp-3 max-w-sm text-sm font-medium leading-6 text-white/82 sm:text-base">
-                {description}
-              </p>
-            ) : null}
-          </div>
 
-          <div className="mx-auto w-full max-w-md">
-            <div className="mb-3 flex flex-wrap justify-center gap-2">
-              <span className="inline-flex h-9 items-center gap-2 rounded-full border border-white/20 bg-white/[0.14] px-3 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md">
-                <span
-                  className={`h-2 w-2 rounded-full ${
-                    isOpen ? "bg-green-500" : "bg-red-500"
-                  }`}
-                />
-                {isOpen ? "Ouvert" : "Fermé"}
-              </span>
-
+            <div className="mt-4 flex max-w-md flex-wrap justify-center gap-2 sm:mt-5">
+              <PublicBadge
+                variant="inverse"
+                size="md"
+                label={isOpen ? "Ouvert" : "Fermé"}
+                icon={<span className={`size-2 rounded-full ${isOpen ? "bg-[var(--success)]" : "bg-[var(--danger)]"}`} />}
+                className="min-h-7 border border-white/15 px-3 text-xs backdrop-blur-md"
+              />
               {serviceTime ? (
-                <span className="inline-flex h-9 items-center gap-2 rounded-full border border-white/20 bg-white/[0.14] px-3 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md">
-                  <Clock className="h-3.5 w-3.5 text-white/80" />
-                  {serviceTime}
-                </span>
+                <PublicBadge
+                  variant="inverse"
+                  size="md"
+                  label={String(serviceTime)}
+                  icon={<Clock />}
+                  className="min-h-7 border border-white/15 px-3 text-xs backdrop-blur-md"
+                />
               ) : null}
-
               {serviceLabel ? (
-                <span className="inline-flex h-9 items-center gap-2 rounded-full border border-white/20 bg-white/[0.14] px-3 text-xs font-black text-white shadow-lg shadow-black/10 backdrop-blur-md">
-                  <ShoppingBag className="h-3.5 w-3.5 text-white/80" />
-                  {serviceLabel}
-                </span>
+                <PublicBadge
+                  variant="inverse"
+                  size="md"
+                  label={String(serviceLabel)}
+                  icon={<ShoppingBag />}
+                  className="min-h-7 border border-white/15 px-3 text-xs backdrop-blur-md"
+                />
               ) : null}
             </div>
 
-            <button
-              ref={buttonRef}
+            <PublicButton
+              ref={menuButtonRef}
               type="button"
+              size="hero"
+              shape="marketing"
+              fullWidth
               onClick={onEnterMenu}
-              className="relative flex h-14 w-full overflow-hidden rounded-full bg-[var(--brand-primary)] px-6 text-base font-black text-white shadow-[0_18px_42px_rgba(0,0,0,0.25)] transition duration-200 hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/35 active:scale-[0.98] before:absolute before:inset-y-0 before:-left-1/2 before:w-1/2 before:skew-x-[-18deg] before:bg-white/25 before:blur-sm before:content-[''] before:animate-[cover-button-shimmer_2.6s_ease-in-out_infinite] motion-reduce:before:animate-none"
+              className="mt-5 max-w-sm shadow-[var(--shadow-public-lg)] sm:mt-6"
             >
-              <span className="relative z-10 flex h-full w-full items-center justify-center">
-                Voir le menu
-              </span>
-            </button>
+              Découvrir le menu
+            </PublicButton>
           </div>
+        </div>
+
+        <div className="flex shrink-0 justify-center pt-2">
+          <PublicButton
+            ref={teamButtonRef}
+            type="button"
+            variant="ghost"
+            size="compact"
+            shape="marketing"
+            onClick={() => setTeamDialogOpen(true)}
+            className="text-xs text-[var(--text-inverse-secondary)] hover:bg-white/10 hover:text-white"
+          >
+            <LockKeyhole className="size-4" />
+            Espace équipe
+          </PublicButton>
         </div>
       </div>
 
-      <div className="absolute bottom-[max(1.15rem,env(safe-area-inset-bottom))] left-0 right-0 z-20 flex justify-center px-5">
-        <button
-          type="button"
-          onClick={() => setTeamDialogOpen(true)}
-          className="group rounded-full border border-white/10 bg-white/[0.08] px-4 py-2 text-center text-white/72 shadow-[0_10px_28px_rgba(0,0,0,0.14)] backdrop-blur-md transition hover:border-white/20 hover:bg-white/[0.12] hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/20"
-        >
-          <span className="block text-xs font-black leading-tight">
-            🔒 Espace équipe
-          </span>
-          <span className="mt-0.5 block text-[10px] font-semibold leading-tight text-white/55 group-hover:text-white/70">
-            Accès réservé au personnel
-          </span>
-        </button>
-      </div>
-
       {teamDialogOpen ? (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/45 px-5 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-[1.6rem] border border-white/15 bg-slate-950/92 p-5 text-white shadow-[0_24px_70px_rgba(0,0,0,0.38)]">
-            <h3 className="text-lg font-black">Connexion personnel</h3>
-            <p className="mt-2 text-sm font-medium leading-6 text-white/72">
-              Cet espace est réservé aux administrateurs, gérants, caissiers,
-              cuisiniers et autres membres du personnel du restaurant.
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-[var(--overlay-modal)] px-5 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="team-dialog-title"
+            aria-describedby="team-dialog-description"
+            onKeyDown={(event) => {
+              if (event.key !== "Tab") return
+              if (event.shiftKey && document.activeElement === cancelButtonRef.current) {
+                event.preventDefault()
+                continueButtonRef.current?.focus()
+              } else if (!event.shiftKey && document.activeElement === continueButtonRef.current) {
+                event.preventDefault()
+                cancelButtonRef.current?.focus()
+              }
+            }}
+            className="w-full max-w-sm rounded-[var(--radius-public-2xl)] border border-[var(--border-public-subtle)] bg-[var(--surface-public-elevated)] p-5 text-[var(--text-primary)] shadow-[var(--shadow-public-lg)]"
+          >
+            <h2 id="team-dialog-title" className="text-public-heading-3 font-public-bold">Connexion personnel</h2>
+            <p id="team-dialog-description" className="mt-2 text-sm leading-5 text-[var(--text-secondary)]">
+              Cet espace est réservé aux administrateurs, gérants, caissiers, cuisiniers et autres membres du personnel du restaurant.
             </p>
-
             <div className="mt-5 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setTeamDialogOpen(false)}
-                className="h-11 rounded-full border border-white/15 bg-white/[0.08] text-sm font-black text-white/82 transition hover:bg-white/[0.12]"
-              >
+              <PublicButton ref={cancelButtonRef} type="button" variant="secondary" size="standard" onClick={closeTeamDialog}>
                 Annuler
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push("/login")}
-                className="h-11 rounded-full bg-white text-sm font-black text-slate-950 transition hover:brightness-95"
-              >
+              </PublicButton>
+              <PublicButton ref={continueButtonRef} type="button" size="standard" onClick={() => router.push("/login")}>
                 Continuer
-              </button>
+              </PublicButton>
             </div>
           </div>
         </div>

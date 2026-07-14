@@ -6,15 +6,25 @@ import { useRouter } from "next/navigation"
 import { ChefHat, ClipboardList, Coffee, Search, ShoppingBag, Utensils } from "lucide-react"
 
 import { useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { getOptimizedImage } from "@/lib/image"
 import CartDrawer from "./components/CartDrawer"
 import CategoriesBar from "./components/CategoriesBar"
 import CoverPage from "./components/CoverPage"
 import DishCard from "./components/DishCard"
 import ProductModal from "./components/ProductModal"
-import PublicSectionTitle from "./components/PublicSectionTitle"
 import PublicProductConfigurator from "./components/PublicProductConfigurator"
-import PublicMenuHeader from "./components/PublicMenuHeader"
+import {
+  PublicBottomNavigation,
+  PublicButton,
+  PublicCategoryCardSkeleton,
+  PublicEmptyState,
+  PublicHeader,
+  PublicPageShell,
+  PublicProductCardSkeleton,
+  PublicSearchField,
+  SectionHeader,
+} from "@/components/public-ui"
 import { productNeedsConfigurator } from "@/lib/linked-option-groups"
 import { getLatestTrackedOrder } from "./orderTrackingStorage"
 import { useCart } from "./cart/CartContext"
@@ -57,8 +67,19 @@ function PublicPageContent({
   const [hasRetriedRestaurantLookup, setHasRetriedRestaurantLookup] = React.useState(false)
   const categoriesSectionRef = React.useRef<HTMLDivElement>(null)
   const menuStartRef = React.useRef<HTMLDivElement>(null)
+  const searchInputRef = React.useRef<HTMLInputElement>(null)
+  const cartTriggerRef = React.useRef<HTMLElement | null>(null)
+  const productTriggerRef = React.useRef<HTMLElement | null>(null)
+  const coverTransitionTimeoutRef = React.useRef<number | null>(null)
+  const previousActiveNavRef = React.useRef(activeNav)
   const isDineInContinuation = mode === "dine_in" && Boolean(tableId)
   const coverStorageKey = React.useMemo(() => `oordera:cover-seen:${slug}`, [slug])
+
+  React.useEffect(() => () => {
+    if (coverTransitionTimeoutRef.current !== null) {
+      window.clearTimeout(coverTransitionTimeoutRef.current)
+    }
+  }, [])
 
   React.useEffect(() => {
     setClientReady(true)
@@ -281,14 +302,41 @@ function PublicPageContent({
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
+  const openCart = React.useCallback(() => {
+    cartTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setCartOpen(true)
+  }, [])
+
+  const closeCart = React.useCallback(() => {
+    setCartOpen(false)
+    window.requestAnimationFrame(() => cartTriggerRef.current?.focus({ preventScroll: true }))
+  }, [])
+
   const handleOrderClick = () => {
     setActiveNav("order")
-    setCartOpen(true)
+    openCart()
   }
 
   const handleSearchClick = () => {
     setActiveNav("search")
+    if (activeNav === "search") searchInputRef.current?.focus({ preventScroll: true })
   }
+
+  const clearSearchAndFocus = React.useCallback(() => {
+    setHomeSearch("")
+    searchInputRef.current?.focus({ preventScroll: true })
+  }, [])
+
+  React.useEffect(() => {
+    const becameActive = activeNav === "search" && previousActiveNavRef.current !== "search"
+    previousActiveNavRef.current = activeNav
+    if (!becameActive) return
+
+    const frame = window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [activeNav])
 
   const handleTrackingClick = () => {
     setActiveNav("tracking")
@@ -303,7 +351,7 @@ function PublicPageContent({
       return
     }
 
-    setCartOpen(true)
+    openCart()
   }
 
   const handleCategorySelect = (categoryId: string) => {
@@ -312,8 +360,14 @@ function PublicPageContent({
   }
 
   const handleOpenProduct = (product: any) => {
+    productTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setSelectedProduct(product)
   }
+
+  const closeProduct = React.useCallback(() => {
+    setSelectedProduct(null)
+    window.requestAnimationFrame(() => productTriggerRef.current?.focus({ preventScroll: true }))
+  }, [])
 
   const handleEnterMenu = React.useCallback(() => {
     if (coverState !== "visible") return
@@ -329,9 +383,13 @@ function PublicPageContent({
     const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
     const delay = prefersReducedMotion ? COVER_REDUCED_MOTION_MS : COVER_TRANSITION_MS
 
-    window.setTimeout(() => {
+    if (coverTransitionTimeoutRef.current !== null) {
+      window.clearTimeout(coverTransitionTimeoutRef.current)
+    }
+    coverTransitionTimeoutRef.current = window.setTimeout(() => {
       setCoverState("hidden")
       menuStartRef.current?.focus({ preventScroll: true })
+      coverTransitionTimeoutRef.current = null
     }, delay)
   }, [coverState, coverStorageKey])
 
@@ -345,7 +403,7 @@ function PublicPageContent({
 
   function handleAddToCartGlobal(item: any) {
     addItem(item)
-    setSelectedProduct(null)
+    closeProduct()
     scrollToCategoriesSection()
   }
 
@@ -379,16 +437,23 @@ function PublicPageContent({
   const coverIsMounted = coverState === "visible" || coverState === "exiting"
   const menuIsOpening = coverState === "exiting"
   const menuIsCovered = coverState === "visible" || coverState === "checking"
+  const normalizedSearch = homeSearch.trim()
+  const activeVisibleCategory = visibleCategories.find((category: any) => category.id === activeCategoryId)
+  const searchResultCount = activeVisibleCategory
+    ? (productsByCategory[activeVisibleCategory.id] || []).length
+    : 0
 
   return (
-    <div
-      id="app-root"
-      className="public-menu-page min-h-screen pb-[calc(5.5rem+env(safe-area-inset-bottom))]"
-    >
-      <PublicMenuHeader
-        restaurant={restaurant}
+    <div id="app-root" className="public-menu-page min-h-screen">
+      <PublicHeader
+        aria-hidden={coverIsMounted ? true : undefined}
+        inert={coverIsMounted ? true : undefined}
+        variant="menu"
+        restaurantName={restaurant.name || "Restaurant"}
+        logoUrl={restaurant.logoUrl || restaurant.logo ? getOptimizedImage(restaurant.logoUrl || restaurant.logo, 120) : null}
+        themeAction={<ThemeToggle />}
         cartCount={count}
-        onCartClick={() => setCartOpen(true)}
+        onCartClick={openCart}
       />
 
       <div
@@ -397,7 +462,7 @@ function PublicPageContent({
         tabIndex={-1}
         aria-hidden={coverIsMounted ? true : undefined}
         inert={coverIsMounted ? true : undefined}
-        className={`public-menu-content public-cover-transition pt-[calc(3.75rem+env(safe-area-inset-top))] outline-none transition-[opacity,transform,filter] motion-reduce:translate-y-0 motion-reduce:blur-0 ${
+        className={`public-menu-content public-cover-transition outline-none transition-[opacity,transform,filter] motion-reduce:translate-y-0 motion-reduce:blur-0 ${
           menuIsOpening
             ? "translate-y-0 opacity-100 blur-0"
             : menuIsCovered
@@ -405,8 +470,31 @@ function PublicPageContent({
             : "translate-y-0 opacity-100 blur-0"
         }`}
       >
-        <main className="relative z-10 bg-transparent pt-2 sm:pt-3 lg:mx-auto lg:max-w-7xl">
+        {!coverIsMounted ? <h1 className="sr-only">{restaurant.name || "Restaurant"} — Menu</h1> : null}
+        <PublicPageShell
+          background="transparent"
+          width="catalog"
+          bottomReserve="navigation"
+          innerContainer
+          withGutters={false}
+          className="pt-[calc(var(--public-shell-header-height)+var(--public-shell-safe-top)+var(--space-2))] sm:pt-[calc(var(--public-shell-header-height)+var(--public-shell-safe-top)+var(--space-3))]"
+        >
           <MenuWelcomeWithTable table={tableContext} />
+          {activeNav === "search" && (
+            <section className="mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6 sm:pt-4 lg:px-8" aria-label="Recherche dans le menu">
+              <div className="max-w-[var(--public-max-list)]">
+                <PublicSearchField
+                  value={homeSearch}
+                  onChange={setHomeSearch}
+                  onClear={clearSearchAndFocus}
+                  inputRef={searchInputRef}
+                  autoFocus
+                  loading={isMenuLoading}
+                  resultCount={normalizedSearch && !isMenuLoading && !productsError && !categoriesError ? searchResultCount : undefined}
+                />
+              </div>
+            </section>
+          )}
           <MainContent
             categories={visibleCategories}
             isLoading={isMenuLoading}
@@ -418,25 +506,37 @@ function PublicPageContent({
             onCategorySelect={handleCategorySelect}
             onOpenProduct={handleOpenProduct}
             onAddedToCart={scrollToCategoriesSection}
+            searchQuery={activeNav === "search" ? homeSearch : ""}
+            onClearSearch={clearSearchAndFocus}
+            searchInputRef={searchInputRef}
           />
-        </main>
+        </PublicPageShell>
 
       </div>
 
       <PublicBottomNavigation
-        active={activeNav}
-        count={count}
-        searchValue={homeSearch}
-        onHome={handleHomeClick}
-        onSearch={handleSearchClick}
-        onSearchChange={setHomeSearch}
-        onOrder={handleOrderClick}
-        onTracking={handleTrackingClick}
+        aria-hidden={coverIsMounted ? true : undefined}
+        inert={coverIsMounted ? true : undefined}
+        variant="menu"
+        activeId={activeNav}
+        items={[
+          { id: "home", label: "Menu", icon: <Utensils />, onSelect: handleHomeClick },
+          { id: "search", label: "Recherche", icon: <Search />, onSelect: handleSearchClick },
+          {
+            id: "order",
+            label: "Panier",
+            icon: <ShoppingBag />,
+            onSelect: handleOrderClick,
+            badge: count,
+            ariaLabel: count > 0 ? `Panier, ${count} article${count > 1 ? "s" : ""}` : "Panier",
+          },
+          { id: "tracking", label: "Suivi", icon: <ClipboardList />, onSelect: handleTrackingClick },
+        ]}
       />
 
       <CartDrawer
         open={cartOpen}
-        onClose={() => setCartOpen(false)}
+        onClose={closeCart}
         restaurantId={restaurantId}
         tableContext={tableContext}
         activeTableSession={activeTableSession}
@@ -447,9 +547,9 @@ function PublicPageContent({
         <PublicProductConfigurator
           product={selectedProduct}
           catalogProducts={products || []}
-          onClose={() => setSelectedProduct(null)}
+          onClose={closeProduct}
           onAdded={() => {
-            setSelectedProduct(null)
+            closeProduct()
             scrollToCategoriesSection()
           }}
         />
@@ -459,7 +559,7 @@ function PublicPageContent({
         <ProductModal
           product={selectedProduct}
           onAddToCart={handleAddToCartGlobal}
-          onClose={() => setSelectedProduct(null)}
+          onClose={closeProduct}
         />
       ) : null}
 
@@ -527,6 +627,9 @@ function MainContent({
   onCategorySelect,
   onOpenProduct,
   onAddedToCart,
+  searchQuery,
+  onClearSearch,
+  searchInputRef,
 }: any) {
 
   // AUTO-SÉLECTION DE LA PREMIÈRE CATÉGORIE
@@ -542,15 +645,38 @@ function MainContent({
     return categories.filter((c: any) => c.id === activeCategoryId)
   }, [categories, activeCategoryId])
 
+  if (hasError) {
+    return (
+      <div className="mx-auto w-full max-w-6xl px-4 pb-6 sm:px-6 lg:px-8">
+        <PublicEmptyState
+          variant="error"
+          title="Menu indisponible"
+          description="Impossible de charger les produits pour le moment."
+          icon={<ChefHat />}
+        />
+      </div>
+    )
+  }
+
   if (isLoading) {
     return (
       <div className="mx-auto w-full max-w-6xl pb-6 sm:pb-8">
-        <div className="px-4 sm:px-6 lg:px-8">
-          <div className="mb-4 h-16 animate-pulse rounded-2xl bg-muted" />
-          <div className="mb-6 h-10 animate-pulse rounded-full bg-muted" />
-          <div className="grid gap-4 md:grid-cols-2">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-28 animate-pulse rounded-2xl bg-muted" />
+        <div className="pt-3 sm:pt-4">
+          <div className="mb-2 px-4 sm:px-6 lg:px-8">
+            <div className="h-7 w-32 animate-pulse rounded-[var(--radius-public-sm)] bg-[var(--surface-public-muted)] motion-reduce:animate-none" />
+          </div>
+          <div className="no-scrollbar flex gap-2 overflow-hidden px-4 py-1 sm:gap-3 sm:px-6 lg:px-8">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <PublicCategoryCardSkeleton key={index} />
+            ))}
+          </div>
+        </div>
+
+        <div className="px-4 pt-3 sm:px-6 sm:pt-4 lg:px-8">
+          <div className="mb-2 h-6 w-40 animate-pulse rounded-[var(--radius-public-sm)] bg-[var(--surface-public-muted)] motion-reduce:animate-none" />
+          <div className="grid w-full grid-cols-1 items-start gap-3 md:grid-cols-2 md:gap-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <PublicProductCardSkeleton key={index} />
             ))}
           </div>
         </div>
@@ -558,24 +684,18 @@ function MainContent({
     )
   }
 
-  if (hasError) {
-    return (
-      <div className="mx-auto w-full max-w-6xl px-4 pb-6 sm:px-6 lg:px-8">
-        <div className="rounded-2xl bg-card px-6 py-14 text-center shadow-sm">
-          <ChefHat className="mx-auto mb-3 h-12 w-12 text-muted-foreground/60" />
-          <h2 className="text-base font-black">Menu indisponible</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Impossible de charger les produits
-          </p>
-        </div>
-      </div>
-    )
+  const currentCategory = filteredCategories[0]
+  const currentProducts = currentCategory ? productsByCategory[currentCategory.id] || [] : []
+  const hasSearchQuery = Boolean(searchQuery.trim())
+  const hasNoSearchResults = hasSearchQuery && (!currentCategory || currentProducts.length === 0)
+
+  const clearEmptySearch = () => {
+    onClearSearch()
+    searchInputRef.current?.focus({ preventScroll: true })
   }
 
-  const currentCategory = filteredCategories[0]
-
   return (
-    <div className="mx-auto w-full max-w-6xl pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pb-[calc(6.5rem+env(safe-area-inset-bottom))]">
+    <div className="mx-auto w-full max-w-6xl">
       
       <TableContextError error={tableError} />
 
@@ -589,14 +709,37 @@ function MainContent({
       </div>
 
       {/* PRODUITS (UNE SEULE CATÉGORIE) */}
-      {currentCategory && (
+      {hasNoSearchResults ? (
+        <div className="px-4 pb-4 sm:px-6 lg:px-8">
+          <PublicEmptyState
+            title="Aucun produit trouvé"
+            description="Essayez un autre terme ou effacez la recherche pour afficher le menu."
+            variant="compact"
+            primaryAction={<PublicButton variant="secondary" size="compact" onClick={clearEmptySearch}>Effacer la recherche</PublicButton>}
+          />
+        </div>
+      ) : categories.length === 0 ? (
+        <div className="px-4 pb-4 sm:px-6 lg:px-8">
+          <PublicEmptyState
+            title="Aucune catégorie disponible"
+            description="Le menu ne contient aucune catégorie disponible pour le moment."
+            icon={<Utensils />}
+          />
+        </div>
+      ) : currentCategory && (
         <div className="mb-4 px-4 sm:px-6 lg:px-8">
           <div className="mb-2">
-            <PublicSectionTitle title={currentCategory.name} />
+            <SectionHeader
+              title={currentCategory.name}
+              icon={<Utensils />}
+              variant="default"
+              size="sm"
+              headingAs="h2"
+            />
           </div>
 
-          <div className="flex flex-col gap-2 sm:gap-2.5">
-            {(productsByCategory[currentCategory.id] || []).map((product: any) => (
+          <div className="grid w-full grid-cols-1 items-start gap-3 md:grid-cols-2 md:gap-4">
+            {currentProducts.map((product: any) => (
               <DishCard
                 key={product.id}
                 product={product}
@@ -606,10 +749,12 @@ function MainContent({
             ))}
           </div>
 
-          {(productsByCategory[currentCategory.id] || []).length === 0 && (
-            <p className="text-sm text-muted-foreground py-8 text-center">
-              Aucun produit disponible dans cette catégorie
-            </p>
+          {currentProducts.length === 0 && (
+            <PublicEmptyState
+              title="Aucun produit dans cette catégorie"
+              description="Cette catégorie ne contient aucun produit disponible pour le moment."
+              icon={<ChefHat />}
+            />
           )}
         </div>
       )}
@@ -681,111 +826,11 @@ function MenuState({
   )
 }
 
-export function PublicBottomNavigation({
-  active,
-  count,
-  searchValue,
-  onHome,
-  onSearch,
-  onSearchChange,
-  onOrder,
-  onTracking,
-}: {
-  active: "home" | "search" | "order" | "tracking"
-  count: number
-  searchValue: string
-  onHome: () => void
-  onSearch: () => void
-  onSearchChange: (value: string) => void
-  onOrder: () => void
-  onTracking: () => void
-}) {
-  const [badgePulse, setBadgePulse] = React.useState(false)
-  const previousCountRef = React.useRef(count)
-
-  React.useEffect(() => {
-    if (count > previousCountRef.current) {
-      setBadgePulse(true)
-      const timeout = window.setTimeout(() => setBadgePulse(false), 450)
-      previousCountRef.current = count
-      return () => window.clearTimeout(timeout)
-    }
-
-    previousCountRef.current = count
-  }, [count])
-
-  return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 w-full rounded-t-2xl border-t border-[var(--public-card-border)] bg-[var(--bg-card)] px-3 pb-[env(safe-area-inset-bottom)] pt-2 shadow-[0_-6px_18px_rgba(15,23,42,0.07)] md:px-4">
-      {active === "search" && (
-        <div className="mx-auto mb-2 max-w-md">
-          <div className="relative">
-            <input
-              value={searchValue}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Rechercher un plat..."
-              className="h-12 w-full rounded-2xl border border-[var(--public-card-border)] bg-[var(--public-card-bg)] pl-4 pr-11 text-sm font-semibold text-[var(--public-text-main)] outline-none backdrop-blur focus:border-[var(--brand-primary)] focus:ring-4 focus:ring-[var(--brand-primary)]/10"
-              autoFocus
-            />
-            <Search className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--brand-primary)]" />
-          </div>
-        </div>
-      )}
-
-      <div className="mx-auto grid h-12 max-w-md grid-cols-4 gap-1">
-        {[
-          { id: "home" as const, label: "Menu", icon: Utensils, onClick: onHome },
-          { id: "order" as const, label: "Panier", icon: ShoppingBag, onClick: onOrder },
-          { id: "tracking" as const, label: "Suivi", icon: ClipboardList, onClick: onTracking },
-          { id: "search" as const, label: "Recherche", icon: Search, onClick: onSearch },
-        ].map((item) => {
-          const Icon = item.icon
-          const isActive = active === item.id
-
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={item.onClick}
-              className={`relative flex h-full flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-black transition-all ${
-                isActive
-                  ? "bg-[var(--brand-primary-soft)] text-[var(--brand-primary)]"
-                  : "text-[var(--public-text-muted)] hover:bg-[var(--brand-primary-soft)] hover:text-[var(--public-text-main)]"
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              <span>{item.label}</span>
-              {item.id === "order" && count > 0 && (
-                <span
-                  className={`absolute -top-1 right-3 min-w-[18px] rounded-full px-1 py-0.5 text-[9px] font-black transition-transform duration-300 sm:right-5 ${
-                    badgePulse ? "scale-125" : "scale-100"
-                  } ${
-                    isActive
-                      ? "bg-white text-[var(--brand-primary)] dark:bg-slate-950/80"
-                      : "bg-[var(--brand-primary)] text-white"
-                  }`}
-                >
-                  {count > 99 ? "99+" : count}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
-    </nav>
-  )
-}
-
 function CategoriesSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-      {Array.from({ length: 6 }).map((_, index) => (
-        <div key={index} className="overflow-hidden rounded-2xl bg-card shadow-sm">
-          <div className="aspect-[4/3] animate-pulse bg-muted" />
-          <div className="flex items-center justify-between p-3">
-            <div className="h-4 w-24 animate-pulse rounded bg-muted" />
-            <div className="h-5 w-8 animate-pulse rounded-full bg-muted" />
-          </div>
-        </div>
+    <div className="no-scrollbar flex gap-2 overflow-hidden sm:gap-3">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <PublicCategoryCardSkeleton key={index} />
       ))}
     </div>
   )
@@ -796,7 +841,7 @@ function PublicLoadingSkeleton() {
     <div className="public-menu-page min-h-screen text-[var(--public-text-main)]">
       <div className="public-menu-content">
       <div className="relative flex h-[140px] items-end bg-muted p-4">
-        <div className="absolute inset-0 animate-pulse bg-muted" />
+        <div className="absolute inset-0 animate-pulse bg-muted motion-reduce:animate-none" />
         <div className="relative flex items-center gap-3">
           <div className="h-12 w-12 rounded-full bg-card shadow-sm" />
           <div>
@@ -808,7 +853,7 @@ function PublicLoadingSkeleton() {
         </div>
       </div>
       <main className="px-4 py-5">
-        <div className="mb-5 h-12 animate-pulse rounded-xl bg-muted" />
+        <div className="mb-5 h-12 animate-pulse rounded-xl bg-muted motion-reduce:animate-none" />
         <CategoriesSkeleton />
       </main>
       </div>

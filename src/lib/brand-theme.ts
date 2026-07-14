@@ -1,6 +1,9 @@
 export const BRAND_PRIMARY_STORAGE_KEY = "oordera:brand-primary"
 export const DEFAULT_BRAND_PRIMARY = "#f97316"
 export const DEFAULT_BRAND_SECONDARY = "#FFFFFF"
+export const ACTION_FOREGROUND_DARK = "#0b0f14"
+export const ACTION_FOREGROUND_LIGHT = "#ffffff"
+export const ACCESSIBLE_FOCUS_RING = "#ea580c"
 
 const LEGACY_BRAND_STORAGE_KEYS = [
   "oordera-brand-primary",
@@ -41,6 +44,52 @@ export function hexToRgbString(value: unknown): string {
     Number.parseInt(hex.slice(3, 5), 16),
     Number.parseInt(hex.slice(5, 7), 16),
   ].join(" ")
+}
+
+function hexToRgbTuple(value: unknown): [number, number, number] {
+  const hex = getBrandPrimary(value)
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ]
+}
+
+function relativeLuminance(value: unknown): number {
+  const channels = hexToRgbTuple(value).map((channel) => {
+    const normalized = channel / 255
+    return normalized <= 0.04045
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4
+  })
+
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+}
+
+export function getContrastRatio(background: unknown, foreground: unknown): number {
+  const backgroundLuminance = relativeLuminance(background)
+  const foregroundLuminance = relativeLuminance(foreground)
+  const lighter = Math.max(backgroundLuminance, foregroundLuminance)
+  const darker = Math.min(backgroundLuminance, foregroundLuminance)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+export function getAccessibleActionForeground(value: unknown): string {
+  const primary = getBrandPrimary(value)
+  const darkContrast = getContrastRatio(primary, ACTION_FOREGROUND_DARK)
+  const lightContrast = getContrastRatio(primary, ACTION_FOREGROUND_LIGHT)
+  return darkContrast >= lightContrast ? ACTION_FOREGROUND_DARK : ACTION_FOREGROUND_LIGHT
+}
+
+function mixHexColors(background: unknown, foreground: unknown, foregroundWeight: number): string {
+  const backgroundRgb = hexToRgbTuple(background)
+  const foregroundRgb = hexToRgbTuple(foreground)
+  const weight = Math.min(1, Math.max(0, foregroundWeight))
+  const channels = backgroundRgb.map((channel, index) =>
+    Math.round(channel * (1 - weight) + foregroundRgb[index] * weight)
+  )
+
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`
 }
 
 export function hexToHslString(value: unknown): string {
@@ -100,17 +149,32 @@ export function applyBrandTheme(value: unknown, options: { persist?: boolean } =
 
   const primary = getBrandPrimary(value)
   const primaryRgb = hexToRgbString(primary)
+  const actionForeground = getAccessibleActionForeground(primary)
+  const actionForegroundRgb = hexToRgbString(actionForeground)
+  const actionHover = mixHexColors(primary, actionForeground, 0.08)
+  const actionActive = mixHexColors(primary, actionForeground, 0.14)
   const root = document.documentElement
 
   root.style.setProperty("--brand-primary", primary)
   root.style.setProperty("--brand-primary-rgb", primaryRgb)
   root.style.setProperty("--brand-primary-soft", `rgb(${primaryRgb} / 0.10)`)
-  root.style.setProperty("--color-primary", primary)
-  root.style.setProperty("--primary", primary)
+  root.style.setProperty("--action-primary-bg", primary)
+  root.style.setProperty("--action-primary-fg", actionForeground)
+  root.style.setProperty("--action-primary-fg-rgb", actionForegroundRgb)
+  root.style.setProperty("--action-primary-hover", actionHover)
+  root.style.setProperty("--action-primary-active", actionActive)
+  root.style.setProperty("--focus-ring", ACCESSIBLE_FOCUS_RING)
+
+  // Transitional aliases: keep every existing consumer working during migration.
+  root.style.setProperty("--color-primary", "var(--action-primary-bg)")
+  root.style.setProperty("--primary", "var(--action-primary-bg)")
   root.style.setProperty("--primary-rgb", primaryRgb)
-  root.style.setProperty("--ring", primary)
-  root.style.setProperty("--sidebar-primary", primary)
-  root.style.setProperty("--sidebar-ring", primary)
+  root.style.setProperty("--primary-foreground", "var(--action-primary-fg)")
+  root.style.setProperty("--primary-foreground-rgb", actionForegroundRgb)
+  root.style.setProperty("--ring", "var(--focus-ring)")
+  root.style.setProperty("--sidebar-primary", "var(--action-primary-bg)")
+  root.style.setProperty("--sidebar-primary-foreground", "var(--action-primary-fg)")
+  root.style.setProperty("--sidebar-ring", "var(--focus-ring)")
   root.style.setProperty("--chart-1", hexToHslString(primary))
   root.style.setProperty("--public-card-border", `rgb(${primaryRgb} / 0.14)`)
   root.style.setProperty("--public-pattern-color", `rgb(${primaryRgb})`)

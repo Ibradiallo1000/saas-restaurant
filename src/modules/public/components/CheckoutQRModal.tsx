@@ -3,8 +3,9 @@
 import * as React from "react"
 import { doc, getDoc, increment, runTransaction, serverTimestamp } from "firebase/firestore"
 import { useRouter } from "next/navigation"
-import { CheckCircle, X } from "lucide-react"
+import { CheckCircle } from "lucide-react"
 
+import { PublicButton, PublicCheckoutModal, PublicPrice, PublicSurface } from "@/components/public-ui"
 import { useFirestore } from "@/firebase"
 import { ORDER_OPERATION_STATUS } from "@/lib/order-lifecycle"
 import { recalculateConfiguredUnitPrice } from "@/lib/order-pricing"
@@ -43,8 +44,6 @@ export default function CheckoutQRModal({
   React.useEffect(() => {
     if (open) setError("")
   }, [open])
-
-  if (!open) return null
 
   const handleSubmit = async () => {
     if (loading || submittingRef.current) return
@@ -210,95 +209,54 @@ export default function CheckoutQRModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 backdrop-blur-md transition-all duration-300 sm:items-center sm:p-6">
-      <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-[2rem] bg-background shadow-[0_20px_60px_rgba(0,0,0,0.5)] ring-1 ring-white/10 duration-300 ease-out animate-in slide-in-from-bottom sm:rounded-3xl sm:zoom-in-95">
-        <div className="border-b border-white/5 bg-card/50 p-5 backdrop-blur-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-black">Commander</h2>
-            <button
-              onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-muted transition hover:bg-muted/80 active:scale-95"
-              aria-label="Fermer"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+    <PublicCheckoutModal
+      open={open}
+      onOpenChange={(nextOpen) => !nextOpen && onClose()}
+      title="Commander"
+      description={`Service à la table ${tableContext.name || tableContext.id}`}
+      closeOnOverlayClick={!loading}
+      footer={
+        <PublicButton fullWidth size="action" loading={loading} loadingLabel="Validation en cours" onClick={handleSubmit}>
+          Valider la commande
+        </PublicButton>
+      }
+    >
+      <div className="space-y-[var(--space-5)]">
+        <div className="text-center">
+          <span className="mx-auto mb-3 flex size-12 items-center justify-center rounded-[var(--radius-public-full)] bg-[var(--brand-primary-soft)] text-[var(--brand-primary)]">
+            <CheckCircle className="size-6" aria-hidden="true" />
+          </span>
+          <h3 className="text-public-lg font-public-extrabold text-[var(--text-primary)]">Récapitulatif de votre commande</h3>
+          <p className="mt-1 text-public-sm text-[var(--text-secondary)]">Votre commande sera servie sur place.</p>
         </div>
 
-        <div className="flex-1 space-y-6 overflow-y-auto p-5">
-          <div className="mb-4 text-center">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-primary)]/10">
-              <CheckCircle className="h-6 w-6 text-[var(--color-primary)]" />
-            </div>
-            <p className="text-lg font-black">Récapitulatif de votre commande</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Vous allez être servi à la table {tableContext.name || tableContext.id}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-black">Ajouter une note pour la cuisine</label>
-            <textarea
-              value={customerNote}
-              onChange={(e) => setCustomerNote(e.target.value)}
-              placeholder="Ex: sans piment, allergie arachide..."
-              className="min-h-20 w-full resize-none rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
-            />
-          </div>
-
-          <div className="space-y-3 rounded-2xl bg-muted/60 p-4">
-            <p className="text-sm font-black">Votre commande</p>
-
-            {items.map((item) => (
-              <div key={item.id} className="flex justify-between text-sm">
-                <div className="flex gap-2">
-                  <span className="font-bold text-muted-foreground">{item.quantity}x</span>
-                  <span className="line-clamp-1">{item.name}</span>
-                </div>
-                <span className="font-medium">{(item.unitPrice * item.quantity).toLocaleString()} FCFA</span>
-              </div>
-            ))}
-
-            <div className="space-y-2 border-t pt-3">
-              <div className="flex justify-between pt-2 text-lg font-black">
-                <span>Total</span>
-                <span className="text-[var(--color-primary)]">{total.toLocaleString()} FCFA</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-xl bg-primary/5 p-4 text-center">
-            <CheckCircle className="h-8 w-8 text-[var(--color-primary)] opacity-80" />
-            <p className="text-left text-sm font-medium">
-              Commande sur place. Votre demande sera envoyée en cuisine.
-            </p>
-          </div>
-
-          {error ? (
-            <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3">
-              <p className="text-sm font-semibold text-red-600">{error}</p>
-            </div>
-          ) : null}
+        <div className="grid gap-2">
+          <label htmlFor="qr-customer-note" className="text-public-sm font-public-semibold text-[var(--text-primary)]">Ajouter une note pour la cuisine</label>
+          <textarea id="qr-customer-note" value={customerNote} onChange={(event) => setCustomerNote(event.target.value)} placeholder="Ex. : sans piment, allergie arachide..." rows={3} className="min-h-20 w-full resize-none rounded-[var(--radius-public-md)] border border-[var(--border-public-control)] bg-[var(--surface-public-card)] px-4 py-3 font-publicBody text-public-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:border-[var(--focus-ring)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--focus-ring)_28%,transparent)]" />
         </div>
 
-        <div className="border-t border-white/5 bg-background/90 p-5 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] backdrop-blur-xl">
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--color-primary)] text-base font-black uppercase tracking-wide text-white shadow-[0_8px_24px_var(--color-primary)]/30 transition-all duration-300 hover:brightness-110 hover:shadow-[0_12px_32px_var(--color-primary)]/40 active:scale-[0.98] disabled:opacity-50"
-          >
-            {loading ? (
-              <div className="flex items-center justify-center gap-2">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                Validation en cours...
-              </div>
-            ) : (
-              "Valider la commande"
-            )}
-          </button>
-        </div>
+        <PublicSurface level="muted" radius="lg" padding="standard" className="space-y-3">
+          <h3 className="text-public-sm font-public-bold">Votre commande</h3>
+          {items.map((item) => (
+            <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 text-public-sm">
+              <span className="min-w-0 truncate"><strong className="mr-2 text-[var(--text-secondary)]">{item.quantity}×</strong>{item.name}</span>
+              <PublicPrice role="card" value={(item.unitPrice * item.quantity).toLocaleString()} suffix="FCFA" />
+            </div>
+          ))}
+          <div className="flex items-center justify-between border-t border-[var(--border-public-subtle)] pt-3">
+            <strong className="text-public-lg">Total</strong>
+            <PublicPrice role="total" value={total.toLocaleString()} suffix="FCFA" aria-label={`Total ${total.toLocaleString()} FCFA`} />
+          </div>
+        </PublicSurface>
+
+        <PublicSurface level="muted" radius="md" padding="standard" className="flex items-center gap-3">
+          <CheckCircle className="size-6 shrink-0 text-[var(--brand-primary)]" aria-hidden="true" />
+          <p className="text-public-sm text-[var(--text-secondary)]">Commande sur place. Votre demande sera envoyée en cuisine.</p>
+        </PublicSurface>
+
+        {error ? <PublicSurface role="alert" level="card" border="default" radius="md" padding="compact" className="border-[var(--danger)] text-public-sm font-public-semibold text-[var(--danger)]">{error}</PublicSurface> : null}
       </div>
-    </div>
+    </PublicCheckoutModal>
   )
 }
 

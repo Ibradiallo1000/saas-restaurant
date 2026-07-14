@@ -172,7 +172,7 @@ export default function QRPaymentModal({
               type="button"
               onClick={() => handlePaymentClick(method)}
               disabled={isPaymentLocked}
-              className="flex min-h-16 items-center gap-3 rounded-xl border border-border bg-background p-3 text-left transition hover:bg-muted active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex min-h-16 items-center gap-3 rounded-xl border border-border bg-background p-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 hover:bg-muted active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none motion-reduce:active:scale-100"
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                 {method.type === "cash" ? (

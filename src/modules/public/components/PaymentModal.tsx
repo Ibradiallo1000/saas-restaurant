@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { X } from "lucide-react"
+import { CreditCard } from "lucide-react"
+
+import { PublicButton, PublicCheckoutModal, PublicOptionChoice, PublicOptionGroup, PublicSurface } from "@/components/public-ui"
 
 type PaymentMethod = {
   code: string
@@ -37,90 +39,66 @@ export default function PaymentModal({
     }
   }, [open])
 
-  if (!open) return null
-
   const selectedPaymentCode = selectedMethod?.paymentCode || selectedMethod?.code || ""
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)] px-3 pb-3 sm:items-center sm:justify-center sm:p-4">
-      <div className="w-full max-w-md overflow-hidden rounded-3xl bg-background text-foreground shadow-2xl">
-        <div className="flex items-center justify-between border-b px-4 py-4">
-          <div>
-            <h2 className="text-lg font-black">Paiement</h2>
-            <p className="text-xs font-semibold text-muted-foreground">
-              Choisissez un moyen de paiement
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-muted"
-            aria-label="Fermer"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="space-y-3 p-4">
+    <PublicCheckoutModal
+      open={open}
+      onOpenChange={(nextOpen) => !nextOpen && onClose()}
+      title="Paiement"
+      description="Choisissez un moyen de paiement mobile."
+      closeOnOverlayClick={!loading}
+      footer={
+        <PublicButton fullWidth size="action" onClick={() => selectedMethod && onConfirm(selectedMethod)} disabled={!selectedMethod || !paymentStarted} loading={loading} loadingLabel="Validation en cours">
+          J’ai payé
+        </PublicButton>
+      }
+    >
+      <div className="space-y-3">
           {loading && methods.length === 0 ? (
-            <div className="rounded-2xl bg-muted p-4 text-sm font-semibold text-muted-foreground">
+            <PublicSurface level="muted" radius="lg" padding="standard" className="text-public-sm font-public-semibold text-[var(--text-secondary)]" role="status">
               Chargement des moyens de paiement...
-            </div>
+            </PublicSurface>
           ) : methods.length === 0 ? (
-            <div className="rounded-2xl bg-muted p-4 text-sm font-semibold text-muted-foreground">
+            <PublicSurface level="muted" radius="lg" padding="standard" className="text-public-sm font-public-semibold text-[var(--text-secondary)]">
               Aucun moyen de paiement mobile n’est configuré.
-            </div>
+            </PublicSurface>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <PublicOptionGroup title="Moyen de paiement" required min={1} max={1} selectedCount={selectedMethod ? 1 : 0}>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {methods.map((method) => {
                 const active = selectedMethod?.code === method.code
                 const methodName = method.name || method.code
 
                 return (
-                  <button
+                  <PublicOptionChoice
                     key={method.code}
-                    type="button"
-                    onClick={() => {
+                    name="tracking-payment-method"
+                    value={method.code}
+                    label={methodName}
+                    description={method.paymentCodeType === "ussd" ? "Paiement USSD" : "Mobile Money"}
+                    icon={method.logoUrl ? <img src={method.logoUrl} alt="" className="size-6 object-contain" /> : <CreditCard />}
+                    selected={active}
+                    controlType="radio"
+                    presentation="card"
+                    onSelect={() => {
                       setSelectedMethod(method)
                       setPaymentStarted(true)
                       if (method.paymentCodeType === "ussd" && method.paymentCode && typeof window !== "undefined") {
                         window.location.href = `tel:${encodeURIComponent(method.paymentCode)}`
                       }
                     }}
-                    className={`flex min-h-14 items-center gap-2 rounded-xl border p-3 text-left transition hover:border-[var(--brand-primary)] ${
-                      active
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
-                        : "bg-card hover:bg-muted"
-                    }`}
-                  >
-                    <div className="h-6 w-6 shrink-0 overflow-hidden rounded-md border border-border bg-card">
-                      {method.logoUrl ? (
-                        <img src={method.logoUrl} alt={methodName} className="h-full w-full object-contain" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-muted">
-                          <span className="text-xs font-black uppercase text-muted-foreground">
-                            {method.code.slice(0, 2)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium">{methodName}</div>
-                      <div className="text-xs font-semibold text-muted-foreground">
-                        {method.paymentCodeType === "ussd" ? "USSD" : "Mobile Money"}
-                      </div>
-                    </div>
-                  </button>
+                  />
                 )
               })}
-            </div>
+              </div>
+            </PublicOptionGroup>
           )}
 
           {selectedMethod && (
-            <div className="rounded-2xl bg-muted p-4">
-              <p className="text-sm font-bold">Moyen de paiement sélectionné</p>
-              <p className="mt-1 text-xs font-semibold text-muted-foreground">
+            <PublicSurface level="muted" radius="lg" padding="standard">
+              <p className="text-public-sm font-public-bold">Moyen de paiement sélectionné</p>
+              <p className="mt-1 text-public-xs font-public-semibold text-[var(--text-secondary)]">
                 {selectedMethod.paymentCodeType === "ussd"
                   ? "La composition du code a été lancée automatiquement."
                   : "Suivez les instructions du moyen choisi."}
@@ -130,30 +108,18 @@ export default function PaymentModal({
                 <a
                   href={selectedPaymentCode}
                   onClick={() => setPaymentStarted(true)}
-                  className="mt-3 flex h-12 items-center justify-center rounded-xl bg-[var(--color-primary)] px-4 text-sm font-black text-white"
+                  className="mt-3 flex h-12 items-center justify-center rounded-[var(--radius-public-lg)] bg-[var(--action-primary-bg)] px-4 font-publicBody text-public-sm font-public-bold text-[var(--action-primary-fg)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
                 >
                   Ouvrir le paiement
                 </a>
               ) : null}
 
-              <p className="mt-3 break-all text-center font-mono text-sm font-black text-[var(--color-primary)]">
+              <p className="mt-3 break-all text-center font-mono text-public-sm font-public-bold text-[var(--brand-primary)]">
                 {selectedPaymentCode}
               </p>
-            </div>
+            </PublicSurface>
           )}
-        </div>
-
-        <div className="border-t p-4">
-          <button
-            type="button"
-            onClick={() => selectedMethod && onConfirm(selectedMethod)}
-            disabled={!selectedMethod || !paymentStarted || loading}
-            className="h-12 w-full rounded-xl bg-[var(--color-primary)] text-sm font-black text-white shadow-sm transition active:scale-[0.98] disabled:opacity-60"
-          >
-            {loading ? "Validation..." : "J’ai payé"}
-          </button>
-        </div>
       </div>
-    </div>
+    </PublicCheckoutModal>
   )
 }

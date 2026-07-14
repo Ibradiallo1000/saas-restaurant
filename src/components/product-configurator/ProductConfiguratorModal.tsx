@@ -4,6 +4,12 @@ import * as React from "react"
 import { ShoppingCart, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import {
+  ProductCommerceModal,
+  PublicButton,
+  PublicOptionChoice,
+  PublicOptionGroup,
+} from "@/components/public-ui"
 import { getOptimizedImage } from "@/lib/image"
 import { getProductConfigGroups } from "@/lib/product-configurator"
 import {
@@ -31,6 +37,7 @@ type ProductConfiguratorModalProps = {
   onClose: () => void
   onAdd: () => void
   validationError?: string | null
+  publicCommerceShell?: boolean
 }
 
 export default function ProductConfiguratorModal({
@@ -44,6 +51,7 @@ export default function ProductConfiguratorModal({
   onClose,
   onAdd,
   validationError,
+  publicCommerceShell = false,
 }: ProductConfiguratorModalProps) {
   const embeddedGroups = getProductConfigGroups(product)
   const linkedGroups = getActiveLinkedOptionGroups(product)
@@ -62,16 +70,49 @@ export default function ProductConfiguratorModal({
   }, 0)
 
   React.useEffect(() => {
+    if (publicCommerceShell) return
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose()
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [onClose])
+  }, [onClose, publicCommerceShell])
 
   const description =
     product.description || product.shortDescription || product.details || null
+
+  if (publicCommerceShell) {
+    return (
+      <ProductCommerceModal
+        open
+        onOpenChange={(open) => { if (!open) onClose() }}
+        title={product.name}
+        description={description}
+        imageUrl={product.imageUrl ? getOptimizedImage(product.imageUrl, 720) : undefined}
+        imageAlt={product.name}
+        imageFallback={<ShoppingCart className="size-10" />}
+        price={`${(unitPrice + linkedTotal).toLocaleString("fr-FR")} FCFA`}
+        footer={
+          <PublicButton type="button" size="action" fullWidth onClick={onAdd}>
+            Ajouter au panier
+          </PublicButton>
+        }
+      >
+        <ConfiguratorOptionsContent
+          embeddedGroups={embeddedGroups}
+          linkedGroups={linkedGroups}
+          catalogProducts={catalogProducts}
+          embeddedSelections={embeddedSelections}
+          linkedSelections={linkedSelections}
+          onToggleEmbeddedChoice={onToggleEmbeddedChoice}
+          onToggleLinkedProduct={onToggleLinkedProduct}
+          validationError={validationError}
+        />
+      </ProductCommerceModal>
+    )
+  }
 
   return (
     <div
@@ -199,6 +240,123 @@ export default function ProductConfiguratorModal({
           </Button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function ConfiguratorOptionsContent({
+  embeddedGroups,
+  linkedGroups,
+  catalogProducts,
+  embeddedSelections,
+  linkedSelections,
+  onToggleEmbeddedChoice,
+  onToggleLinkedProduct,
+  validationError,
+}: {
+  embeddedGroups: ReturnType<typeof getProductConfigGroups>
+  linkedGroups: LinkedOptionGroup[]
+  catalogProducts: any[]
+  embeddedSelections: Record<string, SelectedCartOption>
+  linkedSelections: LinkedOptionSelection[]
+  onToggleEmbeddedChoice: ProductConfiguratorModalProps["onToggleEmbeddedChoice"]
+  onToggleLinkedProduct: ProductConfiguratorModalProps["onToggleLinkedProduct"]
+  validationError?: string | null
+}) {
+  return (
+    <div className="space-y-4">
+      {embeddedGroups.map((group) => {
+        const selectedCount = group.multiple
+          ? Object.keys(embeddedSelections).filter((key) => key.startsWith(`${group.name}:`)).length
+          : embeddedSelections[group.name] ? 1 : 0
+        const groupError = validationError?.includes(group.name) ? validationError : null
+
+        return (
+          <PublicOptionGroup
+            key={group.name}
+            title={group.name}
+            required={group.required}
+            min={group.required ? 1 : 0}
+            max={group.multiple ? undefined : 1}
+            selectedCount={selectedCount}
+            error={groupError}
+          >
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {group.choices.map((choice) => {
+                const active = group.multiple
+                  ? Boolean(embeddedSelections[`${group.name}:${choice.name}`])
+                  : embeddedSelections[group.name]?.choiceName === choice.name
+
+                return (
+                  <PublicOptionChoice
+                    key={choice.name}
+                    name={`embedded-${group.name}`}
+                    value={choice.name}
+                    label={choice.name}
+                    price={choice.price ? `+${Number(choice.price).toLocaleString("fr-FR")} FCFA` : undefined}
+                    selected={active}
+                    required={group.required && !group.multiple}
+                    controlType={group.multiple ? "checkbox" : "radio"}
+                    presentation="card"
+                    onSelect={() => onToggleEmbeddedChoice(group, choice)}
+                  />
+                )
+              })}
+            </div>
+          </PublicOptionGroup>
+        )
+      })}
+
+      {linkedGroups.map((group) => {
+        const products = resolveLinkedGroupProducts(group, catalogProducts)
+        const selectedInGroup = linkedSelections.filter((selection) => selection.groupId === group.id)
+        const groupError = validationError?.includes(group.title) ? validationError : null
+
+        return (
+          <PublicOptionGroup
+            key={group.id}
+            title={group.title}
+            required={group.required}
+            min={group.minSelect}
+            max={group.maxSelect}
+            selectedCount={selectedInGroup.length}
+            error={groupError}
+          >
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {products.map((linkedProduct) => {
+                const active = selectedInGroup.some(
+                  (selection) => selection.productId === linkedProduct.id
+                )
+                const price = getLinkedSelectionUnitPrice(linkedProduct, group.pricingMode)
+
+                return (
+                  <PublicOptionChoice
+                    key={linkedProduct.id}
+                    name={`linked-${group.id}`}
+                    value={linkedProduct.id}
+                    label={linkedProduct.name}
+                    price={price > 0 ? `+${price.toLocaleString("fr-FR")} FCFA` : "Inclus"}
+                    selected={active}
+                    required={group.required && group.maxSelect === 1}
+                    controlType={group.maxSelect === 1 ? "radio" : "checkbox"}
+                    presentation="card"
+                    onSelect={() => onToggleLinkedProduct(group, linkedProduct.id)}
+                  />
+                )
+              })}
+            </div>
+            {products.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Aucun produit disponible dans ce groupe.</p>
+              ) : null}
+          </PublicOptionGroup>
+        )
+      })}
+
+      {validationError && !embeddedGroups.some((group) => validationError.includes(group.name)) && !linkedGroups.some((group) => validationError.includes(group.title)) ? (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+          {validationError}
+        </p>
+      ) : null}
     </div>
   )
 }

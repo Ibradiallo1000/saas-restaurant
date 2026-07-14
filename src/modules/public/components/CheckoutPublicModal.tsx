@@ -3,8 +3,9 @@
 import * as React from "react"
 import { addDoc, doc, getDoc, serverTimestamp } from "firebase/firestore"
 import { useRouter } from "next/navigation"
-import { ArrowRight, Banknote, CheckCircle, ChefHat, ChevronLeft, CreditCard, MapPin, Phone, ShoppingBag, Truck, X } from "lucide-react"
+import { ArrowRight, Banknote, CheckCircle, ChefHat, ChevronLeft, CreditCard, MapPin, Phone, ShoppingBag, Truck } from "lucide-react"
 
+import { PublicButton, PublicCheckoutModal, PublicOptionChoice, PublicOptionGroup, PublicPrice, PublicSurface, PublicTextField } from "@/components/public-ui"
 import { useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { getOptimizedImage } from "@/lib/image"
@@ -78,6 +79,7 @@ export default function CheckoutPublicModal({
   const [flow, setFlow] = React.useState<OrderFlowState>(DEFAULT_FLOW_STATE)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState("")
+  const stepTransitionTimeoutRef = React.useRef<number | null>(null)
 
   const deliveryFee = flow.orderType === "delivery" ? 0 : 0
   const finalTotal = total + deliveryFee
@@ -140,7 +142,11 @@ export default function CheckoutPublicModal({
     setError("")
   }, [open])
 
-  if (!open) return null
+  React.useEffect(() => () => {
+    if (stepTransitionTimeoutRef.current !== null) {
+      window.clearTimeout(stepTransitionTimeoutRef.current)
+    }
+  }, [])
 
   const currentStepBlocked = isCurrentStepBlocked(flow, items.length)
   const updateFlow = (patch: Partial<OrderFlowState>) => {
@@ -187,8 +193,12 @@ export default function CheckoutPublicModal({
       paymentProofSms: "",
     })
 
-    window.setTimeout(() => {
+    if (stepTransitionTimeoutRef.current !== null) {
+      window.clearTimeout(stepTransitionTimeoutRef.current)
+    }
+    stepTransitionTimeoutRef.current = window.setTimeout(() => {
       updateFlow({ step: orderType === "delivery" ? "delivery" : "recap" })
+      stepTransitionTimeoutRef.current = null
     }, 180)
   }
 
@@ -351,24 +361,32 @@ export default function CheckoutPublicModal({
   const title = getStepTitle(flow.step)
   const isPaymentStep = flow.step === "payment"
   const canGoBack = flow.step !== "cart"
+  const stepDescription = getStepDescription(flow.step)
+  const stepNumber = flow.step === "cart" ? 1 : flow.step === "delivery" ? 2 : flow.step === "recap" ? (flow.orderType === "delivery" ? 3 : 2) : (flow.orderType === "delivery" ? 4 : 3)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md">
-      <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-background text-foreground shadow-2xl ring-1 ring-border">
-        <div className="flex items-center justify-between border-b border-border bg-card/70 p-5">
-          <div className="min-w-0">
-            <h2 className="text-xl font-black">{title}</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-muted transition hover:bg-muted/80 active:scale-95"
-            aria-label="Fermer"
-          >
-            <X className="h-4 w-4" />
-          </button>
+    <PublicCheckoutModal
+      open={open}
+      onOpenChange={(nextOpen) => !nextOpen && onClose()}
+      title={title}
+      description={stepDescription}
+      stepLabel={`Étape ${stepNumber}`}
+      closeOnOverlayClick={!loading}
+      footer={flow.step !== "cart" ? (
+        <div className="flex gap-3">
+          {canGoBack ? (
+            <PublicButton variant="secondary" size="action" onClick={goBack} aria-label="Revenir à l’étape précédente" className="w-[52px] px-0">
+              <ChevronLeft aria-hidden="true" />
+            </PublicButton>
+          ) : null}
+          <PublicButton fullWidth size="action" onClick={isPaymentStep ? submitOrder : goNext} disabled={currentStepBlocked} loading={loading} loadingLabel="Validation en cours">
+            {isPaymentStep ? "Valider le paiement" : flow.step === "recap" ? "Passer au paiement" : "Suivant"}
+            {!isPaymentStep && !loading ? <ArrowRight aria-hidden="true" /> : null}
+          </PublicButton>
         </div>
-
-        <div className="flex-1 overflow-y-auto p-5">
+      ) : undefined}
+    >
+      <div>
           {flow.step === "cart" ? (
             <CartStep
               orderType={flow.orderType}
@@ -416,53 +434,9 @@ export default function CheckoutPublicModal({
             />
           ) : null}
 
-          {error ? (
-            <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3">
-              <p className="text-sm font-semibold text-red-600">{error}</p>
-            </div>
-          ) : null}
-        </div>
-
-        {flow.step !== "cart" ? (
-        <div className="border-t border-border bg-background/95 p-5">
-          <div className="flex gap-3">
-            {canGoBack ? (
-              <button
-                type="button"
-                onClick={goBack}
-                className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted font-bold transition hover:bg-muted/80 active:scale-95"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={isPaymentStep ? submitOrder : goNext}
-              disabled={loading || currentStepBlocked}
-              className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-black uppercase tracking-wide text-white shadow-[0_8px_24px_var(--color-primary)]/30 transition hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  Validation...
-                </>
-              ) : (
-                <>
-                  {isPaymentStep
-                    ? "Valider le paiement"
-                    : flow.step === "recap"
-                      ? "Passer au paiement"
-                      : "Suivant"}
-                  {!isPaymentStep ? <ArrowRight className="h-4 w-4" /> : null}
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-        ) : null}
+          {error ? <PublicSurface role="alert" level="card" border="default" radius="md" padding="compact" className="mt-4 border-[var(--danger)] text-public-sm font-public-semibold text-[var(--danger)]">{error}</PublicSurface> : null}
       </div>
-    </div>
+    </PublicCheckoutModal>
   )
 }
 
@@ -497,45 +471,28 @@ function CartStep({
   }>
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h3 className="text-base font-black">Mode de commande *</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Choisissez comment vous voulez recevoir votre commande.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
+    <PublicOptionGroup title="Mode de commande" description="Choisissez comment vous voulez recevoir votre commande." required min={1} max={1} selectedCount={orderType ? 1 : 0}>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {modes.map((mode) => {
           const Icon = mode.icon
           const active = orderType === mode.id
 
           return (
-            <button
+            <PublicOptionChoice
               key={mode.id}
-              type="button"
-              onClick={() => onSelect(mode.id)}
-              className={`flex h-16 items-center justify-center rounded-xl border-2 px-3 text-center transition duration-200 active:scale-[0.98] ${
-                active
-                  ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
-                  : "border-border bg-card hover:bg-muted"
-              }`}
-            >
-              <div className="flex items-center justify-center gap-2">
-                <span
-                  className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                    active ? "bg-[var(--color-primary)] text-white" : "bg-muted text-foreground"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                </span>
-                <p className="font-black">{mode.label}</p>
-              </div>
-            </button>
+              name="public-order-type"
+              value={mode.id}
+              label={mode.label}
+              icon={<Icon />}
+              selected={active}
+              controlType="radio"
+              presentation="card"
+              onSelect={() => onSelect(mode.id)}
+            />
           )
         })}
       </div>
-    </div>
+    </PublicOptionGroup>
   )
 }
 
@@ -552,39 +509,9 @@ function DeliveryStep({
 }) {
   return (
     <div className="space-y-4">
-      <div className="flex h-14 items-center gap-3 rounded-xl border border-border bg-card px-4 focus-within:ring-2 focus-within:ring-[var(--color-primary)]/30">
-        <MapPin className="h-5 w-5 shrink-0 text-muted-foreground" />
-        <input
-          value={address}
-          onChange={(event) => onChange({ address: event.target.value })}
-          placeholder="Quartier / adresse *"
-          className="h-full min-w-0 flex-1 bg-transparent text-base outline-none"
-        />
-      </div>
-      <div className="flex h-14 items-center gap-3 rounded-xl border border-border bg-card px-4 focus-within:ring-2 focus-within:ring-[var(--color-primary)]/30">
-        <Phone className="h-5 w-5 shrink-0 text-muted-foreground" />
-        <input
-          type="tel"
-          inputMode="numeric"
-          maxLength={11}
-          value={formatPhone(phone)}
-          onChange={(event) => onChange({ phone: cleanPhone(event.target.value) })}
-          placeholder="Téléphone *"
-          className="h-full min-w-0 flex-1 bg-transparent text-base outline-none"
-        />
-      </div>
-      <div className="flex h-14 items-center gap-3 rounded-xl border border-border bg-card px-4 focus-within:ring-2 focus-within:ring-[var(--color-primary)]/30">
-        <Phone className="h-5 w-5 shrink-0 text-muted-foreground" />
-        <input
-          type="tel"
-          inputMode="numeric"
-          maxLength={11}
-          value={formatPhone(secondaryPhone)}
-          onChange={(event) => onChange({ secondaryPhone: cleanPhone(event.target.value) })}
-          placeholder="Deuxième numéro de téléphone (optionnel)"
-          className="h-full min-w-0 flex-1 bg-transparent text-base outline-none"
-        />
-      </div>
+      <PublicTextField label="Quartier / adresse" required leftIcon={<MapPin />} value={address} onChange={(event) => onChange({ address: event.target.value })} autoComplete="street-address" placeholder="Indiquez votre adresse de livraison" fieldSize="comfortable" />
+      <PublicTextField label="Téléphone" required leftIcon={<Phone />} type="tel" inputMode="numeric" maxLength={11} value={formatPhone(phone)} onChange={(event) => onChange({ phone: cleanPhone(event.target.value) })} autoComplete="tel" placeholder="Votre numéro de téléphone" fieldSize="comfortable" />
+      <PublicTextField label="Deuxième numéro de téléphone" helpText="Facultatif" leftIcon={<Phone />} type="tel" inputMode="numeric" maxLength={11} value={formatPhone(secondaryPhone)} onChange={(event) => onChange({ secondaryPhone: cleanPhone(event.target.value) })} autoComplete="tel" placeholder="Un autre numéro pour vous joindre" fieldSize="comfortable" />
     </div>
   )
 }
@@ -614,21 +541,21 @@ function RecapStep({
 }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl bg-muted/60 p-4">
-        <p className="text-sm font-black">Votre commande</p>
-        <div className="mt-3 divide-y divide-border/60">
+      <PublicSurface level="muted" radius="lg" padding="standard">
+        <p className="text-public-sm font-public-bold">Votre commande</p>
+        <div className="mt-3 divide-y divide-[var(--border-public-subtle)]">
           {items.map((item) => (
             <div key={item.id} className="grid grid-cols-[58px_minmax(0,1fr)_auto] gap-3 py-3 first:pt-0 last:pb-0">
               <CheckoutLineImage src={item.imageUrl} alt={item.name} />
 
               <div className="min-w-0">
-                <p className="line-clamp-2 text-sm font-black leading-tight">
+                <p className="line-clamp-2 text-public-sm font-public-bold leading-tight">
                   {item.quantity} × {item.name}
                 </p>
                 {item.selectedOptions?.map((option: any, index: number) => (
                   <p
                     key={`${item.id}-recap-option-${index}`}
-                    className="truncate text-[11px] font-semibold text-muted-foreground"
+                    className="truncate text-public-xs font-public-semibold text-[var(--text-muted)]"
                   >
                     {option.optionName}: {option.choiceName}
                   </p>
@@ -637,73 +564,72 @@ function RecapStep({
                   Object.entries(item.selections).map(([option, values]: [string, any]) => (
                     <p
                       key={`${item.id}-recap-selection-${option}`}
-                      className="truncate text-[11px] font-semibold text-muted-foreground"
+                      className="truncate text-public-xs font-public-semibold text-[var(--text-muted)]"
                     >
                       {Array.isArray(values) ? values.join(", ") : String(values)}
                     </p>
                   ))}
               </div>
 
-              <span className="shrink-0 whitespace-nowrap text-right text-sm font-black">
-                {Number(item.total ?? 0).toLocaleString()} FCFA
-              </span>
+              <PublicPrice role="card" value={Number(item.total ?? 0).toLocaleString()} suffix="FCFA" />
             </div>
           ))}
         </div>
-      </div>
+      </PublicSurface>
 
       <div className="space-y-2">
-        <label className="text-sm font-black">Ajouter une note pour la cuisine</label>
+        <label htmlFor="checkout-customer-note" className="text-public-sm font-public-semibold text-[var(--text-primary)]">Ajouter une note pour la cuisine</label>
         <textarea
+          id="checkout-customer-note"
           value={customerNote}
           onChange={(event) => onChange({ customerNote: event.target.value })}
           placeholder="Ex. : sans piment, allergie arachide..."
-          className="min-h-16 w-full resize-none rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
+          className="min-h-20 w-full resize-none rounded-[var(--radius-public-md)] border border-[var(--border-public-control)] bg-[var(--surface-public-card)] px-4 py-3 font-publicBody text-public-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:border-[var(--focus-ring)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--focus-ring)_28%,transparent)]"
           rows={3}
         />
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-4 text-sm">
+      <PublicSurface level="card" border="subtle" radius="lg" padding="standard" className="text-public-sm">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4">
-          <span className="text-muted-foreground">Mode</span>
-          <span className="font-bold">{orderType === "delivery" ? "Livraison" : "A emporter"}</span>
+          <span className="text-[var(--text-secondary)]">Mode</span>
+          <span className="font-public-bold">{orderType === "delivery" ? "Livraison" : "A emporter"}</span>
         </div>
         {orderType === "delivery" ? (
           <>
             <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-4">
-              <span className="text-muted-foreground">Adresse</span>
-              <span className="text-right font-bold">{address}</span>
+              <span className="text-[var(--text-secondary)]">Adresse</span>
+              <span className="break-words text-right font-public-bold">{address}</span>
             </div>
           </>
         ) : null}
         <div className={`mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-4 ${phone ? "" : "hidden"}`}>
-          <span className="text-muted-foreground">Téléphone</span>
-          <span className="font-bold">{formatPhone(phone)}</span>
+          <span className="text-[var(--text-secondary)]">Téléphone</span>
+          <span className="font-public-bold">{formatPhone(phone)}</span>
         </div>
         {secondaryPhone ? (
           <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-4">
-            <span className="text-muted-foreground">Second téléphone</span>
-            <span className="font-bold">{formatPhone(secondaryPhone)}</span>
+            <span className="text-[var(--text-secondary)]">Second téléphone</span>
+            <span className="font-public-bold">{formatPhone(secondaryPhone)}</span>
           </div>
         ) : null}
-      </div>
+      </PublicSurface>
 
-      <div className="rounded-2xl border border-border bg-card p-4">
+      <PublicSurface level="card" border="subtle" radius="lg" padding="standard">
         <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Sous-total</span>
-          <span className="font-bold">{subtotal.toLocaleString()} FCFA</span>
+          <span className="text-[var(--text-secondary)]">Sous-total</span>
+          <PublicPrice role="card" value={subtotal.toLocaleString()} suffix="FCFA" />
         </div>
         {orderType === "delivery" ? (
           <div className="mt-2 flex justify-between text-sm">
-            <span className="text-muted-foreground">Frais de livraison</span>
-            <span className="font-bold">{deliveryFee.toLocaleString()} FCFA</span>
+            <span className="text-[var(--text-secondary)]">Frais de livraison</span>
+            <PublicPrice role="card" value={deliveryFee.toLocaleString()} suffix="FCFA" />
           </div>
         ) : null}
-        <div className="mt-3 flex justify-between border-t border-border pt-3 text-lg font-black">
-          <span>Total</span>
-          <span className="text-[var(--color-primary)]">{total.toLocaleString()} FCFA</span>
+        <div className="mt-3 flex items-center justify-between border-t border-[var(--border-public-subtle)] pt-3">
+          <strong className="text-public-lg">Total</strong>
+          <PublicPrice role="total" value={total.toLocaleString()} suffix="FCFA" aria-label={`Total ${total.toLocaleString()} FCFA`} />
         </div>
-      </div>
+      </PublicSurface>
     </div>
   )
 }
@@ -768,14 +694,19 @@ function PaymentStepCompact({
   }
 
   return (
-    <div className="space-y-3">
-      <h3 className="font-black">Choisissez un moyen de paiement</h3>
-
-      <div className="grid grid-cols-3 justify-items-start gap-2 sm:gap-3">
+    <PublicOptionGroup title="Moyen de paiement" description="Choisissez comment régler votre commande." required min={1} max={1} selectedCount={paymentMethodCode ? 1 : 0}>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {canPayCash ? (
-          <button
-            type="button"
-            onClick={() =>
+          <PublicOptionChoice
+            name="checkout-payment-method"
+            value="cash"
+            label="Espèces"
+            description="Paiement lors du retrait"
+            icon={<Banknote />}
+            selected={paymentMethodCode === "cash"}
+            controlType="radio"
+            presentation="card"
+            onSelect={() =>
               onChange({
                 paymentMethodCode: "cash",
                 paymentCode: "",
@@ -783,78 +714,62 @@ function PaymentStepCompact({
                 paymentProofSms: "",
               })
             }
-            className={`inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl border px-3 text-center transition hover:border-[var(--brand-primary)] sm:px-4 ${
-              paymentMethodCode === "cash"
-                ? "border-[var(--brand-primary)] bg-[var(--brand-primary-soft)] text-slate-950"
-                : "border-border bg-card hover:bg-muted"
-            }`}
-          >
-            <Banknote className="h-5 w-5 shrink-0" />
-            <span className="truncate text-sm font-black">Espèces</span>
-          </button>
+          />
         ) : null}
 
         {loadingPaymentMethods ? (
-          <div className="w-full rounded-lg border bg-muted p-3 text-sm font-semibold text-muted-foreground">
+          <PublicSurface level="muted" radius="md" padding="compact" className="text-public-sm font-public-semibold text-[var(--text-secondary)] sm:col-span-2" role="status">
             Chargement des moyens de paiement...
-          </div>
+          </PublicSurface>
         ) : paymentMethods.length > 0 ? (
           paymentMethods.map((method) => {
             const active = paymentMethodCode === method.code
 
             return (
-              <button
+              <PublicOptionChoice
                 key={method.code}
-                type="button"
-                onClick={() => selectMethod(method)}
-                className={`inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl border px-3 text-center transition hover:border-[var(--brand-primary)] sm:px-4 ${
-                  active
-                    ? "border-[var(--brand-primary)] bg-[var(--brand-primary-soft)] text-slate-950"
-                    : "border-border bg-card hover:bg-muted"
-                }`}
-              >
-                <div className="h-6 w-6 shrink-0 overflow-hidden rounded bg-card">
-                  {method.logoUrl ? (
-                    <img src={method.logoUrl} alt={method.name} className="h-full w-full object-contain" />
+                name="checkout-payment-method"
+                value={method.code}
+                label={method.name}
+                description={method.paymentCodeType === "ussd" ? "Paiement USSD" : "Mobile Money"}
+                icon={
+                  method.logoUrl ? (
+                    <img src={method.logoUrl} alt="" className="size-6 object-contain" />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-muted">
-                      <CreditCard className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                  )}
-                </div>
-                <span className="truncate text-sm font-black">{method.name}</span>
-              </button>
+                    <CreditCard />
+                  )
+                }
+                selected={active}
+                controlType="radio"
+                presentation="card"
+                onSelect={() => selectMethod(method)}
+              />
             )
           })
         ) : (
-          <div className="w-full rounded-lg border bg-muted p-3 text-sm font-semibold text-muted-foreground">
-            Aucun moyen de paiement configure.
-          </div>
+          <PublicSurface level="muted" radius="md" padding="compact" className="text-public-sm font-public-semibold text-[var(--text-secondary)] sm:col-span-2">Aucun moyen de paiement configuré.</PublicSurface>
         )}
       </div>
 
       {selectedMethod && selectedPaymentCode ? (
-        <div className="rounded-lg bg-muted p-3 text-sm">
-          <p className="break-all font-mono font-black text-[var(--color-primary)]">
-            {selectedPaymentCode}
-          </p>
-        </div>
+        <PublicSurface level="muted" radius="md" padding="compact" className="mt-3 text-public-sm"><p className="break-all font-mono font-public-bold text-[var(--brand-primary)]">{selectedPaymentCode}</p></PublicSurface>
       ) : null}
 
       {shouldShowProofSms ? (
-        <div className="space-y-2 rounded-xl border border-border bg-card p-3">
-          <label className="text-sm font-black">
+        <PublicSurface level="card" border="subtle" radius="md" padding="compact" className="mt-3 space-y-2">
+          <label htmlFor="checkout-payment-proof" className="text-public-sm font-public-semibold text-[var(--text-primary)]">
             Collez le SMS de confirmation reçu après votre paiement.
           </label>
           <textarea
+            id="checkout-payment-proof"
             value={paymentProofSms}
             onChange={(event) => onChange({ paymentProofSms: event.target.value })}
             placeholder={paymentProofSmsPlaceholder}
-            className="min-h-28 w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
+            className="min-h-28 w-full resize-none rounded-[var(--radius-public-md)] border border-[var(--border-public-control)] bg-[var(--surface-public-card)] px-4 py-3 font-publicBody text-public-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:border-[var(--focus-ring)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--focus-ring)_28%,transparent)]"
           />
-        </div>
+        </PublicSurface>
       ) : null}
-    </div>
+    </PublicOptionGroup>
   )
 }
 
@@ -1083,4 +998,11 @@ function getStepTitle(step: OrderFlowStep) {
   if (step === "delivery") return "Adresse de livraison"
   if (step === "recap") return "Récapitulatif de commande"
   return "Paiement"
+}
+
+function getStepDescription(step: OrderFlowStep) {
+  if (step === "cart") return "Choisissez le mode adapté à votre commande."
+  if (step === "delivery") return "Renseignez les informations nécessaires à la livraison."
+  if (step === "recap") return "Vérifiez les articles et les informations de votre commande."
+  return "Sélectionnez un moyen de paiement puis validez votre commande."
 }

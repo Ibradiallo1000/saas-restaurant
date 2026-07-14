@@ -466,3 +466,452 @@ Donnees manquantes eventuelles : seulement pour anciennes commandes sans `timest
 
 Statut : PRET POUR IMPLEMENTATION.
 
+## 18. Modele metier final : journal de production du jour
+
+La colonne "Servies aujourd'hui" ne doit pas etre interpretee comme un statut courant unique. Elle doit etre interpretee comme un journal de production du jour.
+
+Definition finale :
+
+- Une commande "active cuisine" est une commande encore a produire ou a remettre : `pending`, `preparing`, `ready`.
+- Une commande "servie aujourd'hui" est une commande qui possede un evenement de production final date dans la journee restaurant :
+  - `timestamps.servedAt` pour le sur place ;
+  - `timestamps.pickedUpAt` pour l'a emporter et la livraison.
+- Le statut commercial courant peut ensuite devenir paye, termine, ferme, recupere ou archive sans retirer la commande du journal cuisine du jour.
+
+Conclusion metier : le tableau Cuisine doit afficher a la fois le flux actif et le journal de production du jour. La colonne "Servies" n'est pas la source de verite d'un workflow commercial ; elle est une vue de production basee sur les timestamps canoniques.
+
+## 19. Architecture a deux sources
+
+Architecture recommandee :
+
+| Source | Role | Filtre canonique | Usage UI |
+|---|---|---|---|
+| Source active | Commandes en production | `kitchenStatus in ["pending", "preparing", "ready"]` | Colonnes En attente, En preparation, Pretes. |
+| Source journal | Commandes finalisees en cuisine aujourd'hui | `timestamps.servedAt` ou `timestamps.pickedUpAt` dans `[debutJour, debutJourSuivant)` | Colonne Servies. |
+
+Regles de fusion :
+
+1. Charger les commandes actives.
+2. Charger les commandes servies aujourd'hui via `timestamps.servedAt`.
+3. Charger les commandes recuperees/remises aujourd'hui via `timestamps.pickedUpAt`.
+4. Fusionner par `order.id`.
+5. Si une commande existe dans le journal du jour, elle doit alimenter la colonne "Servies", meme si `kitchenStatus` vaut deja `picked_up`, `completed` ou un autre statut terminal.
+6. Si une commande n'a pas de timestamp final de production, elle ne doit pas etre classee "Servies aujourd'hui" uniquement parce que `updatedAt`, `completedAt` ou `paymentStatus` ont change.
+
+Compatibilite temporaire possible :
+
+- conserver `servedAt` et `pickedUpAt` racine comme fallback legacy ;
+- conserver un fallback limite via `statusHistory` si besoin ;
+- eviter `updatedAt` comme source stable, sauf diagnostic ponctuel.
+
+## 20. Cartographie complete des ecrivains de statut
+
+| Fichier | Fonction / zone | Champs ecrits | Nature | Risque pour "Servies aujourd'hui" |
+|---|---|---|---|---|
+| `src/modules/kitchen/KitchenBoard.tsx` | `updateStatus` | `kitchenStatus`, `timestamps.preparingAt`, `timestamps.readyAt`, `timestamps.servedAt`, `timestamps.pickedUpAt`, `statusHistory`, `items[].status`, `items[].servedAt`, `updatedAt` | Ecrivain principal cuisine | Source la plus fiable pour les timestamps de production. |
+| `src/modules/kitchen/KitchenOrderCard.tsx` | `nextOrderStatus(...)` via action UI | Aucun write direct | Decide le prochain statut transmis a `KitchenBoard` | Pour pickup/livraison, `ready` devient `picked_up`, ce qui fait sortir la commande du listener actif actuel. |
+| `src/lib/order-lifecycle.ts` | `nextOrderStatus`, `orderStatusFromKitchenStatus`, `normalizeKitchenStatus` | Aucun write direct | Source de normalisation | `picked_up` est normalise comme final cuisine ; doit rester pris en compte par timestamp. |
+| `src/modules/orders/OrdersProvider.tsx` | listeners commandes cuisine | Aucun write metier intentionnel dans le flux normal | Source de lecture Cuisine / Commandes dashboard | Doit devenir l'endroit principal de fusion active + journal du jour. |
+| `src/modules/restaurant-live/RestaurantLiveDataProvider.tsx` | effet migration `kitchenStatus` manquant | `kitchenStatus` | Ecrivain correctif client | Peut reintroduire un statut derive sans timestamp final ; a ne pas utiliser comme source journal. |
+| `src/services/order.service.ts` | `OrderService.createOrder` | `kitchenStatus`, `orderStatus`, `statusHistory`, `paymentStatus`, `createdAt`, `updatedAt` | Creation commande moderne | Initialise correctement, mais ne cree pas d'evenement final. |
+| `src/services/order.service.ts` | `OrderService.updateOrderStatus` | `kitchenStatus`, `statusHistory`, `updatedAt` | Ecrivain statut service | N'ecrit pas `timestamps.servedAt/pickedUpAt` ; risque si utilise pour finaliser une commande hors Cuisine. |
+| `src/services/orderService.ts` | `createOrder` legacy | `kitchenStatus`, `orderStatus`, `statusHistory`, `createdAt` | Creation publique legacy | Initialise correctement, mais pas de timestamp final. |
+| `src/services/orderService.ts` | `updateOrderStatus` legacy | `kitchenStatus`, `statusHistory` | Ecrivain statut legacy | N'ecrit pas de timestamp final ni `updatedAt`. |
+| `src/app/(dashboard)/pos/components/POSClient.tsx` | creation POS | `kitchenStatus`, `orderStatus`, `paymentStatus` via `OrderService.createOrder` | Creation POS | OK pour initialisation. |
+| `src/app/(dashboard)/pos/components/POSClient.tsx` | `markOrderPaid`, paiement commande | champs paiement via `processOrderPaymentTransaction` ou `validateMobilePaymentTransaction` | Paiement | Ne doit pas influencer le journal cuisine. |
+| `src/app/(dashboard)/pos/components/POSClient.tsx` | `markOrderCompleted` | `sessionActive`, `completedAt`, `updatedAt` | Cloture POS/session | `completedAt` est commercial/session, pas production cuisine. |
+| `src/services/pos-security.service.ts` | `processOrderPaymentTransaction` | `paymentStatus`, `paymentMethod`, `paymentType`, `paidAt`, `closedAt`, `sessionActive`, `updatedAt`, verification paiement, audit | Paiement securise | Ne modifie pas `kitchenStatus`; ne doit pas servir a "Servies". |
+| `src/services/pos-security.service.ts` | `validateMobilePaymentTransaction` | paiement confirme, fermeture table/session, `updatedAt` | Paiement securise | Ne modifie pas `kitchenStatus`; ne doit pas servir a "Servies". |
+| `src/services/pos-security.service.ts` | `cancelOrderTransaction` | `cancelled`, `cancelledAt`, `cancelledBy`, `cancelReason`, `updatedAt` | Annulation | Ne doit pas creer de service cuisine. |
+| `src/services/payment-ledger.service.ts` | `createPaymentInTransaction`, `confirmPaymentInTransaction` | applique `orderUpdate` fourni par les appelants | Infrastructure paiement | Indirect ; depend du payload, actuellement paiement/session. |
+| `src/app/(manager)/manager/caisse/page.tsx` | `validateTableSessionPayment` | champs paiement, `sessionActive`, `paidAt`, `updatedAt` via ledger | Caisse manager | Paiement uniquement. |
+| `src/app/(dashboard)/orders/components/OrdersClient.tsx` | `completeOrder`, `validateMobilePayment` | `paymentStatus`, `paymentMethod`, `paymentType`, `paidAt`, `updatedAt` | Gestion commandes/caisse | Paiement uniquement. |
+| `src/modules/public/components/CheckoutQRModal.tsx` | creation QR table | `kitchenStatus`, `orderStatus`, `paymentStatus`, session/table refs, `createdAt`, `updatedAt` | Creation publique QR | OK pour initialisation. |
+| `src/modules/public/components/CheckoutPublicModal.tsx` | creation publique | `kitchenStatus`, `orderStatus`, `paymentStatus`, `createdAt`, `updatedAt` | Creation publique | OK pour initialisation. |
+| `src/app/(public)/checkout/page.tsx` | creation checkout legacy | `kitchenStatus`, `orderStatus`, `paymentStatus` via service legacy | Creation publique legacy | OK pour initialisation. |
+| `src/app/r/[slug]/checkout/page.tsx` | `addDoc` commande | `kitchenStatus`, `orderStatus`, `paymentStatus`, `createdAt`, `updatedAt` | Creation checkout route slug | OK pour initialisation. |
+| `src/modules/public/components/QRPaymentModal.tsx` | demande paiement client | `paymentStatus`, `paymentMethod`, `paymentType`, `paymentIntentStatus`, `updatedAt` | Paiement client | Ne doit pas influencer le journal cuisine. |
+| `src/app/order/[restaurantId]/[orderId]/page.tsx` | paiement/session table | `tableSessions.paymentRequest`, statut session, batch de paiement selon flux | Suivi client / paiement table | Ne doit pas influencer le journal cuisine. |
+
+Constat final : il existe plusieurs ecrivains de `kitchenStatus`, mais un seul chemin ecrit actuellement les timestamps canoniques `timestamps.servedAt` et `timestamps.pickedUpAt` au moment de l'action cuisine : `KitchenBoard.updateStatus`.
+
+## 21. Source de verite canonique par domaine
+
+| Domaine | Source canonique | Champs secondaires / derives | Decision |
+|---|---|---|---|
+| Production cuisine courante | `kitchenStatus` | `orderStatus`, `status`, `items[].status` | Lire `kitchenStatus`, normaliser avec `order-lifecycle`. |
+| Evenement final cuisine | `timestamps.servedAt`, `timestamps.pickedUpAt` | `servedAt`, `pickedUpAt`, `statusHistory` | Utiliser les timestamps imbriques comme source principale. |
+| Journal "Servies aujourd'hui" | timestamps finaux dans la journee restaurant | `kitchenStatus` terminal uniquement comme contexte | Ne pas baser le journal sur `paymentStatus`, `completedAt` ou `updatedAt`. |
+| Etat commercial POS | derive de `kitchenStatus` + `paymentStatus` | `completedAt`, `sessionActive` | Ne pas modifier dans cette correction. |
+| Paiement | `paymentStatus` + documents `payments` | `paidAt`, `paymentIntentStatus`, ledger session | Domaine separe de la production. |
+| Sessions table/caisse | `tableSessions`, `cashSessions` | `sessionActive`, `closedAt` | Ne pas utiliser pour determiner le service cuisine. |
+| Suivi client | `kitchenStatus` normalise + paiement effectif | stockage local de suivi | Doit rester une lecture de l'etat courant, pas le journal cuisine. |
+
+Conclusion : la source de verite des statuts courants reste `kitchenStatus`. La source de verite du modele "Servies aujourd'hui" doit etre le timestamp d'evenement final cuisine.
+
+## 22. Risques de concurrence entre ecritures
+
+Risques identifies :
+
+1. `KitchenBoard.updateStatus` peut finaliser une commande avec timestamp, puis un flux paiement POS peut mettre a jour `paymentStatus`, `closedAt`, `sessionActive` et `updatedAt`. Si la cuisine lit `updatedAt`, la date de service devient fausse.
+2. `OrderService.updateOrderStatus` et `services/orderService.updateOrderStatus` peuvent changer `kitchenStatus` sans ecrire `timestamps.servedAt/pickedUpAt`. Ces chemins peuvent creer des commandes terminales sans date de production exploitable.
+3. `RestaurantLiveDataProvider` peut ecrire un `kitchenStatus` derive lorsqu'il manque. C'est utile pour compatibilite, mais ce n'est pas un evenement cuisine.
+4. `orderStatus` et `kitchenStatus` peuvent diverger : les creations ecrivent les deux, mais les transitions mettent surtout a jour `kitchenStatus`.
+5. `statusHistory` utilise `new Date()` cote client dans certains chemins. Ce champ est utile en fallback, mais moins canonique que `serverTimestamp()`.
+6. `completedAt` est ecrit par le POS pour cloture/session. Il ne represente pas necessairement le moment ou la cuisine a servi/remis la commande.
+7. Les flux de paiement peuvent etre valides apres le service. Un filtre base sur paiement ferait glisser des commandes d'un jour a l'autre.
+
+Mitigation finale :
+
+- ne pas utiliser `updatedAt`, `completedAt`, `paymentStatus`, `closedAt` ou `sessionActive` pour "Servies aujourd'hui" ;
+- utiliser uniquement les timestamps finaux de production ;
+- ajouter si necessaire les timestamps finaux aux chemins de statut non-cuisine seulement si ces chemins sont réellement utilises pour finaliser la production, et seulement apres validation metier.
+
+## 23. Impact sur suivi client, POS et sessions
+
+### Suivi client
+
+Le suivi client lit le statut courant de la commande (`kitchenStatus`, `orderStatus` ou equivalent normalise). Le passage au modele "journal du jour" ne doit pas changer ce comportement.
+
+Impact attendu : aucun, si la correction reste dans `OrdersProvider` / `KitchenBoard` pour la vue Cuisine.
+
+### POS
+
+Le POS classe visuellement les commandes via une combinaison de statut production et paiement :
+
+- `served` ou `picked_up` non paye : encore visible comme a encaisser / servi selon la vue POS ;
+- `served` ou `picked_up` paye : peut apparaitre comme termine ;
+- `markOrderCompleted` cloture la session commerciale avec `completedAt`, sans changer la production.
+
+Impact attendu : aucun changement requis dans le POS pour corriger "Servies aujourd'hui". Le POS ne doit pas devenir la source de verite du journal cuisine.
+
+### Sessions table
+
+Les sessions table/caisse servent a gerer occupation, paiement, fermeture et recapitulatif. Elles peuvent se fermer apres paiement, mais cette fermeture ne doit pas retirer une commande de la colonne "Servies" du jour.
+
+Impact attendu : aucun changement dans `tableSessions`, `cashSessions`, `PaymentLedgerService` ou les ecritures de caisse.
+
+## 24. Decision finale d'implementation
+
+Decision : corriger la disparition des commandes servies en introduisant dans la lecture Cuisine une architecture active + journal, sans modifier les workflows POS, paiement, session ou checkout.
+
+Decision detaillee :
+
+1. Conserver `kitchenStatus` comme source de verite du statut courant.
+2. Utiliser `timestamps.servedAt` et `timestamps.pickedUpAt` comme source de verite des evenements finaux cuisine.
+3. Construire "Servies aujourd'hui" depuis ces timestamps, pas depuis le statut terminal seul.
+4. Garder les ecritures existantes de `KitchenBoard.updateStatus`, qui posent deja les timestamps necessaires.
+5. Ne pas faire de migration de donnees dans cette correction.
+6. Ne pas modifier les flux POS et paiement.
+7. Ajouter les indexes Firestore seulement si les requetes finales les exigent.
+
+Reponse aux questions structurantes :
+
+- Faut-il utiliser le statut ou un journal ? Un journal de production du jour.
+- Quels timestamps sont canoniques ? `timestamps.servedAt` et `timestamps.pickedUpAt`.
+- Existe-t-il plusieurs ecrivains concurrents ? Oui, plusieurs ecrivains de statut existent ; un seul ecrit actuellement les timestamps de production de maniere fiable.
+- Peut-on corriger sans changer le POS ? Oui.
+- Faut-il migrer les anciennes donnees ? Non pour la correction minimale ; les anciennes commandes sans timestamp peuvent rester hors journal ou etre traitees par fallback limite.
+
+## 25. Liste exacte des fichiers a modifier
+
+Correction minimale recommandee :
+
+1. `src/modules/orders/OrdersProvider.tsx`
+   - remplacer les requetes de rattrapage heterogenes par deux lectures journal :
+     - `timestamps.servedAt` dans la journee restaurant ;
+     - `timestamps.pickedUpAt` dans la journee restaurant ;
+   - conserver une lecture active pour `pending`, `preparing`, `ready` ;
+   - fusionner par `id` ;
+   - exposer a la Cuisine les commandes du journal comme "Servies" sans reecrire Firestore.
+
+2. `src/modules/kitchen/KitchenBoard.tsx`
+   - ajuster uniquement la logique de repartition UI si necessaire pour que les commandes issues du journal restent dans la colonne "Servies" meme si leur `kitchenStatus` brut vaut `picked_up` ou `completed` ;
+   - conserver les ecritures actuelles de `updateStatus`, notamment `timestamps.servedAt` et `timestamps.pickedUpAt`.
+
+3. `firestore.indexes.json`
+   - ajouter uniquement les indexes demandes par les nouvelles requetes si Firestore les exige.
+
+Fichier optionnel selon implementation :
+
+4. `src/lib/order-lifecycle.ts`
+   - uniquement si un helper pur est necessaire pour identifier un statut terminal de production ou pour exposer une normalisation deja existante.
+   - ne pas changer les transitions metier.
+
+## 26. Liste exacte des fichiers a ne pas modifier
+
+Ne pas modifier pour cette correction :
+
+- `src/app/(dashboard)/pos/components/POSClient.tsx`
+- `src/services/pos-security.service.ts`
+- `src/services/payment-ledger.service.ts`
+- `src/services/cashier.service.ts`
+- `src/services/order.service.ts`
+- `src/services/orderService.ts`
+- `src/app/(manager)/manager/caisse/page.tsx`
+- `src/app/(dashboard)/orders/components/OrdersClient.tsx`
+- `src/modules/public/components/CheckoutQRModal.tsx`
+- `src/modules/public/components/CheckoutPublicModal.tsx`
+- `src/modules/public/components/QRPaymentModal.tsx`
+- `src/app/(public)/checkout/page.tsx`
+- `src/app/r/[slug]/checkout/page.tsx`
+- `src/app/order/[restaurantId]/[orderId]/page.tsx`
+- `src/services/table-session.service.ts`
+- `firestore.rules`
+- donnees Firestore existantes
+- routes publiques, checkout, suivi client, paiement, QR Code, PWA
+
+Exception : si une verification future prouve qu'un chemin non-cuisine finalise réellement la production, il faudra alors ajouter les timestamps canoniques dans ce chemin. Ce n'est pas necessaire pour la correction minimale identifiee.
+
+## 27. Indexes necessaires
+
+Indexes actuellement presents :
+
+- `kitchenStatus + createdAt ASC`
+- `kitchenStatus + createdAt DESC`
+- plusieurs indexes `restaurantId`, `status`, `createdAt`
+- aucun index explicite sur `timestamps.servedAt`
+- aucun index explicite sur `timestamps.pickedUpAt`
+
+Indexes a prevoir si les requetes restent sur la sous-collection `restaurants/{restaurantId}/orders` avec un seul champ range/order :
+
+```json
+{
+  "collectionGroup": "orders",
+  "queryScope": "COLLECTION",
+  "fields": [
+    { "fieldPath": "timestamps.servedAt", "order": "ASCENDING" }
+  ]
+}
+```
+
+```json
+{
+  "collectionGroup": "orders",
+  "queryScope": "COLLECTION",
+  "fields": [
+    { "fieldPath": "timestamps.pickedUpAt", "order": "ASCENDING" }
+  ]
+}
+```
+
+Si le code utilise `orderBy(..., "desc")`, ajouter les variantes `DESCENDING`.
+
+Si une requete `collectionGroup("orders")` avec filtre `restaurantId` est introduite, prevoir plutot :
+
+```json
+{
+  "collectionGroup": "orders",
+  "queryScope": "COLLECTION_GROUP",
+  "fields": [
+    { "fieldPath": "restaurantId", "order": "ASCENDING" },
+    { "fieldPath": "timestamps.servedAt", "order": "DESCENDING" }
+  ]
+}
+```
+
+```json
+{
+  "collectionGroup": "orders",
+  "queryScope": "COLLECTION_GROUP",
+  "fields": [
+    { "fieldPath": "restaurantId", "order": "ASCENDING" },
+    { "fieldPath": "timestamps.pickedUpAt", "order": "DESCENDING" }
+  ]
+}
+```
+
+Recommandation : rester sur la sous-collection restaurant pour eviter d'introduire un nouveau modele d'indexation.
+
+## 28. Plan d'implementation final et minimal
+
+1. Dans `OrdersProvider`, definir le debut et la fin de jour restaurant :
+   - `startOfDay`;
+   - `nextStartOfDay`;
+   - timezone restaurant si disponible, fallback actuel sinon.
+
+2. Remplacer la strategie de rattrapage par trois sources :
+   - actives : `pending`, `preparing`, `ready` ;
+   - servies aujourd'hui : `timestamps.servedAt >= start` et `< nextStart` ;
+   - remises/recuperees aujourd'hui : `timestamps.pickedUpAt >= start` et `< nextStart`.
+
+3. Fusionner les snapshots dans une map par `order.id`.
+
+4. Marquer en memoire les commandes issues des timestamps finaux comme candidates a la colonne "Servies" sans modifier le document Firestore.
+
+5. Dans `KitchenBoard`, faire primer l'evenement final du jour pour la repartition de la colonne "Servies".
+
+6. Conserver les ecritures de `KitchenBoard.updateStatus` telles quelles, sauf correction strictement necessaire pour garantir `serverTimestamp()` sur `servedAt/pickedUpAt`.
+
+7. Ne modifier aucun flux POS, paiement, caisse, checkout, suivi client ou session.
+
+8. Lancer les validations :
+   - `npx tsc --noEmit` ;
+   - `git diff --check` ;
+   - test manuel cuisine : sur place servi, a emporter recupere, livraison remise, paiement apres service, changement de session caisse.
+
+### Statut complementaire final
+
+Le modele cible est valide : "Servies aujourd'hui" doit etre une vue de journal de production, pas une colonne uniquement basee sur le statut courant.
+
+La correction minimale peut etre implementee sans modifier le POS, sans migration de donnees et sans changement de workflow. Les seuls fichiers applicatifs a toucher devraient etre `OrdersProvider` et eventuellement `KitchenBoard`, avec indexes Firestore seulement si les nouvelles requetes les demandent.
+
+Statut : AUDIT COMPLEMENTAIRE FINALISE - PRET POUR IMPLEMENTATION CIBLEE.
+
+## 29. Preuve runtime de la disparition
+
+### Statut du test runtime
+
+Statut final : CAUSE NON PROUVÉE — TEST INCOMPLET.
+
+La verification runtime demandee n'a pas pu etre executee completement dans cette session, car elle exige une reproduction interactive dans une session navigateur authentifiee Cuisine, avec une commande reelle ou locale deja prete en mode Livraison / A emporter / Sur place.
+
+Le projet ne contient pas de configuration e2e exploitable pour automatiser ce scenario :
+
+- pas de script Playwright/Cypress declare dans `package.json` ;
+- pas de suite `tests` disponible pour simuler le drag/clic Cuisine ;
+- pas d'acces navigateur authentifie disponible depuis cette session.
+
+Aucun log temporaire n'a donc ete laisse dans le code applicatif.
+
+### Chronologie prouvee par lecture statique
+
+La lecture statique du code prouve la chronologie probable suivante pour une commande Livraison ou A emporter :
+
+1. `KitchenOrderCard` calcule l'action suivante avec `nextOrderStatus(orderStatus, order.orderType)`.
+2. Dans `src/lib/order-lifecycle.ts`, une commande `ready` de type `pickup` ou `delivery` passe a `picked_up`.
+3. `KitchenBoard.updateStatus` execute `updateDoc` avec :
+   - `kitchenStatus: "picked_up"` ;
+   - `timestamps.pickedUpAt: serverTimestamp()` ;
+   - `statusHistory` ;
+   - `items` mis a jour ;
+   - `updatedAt: serverTimestamp()`.
+4. `activeOrdersQuery` dans `OrdersProvider` ne lit que :
+   - `pending` ;
+   - `preparing` ;
+   - `ready` ;
+   - `served`.
+5. La commande `picked_up` sort donc mecaniquement de `activeOrdersQuery`.
+6. Elle devrait ensuite etre recuperee par `todayPickedUpAtOrdersQuery`, qui lit `timestamps.pickedUpAt >= todayStart`.
+
+Cette chronologie indique fortement un probleme de lecture ou de fenetre de synchronisation, mais elle ne remplace pas une preuve runtime.
+
+### Valeurs Firestore observees
+
+Non observees en runtime dans cette session.
+
+Valeurs attendues apres clic final Livraison / A emporter, si l'ecriture `KitchenBoard.updateStatus` reussit :
+
+| Champ | Valeur attendue |
+|---|---|
+| `kitchenStatus` | `picked_up` |
+| `orderStatus` | inchange par `KitchenBoard.updateStatus` |
+| `paymentStatus` | inchange par `KitchenBoard.updateStatus` |
+| `timestamps.servedAt` | absent ou inchange |
+| `timestamps.pickedUpAt` | present, ecrit via `serverTimestamp()` |
+| `updatedAt` | present, ecrit via `serverTimestamp()` |
+
+Valeurs attendues apres clic final Sur place :
+
+| Champ | Valeur attendue |
+|---|---|
+| `kitchenStatus` | `served` |
+| `orderStatus` | inchange par `KitchenBoard.updateStatus` |
+| `paymentStatus` | inchange par `KitchenBoard.updateStatus` |
+| `timestamps.servedAt` | present, ecrit via `serverTimestamp()` |
+| `timestamps.pickedUpAt` | absent ou inchange |
+| `updatedAt` | present, ecrit via `serverTimestamp()` |
+
+### Requetes a observer pendant reproduction
+
+| Requete | Role | Observation attendue |
+|---|---|---|
+| `activeOrdersQuery` | commandes Cuisine actives | l'ID sort des que `kitchenStatus` devient `picked_up`, car ce statut n'est pas dans `ACTIVE_KITCHEN_STATUSES`. |
+| `todayPickedUpAtOrdersQuery` | journal A emporter / Livraison du jour | l'ID doit entrer apres resolution de `timestamps.pickedUpAt`. |
+| `todayServedAtOrdersQuery` | journal Sur place du jour | l'ID Sur place doit entrer apres resolution de `timestamps.servedAt`. |
+
+### Erreurs de requete / index
+
+Non observees en runtime dans cette session.
+
+Point a verifier dans la console navigateur pendant reproduction :
+
+- erreur Firestore `failed-precondition` ;
+- lien de creation d'index ;
+- absence de snapshot sur `timestamps.pickedUpAt`.
+
+Si une erreur d'index apparait sur `timestamps.pickedUpAt`, la cause runtime devient : requete journal invalide tant que l'index manque.
+
+### Ecritures concurrentes
+
+Non observees en runtime dans cette session.
+
+La recherche statique n'a pas trouve de Cloud Function locale ni de composant evident qui reecrit automatiquement `kitchenStatus` juste apres le clic Cuisine.
+
+Les ecrivains POS/paiement identifies modifient principalement :
+
+- `paymentStatus` ;
+- `paymentMethod` ;
+- `paymentType` ;
+- `paidAt` ;
+- `closedAt` ;
+- `sessionActive` ;
+- `updatedAt`.
+
+Ils ne prouvent pas une reecriture concurrente de `kitchenStatus` apres `KitchenBoard.updateStatus`.
+
+### Tableau de resultat runtime
+
+| Cas | Write reussi | pickedUpAt/servedAt present | Sortie active | Entree journal | Delai | Erreur |
+|-----|--------------|-----------------------------|---------------|----------------|-------|--------|
+| A. A emporter | Non teste | Non observe | Non observe | Non observe | Non mesure | Non observe |
+| B. Livraison | Non teste | Non observe | Non observe | Non observe | Non mesure | Non observe |
+| C. Sur place | Non teste | Non observe | Non observe | Non observe | Non mesure | Non observe |
+
+### Instrumentation recommandee pour obtenir la preuve
+
+Pour prouver la cause runtime, ajouter temporairement des logs dans :
+
+1. `src/modules/kitchen/KitchenBoard.tsx`
+   - avant `updateDoc` ;
+   - apres `updateDoc` ;
+   - `getDoc(orderRef)` immediat apres l'ecriture ;
+   - `onSnapshot(orderRef)` pendant 3 a 5 secondes pour detecter une ecriture concurrente.
+
+2. `src/modules/orders/OrdersProvider.tsx`
+   - snapshot de `activeOrdersQuery` ;
+   - snapshot de `todayPickedUpAtOrdersQuery` ;
+   - snapshot de `todayServedAtOrdersQuery` ;
+   - log des erreurs Firestore de chaque listener.
+
+3. Console navigateur
+   - conserver l'horodatage ;
+   - copier toute erreur d'index Firestore ;
+   - mesurer le delai entre succes `updateDoc`, sortie active, entree journal.
+
+### Decision selon preuve a obtenir
+
+| Preuve runtime | Decision |
+|---|---|
+| `pickedUpAt` present, document encore existant, aucune ecriture concurrente, mais requete journal ne recoit pas la commande | Corriger la requete, les bornes de date, l'index ou le listener. |
+| `pickedUpAt` absent apres ecriture | Corriger `KitchenBoard.updateStatus` ou le payload Firestore. |
+| `pickedUpAt` present puis supprime/ecrase | Corriger l'ecriture concurrente. |
+| La commande reapparait apres un delai visible | Corriger la fenetre de synchronisation UI avec une architecture active + journal sans trou visuel. |
+
+### Cause prouvee
+
+Cause runtime non prouvee dans cette session.
+
+Cause statique la plus probable : la commande Livraison / A emporter sort de `activeOrdersQuery` quand `kitchenStatus` devient `picked_up`, puis depend de la requete `timestamps.pickedUpAt` pour reapparaitre dans le journal Cuisine.
+
+### Correction a appliquer ensuite
+
+Ne pas appliquer de correction tant que la preuve runtime n'est pas obtenue.
+
+Si la preuve confirme que `timestamps.pickedUpAt` est bien present et qu'aucune ecriture concurrente ne l'efface, appliquer la correction minimale deja recommandee :
+
+- stabiliser `OrdersProvider` autour de deux sources explicites :
+  - commandes actives ;
+  - journal du jour via `timestamps.servedAt` et `timestamps.pickedUpAt` ;
+- eviter toute disparition visuelle entre sortie active et entree journal ;
+- ajouter les indexes Firestore requis si la console les demande.

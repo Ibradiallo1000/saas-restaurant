@@ -6,6 +6,7 @@ import { getClientOrderStep } from "@/lib/getClientOrderStep"
 import { cn } from "@/lib/utils"
 
 type OrderStepperProps = {
+  appearance?: "legacy" | "public"
   orderType?: string | null
   kitchenStatus?: string | null
   legacyStatus?: string | null
@@ -31,6 +32,7 @@ type TrackingStep = {
 }
 
 export function OrderStepper({
+  appearance = "legacy",
   orderType,
   kitchenStatus,
   legacyStatus,
@@ -43,12 +45,13 @@ export function OrderStepper({
   const currentIndex = Math.min(3, Math.max(0, step - 1))
   const createdDate = toDate(createdAt)
   const steps = getTrackingSteps(normalizedType, createdDate, timestamps)
+  const isPublic = appearance === "public"
 
   return (
-    <div className="relative">
-      <div className="absolute left-[12.5%] right-[12.5%] top-[18px] h-0.5 rounded-full bg-muted" />
+    <div className={cn("relative", isPublic && "font-publicBody")} aria-label="Progression de la commande">
+      <div className={cn("absolute left-[12.5%] right-[12.5%] rounded-full", isPublic ? "top-5 h-px bg-[var(--border-public-default)]" : "top-[18px] h-0.5 bg-muted")} />
       <div
-        className="absolute left-[12.5%] top-[18px] h-0.5 rounded-full bg-[var(--brand-primary)] transition-all duration-500 ease-out"
+        className={cn("absolute left-[12.5%] rounded-full bg-[var(--brand-primary)] transition-all ease-out motion-reduce:transition-none", isPublic ? "top-5 h-px duration-200" : "top-[18px] h-0.5 duration-500")}
         style={{ width: `calc(75% * ${Math.max(0, currentIndex) / 3})` }}
       />
 
@@ -60,26 +63,29 @@ export function OrderStepper({
           const isFuture = index > currentIndex
 
           return (
-            <div key={step.key} className="flex min-w-0 flex-col items-center gap-1.5 text-center">
+            <div key={step.key} className="flex min-w-0 flex-col items-center gap-1.5 text-center" aria-current={isCurrent ? "step" : undefined}>
               <div
                 className={cn(
-                  "flex h-9 w-9 items-center justify-center rounded-full border shadow-sm transition-all duration-500 ease-out",
-                  (isCompleted || isCurrent) && "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white",
-                  isFuture && "border-muted bg-background text-muted-foreground"
+                  "flex items-center justify-center rounded-full border shadow-sm transition-[background-color,border-color,color] ease-out motion-reduce:transition-none",
+                  isPublic ? "size-10 duration-200" : "h-9 w-9 duration-500",
+                  !isPublic && (isCompleted || isCurrent) && "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white",
+                  isPublic && isCompleted && "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-[var(--text-inverse)]",
+                  isPublic && isCurrent && "border-2 border-[var(--brand-primary)] bg-[var(--surface-public-elevated)] text-[var(--brand-primary)] ring-2 ring-[color:color-mix(in_srgb,var(--brand-primary)_20%,transparent)]",
+                  isFuture && "border-[var(--border-public-default)] bg-[var(--surface-public-card)] text-[var(--text-muted)]"
                 )}
               >
-                {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                {isCompleted ? <CheckCircle2 className={isPublic ? "size-5" : "h-4 w-4"} aria-label="Étape terminée" /> : <Icon className={isPublic ? "size-5" : "h-4 w-4"} aria-hidden="true" />}
               </div>
               <div className="min-w-0">
                 <p
                   className={cn(
                     "whitespace-nowrap text-[12px] font-black leading-tight sm:text-[13px]",
-                    isFuture ? "text-muted-foreground" : "text-[var(--brand-primary)]"
+                    isFuture ? "text-[var(--text-muted)]" : isCurrent ? "text-[var(--brand-primary)]" : "text-[var(--text-primary)]"
                   )}
                 >
                   {step.label}
                 </p>
-                <p className="mt-1 text-[11px] font-semibold leading-tight text-muted-foreground sm:text-xs">
+                <p className="mt-1 text-[10px] font-public-semibold leading-tight text-[var(--text-muted)] sm:text-xs">
                   {step.at ? formatTime(step.at) : "--:--"}
                   {step.deltaMs !== null ? (
                     <span className="block text-[10px] font-medium text-muted-foreground/80">

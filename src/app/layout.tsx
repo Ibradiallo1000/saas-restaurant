@@ -56,6 +56,43 @@ const brandThemeBootstrapScript = `
     ].join(" ");
   }
 
+  function luminance(hex) {
+    var channels = [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16)
+    ].map(function (channel) {
+      var normalized = channel / 255;
+      return normalized <= 0.04045
+        ? normalized / 12.92
+        : Math.pow((normalized + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  }
+
+  function contrast(background, foreground) {
+    var backgroundLuminance = luminance(background);
+    var foregroundLuminance = luminance(foreground);
+    var lighter = Math.max(backgroundLuminance, foregroundLuminance);
+    var darker = Math.min(backgroundLuminance, foregroundLuminance);
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+
+  function accessibleForeground(background) {
+    var dark = "#0b0f14";
+    var light = "#ffffff";
+    return contrast(background, dark) >= contrast(background, light) ? dark : light;
+  }
+
+  function mix(background, foreground, foregroundWeight) {
+    var backgroundChannels = [1, 3, 5].map(function (index) { return parseInt(background.slice(index, index + 2), 16); });
+    var foregroundChannels = [1, 3, 5].map(function (index) { return parseInt(foreground.slice(index, index + 2), 16); });
+    var channels = backgroundChannels.map(function (channel, index) {
+      return Math.round(channel * (1 - foregroundWeight) + foregroundChannels[index] * foregroundWeight);
+    });
+    return "#" + channels.map(function (channel) { return channel.toString(16).padStart(2, "0"); }).join("");
+  }
+
   function hsl(hex) {
     var r = parseInt(hex.slice(1, 3), 16) / 255;
     var g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -85,16 +122,27 @@ const brandThemeBootstrapScript = `
   } catch (error) {}
 
   var colorRgb = rgb(color);
+  var actionForeground = accessibleForeground(color);
+  var actionForegroundRgb = rgb(actionForeground);
   var root = document.documentElement;
   root.style.setProperty("--brand-primary", color);
   root.style.setProperty("--brand-primary-rgb", colorRgb);
   root.style.setProperty("--brand-primary-soft", "rgb(" + colorRgb + " / 0.10)");
-  root.style.setProperty("--color-primary", color);
-  root.style.setProperty("--primary", color);
+  root.style.setProperty("--action-primary-bg", color);
+  root.style.setProperty("--action-primary-fg", actionForeground);
+  root.style.setProperty("--action-primary-fg-rgb", actionForegroundRgb);
+  root.style.setProperty("--action-primary-hover", mix(color, actionForeground, 0.08));
+  root.style.setProperty("--action-primary-active", mix(color, actionForeground, 0.14));
+  root.style.setProperty("--focus-ring", "#ea580c");
+  root.style.setProperty("--color-primary", "var(--action-primary-bg)");
+  root.style.setProperty("--primary", "var(--action-primary-bg)");
   root.style.setProperty("--primary-rgb", colorRgb);
-  root.style.setProperty("--ring", color);
-  root.style.setProperty("--sidebar-primary", color);
-  root.style.setProperty("--sidebar-ring", color);
+  root.style.setProperty("--primary-foreground", "var(--action-primary-fg)");
+  root.style.setProperty("--primary-foreground-rgb", actionForegroundRgb);
+  root.style.setProperty("--ring", "var(--focus-ring)");
+  root.style.setProperty("--sidebar-primary", "var(--action-primary-bg)");
+  root.style.setProperty("--sidebar-primary-foreground", "var(--action-primary-fg)");
+  root.style.setProperty("--sidebar-ring", "var(--focus-ring)");
   root.style.setProperty("--chart-1", hsl(color));
   root.style.setProperty("--public-card-border", "rgb(" + colorRgb + " / 0.14)");
   root.style.setProperty("--public-pattern-color", "rgb(" + colorRgb + ")");
@@ -115,6 +163,12 @@ export default function RootLayout({
     <html lang="fr" suppressHydrationWarning>
       <head>
         <meta charSet="UTF-8" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=PT+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Playfair+Display:wght@400..900&display=swap"
+          rel="stylesheet"
+        />
         <link rel="manifest" href="/pwa-manifest.webmanifest" />
         <meta name="theme-color" content={DEFAULT_BRAND_PRIMARY} />
         <meta name="msapplication-TileColor" content={DEFAULT_BRAND_PRIMARY} />

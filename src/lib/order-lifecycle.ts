@@ -65,10 +65,9 @@ export type OrderLike = {
 }
 
 export function normalizeOrderType(type: string | null | undefined) {
-  if (type === "dine-in" || type === "table") return "dine_in"
-  if (type === "takeaway") return "pickup"
-  if (type === "delivery") return "delivery"
-  if (type === "pickup") return "pickup"
+  if (type === "dine_in" || type === "dine-in" || type === "table" || type === "sur_place") return "dine_in"
+  if (type === "pickup" || type === "takeaway" || type === "a_emporter" || type === "emporter") return "pickup"
+  if (type === "delivery" || type === "livraison") return "delivery"
   return "dine_in"
 }
 

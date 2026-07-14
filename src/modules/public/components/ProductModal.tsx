@@ -1,10 +1,16 @@
 "use client"
 
 import * as React from "react"
-import { Check, Plus, X } from "lucide-react"
+import { Plus } from "lucide-react"
 
+import {
+  ProductCommerceModal,
+  PublicButton,
+  PublicOptionChoice,
+  PublicOptionGroup,
+  PublicPrice,
+} from "@/components/public-ui"
 import { getOptimizedImage } from "@/lib/image"
-import { cn } from "@/lib/utils"
 
 type Choice = {
   name: string
@@ -45,21 +51,14 @@ export default function ProductModal({
   const [selectedSize, setSelectedSize] = React.useState(defaultSize?.name || "petite")
   const [selectedSupplements, setSelectedSupplements] = React.useState<Choice[]>([])
   const [quantity, setQuantity] = React.useState(1)
+  const [sizeError, setSizeError] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     setSelectedSize(defaultSize?.name || "petite")
     setSelectedSupplements([])
     setQuantity(1)
+    setSizeError(null)
   }, [product?.id])
-
-  React.useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose()
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [onClose])
 
   function calculateTotalPrice() {
     const sizePrice = getSelectedSizePrice(product, selectedSize)
@@ -71,7 +70,7 @@ export default function ProductModal({
     if (!product) return
 
     if (getSizeChoices(product).length > 0 && !selectedSize) {
-      alert("Choisissez une taille")
+      setSizeError("Sélectionnez une taille")
       return
     }
 
@@ -122,149 +121,91 @@ export default function ProductModal({
   const imageUrl = product?.imageUrl
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
+    <ProductCommerceModal
+      open
+      onOpenChange={(open) => { if (!open) onClose() }}
+      title={product.name}
+      description={product.description}
+      imageUrl={imageUrl ? getOptimizedImage(imageUrl, 900) : undefined}
+      imageAlt={product.name}
+      imageFallback={<Plus className="size-10" />}
+      price={`${(getBasePrice(product) + getSelectedSizePrice(product, selectedSize)).toLocaleString()} FCFA`}
+      footer={
+        <PublicButton type="button" size="action" fullWidth onClick={handleAddToCart}>
+          <span className="min-w-0 flex-1 truncate text-left">Ajouter à la commande</span>
+          <span className="shrink-0 whitespace-nowrap">{calculateTotalPrice().toLocaleString()} FCFA</span>
+        </PublicButton>
+      }
     >
-      <div className="flex max-h-[94dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[2rem] bg-background text-foreground shadow-2xl ring-1 ring-black/5 dark:ring-white/10 sm:rounded-[2rem]">
-        <div className="relative m-4 mb-0 overflow-hidden rounded-[1.75rem] bg-muted shadow-sm">
-          <div className="aspect-[16/11] w-full">
-            {imageUrl ? (
-              <img
-                src={getOptimizedImage(imageUrl, 900)}
-                alt={product.name}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground">
-                <Plus className="h-10 w-10" />
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white shadow-lg backdrop-blur transition hover:bg-black/70 active:scale-95"
-            aria-label="Fermer"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-5 pt-4">
-          <div>
-            <h2 className="text-3xl font-black leading-tight tracking-tight">{product.name}</h2>
-            {product.description ? (
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{product.description}</p>
-            ) : null}
-            <p className="mt-4 whitespace-nowrap text-2xl font-black text-[var(--color-primary)]">
-              {(getBasePrice(product) + getSelectedSizePrice(product, selectedSize)).toLocaleString()} FCFA
-            </p>
-          </div>
-
+      <div className="space-y-6">
           {sizeChoices.length > 0 ? (
-            <section className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-black uppercase tracking-wide">Choisir la taille</p>
-                  <p className="mt-1 text-xs font-semibold text-muted-foreground">Sélection obligatoire</p>
-                </div>
-                <span className="shrink-0 rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-[11px] font-black uppercase text-[var(--color-primary)]">
-                  Obligatoire
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <PublicOptionGroup
+              title="Choisir la taille"
+              description="Sélectionnez la taille souhaitée."
+              required
+              min={1}
+              max={1}
+              selectedCount={selectedSize ? 1 : 0}
+              error={sizeError}
+            >
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {sizeChoices.map((size: Choice) => {
                   const selected = selectedSize === size.name
 
                   return (
-                    <button
+                    <PublicOptionChoice
                       key={size.name}
-                      type="button"
-                      onClick={() => setSelectedSize(size.name)}
-                      className={cn(
-                        "min-h-24 rounded-2xl border p-3 text-left shadow-sm transition active:scale-[0.98] sm:p-4",
-                        selected
-                          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 ring-2 ring-[var(--color-primary)]/25"
-                          : "border-border bg-card hover:border-[var(--color-primary)]/40"
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="break-words text-sm font-black leading-tight sm:text-base">{formatSizeName(size.name)}</p>
-                          <p className="mt-2 whitespace-nowrap text-sm font-bold text-muted-foreground">
-                            {size.price > 0 ? `+${size.price.toLocaleString()} FCFA` : "Prix de base"}
-                          </p>
-                        </div>
-                        <span
-                          className={cn(
-                            "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
-                            selected
-                              ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
-                              : "border-border bg-background"
-                          )}
-                        >
-                          {selected ? <Check className="h-3.5 w-3.5" /> : null}
-                        </span>
-                      </div>
-                    </button>
+                      name={`${product.id}-size`}
+                      value={size.name}
+                      label={formatSizeName(size.name)}
+                      price={size.price > 0 ? `+${size.price.toLocaleString()} FCFA` : "Prix de base"}
+                      selected={selected}
+                      required
+                      controlType="radio"
+                      presentation="card"
+                      onSelect={() => {
+                        setSelectedSize(size.name)
+                        setSizeError(null)
+                      }}
+                    />
                   )
                 })}
               </div>
-            </section>
+            </PublicOptionGroup>
           ) : null}
 
           {supplementChoices.length > 0 ? (
-            <section className="space-y-3">
-              <div>
-                <p className="text-sm font-black uppercase tracking-wide">Suppléments</p>
-                <p className="mt-1 text-xs font-semibold text-muted-foreground">Ajoutez ce qui vous fait plaisir</p>
-              </div>
-              <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+            <PublicOptionGroup
+              title="Suppléments"
+              description="Ajoutez ce qui vous fait plaisir."
+              selectedCount={selectedSupplements.length}
+            >
+              <div className="space-y-2">
                 {supplementChoices.map((supplement: Choice) => {
                   const selected = selectedSupplements.some((item) => item.name === supplement.name)
                   return (
-                    <button
+                    <PublicOptionChoice
                       key={supplement.name}
-                      type="button"
-                      onClick={() => {
+                      name={`${product.id}-supplements`}
+                      value={supplement.name}
+                      label={supplement.name}
+                      description="Supplément"
+                      price={`+${supplement.price.toLocaleString()} FCFA`}
+                      selected={selected}
+                      controlType="checkbox"
+                      presentation="row"
+                      onSelect={() => {
                         setSelectedSupplements((current) =>
                           selected
                             ? current.filter((item) => item.name !== supplement.name)
                             : [...current, supplement]
                         )
                       }}
-                      className={cn(
-                        "flex min-h-16 w-full items-center gap-3 border-b border-border px-4 py-3 text-left transition last:border-b-0 active:scale-[0.99]",
-                        selected ? "bg-[var(--color-primary)]/10" : "bg-card hover:bg-muted/60"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border",
-                          selected
-                            ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
-                            : "border-border bg-muted text-muted-foreground"
-                        )}
-                      >
-                        {selected ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-black">{supplement.name}</span>
-                        <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">
-                          Supplément
-                        </span>
-                      </span>
-                      <span className="shrink-0 whitespace-nowrap text-sm font-black text-[var(--color-primary)]">
-                        +{supplement.price.toLocaleString()} FCFA
-                      </span>
-                    </button>
+                    />
                   )
                 })}
               </div>
-            </section>
+            </PublicOptionGroup>
           ) : null}
 
           <section className="rounded-2xl border border-[var(--color-primary)]/15 bg-[var(--color-primary)]/10 p-4">
@@ -275,27 +216,11 @@ export default function ProductModal({
                   Prix mis à jour automatiquement
                 </p>
               </div>
-              <p className="shrink-0 whitespace-nowrap text-2xl font-black text-[var(--color-primary)]">
-                {calculateTotalPrice().toLocaleString()} FCFA
-              </p>
+              <PublicPrice value={`${calculateTotalPrice().toLocaleString()} FCFA`} role="total" className="shrink-0 whitespace-nowrap text-[var(--brand-primary)]" />
             </div>
           </section>
-        </div>
-
-        <div className="sticky bottom-0 border-t bg-background/95 p-4 backdrop-blur">
-          <button
-            type="button"
-            onClick={() => {
-              handleAddToCart()
-            }}
-            className="flex h-14 w-full items-center justify-between gap-4 rounded-2xl bg-[var(--color-primary)] px-5 text-sm font-black uppercase text-white shadow-lg shadow-[var(--color-primary)]/20 transition active:scale-[0.98]"
-          >
-            <span className="min-w-0 truncate">Ajouter à la commande</span>
-            <span className="shrink-0 whitespace-nowrap">{calculateTotalPrice().toLocaleString()} FCFA</span>
-          </button>
-        </div>
       </div>
-    </div>
+    </ProductCommerceModal>
   )
 }
 

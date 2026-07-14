@@ -32,15 +32,22 @@ export const getDefaultPreparationMode = (categoryName: string = ''): Preparatio
 };
 
 export type PreparationItem = {
-  preparationMode?: PreparationMode;
-  categoryName?: string;
+  preparationMode?: PreparationMode | string | null;
+  categoryName?: string | null;
+  destination?: string | null;
+  productionArea?: string | null;
+  status?: string | null;
+  itemStatus?: string | null;
 };
 
 /**
  * Résout le mode de préparation d'un produit (gestion ancien/nouveau format).
  */
 export const getEffectivePreparationMode = (item: PreparationItem): PreparationMode => {
-  if (item.preparationMode) return item.preparationMode;
+  if (item.preparationMode === 'kitchen' || item.preparationMode === 'direct' || item.preparationMode === 'bar') {
+    return item.preparationMode;
+  }
+  if (item.destination === 'kitchen' || item.productionArea === 'kitchen') return 'kitchen';
   return getDefaultPreparationMode(item.categoryName || '');
 };
 
@@ -51,6 +58,14 @@ export const isKitchenItem = (item: PreparationItem): boolean =>
 
 export const orderHasKitchenItems = (items: PreparationItem[]): boolean =>
   items.some(isKitchenItem);
+
+export const hasActiveKitchenItems = (items: PreparationItem[]): boolean =>
+  items.some((item) => {
+    if (!isKitchenItem(item)) return false;
+
+    const status = item.status || item.itemStatus;
+    return status !== 'served';
+  });
 
 export const getKitchenOrderItems = <T extends PreparationItem>(items: T[]): T[] =>
   items.filter(isKitchenItem);

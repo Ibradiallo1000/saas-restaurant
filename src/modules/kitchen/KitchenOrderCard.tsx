@@ -30,6 +30,7 @@ import { getKitchenOrderItems } from "@/utils/preparation-logic"
 type KitchenOrderCardProps = {
   order: RestaurantOrder
   onUpdateStatus: (orderId: string, status: OrderOperationStatus) => Promise<void>
+  isNew?: boolean
 }
 
 const statusLabels: Record<string, string> = {
@@ -74,6 +75,7 @@ const statusIcons: Record<string, React.ReactNode> = {
 type KitchenDisplayOrderType = "dine_in" | "pickup" | "delivery"
 
 function getKitchenDisplayOrderType(order: RestaurantOrder): KitchenDisplayOrderType {
+  const normalizedType = normalizeOrderType(getKitchenOrderTypeValue(order))
   const details = order as RestaurantOrder & {
     publicOrderType?: "pickup" | "delivery" | null
     type?: string
@@ -82,13 +84,13 @@ function getKitchenDisplayOrderType(order: RestaurantOrder): KitchenDisplayOrder
   if (
     order.table ||
     order.tableId ||
-    order.orderType === "dine_in" ||
+    normalizedType === "dine_in" ||
     details.type === "table"
   ) {
     return "dine_in"
   }
 
-  if (details.publicOrderType === "delivery" || order.orderType === "delivery") {
+  if (normalizedType === "delivery" || details.publicOrderType === "delivery") {
     return "delivery"
   }
 
@@ -102,7 +104,17 @@ const orderTypeLabels: Record<KitchenDisplayOrderType, string> = {
 }
 
 function isPaymentLockedForKitchen(order: RestaurantOrder) {
-  return normalizeOrderType(order.orderType) !== "dine_in" && !isOrderPaid(order)
+  return normalizeOrderType(getKitchenOrderTypeValue(order)) !== "dine_in" && !isOrderPaid(order)
+}
+
+function getKitchenOrderTypeValue(order: RestaurantOrder) {
+  const details = order as RestaurantOrder & {
+    publicOrderType?: string | null
+    type?: string | null
+    mode?: string | null
+  }
+
+  return order.orderType ?? details.publicOrderType ?? details.type ?? details.mode
 }
 
 function getCreatedAtMs(order: RestaurantOrder) {
@@ -168,7 +180,7 @@ function formatDeliveryAddress(
   return [value.label, value.street, value.zone, value.city].filter(Boolean).join(", ") || null
 }
 
-export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProps) {
+function KitchenOrderCardComponent({ order, onUpdateStatus, isNew = false }: KitchenOrderCardProps) {
   const { toast } = useToast()
   const [isUpdating, setIsUpdating] = React.useState(false)
   const [isDetailOpen, setIsDetailOpen] = React.useState(false)
@@ -178,7 +190,8 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
   if (!order.kitchenStatus) console.warn("Missing kitchenStatus", order.id)
   const orderStatus = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
   const status = orderStatus
-  const followingStatus = nextOrderStatus(orderStatus, order.orderType)
+  const effectiveOrderType = getKitchenOrderTypeValue(order)
+  const followingStatus = nextOrderStatus(orderStatus, effectiveOrderType)
   const nextAction = followingStatus
     ? {
         label: actionLabels[followingStatus] || statusLabels[status] || followingStatus,
@@ -202,7 +215,7 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
   const elapsedTime = formatElapsedTime(createdAtMs, nowMs)
   const elapsedMinutes = getElapsedMinutes(createdAtMs, nowMs)
   const isPaymentDelayed = isPaymentLocked && elapsedMinutes > 10
-  const isPaidNonTableOrder = normalizeOrderType(order.orderType) !== "dine_in" && !isPaymentLocked
+  const isPaidNonTableOrder = normalizeOrderType(effectiveOrderType) !== "dine_in" && !isPaymentLocked
   const isPaid = isOrderPaid(order)
 
   const lastItemAddedAt = React.useMemo(() => {
@@ -217,14 +230,6 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
 
   const isRecentActivity = (nowMs - lastItemAddedAt) < 20000 // 20 secondes
   const isNewOrder = (lastItemAddedAt - createdAtMs) < 10000 // dans les 10s apres creation
-
-  React.useEffect(() => {
-    console.log({
-      orderId: order.id,
-      type: order.orderType,
-      payment: (order as { paymentStatus?: string | null }).paymentStatus,
-    })
-  }, [order])
 
   React.useEffect(() => {
     const interval = window.setInterval(() => {
@@ -300,7 +305,8 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
           }
         }}
         className={cn(
-          "animate-in fade-in slide-in-from-bottom-2 cursor-pointer rounded-[18px] border border-border/70 bg-card/95 p-3.5 text-card-foreground shadow-[0_10px_26px_rgba(15,23,42,0.07)] outline-none ring-primary/40 transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] hover:border-primary/25 hover:shadow-[0_16px_34px_rgba(15,23,42,0.12)] active:translate-y-0 active:scale-[0.99] focus:ring-2 dark:shadow-[0_12px_28px_rgba(0,0,0,0.24)]",
+          "cursor-pointer rounded-[18px] border border-border/70 bg-card/95 p-3.5 text-card-foreground shadow-[0_10px_26px_rgba(15,23,42,0.07)] outline-none ring-primary/40 transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] hover:border-primary/25 hover:shadow-[0_16px_34px_rgba(15,23,42,0.12)] active:translate-y-0 active:scale-[0.99] focus:ring-2 dark:shadow-[0_12px_28px_rgba(0,0,0,0.24)]",
+          isNew && "animate-in fade-in slide-in-from-bottom-2 duration-500",
           isPaymentLocked && "cursor-not-allowed opacity-50",
           isPaymentDelayed && "border-red-500/50 ring-1 ring-red-500/20",
           isPaidNonTableOrder && "border-emerald-500/40 ring-1 ring-emerald-500/20",
@@ -517,6 +523,127 @@ export function KitchenOrderCard({ order, onUpdateStatus }: KitchenOrderCardProp
       </Dialog>
     </>
   )
+}
+
+export const KitchenOrderCard = React.memo(
+  KitchenOrderCardComponent,
+  (previous, next) =>
+    previous.isNew === next.isNew &&
+    previous.onUpdateStatus === next.onUpdateStatus &&
+    getKitchenOrderCardSignature(previous.order) === getKitchenOrderCardSignature(next.order)
+)
+
+function getKitchenOrderCardSignature(order: RestaurantOrder) {
+  const details = order as RestaurantOrder & {
+    status?: string | null
+    orderStatus?: string | null
+    paymentStatus?: string | null
+    total?: number | null
+    totalAmount?: number | null
+    updatedAt?: unknown
+    timestamps?: {
+      servedAt?: unknown
+      pickedUpAt?: unknown
+    }
+    servedAt?: unknown
+    pickedUpAt?: unknown
+    publicOrderType?: string | null
+    type?: string | null
+    mode?: string | null
+    customerName?: string | null
+    customerPhone?: string | null
+    phoneNumber?: string | null
+    notes?: string | null
+    customerNote?: string | null
+    customerNotes?: string | null
+    deliveryAddress?: unknown
+  }
+  const itemsSignature = (order.items || [])
+    .map((item: any) =>
+      [
+        item.id,
+        item.productId,
+        item.name,
+        item.quantity,
+        item.status,
+        item.itemStatus,
+        item.preparationMode,
+        item.destination,
+        item.productionArea,
+        item.note,
+        item.notes,
+        stableJson(item.options),
+        stableJson(item.extras),
+        stableJson(item.selectedOptions),
+        stableJson(item.supplements),
+        stableJson(item.supplementNames),
+        toComparableTimestamp(item.createdAt),
+        toComparableTimestamp(item.servedAt),
+      ].join(":")
+    )
+    .join("|")
+
+  return [
+    order.id,
+    order.kitchenStatus,
+    details.status,
+    details.orderStatus,
+    details.paymentStatus,
+    order.orderType,
+    details.publicOrderType,
+    details.type,
+    details.mode,
+    details.total,
+    details.totalAmount,
+    order.table,
+    order.tableId,
+    details.customer?.name,
+    details.customer?.phone,
+    details.customerName,
+    details.customerPhone,
+    details.phoneNumber,
+    details.notes,
+    details.customerNote,
+    details.customerNotes,
+    stableJson(details.deliveryAddress),
+    toComparableTimestamp(order.createdAt),
+    toComparableTimestamp(details.updatedAt),
+    toComparableTimestamp(details.timestamps?.servedAt),
+    toComparableTimestamp(details.timestamps?.pickedUpAt),
+    toComparableTimestamp(details.servedAt),
+    toComparableTimestamp(details.pickedUpAt),
+    itemsSignature,
+  ].join("||")
+}
+
+function toComparableTimestamp(value: unknown) {
+  if (!value) return ""
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : ""
+  if (value instanceof Date) {
+    const timestamp = value.getTime()
+    return Number.isFinite(timestamp) ? String(timestamp) : ""
+  }
+
+  const timestampValue = value as {
+    toMillis?: () => number
+    toDate?: () => Date
+  }
+  const timestamp =
+    timestampValue.toMillis?.() ?? timestampValue.toDate?.().getTime()
+
+  return typeof timestamp === "number" && Number.isFinite(timestamp)
+    ? String(timestamp)
+    : ""
+}
+
+function stableJson(value: unknown) {
+  if (value === undefined || value === null) return ""
+
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
 }
 
 function parseItemDetails(item: any) {

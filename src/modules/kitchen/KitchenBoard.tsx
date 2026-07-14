@@ -48,6 +48,9 @@ type KitchenColumnStatus =
   | typeof ORDER_OPERATION_STATUS.READY
   | typeof ORDER_OPERATION_STATUS.SERVED
 
+const KITCHEN_JOURNAL_MARKER = "__kitchenServedToday"
+const DEBUG_PICKED_UP_ORDER_ID = "MEy8U4UOHDUoJz5UVZq7"
+
 const KITCHEN_COLUMNS: Array<{
   status: KitchenColumnStatus
   title: string
@@ -107,6 +110,17 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
   )
   const previousItemCountsRef = React.useRef<Map<string, number>>(new Map())
   const kitchenAlertedOrderIdsRef = React.useRef<Set<string>>(new Set())
+  const ordersRef = React.useRef(orders)
+  const seenOrderIdsRef = React.useRef<Set<string>>(new Set())
+  const entrySoundOrderIdsRef = React.useRef<Set<string>>(new Set())
+  const hasHydratedOrdersRef = React.useRef(false)
+  const [enteringOrderIds, setEnteringOrderIds] = React.useState<Set<string>>(
+    () => new Set()
+  )
+
+  React.useEffect(() => {
+    ordersRef.current = orders
+  }, [orders])
 
   const handleLogout = React.useCallback(async () => {
     await signOut(auth)
@@ -114,6 +128,8 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
   }, [auth, router])
 
   const kitchenOrders = React.useMemo(() => {
+    debugKitchenBoardStage("received orders from OrdersProvider", orders)
+
     return orders
       .filter((order) => orderHasKitchenItems(order.items || []))
       .filter(shouldShowInTodayKitchen)
@@ -136,18 +152,80 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
 
     kitchenOrders.forEach((order) => {
       if (!order.kitchenStatus) console.warn("Missing kitchenStatus", order.id)
+      if (isKitchenServedTodayOrder(order)) {
+        debugKitchenBoardColumn(order, ORDER_OPERATION_STATUS.SERVED, "journal marker")
+        groups.served.push(order)
+        return
+      }
+
       const kitchenStatus = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
 
-      if (kitchenStatus !== ORDER_OPERATION_STATUS.COMPLETED) {
-        const columnStatus =
-          kitchenStatus === ORDER_OPERATION_STATUS.PICKED_UP
-            ? ORDER_OPERATION_STATUS.SERVED
-            : kitchenStatus
-        groups[columnStatus].push(order)
+      if (
+        kitchenStatus === ORDER_OPERATION_STATUS.PENDING ||
+        kitchenStatus === ORDER_OPERATION_STATUS.IN_PREPARATION ||
+        kitchenStatus === ORDER_OPERATION_STATUS.READY
+      ) {
+        debugKitchenBoardColumn(order, kitchenStatus, "active status")
+        groups[kitchenStatus].push(order)
       }
     })
 
+    debugKitchenBoardStage("after grouping", [
+      ...groups.pending,
+      ...groups.preparing,
+      ...groups.ready,
+      ...groups.served,
+    ])
+
     return groups
+  }, [kitchenOrders])
+
+  React.useEffect(() => {
+    const currentOrderIds = new Set(kitchenOrders.map((order) => order.id))
+    const newOrderIds = kitchenOrders
+      .map((order) => order.id)
+      .filter((orderId) => !seenOrderIdsRef.current.has(orderId))
+
+    seenOrderIdsRef.current.forEach((orderId) => {
+      if (!currentOrderIds.has(orderId)) {
+        seenOrderIdsRef.current.delete(orderId)
+        entrySoundOrderIdsRef.current.delete(orderId)
+      }
+    })
+
+    kitchenOrders.forEach((order) => {
+      seenOrderIdsRef.current.add(order.id)
+    })
+
+    if (!hasHydratedOrdersRef.current) {
+      hasHydratedOrdersRef.current = true
+      return
+    }
+
+    const animatedOrderIds = newOrderIds.filter(Boolean)
+    if (animatedOrderIds.length === 0) return
+
+    setEnteringOrderIds((current) => {
+      const next = new Set(current)
+      animatedOrderIds.forEach((orderId) => next.add(orderId))
+      return next
+    })
+
+    animatedOrderIds.forEach((orderId) => {
+      if (entrySoundOrderIdsRef.current.has(orderId)) return
+      entrySoundOrderIdsRef.current.add(orderId)
+      playNewOrderNotificationSound()
+    })
+
+    const timeout = window.setTimeout(() => {
+      setEnteringOrderIds((current) => {
+        const next = new Set(current)
+        animatedOrderIds.forEach((orderId) => next.delete(orderId))
+        return next
+      })
+    }, 650)
+
+    return () => window.clearTimeout(timeout)
   }, [kitchenOrders])
 
   React.useEffect(() => {
@@ -165,7 +243,7 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
       
       const shouldAlertKitchen =
         previous.has(order.id) &&
-        normalizeOrderType(order.orderType) !== "dine_in" &&
+        normalizeOrderType(getKitchenOrderTypeValue(order)) !== "dine_in" &&
         previousPaymentStatus !== "verified" &&
         currentPaymentStatus === "verified" &&
         !kitchenAlertedOrderIdsRef.current.has(order.id)
@@ -184,9 +262,9 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     })
   }, [kitchenOrders, toast])
 
-  const updateStatus = async (orderId: string, newOrderStatus: OrderOperationStatus) => {
+  const updateStatus = React.useCallback(async (orderId: string, newOrderStatus: OrderOperationStatus) => {
     if (!db) return
-    const order = orders.find((currentOrder) => currentOrder.id === orderId)
+    const order = ordersRef.current.find((currentOrder) => currentOrder.id === orderId)
     if (!order) return
 
     const currentStatus = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
@@ -223,7 +301,7 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
       items: nextItems,
       updatedAt: serverTimestamp(),
     })
-  }
+  }, [db, restaurantId])
 
   return (
     <main className="flex h-screen min-h-screen flex-col overflow-hidden bg-background text-foreground">
@@ -342,6 +420,7 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
                           key={order.id}
                           order={order}
                           onUpdateStatus={updateStatus}
+                          isNew={enteringOrderIds.has(order.id)}
                         />
                       ))}
                     </div>
@@ -365,60 +444,39 @@ function getCreatedAtMs(order: RestaurantOrder) {
 }
 
 function shouldShowInTodayKitchen(order: RestaurantOrder) {
-  const status = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
-  if (status !== ORDER_OPERATION_STATUS.SERVED && status !== ORDER_OPERATION_STATUS.PICKED_UP) return true
-  return isToday(getKitchenServedAtMs(order) ?? getCreatedAtMs(order))
-}
+  if (isKitchenServedTodayOrder(order)) return true
 
-function isToday(timestamp: number) {
-  const date = new Date(timestamp)
-  const now = new Date()
+  const status = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
   return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
+    status === ORDER_OPERATION_STATUS.PENDING ||
+    status === ORDER_OPERATION_STATUS.IN_PREPARATION ||
+    status === ORDER_OPERATION_STATUS.READY
   )
 }
 
-function getKitchenServedAtMs(order: RestaurantOrder) {
-  const servedAt =
-    (order as any).timestamps?.servedAt ??
-    (order as any).timestamps?.pickedUpAt ??
-    (order as any).servedAt ??
-    (order as any).pickedUpAt ??
-    (order as any).updatedAt
-  const explicitTimestamp = toTimestampMs(servedAt)
-  if (explicitTimestamp) return explicitTimestamp
-
-  const history = Array.isArray((order as any).statusHistory) ? (order as any).statusHistory : []
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const event = history[index]
-    const eventStatus = orderStatusFromKitchenStatus(event?.status)
-    if (eventStatus === ORDER_OPERATION_STATUS.SERVED || eventStatus === ORDER_OPERATION_STATUS.PICKED_UP) {
-      const historyTimestamp = toTimestampMs(event?.at)
-      if (historyTimestamp) return historyTimestamp
-    }
-  }
-
-  return null
-}
-
-function toTimestampMs(value: any) {
-  if (!value) return null
-  if (typeof value === "number") return value
-  if (value instanceof Date) return value.getTime()
-  return value.toMillis?.() ?? value.toDate?.().getTime?.() ?? null
+function isKitchenServedTodayOrder(order: RestaurantOrder) {
+  return Boolean((order as any)[KITCHEN_JOURNAL_MARKER])
 }
 
 function getKitchenQueuePriority(order: RestaurantOrder) {
   const paymentStatus = (order as { paymentStatus?: string | null }).paymentStatus
-  const isDineIn = normalizeOrderType(order.orderType) === "dine_in"
+  const isDineIn = normalizeOrderType(getKitchenOrderTypeValue(order)) === "dine_in"
   const isVerified = paymentStatus === "verified"
 
   if (!isDineIn && isVerified) return 0
   if (isDineIn) return 1
 
   return 2
+}
+
+function getKitchenOrderTypeValue(order: RestaurantOrder) {
+  const details = order as RestaurantOrder & {
+    publicOrderType?: string | null
+    type?: string | null
+    mode?: string | null
+  }
+
+  return order.orderType ?? details.publicOrderType ?? details.type ?? details.mode
 }
 
 function getKitchenTimestampField(status: OrderOperationStatus) {
@@ -431,6 +489,52 @@ function getKitchenTimestampField(status: OrderOperationStatus) {
 
 function getOrderPaymentStatus(order: RestaurantOrder) {
   return (order as { paymentStatus?: string | null }).paymentStatus ?? null
+}
+
+function debugKitchenBoardStage(stage: string, orders: RestaurantOrder[]) {
+  const matches = orders.filter((order) => order.id === DEBUG_PICKED_UP_ORDER_ID)
+  if (matches.length === 0) return
+
+  console.group(`[KitchenBoard][pickedUpAt target] ${stage}`)
+  console.log("localTime", new Date().toLocaleString())
+  console.log("matchCount", matches.length)
+  matches.forEach((order) => {
+    console.log({
+      id: order.id,
+      kitchenStatus: order.kitchenStatus,
+      orderStatus: (order as any).orderStatus,
+      status: (order as any).status,
+      orderType: order.orderType,
+      type: (order as any).type,
+      mode: (order as any).mode,
+      journalMarker: Boolean((order as any)[KITCHEN_JOURNAL_MARKER]),
+      hasKitchenItems: orderHasKitchenItems(order.items || []),
+      shouldShowInTodayKitchen: shouldShowInTodayKitchen(order),
+      items: order.items,
+      itemPreparationFields: (order.items || []).map((item: any) => ({
+        preparationMode: item?.preparationMode,
+        destination: item?.destination,
+        productionArea: item?.productionArea,
+        status: item?.status,
+      })),
+    })
+  })
+  console.groupEnd()
+}
+
+function debugKitchenBoardColumn(
+  order: RestaurantOrder,
+  column: KitchenColumnStatus,
+  reason: string
+) {
+  if (order.id !== DEBUG_PICKED_UP_ORDER_ID) return
+
+  console.group("[KitchenBoard][pickedUpAt target] column calculated")
+  console.log("localTime", new Date().toLocaleString())
+  console.log("orderId", order.id)
+  console.log("column", column)
+  console.log("reason", reason)
+  console.groupEnd()
 }
 
 

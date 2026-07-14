@@ -12,6 +12,7 @@ import {
   CreditCard,
   Info,
   Phone,
+  ShoppingBag,
   Utensils,
   type LucideIcon,
 } from "lucide-react"
@@ -19,6 +20,8 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 
 import { OrderStepper } from "@/components/OrderStepper"
 import { PaymentBadge } from "@/components/PaymentBadge"
+import { PublicBadge, PublicBottomNavigation, PublicButton, PublicEmptyState, PublicHeader, PublicPageShell, PublicPrice, PublicStatusCard, PublicSurface } from "@/components/public-ui"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { useCollection, useDoc, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { useToast } from "@/hooks/use-toast"
 import { PAYMENT_STATUS } from "@/lib/constants"
@@ -28,9 +31,7 @@ import { normalizeOrderType } from "@/lib/order-lifecycle"
 import { buildUssdTelHref } from "@/lib/ussd"
 import { CartProvider, useCart } from "@/modules/public/cart/CartContext"
 import CartDrawer from "@/modules/public/components/CartDrawer"
-import Header from "@/modules/public/components/Header"
 import PaymentModal from "@/modules/public/components/PaymentModal"
-import { PublicBottomNavigation } from "@/modules/public/PublicPage"
 import {
   isCurrentTrackedOrderExpired,
   rememberTrackedOrder,
@@ -41,9 +42,6 @@ import {
   getAvailablePaymentMethods,
   type AvailablePaymentMethod,
 } from "@/services/payment-methods.service"
-
-const TRACKING_CARD_CLASS =
-  "rounded-2xl border bg-card p-5 text-card-foreground shadow-sm"
 
 type ClientOrderType = "dine_in" | "pickup" | "delivery"
 
@@ -83,6 +81,12 @@ function ClientOrderTrackingContent() {
   const lastFeedbackAtRef = React.useRef(0)
   const hasInteractedRef = React.useRef(false)
   const ordersEndRef = React.useRef<HTMLDivElement | null>(null)
+  const feedbackTimeoutsRef = React.useRef<Set<number>>(new Set())
+
+  React.useEffect(() => () => {
+    feedbackTimeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout))
+    feedbackTimeoutsRef.current.clear()
+  }, [])
 
   const restaurantRef = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
@@ -258,13 +262,15 @@ function ClientOrderTrackingContent() {
       return next
     })
 
-    window.setTimeout(() => {
+    const feedbackTimeout = window.setTimeout(() => {
       setHighlightedOrderIds((previous) => {
         const next = new Set(previous)
         next.delete(input.orderId)
         return next
       })
+      feedbackTimeoutsRef.current.delete(feedbackTimeout)
     }, 5000)
+    feedbackTimeoutsRef.current.add(feedbackTimeout)
 
     ordersEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
 
@@ -286,8 +292,14 @@ function ClientOrderTrackingContent() {
         setCartOpen={setCartOpen}
         onHome={goHome}
       >
-        <div className={`${TRACKING_CARD_CLASS} mx-auto max-w-md p-6 text-center`}>
-          Chargement du suivi...
+        <div className="mx-auto max-w-[480px] space-y-3" role="status" aria-label="Chargement du suivi de commande">
+          <PublicSurface level="card" border="subtle" radius="xl" padding="comfortable" className="space-y-3">
+            <div className="h-6 w-2/3 animate-pulse rounded bg-[var(--surface-public-muted)] motion-reduce:animate-none" />
+            <div className="h-4 w-full animate-pulse rounded bg-[var(--surface-public-muted)] motion-reduce:animate-none" />
+            <div className="h-4 w-4/5 animate-pulse rounded bg-[var(--surface-public-muted)] motion-reduce:animate-none" />
+          </PublicSurface>
+          <PublicSurface level="card" border="subtle" radius="lg" padding="standard" className="h-28 animate-pulse motion-reduce:animate-none" />
+          <span className="sr-only">Chargement du suivi...</span>
         </div>
       </PublicTrackingLayout>
     )
@@ -307,25 +319,12 @@ function ClientOrderTrackingContent() {
         setCartOpen={setCartOpen}
         onHome={goHome}
       >
-        <div className={`${TRACKING_CARD_CLASS} mx-auto max-w-md p-6 text-center`}>
-          <CheckCircle className="mx-auto h-10 w-10 text-emerald-500" />
-          <h1 className="mt-3 text-lg font-semibold">Suivi terminé</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Cette commande finalisée reste disponible pendant {TRACKING_RETENTION_HOURS}h, puis elle est masquée sur cet appareil.
-          </p>
-          <button
-            type="button"
-            onClick={goHome}
-            className="mt-5 h-11 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-black text-white shadow-sm transition active:scale-[0.98]"
-          >
-            Retour au menu
-          </button>
-        </div>
+        <PublicStatusCard className="mx-auto max-w-[480px]" headingAs="h1" title="Suivi terminé" description={`Cette commande finalisée reste disponible pendant ${TRACKING_RETENTION_HOURS}h, puis elle est masquée sur cet appareil.`} icon={<CheckCircle />} variant="neutral" emphasis="primary" action={<PublicButton variant="outline" size="standard" onClick={goHome}>Retour au menu</PublicButton>} />
       </PublicTrackingLayout>
     )
   }
 
-  if (error || !mainOrder) {
+  if (!mainOrder) {
     return (
       <PublicTrackingLayout
         restaurant={restaurant}
@@ -335,12 +334,7 @@ function ClientOrderTrackingContent() {
         setCartOpen={setCartOpen}
         onHome={goHome}
       >
-        <div className={`${TRACKING_CARD_CLASS} mx-auto max-w-md p-6 text-center`}>
-          <h1 className="text-lg font-semibold">Commande introuvable</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {error || "Le lien de suivi ne correspond a aucune commande."}
-          </p>
-        </div>
+        <PublicEmptyState className="mx-auto max-w-[480px]" variant="error" headingAs="h1" title="Commande introuvable" description={error || "Le lien de suivi ne correspond à aucune commande."} primaryAction={<PublicButton variant="outline" onClick={goHome}>Retour au menu</PublicButton>} />
       </PublicTrackingLayout>
     )
   }
@@ -494,96 +488,79 @@ function ClientOrderTrackingContent() {
       setCartOpen={setCartOpen}
       onHome={canContinueOrdering ? continueOrdering : goHome}
     >
-      <div className="mx-auto max-w-md space-y-2.5">
-        <TrackingHeaderCard
-          orderDisplayId={orderDisplayId}
-          orderPhone={shouldShowPhone ? orderPhone : ""}
-        />
+      <div className="mx-auto max-w-[480px] space-y-3">
+        <h1 className="text-[22px] font-public-extrabold leading-7 text-[var(--text-primary)] sm:text-[28px] sm:leading-[34px]">Suivez votre commande</h1>
 
-        <TrackingStatusCard summary={statusSummary} />
+        <TrackingStatusCard summary={statusSummary} step={step} />
+
+        {error ? <PublicStatusCard role="alert" title="Une action n’a pas abouti" description={error} icon={<Info />} variant="danger" emphasis="subtle" /> : null}
 
         {mainOrder && (
-          <section className="rounded-2xl border bg-card px-3.5 py-3 text-card-foreground shadow-sm">
-            <h2 className="mb-3 text-base font-black text-foreground">
+          <PublicSurface as="section" level="card" border="subtle" radius="lg" padding="standard" elevation="xs">
+            <h2 className="mb-4 text-public-md font-public-bold text-[var(--text-primary)]">
               Évolution de votre commande
             </h2>
             <OrderStepper 
+              appearance="public"
               orderType={mainOrder.orderType} 
               kitchenStatus={mainOrder.kitchenStatus} 
               legacyStatus={mainOrder.status}
               createdAt={mainOrder.createdAt}
               timestamps={mainOrder.timestamps}
             />
-          </section>
+          </PublicSurface>
         )}
+
+        <TrackingHeaderCard orderDisplayId={orderDisplayId} orderPhone={shouldShowPhone ? orderPhone : ""} order={safeOrder} restaurantName={restaurant?.name} />
 
         {!isTrackingComplete ? <TrackingInfoCard /> : null}
 
         {shouldShowPostServicePayment ? (
-          <section className="rounded-2xl border-2 border-[var(--brand-primary)]/25 bg-[var(--brand-primary-soft)] p-5 text-card-foreground shadow-lg">
-            <p className="text-xs font-black uppercase tracking-wide text-[var(--brand-primary)]">
-              Total à payer
-            </p>
-            <p className="mt-2 text-4xl font-black text-[var(--brand-primary)]">
-              {formatMoney(sessionTotal)} FCFA
-            </p>
+          <PublicStatusCard title="Paiement de la table" description="Choisissez une méthode lorsque toutes les commandes ont été servies." icon={<CreditCard />} variant={sessionPaymentConfirmed ? "success" : tableSession?.paymentRequest?.status === "rejected" ? "danger" : "warning"} emphasis="standard" badge={sessionPaymentConfirmed ? <PublicBadge label="Confirmé" variant="success" /> : <PublicBadge label="À régler" variant="warning" />}>
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--border-public-subtle)] pb-4">
+              <span className="text-public-sm font-public-semibold text-[var(--text-secondary)]">Total à payer</span>
+              <PublicPrice role="total" value={formatMoney(sessionTotal)} suffix="FCFA" aria-label={`Total à payer ${formatMoney(sessionTotal)} FCFA`} />
+            </div>
 
             {sessionPaymentConfirmed ? (
               <PaymentConfirmedPanel />
             ) : tableSession?.paymentRequest?.status === "requested" && tableSession?.paymentRequest?.method === "cash" ? (
-               <div className="mt-5 rounded-xl border border-[var(--brand-primary)]/30 bg-[var(--brand-primary-soft)] p-4 text-center text-[var(--brand-primary)]">
-                 <p className="font-black text-lg animate-pulse">Un serveur arrive pour encaisser</p>
-               </div>
+               <PublicSurface role="status" className="mt-4 text-center text-public-sm font-public-bold" level="muted" radius="md" padding="standard">Un serveur arrive pour encaisser</PublicSurface>
             ) : tableSession?.paymentRequest?.status === "requested" && tableSession?.paymentRequest?.method === "mobile" ? (
                <div className="mt-5 space-y-3">
-                 <label className="block text-sm font-black text-[var(--brand-primary)]">
+                 <label htmlFor="tracking-payment-proof" className="block text-public-sm font-public-semibold text-[var(--text-primary)]">
                    Collez le SMS de confirmation reçu après votre paiement.
                  </label>
                  <textarea
+                   id="tracking-payment-proof"
                    value={paymentProofSms}
                    onChange={(event) => setPaymentProofSms(event.target.value)}
                    placeholder={paymentProofSmsPlaceholder}
-                   className="min-h-28 w-full resize-none rounded-xl border border-[var(--brand-primary)]/30 bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-[var(--brand-primary)]/30"
+                   className="min-h-28 w-full resize-none rounded-[var(--radius-public-md)] border border-[var(--border-public-default)] bg-[var(--surface-public-card)] px-4 py-3 font-publicBody text-public-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus-visible:border-[var(--focus-ring)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--focus-ring)_28%,transparent)]"
                  />
-                 <button
-                   onClick={handleConfirmMobilePayment}
-                   disabled={isConfirming || !paymentProofSms.trim()}
-                   className="w-full flex items-center justify-center h-14 rounded-xl bg-[var(--color-primary)] text-white text-sm font-black shadow-sm transition active:scale-[0.98] disabled:opacity-60 uppercase"
-                 >
-                   {isConfirming ? "..." : "Envoyer la preuve SMS"}
-                 </button>
+                 <PublicButton fullWidth size="action" onClick={handleConfirmMobilePayment} disabled={!paymentProofSms.trim()} loading={isConfirming} loadingLabel="Envoi en cours">Envoyer la preuve SMS</PublicButton>
                </div>
             ) : tableSession?.paymentRequest?.status === "pending_confirmation" ? (
-               <div className="mt-5 rounded-xl border border-[var(--brand-primary)]/30 bg-[var(--brand-primary-soft)] p-4 text-center text-[var(--brand-primary)]">
-                 <p className="font-black text-lg animate-pulse">Paiement effectué, en attente de validation</p>
-               </div>
+               <PublicSurface role="status" className="mt-4 text-center text-public-sm font-public-bold" level="muted" radius="md" padding="standard">Paiement effectué, en attente de validation</PublicSurface>
             ) : (
                <div className="mt-5 space-y-3">
                  {tableSession?.paymentRequest?.status === "rejected" ? (
-                    <div className="mb-3 rounded-xl bg-red-500/10 p-3 text-sm font-black text-red-700 dark:text-red-300">
-                      Paiement refusé, veuillez réessayer.
-                    </div>
+                    <PublicSurface role="alert" level="card" border="default" radius="md" padding="compact" className="border-[var(--danger)] text-public-sm font-public-bold text-[var(--danger)]">Paiement refusé, veuillez réessayer.</PublicSurface>
                  ) : null}
-                 <p className="text-sm font-semibold text-[var(--brand-primary)]">Comment souhaitez-vous payer ?</p>
+                 <p className="text-public-sm font-public-semibold text-[var(--text-primary)]">Comment souhaitez-vous payer ?</p>
                  
-                 <div className="grid grid-cols-3 justify-items-start gap-2 sm:gap-3">
-                   <button
-                     type="button"
-                     onClick={handleCashPaymentSession}
-                     disabled={isCashPaying}
-                     className="inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-3 text-sm font-black text-white shadow-sm transition active:scale-[0.98] disabled:opacity-60 sm:px-4"
-                   >
+                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                   <PublicButton variant="primary" size="standard" onClick={handleCashPaymentSession} loading={isCashPaying} loadingLabel="Demande en cours">
                      <Banknote className="h-5 w-5" />
-                     {isCashPaying ? "..." : "Espèces"}
-                   </button>
+                     Espèces
+                   </PublicButton>
                    
                    {paymentMethods.map(method => (
-                     <button
+                     <PublicButton
                        key={method.code}
-                       type="button"
+                       variant="outline"
                        onClick={() => handleMobilePaymentSession(method)}
                        disabled={isMobilePaying || paymentMethodsLoading}
-                       className="inline-flex h-12 max-w-full items-center justify-center gap-2 rounded-xl border border-[var(--brand-primary)]/30 bg-background px-3 text-sm font-black text-foreground transition hover:bg-muted active:scale-[0.98] disabled:opacity-60 sm:px-4"
                      >
                        {method.logoUrl ? (
                          <img src={method.logoUrl} alt={method.name} className="h-6 object-contain" />
@@ -591,39 +568,31 @@ function ClientOrderTrackingContent() {
                          <CreditCard className="h-5 w-5 text-[var(--brand-primary)]" />
                        )}
                        <span>{method.name}</span>
-                     </button>
+                     </PublicButton>
                    ))}
                  </div>
                </div>
              )}
 
             {!sessionPaymentConfirmed && canContinueOrdering ? (
-              <button
-                type="button"
-                onClick={continueOrdering}
-                className="mt-5 flex h-12 w-full items-center justify-center rounded-xl border border-[var(--brand-primary)]/30 bg-background px-4 text-sm font-black uppercase text-[var(--brand-primary)] shadow-sm transition hover:bg-[var(--brand-primary-soft)] active:scale-[0.98]"
-              >
-                Commander encore
-              </button>
+              <PublicButton className="mt-4" fullWidth variant="outline" size="standard" onClick={continueOrdering}>Commander encore</PublicButton>
             ) : null}
-           </section>
+           </PublicStatusCard>
         ) : shouldShowPrepaidCompletion ? (
-          <section className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-5 text-emerald-950 shadow-lg dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-100">
-            <p className="whitespace-nowrap text-xl font-black text-emerald-900 dark:text-emerald-100">
-              Merci pour votre commande.
-            </p>
-            <p className="mt-3 text-sm font-semibold text-muted-foreground">
+          <PublicStatusCard title="Merci pour votre commande." icon={<CheckCircle2 />} variant="success" emphasis="standard">
+            <p className="text-public-sm font-public-semibold text-[var(--text-secondary)]">
               {prepaidPaymentConfirmed
                 ? isDeliveryOrder
                   ? "Un livreur vous contactera très bientôt pour effectuer la livraison."
                   : "Votre commande est prête à être récupérée."
                 : "Paiement déjà initié. La caisse finalise la validation si besoin."}
             </p>
-          </section>
+          </PublicStatusCard>
         ) : null}
         
         {!shouldShowPostServicePayment ? (
           <PaymentBadge
+            appearance="public"
             paymentStatus={effectivePaymentStatus}
             paymentIntentStatus={orderWithPaymentVerification.paymentIntentStatus}
             paymentVerificationStatus={orderWithPaymentVerification.paymentVerificationStatus}
@@ -711,75 +680,57 @@ function getTrackingStatusSummary({
 function TrackingHeaderCard({
   orderDisplayId,
   orderPhone,
+  order,
+  restaurantName,
 }: {
   orderDisplayId: string
   orderPhone?: string | null
+  order: any
+  restaurantName?: string | null
 }) {
-  return (
-    <section className="rounded-2xl border bg-card px-3.5 py-3 text-card-foreground shadow-sm">
-      <div className="flex items-start gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--brand-primary)]/20 bg-[var(--brand-primary-soft)] text-[var(--brand-primary)] shadow-sm">
-          <ClipboardList className="h-5 w-5" />
-        </span>
+  const createdAt = toTrackingDate(order?.createdAt)
+  const normalizedType = normalizeOrderType(order?.orderType)
+  const orderTypeLabel = normalizedType === "dine_in" ? "Sur place" : normalizedType === "delivery" ? "Livraison" : "À emporter"
 
-        <div className="min-w-0 flex-1">
-          <h1 className="whitespace-nowrap text-[22px] font-bold leading-tight text-foreground sm:text-2xl">
-            Suivez votre commande
-          </h1>
-          <p className="mt-1 text-base font-semibold text-muted-foreground sm:text-lg">
-            Commande n° <span className="text-[var(--brand-primary)]">{orderDisplayId}</span>
-          </p>
-          {orderPhone ? (
-            <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-muted-foreground sm:text-[15px]">
-              <Phone className="h-3.5 w-3.5 shrink-0" />
-              <span>{orderPhone}</span>
-            </p>
-          ) : null}
+  return (
+    <PublicSurface as="section" level="card" border="subtle" radius="lg" padding="standard" elevation="xs">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-public-md font-public-bold text-[var(--text-primary)]">Informations de commande</h2>
+          <p className="mt-1 text-public-sm text-[var(--text-secondary)]">Commande n° <strong className="text-[var(--text-primary)]">{orderDisplayId}</strong></p>
         </div>
+        <PublicBadge label={orderTypeLabel} variant="neutral" />
       </div>
-    </section>
+      <dl className="mt-4 grid gap-2.5 text-public-sm">
+        {restaurantName ? <TrackingInfoRow label="Restaurant" value={restaurantName} /> : null}
+        {order?.table ? <TrackingInfoRow label="Table" value={order.table} /> : null}
+        {order?.deliveryAddress ? <TrackingInfoRow label="Adresse" value={order.deliveryAddress} /> : null}
+        {orderPhone ? <TrackingInfoRow label="Téléphone" value={orderPhone} icon={<Phone />} /> : null}
+        {createdAt ? <TrackingInfoRow label="Commandée à" value={formatTrackingTime(createdAt)} /> : null}
+      </dl>
+    </PublicSurface>
   )
 }
 
-function TrackingStatusCard({ summary }: { summary: TrackingStatusSummary }) {
+function TrackingStatusCard({ summary, step }: { summary: TrackingStatusSummary; step: number }) {
   const Icon = summary.icon
+  const variant = step <= 1 ? "warning" : step === 2 ? "brand" : "success"
 
   return (
-    <section className="rounded-2xl border border-[var(--brand-primary)]/20 bg-[var(--brand-primary-soft)] px-3.5 py-3 text-card-foreground shadow-sm">
-      <div className="flex items-center gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[var(--brand-primary)] shadow-[0_10px_24px_rgba(15,23,42,0.10)] dark:bg-slate-950/80">
-          <Icon className="h-5 w-5" />
-        </span>
-
-        <div className="min-w-0 flex-1">
-          <h2 className="text-xl font-black leading-tight text-[var(--brand-primary)] sm:text-2xl">
-            {summary.title}
-          </h2>
-          <p className="mt-1 text-sm font-medium leading-5 text-foreground sm:text-base">
-            {summary.description}
-          </p>
-        </div>
-      </div>
-    </section>
+    <PublicStatusCard title={summary.title} description={summary.description} icon={<Icon />} variant={variant} emphasis="primary" badge={step < 4 ? <PublicBadge label={summary.remainingLabel} variant={variant} /> : <PublicBadge label="Terminée" variant="success" />}>
+      {step < 4 ? <p className="text-public-xs font-public-semibold text-[var(--text-muted)]">Heure estimée : {summary.readyAtLabel}</p> : null}
+    </PublicStatusCard>
   )
 }
 
 function TrackingInfoCard() {
   return (
-    <section className="rounded-2xl border border-[var(--brand-primary)]/20 bg-[var(--brand-primary-soft)] px-3.5 py-2.5 text-card-foreground shadow-sm">
-      <div className="flex items-center gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--brand-primary)]/20 bg-white text-[var(--brand-primary)] dark:bg-slate-950/80">
-          <Info className="h-4 w-4" />
-        </span>
-        <div className="min-w-0">
-          <h2 className="text-sm font-black leading-tight text-foreground">Merci pour votre commande !</h2>
-          <p className="mt-0.5 text-xs font-medium leading-4 text-muted-foreground">
-            Nous vous tiendrons informé à chaque étape.
-          </p>
-        </div>
-      </div>
-    </section>
+    <PublicStatusCard title="Merci pour votre commande !" description="Nous vous tiendrons informé à chaque étape." icon={<Info />} variant="info" emphasis="subtle" headingAs="h2" />
   )
+}
+
+function TrackingInfoRow({ label, value, icon }: { label: string; value: React.ReactNode; icon?: React.ReactNode }) {
+  return <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-3"><dt className="flex items-center gap-1.5 text-[var(--text-muted)]">{icon ? <span aria-hidden="true" className="[&_svg]:size-3.5">{icon}</span> : null}{label}</dt><dd className="break-words text-right font-public-semibold text-[var(--text-primary)]">{value}</dd></div>
 }
 
 function getEstimatedReadyAt(order: any, createdAt: Date | null, step: number) {
@@ -836,19 +787,11 @@ function formatTrackingTime(date: Date) {
 
 function PaymentConfirmedPanel() {
   return (
-    <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 p-5 text-green-900 shadow-sm dark:border-green-400/30 dark:bg-green-500/10 dark:text-green-100">
-      <div className="flex items-center gap-2 text-sm font-black uppercase">
-        <CheckCircle className="h-5 w-5" />
-        Commande terminee
-      </div>
-      <h2 className="mt-3 text-2xl font-black">Paiement confirme</h2>
-      <p className="mt-2 text-sm font-semibold text-green-800 dark:text-green-100/90">
-        Merci pour votre visite. Votre table a ete cloturee avec succes.
-      </p>
-      <p className="mt-3 text-sm text-green-800/80 dark:text-green-100/80">
-        Nous esperons vous revoir bientot. Vous pouvez partager votre avis avec l equipe du restaurant avant de partir.
-      </p>
-    </div>
+    <PublicSurface level="card" border="default" radius="lg" padding="standard" className="mt-4 border-[color:color-mix(in_srgb,var(--success)_30%,var(--border-public-subtle))] bg-[color:color-mix(in_srgb,var(--success)_8%,var(--surface-public-card))]">
+      <div className="flex items-center gap-2 text-public-sm font-public-bold text-[var(--success)]"><CheckCircle className="size-5" aria-hidden="true" />Paiement confirmé</div>
+      <p className="mt-2 text-public-sm font-public-semibold text-[var(--text-primary)]">Merci pour votre visite. Votre table a été clôturée avec succès.</p>
+      <p className="mt-2 text-public-xs text-[var(--text-secondary)]">Nous espérons vous revoir bientôt. Vous pouvez partager votre avis avec l’équipe du restaurant avant de partir.</p>
+    </PublicSurface>
   )
 }
 
@@ -1010,24 +953,40 @@ function PublicTrackingLayout({
   onHome: () => void
 }) {
   return (
-    <div className="app-background min-h-screen pb-32 text-foreground">
-      <Header
-        restaurant={restaurant}
+    <div className="app-background min-h-screen text-foreground">
+      <PublicHeader
+        variant="tracking"
+        restaurantName={restaurant?.name || "Restaurant"}
+        logoUrl={restaurant?.logoUrl || restaurant?.logo}
+        themeAction={<ThemeToggle />}
         cartCount={count}
         onCartClick={() => setCartOpen(true)}
       />
 
-      <main className="px-4 pb-5 pt-20">{children}</main>
+      <PublicPageShell
+        background="transparent"
+        width="transaction"
+        bottomReserve="navigation"
+        contentClassName="py-2"
+      >
+        {children}
+      </PublicPageShell>
 
       <PublicBottomNavigation
-        active="tracking"
-        count={count}
-        searchValue=""
-        onHome={onHome}
-        onSearch={() => {}}
-        onSearchChange={() => {}}
-        onOrder={() => setCartOpen(true)}
-        onTracking={() => {}}
+        variant="tracking"
+        activeId="tracking"
+        items={[
+          { id: "home", label: "Menu", icon: <Utensils />, onSelect: onHome },
+          {
+            id: "order",
+            label: "Panier",
+            icon: <ShoppingBag />,
+            onSelect: () => setCartOpen(true),
+            badge: count,
+            ariaLabel: count > 0 ? `Panier, ${count} article${count > 1 ? "s" : ""}` : "Panier",
+          },
+          { id: "tracking", label: "Suivi", icon: <ClipboardList />, active: true, disabled: true, ariaLabel: "Suivi, page actuelle" },
+        ]}
       />
 
       <CartDrawer

@@ -12,9 +12,32 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        body: ['PT Sans', 'sans-serif'],
-        headline: ['Playfair Display', 'serif'],
+        body: ['var(--font-public-body)'],
+        headline: ['var(--font-public-headline)'],
+        publicBody: ['var(--font-public-body)'],
+        publicHeadline: ['var(--font-public-headline)'],
         code: ['monospace'],
+      },
+      fontSize: {
+        'public-xs': ['var(--text-public-xs)', { lineHeight: 'var(--leading-public-xs)' }],
+        'public-sm': ['var(--text-public-sm)', { lineHeight: 'var(--leading-public-sm)' }],
+        'public-md': ['var(--text-public-md)', { lineHeight: 'var(--leading-public-md)' }],
+        'public-lg': ['var(--text-public-lg)', { lineHeight: 'var(--leading-public-lg)' }],
+        'public-heading-3': ['var(--heading-public-3)', { lineHeight: 'var(--leading-heading-public-3)' }],
+        'public-heading-2': ['var(--heading-public-2)', { lineHeight: 'var(--leading-heading-public-2)' }],
+        'public-heading-1': ['var(--heading-public-1)', { lineHeight: 'var(--leading-heading-public-1)' }],
+        'public-display-sm': ['var(--display-public-sm)', { lineHeight: 'var(--leading-display-public-sm)' }],
+        'public-display-lg': ['var(--display-public-lg)', { lineHeight: 'var(--leading-display-public-lg)' }],
+        'public-price-sm': ['var(--price-public-sm)', { lineHeight: 'var(--leading-price-public-sm)' }],
+        'public-price-lg': ['var(--price-public-lg)', { lineHeight: 'var(--leading-price-public-lg)' }],
+        'public-label': ['var(--label-public)', { lineHeight: 'var(--leading-label-public)' }],
+      },
+      fontWeight: {
+        'public-regular': 'var(--weight-public-regular)',
+        'public-medium': 'var(--weight-public-medium)',
+        'public-semibold': 'var(--weight-public-semibold)',
+        'public-bold': 'var(--weight-public-bold)',
+        'public-extrabold': 'var(--weight-public-extrabold)',
       },
       colors: {
         background: 'rgb(var(--bg-main-rgb) / <alpha-value>)',
