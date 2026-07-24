@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import { CloudinaryConfigurationError, uploadImage } from "@/services/cloudinary.service"
+import { PlatformConfirmationDialog, PlatformMediaCard, PlatformMediaLibrary } from "@/components/platform-ui"
 
 type PlatformMedia = {
   url: string
@@ -78,6 +79,7 @@ export function MediaSelector({
   const [localMedia, setLocalMedia] = React.useState<PlatformMediaSelection[]>([])
   const [deletedMediaIds, setDeletedMediaIds] = React.useState<Set<string>>(() => new Set())
   const [uploadPreviewUrl, setUploadPreviewUrl] = React.useState<string | null>(null)
+  const [deleteCandidate, setDeleteCandidate] = React.useState<PlatformMediaSelection | null>(null)
 
   const mediaQuery = useMemoFirebase(() => {
     if (!db) return null
@@ -238,9 +240,6 @@ export function MediaSelector({
   const handleDelete = async (item: PlatformMediaSelection) => {
     if (!db) return
 
-    const confirmed = window.confirm("Supprimer cette image de la galerie ?")
-    if (!confirmed) return
-
     setDeletingId(item.id)
 
     try {
@@ -272,6 +271,7 @@ export function MediaSelector({
       })
     } finally {
       setDeletingId(null)
+      setDeleteCandidate(null)
     }
   }
 
@@ -312,7 +312,7 @@ export function MediaSelector({
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-h-[calc(100dvh-var(--safe-top,0px)-var(--safe-bottom,0px)-1rem)] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Galerie média</DialogTitle>
             <DialogDescription>
@@ -335,7 +335,7 @@ export function MediaSelector({
               disabled={isUploading}
             >
               {isUploading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" />
               ) : (
                 <UploadCloud className="mr-2 h-4 w-4" />
               )}
@@ -343,13 +343,13 @@ export function MediaSelector({
             </Button>
           </div>
 
-          <div className="grid max-h-[420px] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3 md:grid-cols-4">
+          <PlatformMediaLibrary className="max-h-[420px] overflow-y-auto">
             {isUploading && uploadPreviewUrl && (
               <div className="overflow-hidden rounded-xl border border-dashed border-primary bg-card p-2">
                 <div className="relative">
                   <img src={uploadPreviewUrl} alt="Upload en cours" className="aspect-square w-full rounded-lg object-cover opacity-60" />
                   <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/60">
-                    <Loader2 className="h-7 w-7 animate-spin text-primary" />
+                    <Loader2 className="h-7 w-7 animate-spin text-primary motion-reduce:animate-none" />
                   </div>
                 </div>
                 <p className="mt-2 text-center text-xs font-medium text-muted-foreground">Upload en cours...</p>
@@ -358,7 +358,7 @@ export function MediaSelector({
 
             {isLoading && (
               <div className="col-span-full flex justify-center p-10">
-                <Loader2 className="h-7 w-7 animate-spin text-primary" />
+                <Loader2 className="h-7 w-7 animate-spin text-primary motion-reduce:animate-none" />
               </div>
             )}
 
@@ -367,20 +367,22 @@ export function MediaSelector({
                 const isCurrent = activeUrl === item.url
 
                 return (
-                  <div
+                  <PlatformMediaCard
                     key={item.id}
                     className={cn(
                       "group relative overflow-hidden rounded-xl border bg-card p-2 text-left transition hover:border-primary",
                       value === item.url || isCurrent ? "border-primary ring-2 ring-primary/30" : "border-border"
                     )}
-                  >
-                    <button
+                    preview={<button
                       type="button"
                       onClick={() => handleSelect(item)}
-                      className="block w-full text-left"
+                      className="dashboard-focus-visible block h-full w-full text-left"
                     >
                       <img src={item.url} alt="" className="aspect-square w-full rounded-lg object-cover" />
-                    </button>
+                    </button>}
+                    name={item.publicId || "Média plateforme"}
+                    meta={item.format ? `${item.format}${item.width && item.height ? ` · ${item.width}×${item.height}` : ""}` : undefined}
+                    actions={<>
 
                     {isCurrent && (
                       <Badge className="absolute left-3 top-3 gap-1 bg-primary text-primary-foreground shadow">
@@ -393,13 +395,13 @@ export function MediaSelector({
                       type="button"
                       size="icon"
                       variant="destructive"
-                      className="absolute right-3 top-3 h-8 w-8 shadow sm:opacity-90 sm:transition sm:group-hover:opacity-100"
+                      className="absolute right-3 top-3 size-11 shadow sm:opacity-90 sm:transition sm:group-hover:opacity-100"
                       disabled={deletingId === item.id}
-                      onClick={() => handleDelete(item)}
+                      onClick={() => setDeleteCandidate(item)}
                       aria-label="Supprimer l'image"
                     >
                       {deletingId === item.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
                       ) : (
                         <Trash2 className="h-4 w-4" />
                       )}
@@ -414,11 +416,12 @@ export function MediaSelector({
                       onClick={() => handleSetActive(item)}
                     >
                       {activatingId === item.id ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" />
                       ) : null}
                       {isCurrent ? "Logo actuel" : onSetActive ? "Définir comme logo" : "Sélectionner"}
                     </Button>
-                  </div>
+                    </>}
+                  />
                 )
               })}
 
@@ -427,9 +430,10 @@ export function MediaSelector({
                 Aucune image disponible pour ce type.
               </div>
             )}
-          </div>
+          </PlatformMediaLibrary>
         </DialogContent>
       </Dialog>
+      <PlatformConfirmationDialog open={Boolean(deleteCandidate)} onOpenChange={(nextOpen) => { if (!nextOpen && !deletingId) setDeleteCandidate(null) }} title="Supprimer ce média de la galerie ?" description="L’entrée média sera supprimée de la plateforme." consequence="Le fichier Cloudinary restera stocké côté Cloudinary. Si ce média est actif, le callback existant de désactivation sera exécuté." confirmLabel="Supprimer" loading={Boolean(deletingId)} onConfirm={() => { if (deleteCandidate) void handleDelete(deleteCandidate) }} />
     </div>
   )
 }

@@ -1,17 +1,79 @@
 import type { Metadata } from "next"
 
 import { adminDb } from "@/lib/firebase-admin"
+import { MarketplaceDishRepository } from "@/lib/marketplace-discovery"
 import MarketplaceClient, { type PublicRestaurantSummary } from "./marketplace-client"
+import MarketplaceDishClient from "./marketplace-dish-client"
+import { buildMarketplaceDishHomeViewModel } from "./marketplace-dish-view-model"
+import type { PlatformPublicFooter } from "@/types"
 
 export const dynamic = "force-dynamic"
 
-export const metadata: Metadata = {
-  title: "Restaurants et menus",
-  description: "Découvrez les restaurants disponibles sur Oordera et consultez leur menu en ligne.",
-  alternates: { canonical: "/" },
+export function generateMetadata(): Metadata {
+  return { title: "Restaurants par catégorie", description: "Découvrez les restaurants disponibles par envie culinaire sur Oordera.", alternates: { canonical: "/" } }
 }
 
-export default async function MarketplacePage() {
+export default async function MarketplacePage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  const params = searchParams ? await searchParams : {}
+  const restaurantsView = firstParam(params.view) === "restaurants"
+  if (!restaurantsView) return renderDishMarketplace(params)
+  return renderRestaurantMarketplace()
+}
+
+async function renderDishMarketplace(params: Record<string, string | string[] | undefined>) {
+  const requestedCategoryId = sanitizeQuery(firstParam(params.category), 100) || null
+  const cursor = sanitizeCursor(firstParam(params.cursor))
+  const repository = new MarketplaceDishRepository(adminDb)
+  const categoriesResult = await Promise.resolve(repository.listActiveCategories(20)).then(
+    (categories) => ({ status: "fulfilled" as const, value: categories }),
+    (reason) => ({ status: "rejected" as const, reason })
+  )
+  if (categoriesResult.status === "rejected") console.error("MARKETPLACE FOOD CATEGORIES ERROR", normalizeError(categoriesResult.reason))
+  const categories = categoriesResult.status === "fulfilled" ? categoriesResult.value : []
+  const selectedCategoryId = categories.some((category) => category.id === requestedCategoryId) ? requestedCategoryId : categories[0]?.id ?? null
+  const categoryOfferResults = await Promise.all(categories.map(async (category) => {
+    const categoryCursor = category.id === selectedCategoryId ? cursor : null
+    return Promise.resolve(repository.listRestaurantCategoryOffers({ pageSize: 24, categoryId: category.id, cursor: categoryCursor })).then(
+      (page) => ({ categoryId: category.id, status: "fulfilled" as const, value: page }),
+      (reason) => ({ categoryId: category.id, status: "rejected" as const, reason })
+    )
+  }))
+  const dishOffersResult = await Promise.resolve(repository.listOffers({ pageSize: 30 })).then(
+    (page) => ({ status: "fulfilled" as const, value: page.offers }),
+    (reason) => ({ status: "rejected" as const, reason })
+  )
+  const rejectedCategoryOffers = categoryOfferResults.filter((result) => result.status === "rejected")
+  const loadError = categoriesResult.status === "rejected" || rejectedCategoryOffers.length > 0 || dishOffersResult.status === "rejected"
+  for (const result of rejectedCategoryOffers) console.error("MARKETPLACE RESTAURANT CATEGORY OFFERS ERROR", { categoryId: result.categoryId, ...normalizeError(result.reason) })
+  if (dishOffersResult.status === "rejected") console.error("MARKETPLACE DISH OFFERS ERROR", normalizeError(dishOffersResult.reason))
+  const restaurantCategoryOffersByCategory = Object.fromEntries(categoryOfferResults.map((result) => [
+    result.categoryId,
+    result.status === "fulfilled" ? result.value.offers : [],
+  ]))
+  const nextCursorByCategory = Object.fromEntries(categoryOfferResults.map((result) => [
+    result.categoryId,
+    result.status === "fulfilled" ? result.value.nextCursor : null,
+  ]))
+  const platformSettings = await getPlatformPublicSettings()
+  return (
+    <MarketplaceDishClient
+      loadError={loadError}
+      platformLogoUrl={platformSettings.logoUrl}
+      platformName={platformSettings.name}
+      marketplaceHeroCoverImageUrl={platformSettings.marketplaceHero.coverImageUrl}
+      publicFooter={platformSettings.publicFooter}
+      model={buildMarketplaceDishHomeViewModel({
+        restaurantCategoryOffersByCategory,
+        dishOffers: dishOffersResult.status === "fulfilled" ? dishOffersResult.value : [],
+        categories,
+        selectedCategoryId,
+        nextCursorByCategory,
+      })}
+    />
+  )
+}
+
+async function renderRestaurantMarketplace() {
   let restaurants: PublicRestaurantSummary[] = []
   let loadError = false
   try {
@@ -22,6 +84,58 @@ export default async function MarketplacePage() {
     loadError = true
   }
   return <MarketplaceClient restaurants={restaurants} loadError={loadError} />
+}
+
+function firstParam(value: string | string[] | undefined) { return Array.isArray(value) ? value[0] : value }
+function sanitizeQuery(value: string | undefined, maximum: number) { return typeof value === "string" ? value.trim().slice(0, maximum) : "" }
+function sanitizeCursor(value: string | undefined) { return typeof value === "string" && /^[A-Za-z0-9_-]{1,512}$/.test(value) ? value : null }
+function normalizeError(error: unknown) { return error instanceof Error ? { name: error.name, message: error.message } : { message: String(error) } }
+
+async function getPlatformPublicSettings() {
+  try {
+    const snapshot = await adminDb.collection("platformSettings").doc("default").get()
+    const data = snapshot.exists ? snapshot.data() : null
+    return {
+      name: firstString(data?.name) || "Oordera",
+      logoUrl: firstString(data?.logoUrl),
+      marketplaceHero: normalizeMarketplaceHero(data?.marketplaceHero),
+      publicFooter: normalizePublicFooter(data?.publicFooter),
+    }
+  } catch (error) {
+    console.error("MARKETPLACE PLATFORM SETTINGS ERROR", normalizeError(error))
+    return { name: "Oordera", logoUrl: null, marketplaceHero: normalizeMarketplaceHero(null), publicFooter: normalizePublicFooter(null) }
+  }
+}
+
+function normalizeMarketplaceHero(value: unknown) {
+  const hero = value && typeof value === "object" ? value as Record<string, any> : {}
+  return {
+    coverImageUrl: firstString(hero.coverImageUrl) || "",
+  }
+}
+
+function normalizePublicFooter(value: unknown): PlatformPublicFooter {
+  const footer = value && typeof value === "object" ? value as Record<string, any> : {}
+  return {
+    description: firstString(footer.description) || "",
+    phone: firstString(footer.phone) || "",
+    whatsapp: firstString(footer.whatsapp) || "",
+    email: firstString(footer.email) || "",
+    officeAddress: firstString(footer.officeAddress) || "",
+    socialLinks: {
+      facebook: firstString(footer.socialLinks?.facebook) || "",
+      instagram: firstString(footer.socialLinks?.instagram) || "",
+      tiktok: firstString(footer.socialLinks?.tiktok) || "",
+      linkedin: firstString(footer.socialLinks?.linkedin) || "",
+      youtube: firstString(footer.socialLinks?.youtube) || "",
+      twitter: firstString(footer.socialLinks?.twitter) || "",
+    },
+    legalLinks: {
+      privacy: firstString(footer.legalLinks?.privacy) || "/privacy",
+      terms: firstString(footer.legalLinks?.terms) || "/terms",
+      legalNotice: firstString(footer.legalLinks?.legalNotice) || "/legal",
+    },
+  }
 }
 
 function toPublicRestaurant(id: string, data: FirebaseFirestore.DocumentData): PublicRestaurantSummary | null {

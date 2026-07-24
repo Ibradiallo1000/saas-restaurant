@@ -4,8 +4,7 @@ import * as React from "react"
 
 import type { CartItem, CartSelection, SelectedCartOption } from "@/modules/restaurant/types"
 import { getCartLinesForBundleRemoval } from "@/lib/linked-option-groups"
-
-const CART_STORAGE_KEY = "restaurant_public_cart_v1"
+import { readRestaurantCart, writeRestaurantCart } from "./cart-storage"
 
 type AddCartItemInput = {
   id: string
@@ -36,6 +35,8 @@ type CartContextType = {
   count: number
   totalPrice: number
   totalItems: number
+  restaurantId: string | null
+  setRestaurantScope: (restaurantId: string) => void
 }
 
 const CartContext = React.createContext<CartContextType | null>(null)
@@ -48,28 +49,25 @@ export const useCart = () => {
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = React.useState<CartItem[]>([])
-  const [isReady, setIsReady] = React.useState(false)
+  const [restaurantId, setRestaurantId] = React.useState<string | null>(null)
+  const itemsRef = React.useRef(items)
+  itemsRef.current = items
 
-  React.useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(CART_STORAGE_KEY)
-      if (!raw) return
+  const setRestaurantScope = React.useCallback((nextRestaurantId: string) => {
+    if (!nextRestaurantId || nextRestaurantId === restaurantId) return
 
-      const parsed = JSON.parse(raw)
-      if (!Array.isArray(parsed)) return
-
-      setItems(parsed.map(normalizeStoredItem).filter(Boolean) as CartItem[])
-    } catch {
-      window.localStorage.removeItem(CART_STORAGE_KEY)
-    } finally {
-      setIsReady(true)
+    if (restaurantId) {
+      writeRestaurantCart(window.localStorage, restaurantId, itemsRef.current)
     }
-  }, [])
+
+    setItems(readRestaurantCart(window.localStorage, nextRestaurantId, normalizeStoredItem))
+    setRestaurantId(nextRestaurantId)
+  }, [restaurantId])
 
   React.useEffect(() => {
-    if (!isReady) return
-    window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items))
-  }, [isReady, items])
+    if (!restaurantId) return
+    writeRestaurantCart(window.localStorage, restaurantId, items)
+  }, [items, restaurantId])
 
   const addItem = (input: AddCartItemInput) => {
     const item = normalizeInputItem(input)
@@ -138,6 +136,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         count,
         totalPrice: total,
         totalItems: count,
+        restaurantId,
+        setRestaurantScope,
       }}
     >
       {children}

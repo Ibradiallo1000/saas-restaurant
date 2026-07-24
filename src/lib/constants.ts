@@ -143,6 +143,8 @@ export const COLLECTION_NAMES = {
   PLATFORM_MENU_PACKS: 'platformMenuPacks',
   PLATFORM_MENU_CATEGORIES: 'platformMenuCategories',
   PLATFORM_MENU_PRODUCTS: 'platformMenuProducts',
+  MARKETPLACE_FOOD_CATEGORIES: 'marketplaceFoodCategories',
+  MARKETPLACE_RESTAURANT_CATEGORY_OFFERS: 'marketplaceRestaurantCategoryOffers',
   RESTAURANT_PAYMENT_CONFIGS: 'restaurantPaymentConfigs',
 
   // 🔥 séparation claire

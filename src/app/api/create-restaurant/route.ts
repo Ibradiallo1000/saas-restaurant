@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import {
+  buildRestaurantLocationPayload,
+  normalizeCountryCode,
+  normalizeText,
+} from "@/lib/restaurant-location";
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,11 +39,80 @@ export async function POST(req: NextRequest) {
     // 📦 2. DATA VALIDATION
     // ===============================
     const body = await req.json();
-    const { email, name, slug, city, phone, countryCode } = body;
+    const { email, name, slug, phone, countryCode, cityId, communeId } = body;
+    const safeCountryCode = normalizeCountryCode(countryCode);
+    const safeCityId = normalizeText(cityId, 100);
+    const safeCommuneId = normalizeText(communeId, 100);
+    const safeName = normalizeText(name, 140);
+    const safeSlug = normalizeText(slug, 140);
+    const safeEmail = normalizeText(email, 180).toLowerCase();
 
-    if (!email || !name || !slug || !countryCode) {
+    if (!safeEmail || !safeName || !safeSlug || !safeCountryCode || !safeCityId || !safeCommuneId) {
       return NextResponse.json(
         { error: "Champs requis manquants" },
+        { status: 400 }
+      );
+    }
+
+    const countryDoc = await adminDb.collection("platformCountries").doc(safeCountryCode).get();
+    if (!countryDoc.exists || countryDoc.data()?.isActive === false) {
+      return NextResponse.json(
+        { error: "Pays indisponible" },
+        { status: 400 }
+      );
+    }
+
+    const cityDoc = await countryDoc.ref.collection("cities").doc(safeCityId).get();
+    if (!cityDoc.exists || cityDoc.data()?.isActive === false) {
+      return NextResponse.json(
+        { error: "Ville indisponible" },
+        { status: 400 }
+      );
+    }
+
+    const communeDoc = await cityDoc.ref.collection("communes").doc(safeCommuneId).get();
+    if (!communeDoc.exists || communeDoc.data()?.isActive === false) {
+      return NextResponse.json(
+        { error: "Commune indisponible" },
+        { status: 400 }
+      );
+    }
+
+    const locationPayload = buildRestaurantLocationPayload({
+      phone,
+      countryCode: safeCountryCode,
+      countryName: countryDoc.data()?.name,
+      cityId: safeCityId,
+      cityName: cityDoc.data()?.name,
+      communeId: safeCommuneId,
+      communeName: communeDoc.data()?.name,
+      districtName: body.districtName,
+      location: body.location || {
+        address: body.address,
+        googleMapsUrl: body.googleMapsUrl,
+        lat: body.lat,
+        lng: body.lng,
+      },
+    });
+    const rawLocation = body.location || {
+      address: body.address,
+      googleMapsUrl: body.googleMapsUrl,
+      lat: body.lat,
+      lng: body.lng,
+    };
+
+    if (!locationPayload.phone) {
+      return NextResponse.json(
+        { error: "Téléphone requis" },
+        { status: 400 }
+      );
+    }
+
+    const invalidLatitude = rawLocation.lat !== undefined && rawLocation.lat !== null && rawLocation.lat !== "" && locationPayload.location.lat === null;
+    const invalidLongitude = rawLocation.lng !== undefined && rawLocation.lng !== null && rawLocation.lng !== "" && locationPayload.location.lng === null;
+    if (invalidLatitude || invalidLongitude) {
+      return NextResponse.json(
+        { error: "Coordonnées GPS invalides" },
         { status: 400 }
       );
     }
@@ -50,7 +124,7 @@ export async function POST(req: NextRequest) {
 
     try {
       userRecord = await adminAuth.createUser({
-        email,
+        email: safeEmail,
         emailVerified: false,
       });
     } catch (err: any) {
@@ -78,22 +152,21 @@ export async function POST(req: NextRequest) {
     const restaurantRef = adminDb.collection("restaurants").doc(restaurantId);
     batch.set(restaurantRef, {
       id: restaurantId,
-      name,
-      slug,
-      countryCode: String(countryCode).toUpperCase(),
-      city,
-      phone,
+      name: safeName,
+      slug: safeSlug,
+      ...locationPayload,
       ownerId: ownerUid,
-      ownerEmail: email.toLowerCase(),
+      ownerEmail: safeEmail,
       status: "active",
-      createdAt: now
+      createdAt: now,
+      updatedAt: now
     });
 
     // 👤 User profile
     const userRef = adminDb.collection("users").doc(ownerUid);
     batch.set(userRef, {
       id: ownerUid,
-      email: email.toLowerCase(),
+      email: safeEmail,
       role: "owner",
       restaurantId,
       active: true,
@@ -122,7 +195,7 @@ export async function POST(req: NextRequest) {
     // ===============================
     // 🔗 5. GENERATE INVITE LINK
     // ===============================
-    const inviteLink = await adminAuth.generatePasswordResetLink(email);
+    const inviteLink = await adminAuth.generatePasswordResetLink(safeEmail);
 
     return NextResponse.json({
       success: true,

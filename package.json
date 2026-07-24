@@ -10,7 +10,16 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "migrate:order-status": "node scripts/migrate-order-status.js"
+    "migrate:order-status": "node scripts/migrate-order-status.js",
+    "test:marketplace-discovery": "node --experimental-strip-types --test tests/marketplace-discovery/*.test.mjs",
+    "test:marketplace-transaction": "node --experimental-strip-types --test tests/marketplace-transaction/*.test.mjs",
+    "functions:build": "npm --prefix functions run build",
+    "functions:typecheck": "npm --prefix functions run typecheck",
+    "marketplace:backfill": "tsx scripts/marketplace-discovery-backfill.mjs",
+    "marketplace:rebuild": "node --experimental-strip-types scripts/marketplace-discovery-rebuild.mjs",
+    "marketplace:category-offers:backfill": "tsx scripts/marketplace-restaurant-category-offers-backfill.mjs",
+    "marketplace:load-test": "node --experimental-strip-types scripts/marketplace-discovery-load-test.mjs",
+    "seed:west-africa-location": "node scripts/seed-west-africa-location.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -47,6 +56,7 @@
     "firebase": "^11.9.1",
     "firebase-admin": "^13.8.0",
     "genkit": "^1.28.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.475.0",
     "next": "15.5.9",
     "patch-package": "^8.0.0",
@@ -62,6 +72,7 @@
   },
   "devDependencies": {
     "@next/bundle-analyzer": "^16.2.6",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^20.19.39",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.1",

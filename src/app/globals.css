@@ -1,4 +1,6 @@
 
+@import "leaflet/dist/leaflet.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -222,6 +224,409 @@
     --motion-public-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
     --motion-public-ease-exit: cubic-bezier(0.4, 0, 1, 1);
     --motion-public-ease-emphasized: cubic-bezier(0.2, 0, 0, 1.2);
+
+    /* Marketplace Design System — presentation-only foundations. */
+    --marketplace-surface-canvas: var(--surface-public-canvas);
+    --marketplace-surface-card: var(--surface-public-card);
+    --marketplace-surface-muted: var(--surface-public-muted);
+    --marketplace-surface-search: var(--surface-public-elevated);
+    --marketplace-surface-media: var(--surface-public-muted);
+    --marketplace-surface-sheet: var(--surface-public-canvas);
+    --marketplace-surface-overlay: var(--overlay-modal);
+    --marketplace-border-subtle: var(--border-public-subtle);
+    --marketplace-border-default: var(--border-public-default);
+    --marketplace-border-strong: var(--border-public-strong);
+    --marketplace-state-positive-bg: color-mix(in srgb, var(--success) 12%, transparent);
+    --marketplace-state-positive-fg: var(--success);
+    --marketplace-state-warning-bg: color-mix(in srgb, var(--warning) 12%, transparent);
+    --marketplace-state-warning-fg: var(--warning);
+    --marketplace-state-danger-bg: color-mix(in srgb, var(--danger) 12%, transparent);
+    --marketplace-state-danger-fg: var(--danger);
+    --marketplace-state-info-bg: color-mix(in srgb, var(--info) 12%, transparent);
+    --marketplace-state-info-fg: var(--info);
+    --marketplace-category-active-bg: var(--brand-primary-soft);
+    --marketplace-category-icon-bg: color-mix(in srgb, var(--brand-primary) 10%, var(--surface-public-muted));
+    --marketplace-category-pizza: #ef4444;
+    --marketplace-category-burger: #f59e0b;
+    --marketplace-category-chicken: #f97316;
+    --marketplace-category-grill: #dc2626;
+    --marketplace-category-dessert: #db2777;
+    --marketplace-category-drink: #0284c7;
+    --marketplace-badge-bg: var(--brand-primary-soft);
+    --marketplace-badge-fg: var(--brand-primary);
+    --marketplace-quality-complete-bg: color-mix(in srgb, var(--success) 12%, transparent);
+    --marketplace-quality-complete-fg: var(--success);
+    --marketplace-quality-partial-bg: color-mix(in srgb, var(--warning) 12%, transparent);
+    --marketplace-quality-partial-fg: var(--warning);
+    --marketplace-quality-estimated-bg: color-mix(in srgb, var(--info) 12%, transparent);
+    --marketplace-quality-estimated-fg: var(--info);
+    --marketplace-quality-unavailable-bg: var(--surface-public-muted);
+    --marketplace-quality-unavailable-fg: var(--text-muted);
+    --marketplace-gutter-x: var(--public-gutter-x);
+    --marketplace-section-gap: var(--space-4);
+    --marketplace-grid-gap: var(--space-4);
+    --marketplace-max-content: var(--public-max-marketing);
+    --marketplace-search-height: 52px;
+    --marketplace-category-target: 88px;
+    --marketplace-category-min-width: 88px;
+    --marketplace-safe-top: var(--safe-top);
+    --marketplace-safe-bottom: var(--safe-bottom);
+    --marketplace-safe-left: var(--safe-left);
+    --marketplace-safe-right: var(--safe-right);
+    --marketplace-motion-micro: var(--motion-public-micro);
+    --marketplace-motion-standard: var(--motion-public-standard);
+    --marketplace-motion-overlay: var(--motion-public-sheet);
+    --marketplace-motion-ease: var(--motion-public-ease);
+
+    /* Internal Dashboard Design System — opt-in foundations. */
+    --dashboard-canvas: #f8fafc;
+    --dashboard-surface: #ffffff;
+    --dashboard-section: #f1f5f9;
+    --dashboard-elevated: #ffffff;
+
+    --dashboard-title: #0f172a;
+    --dashboard-subtitle: #334155;
+    --dashboard-label: #475569;
+    --dashboard-value: #0f172a;
+    --dashboard-muted: #64748b;
+
+    --dashboard-border: #e2e8f0;
+    --dashboard-divider: #e2e8f0;
+
+    --data-positive: #15803d;
+    --data-negative: #dc2626;
+    --data-neutral: #64748b;
+    --data-warning: #b45309;
+    --data-info: #0369a1;
+
+    --metric-background: var(--dashboard-surface);
+    --metric-border: var(--dashboard-border);
+    --metric-hover: #f8fafc;
+
+    --dashboard-chart-1: #2563eb;
+    --dashboard-chart-2: #7c3aed;
+    --dashboard-chart-3: #0891b2;
+    --dashboard-chart-4: #16a34a;
+    --dashboard-chart-5: #d97706;
+    --dashboard-chart-6: #db2777;
+
+    --font-dashboard: var(--font-public-body);
+    --text-dashboard-display: 36px;
+    --leading-dashboard-display: 40px;
+    --text-dashboard-page-title: 28px;
+    --leading-dashboard-page-title: 34px;
+    --text-dashboard-section-title: 18px;
+    --leading-dashboard-section-title: 24px;
+    --text-dashboard-metric: 28px;
+    --leading-dashboard-metric: 32px;
+    --text-dashboard-label: 12px;
+    --leading-dashboard-label: 16px;
+    --text-dashboard-description: 14px;
+    --leading-dashboard-description: 20px;
+    --text-dashboard-caption: 12px;
+    --leading-dashboard-caption: 16px;
+
+    --dashboard-gutter-x: 16px;
+    --dashboard-section-gap: 16px;
+    --dashboard-grid-gap: 12px;
+    --dashboard-content-max: 1440px;
+    --dashboard-reading-max: 960px;
+
+    --radius-dashboard-card: 12px;
+    --radius-dashboard-widget: 12px;
+    --radius-dashboard-button: 8px;
+    --radius-dashboard-input: 8px;
+    --radius-dashboard-overlay: 16px;
+    --radius-dashboard-chart: 8px;
+
+    --shadow-dashboard-surface: 0 1px 2px rgb(15 23 42 / 0.05);
+    --shadow-dashboard-floating: 0 10px 28px rgb(15 23 42 / 0.12);
+    --shadow-dashboard-overlay: 0 24px 64px rgb(15 23 42 / 0.18);
+
+    --motion-dashboard-hover: 150ms;
+    --motion-dashboard-focus: 120ms;
+    --motion-dashboard-loading: 1200ms;
+    --motion-dashboard-chart: 300ms;
+    --motion-dashboard-drawer: 250ms;
+    --motion-dashboard-dialog: 200ms;
+    --motion-dashboard-ease: cubic-bezier(0.2, 0, 0, 1);
+
+    --focus-dashboard-width: 2px;
+    --focus-dashboard-offset: 2px;
+    --target-dashboard-min: 40px;
+    --target-dashboard-recommended: 44px;
+
+    /* Settings UI — presentation-only aliases and states. */
+    --settings-canvas: var(--dashboard-canvas);
+    --settings-panel: var(--dashboard-surface);
+    --settings-section: var(--dashboard-section);
+    --settings-muted: var(--dashboard-muted);
+    --settings-elevated: var(--dashboard-elevated);
+    --settings-danger-surface: #fef2f2;
+    --settings-border: var(--dashboard-border);
+    --settings-divider: var(--dashboard-divider);
+    --settings-focus: var(--focus-ring);
+    --settings-danger-border: #fecaca;
+    --settings-state-saved-bg: #f0fdf4;
+    --settings-state-saved-fg: #166534;
+    --settings-state-dirty-bg: #fff7ed;
+    --settings-state-dirty-fg: #9a3412;
+    --settings-state-saving-bg: #eff6ff;
+    --settings-state-saving-fg: #1d4ed8;
+    --settings-state-error-bg: #fef2f2;
+    --settings-state-error-fg: #b91c1c;
+    --settings-state-unavailable-bg: var(--dashboard-section);
+    --settings-state-unavailable-fg: var(--dashboard-label);
+    --settings-state-danger-bg: #fef2f2;
+    --settings-state-danger-fg: #b91c1c;
+    --settings-navigation-active: color-mix(in srgb, var(--brand-primary) 12%, var(--settings-panel));
+    --settings-navigation-hover: var(--metric-hover);
+    --settings-navigation-disabled: var(--dashboard-muted);
+    --settings-field-default: var(--settings-panel);
+    --settings-field-focus: var(--settings-focus);
+    --settings-field-error: var(--data-negative);
+    --settings-field-disabled: var(--settings-section);
+    --settings-field-readonly: var(--settings-section);
+    --settings-form-max: 800px;
+    --settings-navigation-width: 240px;
+    --settings-content-gap: 24px;
+    --motion-settings-focus: var(--motion-dashboard-focus);
+    --motion-settings-section: 200ms;
+    --motion-settings-dialog: var(--motion-dashboard-dialog);
+    --motion-settings-feedback: 200ms;
+    --motion-settings-loading: var(--motion-dashboard-loading);
+
+    /* Platform Admin UI — presentation-only foundations. */
+    --platform-canvas: var(--dashboard-canvas);
+    --platform-sidebar: var(--dashboard-surface);
+    --platform-panel: var(--dashboard-surface);
+    --platform-elevated: var(--dashboard-elevated);
+    --platform-muted: var(--dashboard-section);
+    --platform-highlight: var(--metric-hover);
+    --platform-danger-surface: var(--settings-danger-surface);
+    --platform-border: var(--dashboard-border);
+    --platform-divider: var(--dashboard-divider);
+    --platform-focus: var(--focus-ring);
+    --platform-danger-border: var(--settings-danger-border);
+
+    --platform-quality-complete-bg: #f0fdf4; --platform-quality-complete-fg: #166534; --platform-quality-complete-border: #bbf7d0;
+    --platform-quality-partial-bg: #fff7ed; --platform-quality-partial-fg: #9a3412; --platform-quality-partial-border: #fed7aa;
+    --platform-quality-estimated-bg: #eff6ff; --platform-quality-estimated-fg: #1d4ed8; --platform-quality-estimated-border: #bfdbfe;
+    --platform-quality-placeholder-bg: #faf5ff; --platform-quality-placeholder-fg: #7e22ce; --platform-quality-placeholder-border: #e9d5ff;
+    --platform-quality-stale-bg: #fffbeb; --platform-quality-stale-fg: #92400e; --platform-quality-stale-border: #fde68a;
+    --platform-quality-unavailable-bg: var(--dashboard-section); --platform-quality-unavailable-fg: var(--dashboard-label); --platform-quality-unavailable-border: var(--dashboard-border);
+    --platform-quality-unknown-bg: var(--dashboard-section); --platform-quality-unknown-fg: var(--dashboard-label); --platform-quality-unknown-border: var(--dashboard-border);
+
+    --platform-state-positive-bg: #f0fdf4; --platform-state-positive-fg: #166534; --platform-state-positive-border: #bbf7d0;
+    --platform-state-neutral-bg: var(--dashboard-section); --platform-state-neutral-fg: var(--dashboard-label); --platform-state-neutral-border: var(--dashboard-border);
+    --platform-state-info-bg: #eff6ff; --platform-state-info-fg: #1d4ed8; --platform-state-info-border: #bfdbfe;
+    --platform-state-warning-bg: #fff7ed; --platform-state-warning-fg: #9a3412; --platform-state-warning-border: #fed7aa;
+    --platform-state-danger-bg: #fef2f2; --platform-state-danger-fg: #b91c1c; --platform-state-danger-border: #fecaca;
+
+    /* Internal Reports & Analytics UI — presentation-only aliases. */
+    --reports-canvas: var(--dashboard-canvas);
+    --reports-panel: var(--dashboard-surface);
+    --reports-chart: var(--dashboard-surface);
+    --reports-table: var(--dashboard-surface);
+    --reports-muted: var(--dashboard-section);
+    --reports-highlight: var(--metric-hover);
+    --reports-border: var(--dashboard-border);
+    --reports-divider: var(--dashboard-divider);
+    --reports-focus: var(--focus-ring);
+
+    --reports-quality-complete-bg: var(--order-status-completed-bg);
+    --reports-quality-complete-fg: var(--order-status-completed-fg);
+    --reports-quality-partial-bg: var(--order-status-pending-bg);
+    --reports-quality-partial-fg: var(--order-status-pending-fg);
+    --reports-quality-estimated-bg: var(--order-status-ready-bg);
+    --reports-quality-estimated-fg: var(--order-status-ready-fg);
+    --reports-quality-stale-bg: var(--order-payment-pending-bg);
+    --reports-quality-stale-fg: var(--order-payment-pending-fg);
+    --reports-quality-unavailable-bg: var(--order-status-neutral-bg);
+    --reports-quality-unavailable-fg: var(--order-status-neutral-fg);
+    --reports-quality-unknown-bg: var(--order-status-neutral-bg);
+    --reports-quality-unknown-fg: var(--order-status-neutral-fg);
+
+    --reports-comparison-positive: var(--data-positive);
+    --reports-comparison-negative: var(--data-negative);
+    --reports-comparison-neutral: var(--data-neutral);
+    --reports-freshness-live: var(--data-positive);
+    --reports-freshness-recent: var(--data-info);
+    --reports-freshness-delayed: var(--data-warning);
+    --reports-freshness-historical: var(--data-neutral);
+    --reports-freshness-unknown: var(--data-neutral);
+
+    /* Internal Orders UI — presentation-only foundations. */
+    --order-surface: var(--dashboard-surface);
+    --order-surface-emphasis: var(--dashboard-elevated);
+    --order-surface-muted: var(--dashboard-section);
+    --order-border: var(--dashboard-border);
+    --order-border-active: var(--data-info);
+    --order-divider: var(--dashboard-divider);
+
+    --order-status-pending-bg: #fff7ed;
+    --order-status-pending-fg: #9a3412;
+    --order-status-preparing-bg: #fffbeb;
+    --order-status-preparing-fg: #92400e;
+    --order-status-ready-bg: #eff6ff;
+    --order-status-ready-fg: #1d4ed8;
+    --order-status-served-bg: #ecfeff;
+    --order-status-served-fg: #0e7490;
+    --order-status-completed-bg: #f0fdf4;
+    --order-status-completed-fg: #166534;
+    --order-status-cancelled-bg: #fef2f2;
+    --order-status-cancelled-fg: #b91c1c;
+    --order-status-neutral-bg: var(--dashboard-section);
+    --order-status-neutral-fg: var(--dashboard-label);
+
+    --order-payment-unpaid-bg: #fff7ed;
+    --order-payment-unpaid-fg: #9a3412;
+    --order-payment-pending-bg: #fefce8;
+    --order-payment-pending-fg: #854d0e;
+    --order-payment-paid-bg: #f0fdf4;
+    --order-payment-paid-fg: #166534;
+    --order-payment-failed-bg: #fef2f2;
+    --order-payment-failed-fg: #b91c1c;
+
+    --order-priority-warning: #b45309;
+    --order-priority-overdue: #dc2626;
+    --order-priority-critical: #991b1b;
+
+    /* Kitchen UI — presentation-only foundations. */
+    --kitchen-canvas: var(--dashboard-canvas);
+    --kitchen-column: var(--dashboard-section);
+    --kitchen-card: var(--dashboard-surface);
+    --kitchen-card-emphasis: var(--dashboard-elevated);
+    --kitchen-card-muted: var(--dashboard-section);
+    --kitchen-border: var(--dashboard-border);
+    --kitchen-divider: var(--dashboard-divider);
+    --kitchen-focus: var(--focus-ring);
+
+    --kitchen-status-pending-bg: var(--order-status-pending-bg);
+    --kitchen-status-pending-fg: var(--order-status-pending-fg);
+    --kitchen-status-pending-border: #c2410c;
+    --kitchen-status-preparing-bg: var(--order-status-preparing-bg);
+    --kitchen-status-preparing-fg: var(--order-status-preparing-fg);
+    --kitchen-status-preparing-border: #a16207;
+    --kitchen-status-ready-bg: var(--order-status-ready-bg);
+    --kitchen-status-ready-fg: var(--order-status-ready-fg);
+    --kitchen-status-ready-border: #2563eb;
+    --kitchen-status-served-bg: var(--order-status-served-bg);
+    --kitchen-status-served-fg: var(--order-status-served-fg);
+    --kitchen-status-served-border: #0e7490;
+    --kitchen-status-completed-bg: var(--order-status-completed-bg);
+    --kitchen-status-completed-fg: var(--order-status-completed-fg);
+    --kitchen-status-completed-border: #15803d;
+    --kitchen-status-cancelled-bg: var(--order-status-cancelled-bg);
+    --kitchen-status-cancelled-fg: var(--order-status-cancelled-fg);
+    --kitchen-status-cancelled-border: #b91c1c;
+    --kitchen-status-neutral-bg: var(--order-status-neutral-bg);
+    --kitchen-status-neutral-fg: var(--order-status-neutral-fg);
+
+    --kitchen-priority-warning: var(--order-priority-warning);
+    --kitchen-priority-overdue: var(--order-priority-overdue);
+    --kitchen-priority-critical: var(--order-priority-critical);
+    --kitchen-priority-warning-bg: #fffbeb;
+    --kitchen-priority-warning-fg: #78350f;
+    --kitchen-priority-critical-bg: #fef2f2;
+    --kitchen-priority-critical-fg: #991b1b;
+
+    --kitchen-destination-kitchen: #7c3aed;
+    --kitchen-destination-bar: #0369a1;
+    --kitchen-destination-direct: #0f766e;
+    --kitchen-destination-mixed: #a21caf;
+
+    --text-kitchen-page-title: 24px;
+    --leading-kitchen-page-title: 30px;
+    --text-kitchen-column-title: 18px;
+    --leading-kitchen-column-title: 24px;
+    --text-kitchen-column-count: 16px;
+    --leading-kitchen-column-count: 20px;
+    --text-kitchen-reference: 24px;
+    --leading-kitchen-reference: 28px;
+    --text-kitchen-context: 14px;
+    --leading-kitchen-context: 20px;
+    --text-kitchen-timer: 16px;
+    --leading-kitchen-timer: 22px;
+    --text-kitchen-item-quantity: 20px;
+    --leading-kitchen-item-quantity: 24px;
+    --text-kitchen-item-name: 16px;
+    --leading-kitchen-item-name: 22px;
+    --text-kitchen-option: 12px;
+    --leading-kitchen-option: 18px;
+    --text-kitchen-note: 12px;
+    --leading-kitchen-note: 18px;
+    --text-kitchen-action: 14px;
+    --leading-kitchen-action: 20px;
+    --text-kitchen-caption: 12px;
+    --leading-kitchen-caption: 16px;
+
+    --kitchen-gutter-x: 16px;
+    --kitchen-gutter-y: 16px;
+    --kitchen-column-min: 280px;
+    --kitchen-column-comfortable: 360px;
+    --kitchen-column-max: 440px;
+    --kitchen-column-gap: 12px;
+    --kitchen-column-padding: 12px;
+    --kitchen-card-padding: 16px;
+    --kitchen-card-padding-wall: 20px;
+    --kitchen-card-gap: 12px;
+    --radius-kitchen-column: var(--radius-dashboard-card);
+    --radius-kitchen-card: var(--radius-dashboard-card);
+    --target-kitchen-min: 44px;
+    --target-kitchen-tactile: 48px;
+    --target-kitchen-wall: 52px;
+    --motion-kitchen-focus: 120ms;
+    --motion-kitchen-state: 200ms;
+    --motion-kitchen-card-entry: 200ms;
+    --motion-kitchen-overlay: 250ms;
+    --motion-kitchen-fullscreen: 250ms;
+
+    /* POS UI — presentation-only foundations. */
+    --pos-canvas: var(--dashboard-canvas);
+    --pos-panel: var(--dashboard-surface);
+    --pos-catalog: var(--dashboard-section);
+    --pos-cart: var(--dashboard-surface);
+    --pos-elevated: var(--dashboard-elevated);
+    --pos-muted: var(--dashboard-section);
+    --pos-border: var(--dashboard-border);
+    --pos-divider: var(--dashboard-divider);
+    --pos-focus: var(--focus-ring);
+    --pos-session-closed-bg: var(--order-status-neutral-bg);
+    --pos-session-closed-fg: var(--order-status-neutral-fg);
+    --pos-session-active-bg: var(--order-status-completed-bg);
+    --pos-session-active-fg: var(--order-status-completed-fg);
+    --pos-session-paused-bg: var(--order-status-pending-bg);
+    --pos-session-paused-fg: var(--order-status-pending-fg);
+    --pos-session-closing-bg: var(--order-payment-pending-bg);
+    --pos-session-closing-fg: var(--order-payment-pending-fg);
+    --pos-session-validation-bg: var(--order-status-ready-bg);
+    --pos-session-validation-fg: var(--order-status-ready-fg);
+    --pos-session-error-bg: var(--order-status-cancelled-bg);
+    --pos-session-error-fg: var(--order-status-cancelled-fg);
+    --pos-payment-cash: #166534;
+    --pos-payment-mobile-money: #1d4ed8;
+    --pos-payment-pending-bg: var(--order-payment-pending-bg);
+    --pos-payment-pending-fg: var(--order-payment-pending-fg);
+    --pos-payment-paid-bg: var(--order-payment-paid-bg);
+    --pos-payment-paid-fg: var(--order-payment-paid-fg);
+    --pos-payment-failed-bg: var(--order-payment-failed-bg);
+    --pos-payment-failed-fg: var(--order-payment-failed-fg);
+    --pos-variance-balanced-bg: #f0fdf4;
+    --pos-variance-balanced-fg: #166534;
+    --pos-variance-positive-bg: #eff6ff;
+    --pos-variance-positive-fg: #1d4ed8;
+    --pos-variance-negative-bg: #fef2f2;
+    --pos-variance-negative-fg: #b91c1c;
+    --pos-variance-warning-bg: #fffbeb;
+    --pos-variance-warning-fg: #92400e;
+    --pos-gutter-x: 0.75rem;
+    --pos-gutter-y: 0.75rem;
+    --pos-layout-gap: 1rem;
+    --pos-cart-width: 25.5rem;
+    --pos-aside-width: 20rem;
+    --text-pos-page-title: 24px;
+    --text-pos-total: 28px;
   }
 
   .dark {
@@ -296,11 +701,185 @@
     --public-pattern-opacity: 0.12;
     --public-shadow-soft: 0 18px 45px rgb(0 0 0 / 0.28);
 
+    --marketplace-category-icon-bg: color-mix(in srgb, var(--brand-primary) 16%, var(--surface-public-muted));
+    --marketplace-category-pizza: #f87171;
+    --marketplace-category-burger: #fbbf24;
+    --marketplace-category-chicken: #fb923c;
+    --marketplace-category-grill: #f87171;
+    --marketplace-category-dessert: #f472b6;
+    --marketplace-category-drink: #38bdf8;
+
     --shadow-public-xs: 0 1px 2px rgb(0 0 0 / 0.18);
     --shadow-public-sm: 0 4px 12px rgb(0 0 0 / 0.22);
     --shadow-public-md: 0 10px 28px rgb(0 0 0 / 0.26);
     --shadow-public-lg: 0 20px 50px rgb(0 0 0 / 0.32);
     --shadow-public-top: 0 -8px 24px rgb(0 0 0 / 0.24);
+
+    --dashboard-canvas: #0b0f14;
+    --dashboard-surface: #111827;
+    --dashboard-section: #172033;
+    --dashboard-elevated: #1f2937;
+    --dashboard-title: #f8fafc;
+    --dashboard-subtitle: #d1d5db;
+    --dashboard-label: #cbd5e1;
+    --dashboard-value: #ffffff;
+    --dashboard-muted: #9ca3af;
+    --dashboard-border: #334155;
+    --dashboard-divider: #334155;
+    --data-positive: #4ade80;
+    --data-negative: #f87171;
+    --data-neutral: #94a3b8;
+    --data-warning: #fbbf24;
+    --data-info: #38bdf8;
+    --metric-background: var(--dashboard-surface);
+    --metric-border: var(--dashboard-border);
+    --metric-hover: #172033;
+    --dashboard-chart-1: #60a5fa;
+    --dashboard-chart-2: #a78bfa;
+    --dashboard-chart-3: #22d3ee;
+    --dashboard-chart-4: #4ade80;
+    --dashboard-chart-5: #fbbf24;
+    --dashboard-chart-6: #f472b6;
+    --shadow-dashboard-surface: 0 1px 2px rgb(0 0 0 / 0.24);
+    --shadow-dashboard-floating: 0 12px 32px rgb(0 0 0 / 0.30);
+    --shadow-dashboard-overlay: 0 28px 72px rgb(0 0 0 / 0.42);
+
+    --settings-danger-surface: #450a0a;
+    --settings-danger-border: #7f1d1d;
+    --settings-state-saved-bg: #052e16;
+    --settings-state-saved-fg: #86efac;
+    --settings-state-dirty-bg: #431f0d;
+    --settings-state-dirty-fg: #fdba74;
+    --settings-state-saving-bg: #172554;
+    --settings-state-saving-fg: #93c5fd;
+    --settings-state-error-bg: #450a0a;
+    --settings-state-error-fg: #fca5a5;
+    --settings-state-danger-bg: #450a0a;
+    --settings-state-danger-fg: #fca5a5;
+
+    --platform-quality-complete-bg: #052e16; --platform-quality-complete-fg: #86efac; --platform-quality-complete-border: #166534;
+    --platform-quality-partial-bg: #431f0d; --platform-quality-partial-fg: #fdba74; --platform-quality-partial-border: #9a3412;
+    --platform-quality-estimated-bg: #172554; --platform-quality-estimated-fg: #93c5fd; --platform-quality-estimated-border: #1d4ed8;
+    --platform-quality-placeholder-bg: #3b0764; --platform-quality-placeholder-fg: #d8b4fe; --platform-quality-placeholder-border: #7e22ce;
+    --platform-quality-stale-bg: #422006; --platform-quality-stale-fg: #fcd34d; --platform-quality-stale-border: #92400e;
+    --platform-state-positive-bg: #052e16; --platform-state-positive-fg: #86efac; --platform-state-positive-border: #166534;
+    --platform-state-info-bg: #172554; --platform-state-info-fg: #93c5fd; --platform-state-info-border: #1d4ed8;
+    --platform-state-warning-bg: #431f0d; --platform-state-warning-fg: #fdba74; --platform-state-warning-border: #9a3412;
+    --platform-state-danger-bg: #450a0a; --platform-state-danger-fg: #fca5a5; --platform-state-danger-border: #991b1b;
+
+    --order-status-pending-bg: #431f0d;
+    --order-status-pending-fg: #fdba74;
+    --order-status-preparing-bg: #422006;
+    --order-status-preparing-fg: #fcd34d;
+    --order-status-ready-bg: #172554;
+    --order-status-ready-fg: #93c5fd;
+    --order-status-served-bg: #083344;
+    --order-status-served-fg: #67e8f9;
+    --order-status-completed-bg: #052e16;
+    --order-status-completed-fg: #86efac;
+    --order-status-cancelled-bg: #450a0a;
+    --order-status-cancelled-fg: #fca5a5;
+    --order-payment-unpaid-bg: #431f0d;
+    --order-payment-unpaid-fg: #fdba74;
+    --order-payment-pending-bg: #422006;
+    --order-payment-pending-fg: #fde047;
+    --order-payment-paid-bg: #052e16;
+    --order-payment-paid-fg: #86efac;
+    --order-payment-failed-bg: #450a0a;
+    --order-payment-failed-fg: #fca5a5;
+    --order-priority-warning: #fbbf24;
+    --order-priority-overdue: #f87171;
+    --order-priority-critical: #fca5a5;
+    --kitchen-status-pending-border: #fdba74;
+    --kitchen-status-preparing-border: #fcd34d;
+    --kitchen-status-ready-border: #93c5fd;
+    --kitchen-status-served-border: #67e8f9;
+    --kitchen-status-completed-border: #86efac;
+    --kitchen-status-cancelled-border: #fca5a5;
+    --kitchen-priority-warning-bg: #422006;
+    --kitchen-priority-warning-fg: #fde68a;
+    --kitchen-priority-critical-bg: #450a0a;
+    --kitchen-priority-critical-fg: #fecaca;
+    --kitchen-destination-kitchen: #c4b5fd;
+    --kitchen-destination-bar: #7dd3fc;
+    --kitchen-destination-direct: #5eead4;
+    --kitchen-destination-mixed: #f0abfc;
+  }
+}
+
+@layer components {
+  .marketplace-container {
+    padding-left: max(var(--marketplace-gutter-x), var(--marketplace-safe-left));
+    padding-right: max(var(--marketplace-gutter-x), var(--marketplace-safe-right));
+  }
+  .marketplace-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--marketplace-grid-gap);
+  }
+  .marketplace-list {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+  .marketplace-rail {
+    display: flex;
+    gap: var(--space-3);
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    padding-block: var(--space-1);
+    scroll-snap-type: inline proximity;
+    scrollbar-width: thin;
+  }
+  .marketplace-rail > * { scroll-snap-align: start; }
+  [data-quality="complete"] { --marketplace-quality-bg: var(--marketplace-quality-complete-bg); --marketplace-quality-fg: var(--marketplace-quality-complete-fg); }
+  [data-quality="partial"] { --marketplace-quality-bg: var(--marketplace-quality-partial-bg); --marketplace-quality-fg: var(--marketplace-quality-partial-fg); }
+  [data-quality="estimated"] { --marketplace-quality-bg: var(--marketplace-quality-estimated-bg); --marketplace-quality-fg: var(--marketplace-quality-estimated-fg); }
+  [data-quality="unavailable"] { --marketplace-quality-bg: var(--marketplace-quality-unavailable-bg); --marketplace-quality-fg: var(--marketplace-quality-unavailable-fg); }
+  [data-quality="complete"] { --platform-quality-bg: var(--platform-quality-complete-bg); --platform-quality-fg: var(--platform-quality-complete-fg); --platform-quality-border: var(--platform-quality-complete-border); }
+  [data-quality="partial"] { --platform-quality-bg: var(--platform-quality-partial-bg); --platform-quality-fg: var(--platform-quality-partial-fg); --platform-quality-border: var(--platform-quality-partial-border); }
+  [data-quality="estimated"] { --platform-quality-bg: var(--platform-quality-estimated-bg); --platform-quality-fg: var(--platform-quality-estimated-fg); --platform-quality-border: var(--platform-quality-estimated-border); }
+  [data-quality="placeholder"] { --platform-quality-bg: var(--platform-quality-placeholder-bg); --platform-quality-fg: var(--platform-quality-placeholder-fg); --platform-quality-border: var(--platform-quality-placeholder-border); }
+  [data-quality="stale"] { --platform-quality-bg: var(--platform-quality-stale-bg); --platform-quality-fg: var(--platform-quality-stale-fg); --platform-quality-border: var(--platform-quality-stale-border); }
+  [data-quality="unavailable"] { --platform-quality-bg: var(--platform-quality-unavailable-bg); --platform-quality-fg: var(--platform-quality-unavailable-fg); --platform-quality-border: var(--platform-quality-unavailable-border); }
+  [data-quality="unknown"] { --platform-quality-bg: var(--platform-quality-unknown-bg); --platform-quality-fg: var(--platform-quality-unknown-fg); --platform-quality-border: var(--platform-quality-unknown-border); }
+  [data-family="restaurant"][data-state="active"], [data-family="subscription"][data-state="active"], [data-family="monitoring"][data-state="healthy"] { --platform-state-bg: var(--platform-state-positive-bg); --platform-state-fg: var(--platform-state-positive-fg); --platform-state-border: var(--platform-state-positive-border); }
+  [data-family="restaurant"][data-state="provisioning"], [data-family="subscription"][data-state="trial"] { --platform-state-bg: var(--platform-state-info-bg); --platform-state-fg: var(--platform-state-info-fg); --platform-state-border: var(--platform-state-info-border); }
+  [data-family="subscription"][data-state="pastDue"], [data-family="monitoring"][data-state="degraded"] { --platform-state-bg: var(--platform-state-warning-bg); --platform-state-fg: var(--platform-state-warning-fg); --platform-state-border: var(--platform-state-warning-border); }
+  [data-family="restaurant"][data-state="suspended"], [data-family="restaurant"][data-state="error"], [data-family="subscription"][data-state="expired"], [data-family="subscription"][data-state="cancelled"], [data-family="subscription"][data-state="suspended"], [data-family="monitoring"][data-state="incident"] { --platform-state-bg: var(--platform-state-danger-bg); --platform-state-fg: var(--platform-state-danger-fg); --platform-state-border: var(--platform-state-danger-border); }
+  [data-family="restaurant"], [data-family="subscription"], [data-family="monitoring"] { --platform-state-bg: var(--platform-state-neutral-bg); --platform-state-fg: var(--platform-state-neutral-fg); --platform-state-border: var(--platform-state-neutral-border); }
+  [data-quality="complete"] { --reports-quality-bg: var(--reports-quality-complete-bg); --reports-quality-fg: var(--reports-quality-complete-fg); }
+  [data-quality="partial"] { --reports-quality-bg: var(--reports-quality-partial-bg); --reports-quality-fg: var(--reports-quality-partial-fg); }
+  [data-quality="estimated"] { --reports-quality-bg: var(--reports-quality-estimated-bg); --reports-quality-fg: var(--reports-quality-estimated-fg); }
+  [data-quality="stale"] { --reports-quality-bg: var(--reports-quality-stale-bg); --reports-quality-fg: var(--reports-quality-stale-fg); }
+  [data-quality="unavailable"] { --reports-quality-bg: var(--reports-quality-unavailable-bg); --reports-quality-fg: var(--reports-quality-unavailable-fg); }
+  [data-quality="unknown"] { --reports-quality-bg: var(--reports-quality-unknown-bg); --reports-quality-fg: var(--reports-quality-unknown-fg); }
+  [data-freshness="live"] { --reports-freshness-color: var(--reports-freshness-live); }
+  [data-freshness="recent"] { --reports-freshness-color: var(--reports-freshness-recent); }
+  [data-freshness="delayed"] { --reports-freshness-color: var(--reports-freshness-delayed); }
+  [data-freshness="historical"] { --reports-freshness-color: var(--reports-freshness-historical); }
+  [data-freshness="unknown"] { --reports-freshness-color: var(--reports-freshness-unknown); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketplace-reduced-motion,
+  .marketplace-reduced-motion *,
+  .marketplace-reduced-motion *::before,
+  .marketplace-reduced-motion *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .reports-reduced-motion,
+  .reports-reduced-motion *,
+  .reports-reduced-motion *::before,
+  .reports-reduced-motion *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -308,6 +887,12 @@
   :root {
     --public-gutter-x: 12px;
     --public-section-y: 12px;
+    --dashboard-gutter-x: 12px;
+    --dashboard-section-gap: 12px;
+    --dashboard-grid-gap: 8px;
+    --kitchen-gutter-x: 12px;
+    --kitchen-gutter-y: 12px;
+    --kitchen-column-gap: 12px;
   }
 }
 
@@ -315,14 +900,42 @@
   :root {
     --public-gutter-x: 24px;
     --public-section-y: 24px;
+    --dashboard-gutter-x: 24px;
+    --dashboard-section-gap: 20px;
+    --dashboard-grid-gap: 16px;
+    --kitchen-gutter-x: 20px;
+    --kitchen-gutter-y: 16px;
+    --kitchen-column-gap: 16px;
+    --kitchen-column-padding: 16px;
+    --marketplace-section-gap: var(--space-6);
+    --marketplace-grid-gap: var(--space-5);
   }
+
+  .marketplace-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (min-width: 1024px) {
   :root {
     --public-gutter-x: 32px;
     --public-section-y: 32px;
+    --dashboard-gutter-x: 32px;
+    --dashboard-section-gap: 24px;
+    --dashboard-grid-gap: 16px;
+    --kitchen-gutter-x: 24px;
+    --kitchen-gutter-y: 20px;
+    --text-kitchen-page-title: 28px;
+    --leading-kitchen-page-title: 34px;
+    --text-kitchen-reference: 26px;
+    --leading-kitchen-reference: 30px;
+    --text-kitchen-item-quantity: 22px;
+    --leading-kitchen-item-quantity: 26px;
+    --text-kitchen-item-name: 17px;
+    --leading-kitchen-item-name: 24px;
+    --marketplace-section-gap: var(--space-8);
+    --marketplace-grid-gap: var(--space-6);
   }
+
+  .marketplace-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @layer base {
@@ -337,6 +950,15 @@
 }
 
 @layer components {
+  .dashboard-tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dashboard-focus-visible:focus-visible {
+    outline: var(--focus-dashboard-width) solid var(--focus-ring);
+    outline-offset: var(--focus-dashboard-offset);
+  }
+
   .dark-surface {
     background-color: var(--bg-card);
     border: 1px solid var(--border);
@@ -462,10 +1084,28 @@
     }
   }
 
+  @keyframes cover-cta-sheen {
+    0%, 42% {
+      transform: translateX(0) skewX(-18deg);
+      opacity: 0;
+    }
+    50% {
+      opacity: 0.8;
+    }
+    70%, 100% {
+      transform: translateX(430%) skewX(-18deg);
+      opacity: 0;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .public-cover-transition {
       transition-duration: 180ms;
       transition-timing-function: var(--motion-public-ease);
+    }
+
+    .after\:animate-\[cover-cta-sheen_3\.2s_ease-in-out_infinite\]::after {
+      animation: none;
     }
   }
 
@@ -480,6 +1120,18 @@
     box-shadow: var(--public-shadow-soft);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-reduced-motion,
+  .dashboard-reduced-motion *,
+  .dashboard-reduced-motion *::before,
+  .dashboard-reduced-motion *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
   }
 }
 

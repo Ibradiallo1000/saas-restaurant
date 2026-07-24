@@ -26,6 +26,7 @@ import {
   SectionHeader,
 } from "@/components/public-ui"
 import { productNeedsConfigurator } from "@/lib/linked-option-groups"
+import { buildMarketplaceIntentKey, claimMarketplaceIntent, MARKETPLACE_NAVIGATION_SOURCE, resolveMarketplaceProduct } from "@/lib/marketplace-offer-navigation"
 import { getLatestTrackedOrder } from "./orderTrackingStorage"
 import { useCart } from "./cart/CartContext"
 import {
@@ -43,16 +44,22 @@ function PublicPageContent({
   sessionId,
   mode,
   orderId,
+  marketplaceProductId,
+  marketplaceCategoryId,
+  navigationSource,
 }: {
   slug: string
   tableId?: string | null
   sessionId?: string | null
   mode?: string | null
   orderId?: string | null
+  marketplaceProductId?: string | null
+  marketplaceCategoryId?: string | null
+  navigationSource?: string | null
 }) {
   const db = useFirestore()
   const router = useRouter()
-  const { addItem, count, items } = useCart()
+  const { addItem, count, items, restaurantId: cartRestaurantId, setRestaurantScope } = useCart()
 
   const [clientReady, setClientReady] = React.useState(false)
   const [loadTimedOut, setLoadTimedOut] = React.useState(false)
@@ -71,6 +78,7 @@ function PublicPageContent({
   const cartTriggerRef = React.useRef<HTMLElement | null>(null)
   const productTriggerRef = React.useRef<HTMLElement | null>(null)
   const coverTransitionTimeoutRef = React.useRef<number | null>(null)
+  const handledMarketplaceIntentsRef = React.useRef<Set<string>>(new Set())
   const previousActiveNavRef = React.useRef(activeNav)
   const isDineInContinuation = mode === "dine_in" && Boolean(tableId)
   const coverStorageKey = React.useMemo(() => `oordera:cover-seen:${slug}`, [slug])
@@ -115,6 +123,13 @@ function PublicPageContent({
 
   const restaurantId = restaurant?.id
 
+  React.useEffect(() => {
+    if (restaurantId) setRestaurantScope(restaurantId)
+  }, [restaurantId, setRestaurantScope])
+  const restaurantAcceptsMarketplaceIntent = Boolean(
+    restaurant && restaurant.status === "active" && restaurant.isActive !== false && !restaurant.deletedAt
+  )
+
   const shouldRetryRestaurantLookup =
     !isRestaurantDocLoading &&
     !restaurantError &&
@@ -133,12 +148,12 @@ function PublicPageContent({
     if (!restaurant) return
 
     try {
-      const hasSeenCover = window.sessionStorage.getItem(coverStorageKey) === "true"
+      const hasSeenCover = navigationSource === MARKETPLACE_NAVIGATION_SOURCE || window.sessionStorage.getItem(coverStorageKey) === "true"
       setCoverState(hasSeenCover ? "hidden" : "visible")
     } catch {
-      setCoverState("visible")
+      setCoverState(navigationSource === MARKETPLACE_NAVIGATION_SOURCE ? "hidden" : "visible")
     }
-  }, [coverStorageKey, restaurant])
+  }, [coverStorageKey, navigationSource, restaurant])
 
   const tableRef = useMemoFirebase(() => {
     if (!db || !restaurantId || !tableId) return null
@@ -206,6 +221,22 @@ function PublicPageContent({
     error: productsError,
   } = useCollectionOnce(productsQuery, PUBLIC_MENU_CACHE_TTL_MS)
 
+  const marketplaceIntentActive = navigationSource === MARKETPLACE_NAVIGATION_SOURCE && Boolean(marketplaceProductId)
+  const marketplaceCategoryIntentActive = navigationSource === MARKETPLACE_NAVIGATION_SOURCE && Boolean(marketplaceCategoryId)
+  const listedMarketplaceProduct = React.useMemo(
+    () => marketplaceIntentActive ? (products || []).find((product: any) => product.id === marketplaceProductId) ?? null : null,
+    [marketplaceIntentActive, marketplaceProductId, products]
+  )
+  const targetedProductRef = useMemoFirebase(() => {
+    if (!db || !restaurantId || !restaurantAcceptsMarketplaceIntent || !marketplaceIntentActive || !marketplaceProductId || products === null || listedMarketplaceProduct) return null
+    return doc(db, "restaurants", restaurantId, "products", marketplaceProductId)
+  }, [db, listedMarketplaceProduct, marketplaceIntentActive, marketplaceProductId, products, restaurantAcceptsMarketplaceIntent, restaurantId])
+  const {
+    data: targetedMarketplaceProduct,
+    isLoading: isTargetedProductLoading,
+    error: targetedProductError,
+  } = useDocOnce<any>(targetedProductRef, PUBLIC_MENU_CACHE_TTL_MS)
+
   const categoriesQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
     return query(collection(db, "restaurants", restaurantId, "categories"), limit(50))
@@ -225,7 +256,8 @@ function PublicPageContent({
 
   const isMenuLoading =
     Boolean(restaurantId) &&
-    (isProductsLoading ||
+    (cartRestaurantId !== restaurantId ||
+      isProductsLoading ||
       isCategoriesLoading ||
       products === null ||
       categoriesData === null)
@@ -238,6 +270,24 @@ function PublicPageContent({
         imageUrl: getOptimizedImage(category.imageUrl || "", 300),
       }))
   }, [categoriesData])
+
+  const resolvedMarketplaceProduct = React.useMemo(() => {
+    const resolution = resolveMarketplaceProduct({ productId: marketplaceProductId ?? "", loadedProducts: products || [], targetedProduct: targetedMarketplaceProduct })
+    if (resolution.status !== "found") return null
+    const product = resolution.product
+    const category = optimizedCategories.find((item: any) => item.id === product.categoryId)
+    return {
+      ...product,
+      imageUrl: getOptimizedImage(product.imageUrl || category?.imageUrl || "", 300),
+      categoryName: category?.name || "",
+    }
+  }, [marketplaceProductId, optimizedCategories, products, targetedMarketplaceProduct])
+
+  const catalogProducts = React.useMemo(() => {
+    const current = products || []
+    if (!resolvedMarketplaceProduct || current.some((product: any) => product.id === resolvedMarketplaceProduct.id)) return current
+    return [...current, resolvedMarketplaceProduct]
+  }, [products, resolvedMarketplaceProduct])
 
   const productsByCategory = React.useMemo(() => {
     if (!products) return {}
@@ -364,6 +414,29 @@ function PublicPageContent({
     setSelectedProduct(product)
   }
 
+  const marketplaceIntentLookupComplete = marketplaceIntentActive && products !== null && !isProductsLoading && !isTargetedProductLoading
+  const marketplaceIntentUnavailable = marketplaceIntentLookupComplete && (
+    !restaurantAcceptsMarketplaceIntent || Boolean(targetedProductError) || !resolvedMarketplaceProduct
+  )
+
+  React.useEffect(() => {
+    if (!marketplaceIntentActive || !marketplaceProductId || !marketplaceIntentLookupComplete || coverState !== "hidden") return
+    const intentKey = buildMarketplaceIntentKey(slug, marketplaceProductId)
+    if (!claimMarketplaceIntent(handledMarketplaceIntentsRef.current, intentKey)) return
+    if (!restaurantAcceptsMarketplaceIntent || !resolvedMarketplaceProduct) return
+    if (resolvedMarketplaceProduct.categoryId && optimizedCategories.some((category: any) => category.id === resolvedMarketplaceProduct.categoryId)) {
+      setActiveCategoryId(resolvedMarketplaceProduct.categoryId)
+    }
+    productTriggerRef.current = menuStartRef.current
+    setSelectedProduct(resolvedMarketplaceProduct)
+  }, [coverState, marketplaceIntentActive, marketplaceIntentLookupComplete, marketplaceProductId, optimizedCategories, resolvedMarketplaceProduct, restaurantAcceptsMarketplaceIntent, slug])
+
+  React.useEffect(() => {
+    if (!marketplaceCategoryIntentActive || !marketplaceCategoryId || coverState !== "hidden") return
+    if (!optimizedCategories.some((category: any) => category.id === marketplaceCategoryId)) return
+    setActiveCategoryId(marketplaceCategoryId)
+  }, [coverState, marketplaceCategoryId, marketplaceCategoryIntentActive, optimizedCategories])
+
   const closeProduct = React.useCallback(() => {
     setSelectedProduct(null)
     window.requestAnimationFrame(() => productTriggerRef.current?.focus({ preventScroll: true }))
@@ -479,7 +552,15 @@ function PublicPageContent({
           withGutters={false}
           className="pt-[calc(var(--public-shell-header-height)+var(--public-shell-safe-top)+var(--space-2))] sm:pt-[calc(var(--public-shell-header-height)+var(--public-shell-safe-top)+var(--space-3))]"
         >
-          <MenuWelcomeWithTable table={tableContext} />
+          {marketplaceIntentUnavailable ? (
+            <MarketplaceProductIntentNotice
+              onViewMenu={() => {
+                setActiveNav("home")
+                categoriesSectionRef.current?.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })
+              }}
+              onReturn={() => router.push("/")}
+            />
+          ) : null}
           {activeNav === "search" && (
             <section className="mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6 sm:pt-4 lg:px-8" aria-label="Recherche dans le menu">
               <div className="max-w-[var(--public-max-list)]">
@@ -546,7 +627,7 @@ function PublicPageContent({
       {selectedProduct && productNeedsConfigurator(selectedProduct) ? (
         <PublicProductConfigurator
           product={selectedProduct}
-          catalogProducts={products || []}
+          catalogProducts={catalogProducts}
           onClose={closeProduct}
           onAdded={() => {
             closeProduct()
@@ -598,12 +679,18 @@ export default function PublicPage({
   sessionId,
   mode,
   orderId,
+  marketplaceProductId,
+  marketplaceCategoryId,
+  navigationSource,
 }: {
   slug: string
   tableId?: string | null
   sessionId?: string | null
   mode?: string | null
   orderId?: string | null
+  marketplaceProductId?: string | null
+  marketplaceCategoryId?: string | null
+  navigationSource?: string | null
 }) {
   return (
     <PublicPageContent
@@ -612,7 +699,25 @@ export default function PublicPage({
       sessionId={sessionId}
       mode={mode}
       orderId={orderId}
+      marketplaceProductId={marketplaceProductId}
+      marketplaceCategoryId={marketplaceCategoryId}
+      navigationSource={navigationSource}
     />
+  )
+}
+
+function MarketplaceProductIntentNotice({ onReturn, onViewMenu }: { onReturn: () => void; onViewMenu: () => void }) {
+  return (
+    <div className="mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6 lg:px-8">
+      <div role="alert" className="rounded-[var(--radius-public-xl)] border border-[var(--border-public-default)] bg-[var(--surface-public-card)] p-4 shadow-[var(--shadow-public-xs)]">
+        <h2 className="text-public-heading-3 font-public-bold text-[var(--text-primary)]">Ce plat n’est plus disponible</h2>
+        <p className="mt-1 text-public-sm text-[var(--text-secondary)]">Le menu reste accessible avec les produits actuellement proposés par ce restaurant.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <PublicButton variant="primary" size="compact" onClick={onViewMenu}>Voir le menu</PublicButton>
+          <PublicButton variant="outline" size="compact" onClick={onReturn}>Retour à la Marketplace</PublicButton>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -759,40 +864,6 @@ function MainContent({
         </div>
       )}
     </div>
-  )
-}
-
-function MenuWelcome() {
-  return (
-    <section className="mx-auto w-full max-w-6xl px-4 pb-0 sm:px-6 lg:px-8">
-      <p className="text-[22px] font-black leading-tight text-[var(--public-text-main)] sm:text-[23px]">
-        Bonjour 👋
-      </p>
-      <p className="mt-0.5 text-[13.5px] font-semibold leading-snug text-[var(--public-text-muted)] sm:text-[15px]">
-        Qu&apos;avez-vous envie de manger aujourd&apos;hui ?
-      </p>
-    </section>
-  )
-}
-
-function MenuWelcomeWithTable({ table }: { table?: RestaurantTableRecord | null }) {
-  return (
-    <section className="mx-auto w-full max-w-6xl px-4 pb-0 sm:px-6 lg:px-8">
-      <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 text-[22px] font-black leading-tight text-[var(--public-text-main)] sm:text-[23px]">
-          Bonjour 👋
-        </p>
-
-        {table ? (
-          <span className="shrink-0 rounded-full border border-[var(--brand-primary)]/15 bg-[var(--brand-primary-soft)] px-2.5 py-1 text-[11px] font-black leading-none text-[var(--brand-primary)]">
-            🪑 {table.name || table.id}
-          </span>
-        ) : null}
-      </div>
-      <p className="mt-0.5 text-[13.5px] font-semibold leading-snug text-[var(--public-text-muted)] sm:text-[15px]">
-        Qu&apos;avez-vous envie de manger aujourd&apos;hui ?
-      </p>
-    </section>
   )
 }
 

@@ -23,6 +23,7 @@ import { MediaSelector } from '@/components/platform/MediaSelector';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { COLLECTION_NAMES } from '@/lib/constants';
+import { PlatformConfirmationDialog, PlatformHeader, PlatformPage } from '@/components/platform-ui';
 
 type PaymentMethodType = 'ussd' | 'link';
 
@@ -49,6 +50,7 @@ export default function PlatformPaymentMethodsPage() {
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
   const [pendingId, setPendingId] = React.useState<string | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = React.useState<{ id: string; name: string } | null>(null);
 
   const methodsQuery = useMemoFirebase(() => {
     if (!db) return null;
@@ -164,19 +166,13 @@ export default function PlatformPaymentMethodsPage() {
       });
     } finally {
       setPendingId(null);
+      setDeleteCandidate(null);
     }
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-4xl font-black italic uppercase tracking-tighter text-primary">
-          Moyens de paiement
-        </h1>
-        <p className="text-muted-foreground font-medium">
-          Configuration des moyens de paiement disponibles sur la plateforme.
-        </p>
-      </div>
+    <PlatformPage>
+      <PlatformHeader title="Moyens de paiement" subtitle="Configuration des moyens de paiement disponibles sur la plateforme." />
 
       <Card className="border-none shadow-2xl">
         <CardHeader>
@@ -188,8 +184,9 @@ export default function PlatformPaymentMethodsPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-6">
             <div className="space-y-2 md:col-span-2">
-              <Label>Nom</Label>
+              <Label htmlFor="platform-payment-method-name">Nom</Label>
               <Input
+                id="platform-payment-method-name"
                 placeholder="Orange Money"
                 value={formData.name}
                 onChange={(event) => setFormData({ ...formData, name: event.target.value })}
@@ -197,8 +194,9 @@ export default function PlatformPaymentMethodsPage() {
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label>Code</Label>
+              <Label htmlFor="platform-payment-method-code">Code</Label>
               <Input
+                id="platform-payment-method-code"
                 placeholder="orange_money"
                 value={formData.code}
                 onChange={(event) => setFormData({ ...formData, code: event.target.value })}
@@ -206,8 +204,9 @@ export default function PlatformPaymentMethodsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Type</Label>
+              <Label htmlFor="platform-payment-method-type">Type</Label>
               <select
+                id="platform-payment-method-type"
                 value={formData.type}
                 onChange={(event) =>
                   setFormData({ ...formData, type: event.target.value as PaymentMethodType })
@@ -220,9 +219,10 @@ export default function PlatformPaymentMethodsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Actif</Label>
+              <Label htmlFor="platform-payment-method-active">Actif</Label>
               <div className="flex h-10 items-center">
                 <Switch
+                  id="platform-payment-method-active"
                   checked={formData.isActive}
                   onCheckedChange={(checked) =>
                     setFormData({ ...formData, isActive: checked })
@@ -301,6 +301,7 @@ export default function PlatformPaymentMethodsPage() {
                       Actif
                     </Label>
                     <Switch
+                      aria-label={`${method.isActive ? 'Désactiver' : 'Activer'} ${method.name}`}
                       checked={method.isActive}
                       disabled={pendingId === method.id}
                       onCheckedChange={(checked) => toggleMethod(method.id, checked)}
@@ -312,6 +313,7 @@ export default function PlatformPaymentMethodsPage() {
                       type="button"
                       variant="outline"
                       size="icon"
+                      className="min-h-11 min-w-11"
                       disabled={pendingId === method.id}
                       onClick={() => startEdit(method)}
                       aria-label={`Modifier ${method.name}`}
@@ -322,8 +324,9 @@ export default function PlatformPaymentMethodsPage() {
                       type="button"
                       variant="outline"
                       size="icon"
+                      className="min-h-11 min-w-11"
                       disabled={pendingId === method.id}
-                      onClick={() => deleteMethod(method.id)}
+                      onClick={() => setDeleteCandidate({ id: method.id, name: method.name })}
                       aria-label={`Supprimer ${method.name}`}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
@@ -342,6 +345,7 @@ export default function PlatformPaymentMethodsPage() {
           </Card>
         )}
       </div>
-    </div>
+      <PlatformConfirmationDialog open={Boolean(deleteCandidate)} onOpenChange={(open) => { if (!open && !pendingId) setDeleteCandidate(null) }} title="Supprimer ce moyen de paiement ?" description={deleteCandidate ? `Vous allez supprimer « ${deleteCandidate.name} ».` : "Confirmer la suppression."} consequence="Les variantes ou usages dépendants ne sont pas analysés automatiquement par le flux existant." confirmLabel="Supprimer" loading={Boolean(pendingId)} onConfirm={() => { if (deleteCandidate) void deleteMethod(deleteCandidate.id) }} />
+    </PlatformPage>
   );
 }

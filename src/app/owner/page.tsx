@@ -9,22 +9,37 @@ import {
   AlertTriangle,
   BarChart3,
   Banknote,
-  Calendar,
-  ChefHat,
-  DollarSign,
   Eye,
-  Info,
-  Loader2,
   Package,
   ReceiptText,
-  TrendingDown,
   TrendingUp,
   Wallet,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { GlobalTimeFilterBar } from "@/components/time-filter/GlobalTimeFilterBar"
+import {
+  DashboardAlert,
+  DashboardAlertList,
+  DashboardChart,
+  DashboardChartCard,
+  DashboardEmptyState,
+  DashboardErrorState,
+  DashboardFilters,
+  DashboardHeader,
+  DashboardLoadingState,
+  DashboardPage,
+  DashboardPanel,
+  DashboardSection,
+  DashboardStat,
+  DashboardToolbar,
+  DashboardTrend,
+  DashboardWidget,
+  DashboardWidgetHeader,
+  MetricCard,
+  MetricDelta,
+  MetricGroup,
+} from "@/components/dashboard-ui"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
@@ -95,41 +110,6 @@ type BusinessStatus = {
 
 const KITCHEN_PRODUCTION_STATUSES = ["pending", "preparing", "ready", "served"] as const
 
-const sectionTitleClass = "text-sm font-black tracking-tight md:text-base"
-const panelClass = "rounded-lg border bg-background shadow-sm"
-const metricCardClass = "min-h-[116px] rounded-lg border bg-background p-3 shadow-sm transition"
-
-const sectionStyles = {
-  performance: {
-    wrapper: "border-blue-200 bg-blue-50/70 dark:border-blue-400/30 dark:bg-blue-500/10",
-    icon: "text-blue-700 dark:text-blue-200",
-  },
-  evolution: {
-    wrapper: "border-sky-200 bg-sky-50/70 dark:border-sky-400/30 dark:bg-sky-500/10",
-    icon: "text-sky-700 dark:text-sky-200",
-  },
-  alerts: {
-    wrapper: "border-amber-300 bg-amber-100/80 dark:border-amber-400/40 dark:bg-amber-500/15",
-    icon: "text-amber-700 dark:text-amber-200",
-  },
-  impact: {
-    wrapper: "border-amber-200 bg-amber-50/70 dark:border-amber-400/30 dark:bg-amber-500/10",
-    icon: "text-amber-700 dark:text-amber-200",
-  },
-  treasury: {
-    wrapper: "border-green-200 bg-green-50/70 dark:border-green-400/30 dark:bg-green-500/10",
-    icon: "text-green-700 dark:text-green-200",
-  },
-  analysis: {
-    wrapper: "border-gray-200 bg-gray-50/80 dark:border-gray-400/30 dark:bg-gray-500/10",
-    icon: "text-gray-700 dark:text-gray-200",
-  },
-  realtime: {
-    wrapper: "border-purple-200 bg-purple-50/70 dark:border-purple-400/30 dark:bg-purple-500/10",
-    icon: "text-purple-700 dark:text-purple-200",
-  },
-}
-
 export default function OwnerPage() {
   return <OwnerPageContent />
 }
@@ -140,7 +120,6 @@ function OwnerPageContent() {
   const { user, role } = useTenant()
   const {
     cashMovements,
-    cashSessionRequests,
     cashSessions,
     isLoadingSessions,
     payments,
@@ -209,517 +188,118 @@ function OwnerPageContent() {
   )
 
   const isLiveLoading = isLoadingOrders || isLoadingSessions
+  const isOrdersPartial = orders.length >= 500
 
   if (loading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
+    return <DashboardLoadingState className="min-h-[60vh]" label="Chargement du tableau de bord" />
   }
 
   if (!restaurantId) {
-    return (
-      <div className="flex min-h-screen items-center justify-center p-6 text-center">
-        <div>
-          <BarChart3 className="mx-auto mb-4 h-10 w-10 text-muted-foreground" />
-          <h1 className="text-2xl font-bold">Compte non lié à un restaurant</h1>
-          <p className="mt-2 text-muted-foreground">
-            Votre compte utilisateur ne contient pas de restaurantId.
-          </p>
-        </div>
-      </div>
-    )
+    return <DashboardErrorState className="min-h-[60vh]" title="Compte non lié à un restaurant" description="Votre compte utilisateur ne contient pas de restaurantId." />
   }
 
   return (
-    <main className="space-y-3 pb-14 md:space-y-4">
-      <header className="flex flex-col gap-3 rounded-lg border bg-card p-3 shadow-sm md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <BarChart3 className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-black tracking-tight md:text-2xl">Dashboard</h1>
-          </div>
-          <p className="mt-0.5 text-xs font-medium text-muted-foreground">
-            Centre de pilotage business : performance, stock, trésorerie et actions.
-          </p>
-        </div>
+    <DashboardPage className="px-0 py-0 pb-14 md:pb-6">
+      <DashboardHeader
+        title="Tableau de bord"
+        subtitle="Pilotez la performance, la trésorerie et les risques du restaurant."
+        meta={<>Période sélectionnée : <span className="font-semibold text-[var(--dashboard-subtitle)]">{period.label}</span>{isOrdersPartial ? " · Données commandes potentiellement partielles" : ""}</>}
+        actions={<DashboardToolbar className="border-0 bg-transparent p-0 shadow-none"><DashboardFilters><GlobalTimeFilterBar compact /></DashboardFilters></DashboardToolbar>}
+      />
 
-        <div className="flex flex-col gap-2 md:items-end">
-          <BusinessStatusBadge status={business.status} />
-          <GlobalTimeFilterBar compact />
-          <p className="text-xs font-semibold text-muted-foreground">{period.label}</p>
-        </div>
-      </header>
+      <OwnerDecisionOverview business={business} periodMode={periodMode} searchParams={searchParams} />
 
-      {business.summary.length > 0 ? (
-        <DecisionSummary periodLabel={getPeriodSummaryLabel(periodMode)} lines={business.summary} />
-      ) : null}
+      {isOrdersPartial ? <DashboardAlert tone="warning" title="Données potentiellement partielles" description="La période a atteint la limite actuelle de 500 commandes. Les indicateurs restent calculés avec les mêmes données, mais peuvent ne pas couvrir toute la période." /> : null}
+      {!business.hasPeriodData && !isLoadingOrders ? <DashboardEmptyState title="Aucune donnée pour cette période" description="Choisissez une autre période pour consulter l’activité disponible." /> : null}
 
-      {!business.hasPeriodData ? (
-        <div className="rounded-lg border border-dashed bg-card p-3 text-sm font-bold text-muted-foreground">
-          Aucune donnée pour cette période
-        </div>
-      ) : null}
+      <OwnerPrimaryMetrics business={business} periodLabel={period.label} searchParams={searchParams} loading={isLoadingOrders} partial={isOrdersPartial} />
 
-      <DashboardSection
-        tone="performance"
-        icon={TrendingUp}
-        title="Performance"
-        description="La santé commerciale de la période sélectionnée."
-      >
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <KpiCard
-            href="/owner"
-            title="Total commandes"
-            value={business.current.orders.toLocaleString("fr-FR")}
-            description="Nombre de commandes sur la période."
-            variation={business.variation.orders}
-          />
-          <KpiCard
-            href="/owner"
-            title="Chiffre d’affaires"
-            value={`${formatMoney(business.current.revenue)} FCFA`}
-            description="CA encaissé ou confirmé sur la période."
-            variation={business.variation.revenue}
-          />
-          <KpiCard
-            href="/owner"
-            title="Panier moyen"
-            value={`${formatMoney(business.current.averageOrder)} FCFA`}
-            description="Montant moyen par commande."
-            variation={business.variation.averageOrder}
-          />
-          <KpiCard
-            href="/manager/commandes"
-            title="Statut global"
-            value={getTrendLabel(business.variation.revenue.trend)}
-            description="Lecture rapide de la progression du CA."
-            variation={business.variation.revenue}
-          />
-        </div>
+      <DashboardSection title="Évolution" description={`Tendance du chiffre d’affaires et des commandes · ${period.label}`}>
+        {isLoadingOrders ? <DashboardLoadingState label="Chargement des tendances" /> : <div className="grid gap-[var(--dashboard-grid-gap)] 2xl:grid-cols-2"><OwnerTrendChart title={periodMode === "month" || periodMode === "custom" ? "Chiffre d’affaires sur la période" : "Chiffre d’affaires sur 7 jours"} points={business.trend} valueKey="revenue" partial={isOrdersPartial} /><OwnerTrendChart title={periodMode === "month" || periodMode === "custom" ? "Commandes sur la période" : "Commandes sur 7 jours"} points={business.trend} valueKey="orders" partial={isOrdersPartial} /></div>}
       </DashboardSection>
 
-      <DashboardSection
-        tone="evolution"
-        icon={BarChart3}
-        title="Évolution"
-        description="Tendance rapide du chiffre d’affaires et des commandes."
-      >
-        <div className="grid gap-2 xl:grid-cols-2">
-          <TrendChart title={periodMode === "month" || periodMode === "custom" ? "CA sur la période" : "CA sur 7 jours"} points={business.trend} valueKey="revenue" />
-          <TrendChart title={periodMode === "month" || periodMode === "custom" ? "Commandes sur la période" : "Commandes sur 7 jours"} points={business.trend} valueKey="orders" />
-        </div>
-      </DashboardSection>
+      <div className="grid gap-[var(--dashboard-section-gap)] 2xl:grid-cols-2">
+        <OwnerTreasuryWidget treasury={business.treasury} periodLabel={period.label} searchParams={searchParams} />
+        <OwnerInventoryWidget inventory={business.inventory} inventoryHref={inventoryHref} />
+      </div>
 
-      <DashboardSection
-        tone="alerts"
-        icon={AlertTriangle}
-        title="Attention requise"
-        description="Ce qui mérite une décision immédiate."
-      >
-        <AlertActionList alerts={business.alerts} />
-      </DashboardSection>
+      <OwnerAnalysisSection analysis={business.analysis} insights={business.insights} />
+      <OwnerLiveSection live={business.live} loading={isLiveLoading} searchParams={searchParams} />
 
-      <DashboardSection
-        tone="impact"
-        icon={Package}
-        title="Impact business"
-        description="Impact financier du stock sur la période."
-        action={<Button asChild variant="outline" size="sm"><Link href={inventoryHref}>Voir détails inventaire</Link></Button>}
-      >
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <SimpleMetricCard title="Coût consommé" value={`${formatMoney(business.inventory.consumedCost)} FCFA`} description="Coût estimé des ingrédients utilisés." />
-          <SimpleMetricCard title="Pertes estimées" value={`${formatMoney(business.inventory.estimatedLosses)} FCFA`} description="Écart inventaire valorisé." danger={business.inventory.estimatedLosses > 0} />
-          <SimpleMetricCard title="Valeur totale du stock" value={`${formatMoney(business.inventory.stockValue)} FCFA`} description="Capital immobilisé en stock." />
-          <SimpleMetricCard title="Produits critiques" value={String(business.inventory.criticalProducts)} description="Produits avec impact prioritaire." danger={business.inventory.criticalProducts > 0} />
-        </div>
-      </DashboardSection>
-
-      <DashboardSection
-        tone="treasury"
-        icon={Wallet}
-        title="Trésorerie"
-        description="Argent disponible, sorties et mouvements."
-      >
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <SimpleMetricCard href="/owner/tresorerie" title="Solde trésorerie validé" value={`${formatMoney(business.treasury.balance)} FCFA`} description="Dépôts clôturés moins sorties." />
-          <SimpleMetricCard href="/manager/depenses" title="Dépenses" value={`${formatMoney(business.treasury.expenses)} FCFA`} description="Sorties sur la période." danger={business.treasury.expenses > 0} />
-          <SimpleMetricCard href="/manager/caisse" title="Transferts" value={`${formatMoney(business.treasury.transfers)} FCFA`} description="Mouvements hors dépenses." />
-          <SimpleMetricCard title="Sessions ouvertes" value={String(business.treasury.openSessions)} description={`Caisse en cours : ${formatMoney(business.treasury.openSessionSales)} FCFA non clôturés.`} />
-        </div>
-      </DashboardSection>
-
-      <DashboardSection
-        tone="analysis"
-        icon={Activity}
-        title="Analyse business"
-        description="Produits et jours qui tirent la performance."
-      >
-        <div className="grid gap-2 xl:grid-cols-3">
-          <RankedList title="Top produits vendus" empty="Aucun produit vendu sur cette période." items={business.analysis.topProducts.map((item) => ({
-            key: item.name,
-            label: item.name,
-            value: `${item.count} vendu(s)`,
-          }))} />
-          <RankedList title="Jours les plus performants" empty="Pas assez de jours avec ventes." items={business.analysis.bestDays.map((item) => ({
-            key: item.day,
-            label: item.day,
-            value: `${formatMoney(item.revenue)} FCFA`,
-          }))} />
-          <InsightsPanel insights={business.insights} />
-        </div>
-      </DashboardSection>
-
-      <DashboardSection
-        tone="realtime"
-        icon={Eye}
-        title="Temps réel"
-        description="Ce qui se passe maintenant dans le restaurant."
-        action={<span className="rounded-full border bg-background px-2.5 py-1 text-[11px] font-bold text-muted-foreground">{isLiveLoading ? "Synchronisation..." : "Live"}</span>}
-      >
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <SimpleMetricCard href="/manager/commandes" title="Commandes en cours" value={String(business.live.activeOrders)} description={getLiveActivityMessage(business.live.activeOrders)} danger={business.live.activeOrders === 0} />
-          <SimpleMetricCard href="/kitchen" title="Cuisine active" value={String(business.live.kitchenActive)} description="Commandes à préparer ou servir." />
-          <SimpleMetricCard href="/manager/commandes?status=late" title="Anomalies" value={String(business.live.anomalies.length)} description="Commandes en retard." danger={business.live.anomalies.length > 0} />
-          <SimpleMetricCard title="Ventes live" value={`${formatMoney(business.live.liveRevenue)} FCFA`} description="Valeur des commandes actives." />
-        </div>
+      <DashboardSection title="Demandes de caisse" description="Actions secondaires nécessitant une validation Owner.">
         <OwnerCashSessionRequests restaurantId={restaurantId} user={user} role={role} />
       </DashboardSection>
-    </main>
+    </DashboardPage>
   )
 }
 
-function BusinessStatusBadge({ status }: { status: BusinessStatus }) {
-  const tone =
-    status.tone === "good"
-      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-      : status.tone === "bad"
-        ? "border-red-300 bg-red-50 text-red-700"
-        : "border-amber-300 bg-amber-50 text-amber-700"
+type OwnerBusinessDashboard = ReturnType<typeof buildBusinessDashboardData>
+type QueryParams = { toString(): string } | null
 
-  return (
-    <div className={cn("inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-black", tone)}>
-      <span className={cn(
-        "h-2 w-2 rounded-full",
-        status.tone === "good" && "bg-emerald-500",
-        status.tone === "watch" && "bg-amber-500",
-        status.tone === "bad" && "bg-red-500"
-      )} />
-      {status.label}
+function OwnerDecisionOverview({ business, periodMode, searchParams }: { business: OwnerBusinessDashboard; periodMode: PeriodMode; searchParams: QueryParams }) {
+  const criticalAlerts = business.alerts.slice(0, 3)
+  const statusTone = business.status.tone === "good" ? "positive" : business.status.tone === "bad" ? "negative" : "warning"
+  return <DashboardPanel className="grid gap-4 xl:grid-cols-[minmax(240px,0.8fr)_minmax(0,1.5fr)]">
+    <div className="space-y-3">
+      <div><p className="text-xs font-semibold uppercase tracking-wide text-[var(--dashboard-label)]">Tendance commerciale</p><p className={cn("mt-1 text-2xl font-bold", statusTone === "positive" && "text-[var(--data-positive)]", statusTone === "negative" && "text-[var(--data-negative)]", statusTone === "warning" && "text-[var(--data-warning)]")}>{business.status.label}</p><p className="mt-1 text-sm text-[var(--dashboard-muted)]">Lecture de la performance et des alertes disponibles, sans score artificiel.</p></div>
+      <dl className="grid grid-cols-2 gap-3"><DashboardStat label="Tendance CA" value={getTrendLabel(business.variation.revenue.trend)} tone={statusTone} /><DashboardStat label="Alertes prioritaires" value={business.alerts.length} tone={business.alerts.length > 0 ? "negative" : "positive"} /></dl>
+      {business.summary.length > 0 ? <div><h2 className="text-sm font-semibold text-[var(--dashboard-title)]">Résumé {getPeriodSummaryLabel(periodMode)}</h2><ul className="mt-2 space-y-1.5 text-sm text-[var(--dashboard-subtitle)]">{business.summary.map((line) => <li key={line}>{line}</li>)}</ul></div> : null}
     </div>
-  )
+    <div><h2 className="mb-2 text-sm font-semibold text-[var(--dashboard-title)]">Attention requise</h2>{criticalAlerts.length === 0 ? <DashboardAlert title="Aucune intervention immédiate" description="Aucune alerte prioritaire n’est détectée avec les données disponibles." tone="neutral" icon={<Activity />} /> : <DashboardAlertList>{criticalAlerts.map((alert) => <DashboardAlert key={`${alert.title}-${alert.href}`} title={alert.title} description={alert.description} tone={alert.severity === "high" ? "negative" : "warning"} announce={alert.severity === "high"} icon={<AlertTriangle />} action={<Button asChild size="sm" variant="outline"><Link href={getHrefWithCurrentQuery(alert.href, searchParams)}>Consulter</Link></Button>} />)}</DashboardAlertList>}</div>
+  </DashboardPanel>
 }
 
-function DecisionSummary({ periodLabel, lines }: { periodLabel: string; lines: string[] }) {
-  if (lines.length === 0) return null
-
-  return (
-    <section className="rounded-lg border border-blue-200 bg-blue-50/80 p-3 shadow-sm dark:border-blue-400/30 dark:bg-blue-500/10">
-      <div className="flex items-start gap-2.5">
-        <div className="rounded-lg bg-background/80 p-1.5 shadow-sm">
-          <Info className="h-4 w-4 text-blue-700 dark:text-blue-200" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-black">Résumé {periodLabel}</h2>
-          <div className="mt-2 grid gap-1 text-sm font-semibold text-foreground sm:grid-cols-2 xl:grid-cols-4">
-            {lines.slice(0, 5).map((line) => (
-              <p key={line}>{line}</p>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  )
+function OwnerPrimaryMetrics({ business, loading, partial, periodLabel, searchParams }: { business: OwnerBusinessDashboard; loading: boolean; partial: boolean; periodLabel: string; searchParams: QueryParams }) {
+  if (loading) return <DashboardSection title="Indicateurs principaux"><DashboardLoadingState label="Chargement des indicateurs" /></DashboardSection>
+  const items = [
+    { href: "/owner", label: "Chiffre d’affaires", value: formatMoney(business.current.revenue), unit: "FCFA", variation: business.variation.revenue, description: "CA encaissé ou confirmé sur la période.", icon: <TrendingUp /> },
+    { href: "/owner", label: "Commandes", value: business.current.orders.toLocaleString("fr-FR"), unit: undefined, variation: business.variation.orders, description: "Commandes acquises sur la période.", icon: <ReceiptText /> },
+    { href: "/owner", label: "Panier moyen", value: formatMoney(business.current.averageOrder), unit: "FCFA", variation: business.variation.averageOrder, description: "Montant moyen par commande acquise.", icon: <BarChart3 /> },
+    { href: "/owner/tresorerie", label: "Trésorerie validée", value: formatMoney(business.treasury.balance), unit: "FCFA", variation: null, description: "Dépôts clôturés moins sorties.", icon: <Wallet /> },
+  ]
+  return <DashboardSection title="Indicateurs principaux" description={`${periodLabel}${partial ? " · données commandes potentiellement partielles" : ""}`}><MetricGroup>{items.map((item) => <Link key={item.label} href={getHrefWithCurrentQuery(item.href, searchParams)} className="rounded-[var(--radius-dashboard-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2"><MetricCard className="h-full" interactive label={item.label} value={item.value} unit={item.unit} description={item.description} icon={item.icon} delta={item.variation ? <OwnerMetricDelta variation={item.variation} /> : <span className="text-xs text-[var(--dashboard-muted)]">Solde validé actuel</span>} /></Link>)}</MetricGroup></DashboardSection>
 }
 
-function DashboardSection({
-  tone,
-  icon: Icon,
-  title,
-  description,
-  action,
-  children,
-}: {
-  tone: keyof typeof sectionStyles
-  icon: React.ComponentType<{ className?: string }>
-  title: string
-  description: string
-  action?: React.ReactNode
-  children: React.ReactNode
-}) {
-  const style = sectionStyles[tone]
-  return (
-    <section className={cn("space-y-3 rounded-lg border p-3 shadow-sm", style.wrapper)}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex items-start gap-2.5">
-          <div className="rounded-lg bg-background/80 p-1.5 shadow-sm">
-            <Icon className={cn("h-4 w-4", style.icon)} />
-          </div>
-          <div>
-            <h2 className={sectionTitleClass}>{title}</h2>
-            <p className="mt-0.5 text-xs font-medium text-muted-foreground">{description}</p>
-          </div>
-        </div>
-        {action}
-      </div>
-      {children}
-    </section>
-  )
+function OwnerMetricDelta({ variation }: { variation: Variation }) {
+  if (variation.trend === "none" || variation.percent === null) return <MetricDelta value="Comparaison indisponible" context="période précédente" />
+  return <MetricDelta direction={variation.trend === "up" ? "up" : variation.trend === "down" ? "down" : "flat"} tone={variation.trend === "up" ? "positive" : variation.trend === "down" ? "negative" : "neutral"} value={`${variation.absolute > 0 ? "+" : ""}${formatMoney(variation.absolute)} (${variation.percent.toFixed(1)} %)`} context="par rapport à la période précédente" />
 }
 
-function MetricTooltip({ text }: { text: string }) {
-  const [open, setOpen] = React.useState(false)
-  return (
-    <span className="relative inline-flex">
-      <button
-        type="button"
-        aria-label="Explication"
-        onClick={(event) => {
-          event.preventDefault()
-          setOpen((value) => !value)
-        }}
-        onBlur={() => setOpen(false)}
-        className="group inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
-      >
-        <Info className="h-3 w-3" />
-        <span className={cn(
-          "pointer-events-none absolute right-0 top-6 z-50 w-60 rounded-lg bg-gray-950 p-3 text-left text-xs font-semibold leading-relaxed text-white opacity-0 shadow-xl transition group-hover:opacity-100",
-          open && "opacity-100"
-        )}>
-          {text}
-        </span>
-      </button>
-    </span>
-  )
-}
-
-function KpiCard({
-  href,
-  title,
-  value,
-  description,
-  variation,
-}: {
-  href: string
-  title: string
-  value: string
-  description: string
-  variation: Variation
-}) {
-  const searchParams = useSearchParams()
-  const targetHref = getHrefWithCurrentQuery(href, searchParams)
-
-  return (
-    <Link href={targetHref} className={cn(metricCardClass, "block hover:border-primary/40 hover:shadow-md")}>
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-[11px] font-black uppercase text-muted-foreground">{title}</p>
-        <MetricTooltip text={description} />
-      </div>
-      <p className="mt-1.5 text-xl font-black leading-tight md:text-2xl">{value}</p>
-      <VariationBadge variation={variation} />
-      <p className={cn("mt-1.5 text-xs font-black", getVariationInterpretation(variation).className)}>
-        {getVariationInterpretation(variation).label}
-      </p>
-    </Link>
-  )
-}
-
-function SimpleMetricCard({
-  href,
-  title,
-  value,
-  description,
-  danger = false,
-}: {
-  href?: string
-  title: string
-  value: string
-  description: string
-  danger?: boolean
-}) {
-  const searchParams = useSearchParams()
-  const targetHref = href ? getHrefWithCurrentQuery(href, searchParams) : null
-  const content = (
-    <div className={cn(
-      metricCardClass,
-      href && "hover:border-primary/40 hover:shadow-md",
-      danger && "border-red-200 bg-red-50/80 text-red-700 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-200"
-    )}>
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-[11px] font-black uppercase text-muted-foreground">{title}</p>
-        <MetricTooltip text={description} />
-      </div>
-      <p className="mt-1.5 text-xl font-black leading-tight md:text-2xl">{value}</p>
-      <p className="mt-1 text-xs font-medium leading-snug text-muted-foreground">{description}</p>
-    </div>
-  )
-  return targetHref ? <Link href={targetHref} className="block h-full">{content}</Link> : content
-}
-
-function VariationBadge({ variation }: { variation: Variation }) {
-  if (variation.trend === "none" || variation.percent === null) {
-    return <p className="mt-1.5 text-xs font-bold text-muted-foreground">Comparaison indisponible</p>
-  }
-
-  const tone =
-    variation.trend === "up"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-      : variation.trend === "down"
-        ? "border-red-200 bg-red-50 text-red-700"
-        : "border-amber-200 bg-amber-50 text-amber-700"
-  const sign = variation.absolute > 0 ? "+" : ""
-  const dot =
-    variation.trend === "up"
-      ? "bg-emerald-500"
-      : variation.trend === "down"
-        ? "bg-red-500"
-        : "bg-amber-500"
-
-  return (
-    <div className={cn("mt-2 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-black", tone)}>
-      <span className={cn("h-2 w-2 rounded-full", dot)} />
-      <span>{sign}{formatMoney(variation.absolute)} ({variation.percent.toFixed(1)}%)</span>
-    </div>
-  )
-}
-
-function TrendChart({
-  title,
-  points,
-  valueKey,
-}: {
-  title: string
-  points: Array<{ date: string; label: string; revenue: number; orders: number }>
-  valueKey: "revenue" | "orders"
-}) {
+function OwnerTrendChart({ title, points, valueKey, partial }: { title: string; points: Array<{ date: string; label: string; revenue: number; orders: number }>; valueKey: "revenue" | "orders"; partial: boolean }) {
   const validPoints = points.filter((point) => point[valueKey] > 0)
   const maxValue = Math.max(1, ...points.map((point) => point[valueKey]))
-
-  return (
-    <Card className={cn(panelClass, "h-full")}>
-      <CardHeader className="p-3 pb-2">
-        <CardTitle className="text-sm font-black">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="p-3 pt-0">
-        {validPoints.length < 2 ? (
-          <div className="rounded-lg border border-dashed p-3 text-sm font-medium text-muted-foreground">
-            Le graphique apparaîtra automatiquement après plusieurs jours d'activité.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {points.map((point) => (
-              <div key={point.date} className="grid grid-cols-[72px_1fr_78px] items-center gap-2">
-                <span className="truncate text-xs font-bold text-muted-foreground">{point.label}</span>
-                <div className="h-2.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{ width: `${Math.max(4, (point[valueKey] / maxValue) * 100)}%` }}
-                  />
-                </div>
-                <span className="text-right text-xs font-black">
-                  {valueKey === "revenue" ? `${formatMoney(point.revenue)} F` : point.orders}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
+  const summary = validPoints.length < 2 ? "Données insuffisantes pour dégager une évolution." : `${validPoints.length} jours présentent une valeur non nulle. Valeur maximale : ${valueKey === "revenue" ? `${formatMoney(maxValue)} FCFA` : maxValue}.`
+  const table = <table className="w-full text-left text-sm"><caption className="sr-only">Données de {title}</caption><thead><tr><th scope="col" className="py-2">Jour</th><th scope="col" className="py-2 text-right">Valeur</th></tr></thead><tbody>{points.map((point) => <tr key={point.date} className="border-t border-[var(--dashboard-divider)]"><th scope="row" className="py-2 font-medium">{point.label}</th><td className="py-2 text-right tabular-nums">{valueKey === "revenue" ? `${formatMoney(point.revenue)} FCFA` : point.orders}</td></tr>)}</tbody></table>
+  return <DashboardChartCard title={title} description={partial ? "Valeurs potentiellement partielles : limite de 500 commandes atteinte." : "Comparaison quotidienne avec les données disponibles."}><DashboardChart label={title} description={summary} table={table}>{validPoints.length < 2 ? <DashboardEmptyState className="min-h-48" title="Évolution indisponible" description="Le graphique apparaîtra après plusieurs jours d’activité." /> : <div className="space-y-3">{points.map((point) => <DashboardTrend key={point.date} label={point.label} current={point[valueKey]} max={maxValue} value={valueKey === "revenue" ? `${formatMoney(point.revenue)} F` : point.orders} tone={valueKey === "revenue" ? "info" : "neutral"} />)}</div>}</DashboardChart></DashboardChartCard>
 }
 
-function AlertActionList({ alerts }: { alerts: Array<{ title: string; description: string; href: string; severity: "high" | "medium" }> }) {
-  const searchParams = useSearchParams()
-  const prioritizedAlerts = alerts.slice(0, 3)
+function OwnerTreasuryWidget({ treasury, periodLabel, searchParams }: { treasury: OwnerBusinessDashboard["treasury"]; periodLabel: string; searchParams: QueryParams }) {
+  return <DashboardWidget><DashboardWidgetHeader title="Trésorerie" description={`Solde, mouvements et sessions · ${periodLabel}`} action={<Button asChild size="sm" variant="outline"><Link href={getHrefWithCurrentQuery("/owner/tresorerie", searchParams)}>Voir la trésorerie</Link></Button>} /><div className="grid gap-4 p-4 sm:grid-cols-2"><DashboardStat label="Solde validé" value={`${formatMoney(treasury.balance)} FCFA`} tone={treasury.balance < 0 ? "negative" : "neutral"} /><DashboardStat label="Dépenses" value={`${formatMoney(treasury.expenses)} FCFA`} /><DashboardStat label="Transferts" value={`${formatMoney(treasury.transfers)} FCFA`} /><DashboardStat label="Sessions ouvertes" value={treasury.openSessions} tone={treasury.openSessions > 0 ? "warning" : "neutral"} /><p className="sm:col-span-2 text-xs text-[var(--dashboard-muted)]">Ventes des sessions ouvertes : <span className="font-semibold tabular-nums text-[var(--dashboard-subtitle)]">{formatMoney(treasury.openSessionSales)} FCFA</span> non clôturés.</p>{treasury.anomalies.length > 0 ? <DashboardAlert className="sm:col-span-2" tone="warning" title="Mouvement à vérifier" description={treasury.anomalies[0]?.label} action={<Button asChild size="sm" variant="outline"><Link href={getHrefWithCurrentQuery("/manager/caisse", searchParams)}>Consulter</Link></Button>} /> : null}</div></DashboardWidget>
+}
 
-  if (alerts.length === 0) {
-    return (
-      <div className="rounded-lg border border-amber-200 bg-background p-3 text-sm font-semibold text-muted-foreground dark:border-amber-400/30 dark:bg-background">
-        Aucune intervention immédiate nécessaire.
-      </div>
-    )
-  }
+function OwnerInventoryWidget({ inventory, inventoryHref }: { inventory: OwnerBusinessDashboard["inventory"]; inventoryHref: string }) {
+  const dataIsEstimated = inventory.alerts.some((alert) => alert.type === "missing_cost")
+  return <DashboardWidget><DashboardWidgetHeader title="Stock et impact business" description="Valeurs estimées à partir des stocks et coûts renseignés." action={<Button asChild size="sm" variant="outline"><Link href={inventoryHref}>Voir l’inventaire</Link></Button>} /><div className="grid gap-4 p-4 sm:grid-cols-2"><DashboardStat label="Valeur estimée du stock" value={`${formatMoney(inventory.stockValue)} FCFA`} /><DashboardStat label="Coût consommé" value={`${formatMoney(inventory.consumedCost)} FCFA`} /><DashboardStat label="Pertes estimées" value={`${formatMoney(inventory.estimatedLosses)} FCFA`} tone={inventory.estimatedLosses > 0 ? "warning" : "neutral"} /><DashboardStat label="Produits critiques" value={inventory.criticalProducts} tone={inventory.criticalProducts > 0 ? "negative" : "positive"} />{dataIsEstimated ? <DashboardAlert className="sm:col-span-2" tone="warning" title="Coûts incomplets" description="Certaines estimations dépendent de coûts qui ne sont pas encore renseignés." /> : null}</div></DashboardWidget>
+}
 
-  return (
-    <div className="grid gap-2">
-      {prioritizedAlerts.map((alert) => (
-        <Link
-          key={`${alert.title}-${alert.href}`}
-          href={getHrefWithCurrentQuery(alert.href, searchParams)}
-          className={cn(
-            "flex items-start gap-2.5 rounded-lg border bg-background p-3 text-amber-800 shadow-sm transition hover:border-primary/40 hover:shadow-md dark:border-amber-400/30 dark:bg-background dark:text-amber-200",
-            alert.severity === "high" && "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-500/15 dark:text-red-200"
-          )}
-        >
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            <span className="block text-sm font-black">{alert.title}</span>
-            <span className="mt-0.5 block text-xs font-medium text-muted-foreground">{alert.description}</span>
-          </span>
-        </Link>
-      ))}
-    </div>
-  )
+function OwnerAnalysisSection({ analysis, insights }: { analysis: OwnerBusinessDashboard["analysis"]; insights: string[] }) {
+  const hasAnalysis = analysis.topProducts.length > 0 || analysis.bestDays.length > 0 || insights.length > 0
+  if (!hasAnalysis) return null
+  return <DashboardSection title="Analyse business" description="Les produits, jours et signaux qui expliquent la période."><div className="grid gap-[var(--dashboard-grid-gap)] xl:grid-cols-3">{analysis.topProducts.length > 0 ? <OwnerRankedWidget title="Produits les plus vendus" items={analysis.topProducts.map((item) => ({ key: item.name, label: item.name, value: `${item.count} vendu(s)` }))} /> : null}{analysis.bestDays.length > 0 ? <OwnerRankedWidget title="Jours les plus performants" items={analysis.bestDays.map((item) => ({ key: item.day, label: item.day, value: `${formatMoney(item.revenue)} FCFA` }))} /> : null}{insights.length > 0 ? <DashboardWidget><DashboardWidgetHeader title="Insights disponibles" /><ul className="space-y-2 p-4 text-sm text-[var(--dashboard-subtitle)]">{insights.map((insight) => <li key={insight} className="border-b border-[var(--dashboard-divider)] pb-2 last:border-0 last:pb-0">{insight}</li>)}</ul></DashboardWidget> : null}</div></DashboardSection>
+}
+
+function OwnerRankedWidget({ title, items }: { title: string; items: Array<{ key: string; label: string; value: string }> }) {
+  return <DashboardWidget><DashboardWidgetHeader title={title} /><ol className="space-y-1 p-4">{items.map((item, index) => <li key={item.key} className="flex items-center justify-between gap-3 border-b border-[var(--dashboard-divider)] py-2 first:pt-0 last:border-0 last:pb-0"><span className="min-w-0 text-sm font-medium text-[var(--dashboard-title)]">{index + 1}. {item.label}</span><span className="shrink-0 text-xs font-semibold tabular-nums text-[var(--dashboard-muted)]">{item.value}</span></li>)}</ol></DashboardWidget>
+}
+
+function OwnerLiveSection({ live, loading, searchParams }: { live: OwnerBusinessDashboard["live"]; loading: boolean; searchParams: QueryParams }) {
+  return <DashboardSection title="Maintenant" description="Activité opérationnelle immédiate dans les données actuellement chargées." action={<span className="inline-flex min-h-10 items-center rounded-[var(--radius-dashboard-button)] border border-[var(--dashboard-border)] px-3 text-xs font-semibold text-[var(--dashboard-muted)]">{loading ? "Synchronisation…" : "En direct"}</span>}>{loading ? <DashboardLoadingState compact label="Synchronisation de l’activité en direct" /> : <div className="grid gap-[var(--dashboard-grid-gap)] sm:grid-cols-2 xl:grid-cols-4"><Link href={getHrefWithCurrentQuery("/manager/commandes", searchParams)} className="rounded-[var(--radius-dashboard-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><MetricCard interactive className="h-full" label="Commandes actives" value={live.activeOrders} description={getLiveActivityMessage(live.activeOrders)} icon={<Eye />} /></Link><Link href={getHrefWithCurrentQuery("/kitchen", searchParams)} className="rounded-[var(--radius-dashboard-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><MetricCard interactive className="h-full" label="Cuisine active" value={live.kitchenActive} description="Commandes à préparer ou servir." icon={<Activity />} /></Link><Link href={getHrefWithCurrentQuery("/manager/commandes?status=late", searchParams)} className="rounded-[var(--radius-dashboard-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><MetricCard interactive className="h-full" label="Retards" value={live.anomalies.length} description="Commandes en retard." icon={<AlertTriangle />} /></Link><MetricCard label="Valeur active" value={formatMoney(live.liveRevenue)} unit="FCFA" description="Valeur des commandes actives." icon={<Banknote />} /></div>}</DashboardSection>
 }
 
 function getHrefWithCurrentQuery(href: string, searchParams: { toString(): string } | null) {
   const queryString = searchParams?.toString()
   if (!queryString) return href
   return href.includes("?") ? `${href}&${queryString}` : `${href}?${queryString}`
-}
-
-function RankedList({
-  title,
-  items,
-  empty,
-}: {
-  title: string
-  items: Array<{ key: string; label: string; value: string }>
-  empty: string
-}) {
-  return (
-    <Card className={cn(panelClass, "h-full")}>
-      <CardHeader className="p-3 pb-2">
-        <CardTitle className="text-sm font-black">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 p-3 pt-0">
-        {items.length === 0 ? (
-          <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">{empty}</p>
-        ) : (
-          items.map((item, index) => (
-            <div key={item.key} className="flex items-center justify-between gap-3 rounded-lg border p-2.5">
-              <span className="min-w-0 truncate text-sm font-black">{index + 1}. {item.label}</span>
-              <span className="shrink-0 text-xs font-bold text-muted-foreground">{item.value}</span>
-            </div>
-          ))
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function InsightsPanel({ insights }: { insights: string[] }) {
-  return (
-    <Card className={cn(panelClass, "h-full")}>
-      <CardHeader className="p-3 pb-2">
-        <CardTitle className="text-sm font-black">Insights automatiques</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 p-3 pt-0">
-        {insights.length === 0 ? (
-          <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-            Insights disponibles dès que la période contient assez de données.
-          </p>
-        ) : (
-          insights.map((insight) => (
-            <p key={insight} className="rounded-lg border bg-muted/30 p-2.5 text-sm font-semibold">
-              {insight}
-            </p>
-          ))
-        )}
-      </CardContent>
-    </Card>
-  )
 }
 
 function OwnerCashSessionRequests({
@@ -785,28 +365,28 @@ function OwnerCashSessionRequests({
     })
   }
 
-  if (pendingRequests.length === 0) return null
+  if (pendingRequests.length === 0) {
+    return <DashboardEmptyState className="min-h-32" title="Aucune demande en attente" description="Les nouvelles demandes d’ouverture de caisse apparaîtront ici." />
+  }
 
   return (
-    <Card className={cn(panelClass, "mt-2")}>
-      <CardHeader className="p-3 pb-2">
-        <CardTitle className="text-sm font-black">Demandes caisse</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 p-3 pt-0">
+    <DashboardWidget>
+      <DashboardWidgetHeader title="Demandes en attente" description={`${pendingRequests.length} demande(s) à traiter`} />
+      <div className="space-y-2 p-4">
         {pendingRequests.map((request: any) => (
-          <div key={request.id} className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div key={request.id} className="flex flex-col gap-3 rounded-[var(--radius-dashboard-button)] border border-[var(--dashboard-border)] bg-[var(--dashboard-section)] p-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-black">{request.cashierName || request.cashierId}</p>
-              <p className="text-xs text-muted-foreground">Ouverture de caisse</p>
+              <p className="text-sm font-semibold text-[var(--dashboard-title)]">{request.cashierName || request.cashierId}</p>
+              <p className="text-xs text-[var(--dashboard-muted)]">Ouverture de caisse</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <Button size="sm" onClick={() => approve(request)}>Valider</Button>
-              <Button size="sm" variant="outline" onClick={() => reject(request)}>Refuser</Button>
+              <Button className="min-h-10" size="sm" onClick={() => approve(request)}>Valider</Button>
+              <Button className="min-h-10" size="sm" variant="outline" onClick={() => reject(request)}>Refuser</Button>
             </div>
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </DashboardWidget>
   )
 }
 

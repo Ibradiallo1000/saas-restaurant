@@ -13,6 +13,7 @@ import {
   LogOut,
   Menu,
   MenuSquare,
+  Clock,
   Package,
   ReceiptText,
   Settings,
@@ -56,6 +57,7 @@ const MANAGER_NAV = [
   { label: "Tables", href: "/manager/tables", icon: Table2 },
   { label: "Images", href: "/manager/images", icon: ImageIcon },
   { label: "Inventaire", href: "/manager/inventory", icon: Package },
+  { label: "Horaires", href: "/manager/hours", icon: Clock },
   { label: "Fournisseurs", href: "/manager/suppliers", icon: UserRound },
 ]
 

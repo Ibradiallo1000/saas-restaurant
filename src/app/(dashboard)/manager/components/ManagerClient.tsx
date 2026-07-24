@@ -20,7 +20,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore"
 
-import { Store, Plus, Search, X, MoreVertical, Edit2, Trash2, Power, PowerOff, Eye, ImageIcon, ArrowLeft, AlertTriangle, Clock, ShieldCheck, Banknote, ReceiptText, Wallet, ClipboardList, BookOpen, MapPin, PackageCheck } from "lucide-react"
+import { Store, Plus, Search, X, MoreVertical, Edit2, Trash2, Power, PowerOff, Eye, ImageIcon, ArrowLeft, ShieldCheck, Banknote, ReceiptText, Wallet, ClipboardList, BookOpen } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -35,7 +35,9 @@ import { useTenant } from "@/design-system/context/TenantProvider"
 import { getOptimizedImage } from "@/lib/image"
 import { cn } from "@/lib/utils"
 import { COLLECTION_NAMES } from "@/lib/constants"
+import type { MarketplaceFoodCategoryDocument } from "@/lib/marketplace-discovery/marketplace-discovery-types"
 import { getOrderDisplayId } from "@/lib/order-display-id"
+import { normalizePaymentMethod, normalizePaymentStatus } from "@/lib/order-payment"
 import { getFinancialSummary, getSupportedBusinessTimeZone } from "@/lib/finance/financial-summary"
 import {
   assertValidComponentMultiplier,
@@ -70,7 +72,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Tabs, TabsContent } from "@/components/ui/tabs"
 import OptionEditor from "@/components/menu/OptionEditor"
 import LinkedOptionsEditor from "@/components/menu/LinkedOptionsEditor"
 import {
@@ -80,6 +81,19 @@ import {
 import ImagePickerModal from "@/components/ImagePickerModal"
 import { CatalogProvider, useCatalog } from "@/modules/catalog/CatalogProvider"
 import MenuLibraryImportDialog from "@/modules/menu-library/MenuLibraryImportDialog"
+import { ManagerDashboardView } from "./ManagerDashboardView"
+import { ManagerOrderDetail } from "./ManagerOrderDetail"
+import { ManagerOrdersView } from "./ManagerOrdersView"
+import {
+  createManagerOrderDetailViewModel,
+  type ManagerOrderDetailViewModel,
+} from "./manager-order-detail-view-model"
+import {
+  createManagerOrderListItem,
+  type ManagerOrderCounts,
+  type ManagerOrderListItem,
+  type ManagerOrderTab,
+} from "./manager-orders-view-model"
 
 // Drag & Drop imports
 import {
@@ -407,6 +421,16 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryItems")
   }, [db, restaurantId])
   const { data: inventoryItems } = useCollection<any>(inventoryItemsQuery)
+  const marketplaceCategoriesQuery = useMemoFirebase(() => {
+    if (!db) return null
+    return query(
+      collection(db, COLLECTION_NAMES.MARKETPLACE_FOOD_CATEGORIES),
+      where("active", "==", true),
+      orderBy("sortOrder", "asc"),
+      limit(100)
+    )
+  }, [db])
+  const { data: marketplaceCategories } = useCollection<MarketplaceFoodCategoryDocument>(marketplaceCategoriesQuery)
 
   const [searchTerm, setSearchTerm] = React.useState("")
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null)
@@ -421,6 +445,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   const [previewProduct, setPreviewProduct] = React.useState<any>(null)
 
   const [newCategoryName, setNewCategoryName] = React.useState("")
+  const [selectedMarketplaceCategoryId, setSelectedMarketplaceCategoryId] = React.useState("")
   const [editingCategory, setEditingCategory] = React.useState<any>(null)
   const [selectedCategoryImage, setSelectedCategoryImage] = React.useState<{
     id: string
@@ -669,6 +694,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       name: formatted,
       imageUrl: selectedCategoryImage?.url || null,
       imageId: selectedCategoryImage?.id || null,
+      marketplaceCategoryId: selectedMarketplaceCategoryId || null,
       order: currentMaxOrder + 1,
       updatedAt: serverTimestamp()
     }
@@ -692,6 +718,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
 
     refreshCatalog()
     setNewCategoryName("")
+    setSelectedMarketplaceCategoryId("")
     setEditingCategory(null)
     setSelectedCategoryImage(null)
     setIsCategoryOpen(false)
@@ -700,6 +727,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   const openCreateCategoryModal = () => {
     setEditingCategory(null)
     setNewCategoryName("")
+    setSelectedMarketplaceCategoryId("")
     setSelectedCategoryImage(null)
     setIsCategoryOpen(true)
   }
@@ -707,6 +735,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   const openEditCategoryModal = (category: any) => {
     setEditingCategory(category)
     setNewCategoryName(category.name || "")
+    setSelectedMarketplaceCategoryId(category.marketplaceCategoryId || "")
     setSelectedCategoryImage(
       category.imageUrl
         ? { id: category.imageId || "", url: category.imageUrl }
@@ -1159,6 +1188,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
                   setIsCategoryOpen(false)
                   setEditingCategory(null)
                   setSelectedCategoryImage(null)
+                  setSelectedMarketplaceCategoryId("")
                 }}
                 className="cursor-pointer"
               >
@@ -1172,6 +1202,25 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
               onChange={(e) => setNewCategoryName(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSaveCategory()}
             />
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Catégorie marketplace</label>
+              <select
+                value={selectedMarketplaceCategoryId}
+                onChange={(event) => setSelectedMarketplaceCategoryId(event.target.value)}
+                className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Non reliée au marketplace</option>
+                {(marketplaceCategories || []).map((category: any) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Sans mapping, les produits restent visibles dans ce menu mais sont exclus de la découverte marketplace.
+              </p>
+            </div>
 
             <div className="space-y-3 rounded-xl border p-3">
               <div className="flex items-center justify-between gap-3">
@@ -1233,6 +1282,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
                   setIsCategoryOpen(false)
                   setEditingCategory(null)
                   setSelectedCategoryImage(null)
+                  setSelectedMarketplaceCategoryId("")
                 }}
               >
                 Annuler
@@ -1683,181 +1733,35 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
   )
 
   if (!restaurantId) {
-    return <div className="p-6 text-muted-foreground">Restaurant non disponible.</div>
+    return <ManagerDashboardView
+      activeCashSession={false}
+      activeOperationalCount={0}
+      financialSummary={financialSummary}
+      inventorySummary={inventorySummary}
+      isLoading={false}
+      orderCounts={orderCounts}
+      ordersError={false}
+      pendingCashValidationCount={pendingCashValidationCount}
+      pendingSessionRequestCount={pendingSessionRequests.length}
+      periodLabel="Restaurant non disponible"
+      restaurantUnavailable
+    />
   }
 
-  return (
-    <main className="space-y-4 pb-20 md:pb-6">
-      <section className="rounded-xl border bg-card p-3 shadow-sm md:p-4">
-        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-xl font-black uppercase tracking-tight text-primary md:text-2xl">Dashboard</h1>
-            <p className="text-xs font-semibold text-muted-foreground md:text-sm">
-              Situation du restaurant et points d'intervention.
-            </p>
-          </div>
-          <Button asChild variant="outline" className="mt-2 h-9 w-full font-black md:mt-0 md:w-auto">
-            <Link href="/manager/commandes">Ouvrir Commandes</Link>
-          </Button>
-        </div>
-      </section>
+  const periodLabel = `${orderRange.startDate.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })} → ${orderRange.endDate.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}`
 
-      {ordersError ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700 md:text-sm">
-          Impossible de charger les commandes de la periode. Consultez la console pour le detail Firestore.
-        </div>
-      ) : null}
-
-      <DashboardSection title="Activité du restaurant">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <DashboardPilotCard href="/manager/commandes" icon={ClipboardList} label="Commandes actives" value={activeOperationalCount} />
-          <DashboardPilotCard href="/manager/caisse?filter=payments" icon={Wallet} label="À encaisser" value={orderCounts.cash_due} danger={orderCounts.cash_due > 0} />
-          <DashboardPilotCard href="/manager/commandes?status=late" icon={AlertTriangle} label="Retards" value={orderCounts.late} danger={orderCounts.late > 0} />
-          <DashboardPilotCard href="/manager/commandes?status=completed" icon={ShieldCheck} label="Terminées aujourd'hui" value={orderCounts.completed} />
-        </div>
-      </DashboardSection>
-
-      <DashboardSection title="Finances">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <DashboardPilotCard href="/manager/caisse" icon={ReceiptText} label="CA du jour" value={`${financialSummary.todayDeposits.toLocaleString()} FCFA`} />
-          <DashboardPilotCard href="/manager/depenses" icon={Banknote} label="Dépenses du jour" value={`${financialSummary.todayExpenses.toLocaleString()} FCFA`} danger={financialSummary.todayExpenses > 0} />
-          <DashboardPilotCard href="/manager/tresorerie" icon={Wallet} label="Solde caisse" value={`${financialSummary.balance.toLocaleString()} FCFA`} danger={financialSummary.balance < 0} />
-        </div>
-      </DashboardSection>
-
-      <DashboardSection title="Inventaire" action={<Button asChild variant="outline" size="sm" className="font-black"><Link href="/manager/inventory">Voir Inventaire</Link></Button>}>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <DashboardPilotCard href="/manager/inventory" icon={PackageCheck} label="Produits en rupture" value={inventorySummary.outOfStockCount} danger={inventorySummary.outOfStockCount > 0} />
-          <DashboardPilotCard href="/manager/inventory" icon={AlertTriangle} label="Stock faible" value={inventorySummary.lowStockCount} danger={inventorySummary.lowStockCount > 0} />
-          <DashboardPilotCard href="/manager/inventory" icon={Banknote} label="Valeur estimée du stock" value={`${inventorySummary.stockValue.toLocaleString()} FCFA`} />
-        </div>
-      </DashboardSection>
-
-      <DashboardSection title="Alertes">
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          <DashboardAlert href="/manager/commandes?status=late" label="Commande en retard" value={orderCounts.late} active={orderCounts.late > 0} />
-          <DashboardAlert href="/manager/caisse" label="Demande ouverture caisse" value={pendingSessionRequests.length} active={pendingSessionRequests.length > 0} />
-          <DashboardAlert href="/manager/caisse" label="Caisse à valider" value={pendingCashValidationCount} active={pendingCashValidationCount > 0} />
-          <DashboardAlert href="/manager/inventory" label="Stock faible" value={inventorySummary.lowStockCount} active={inventorySummary.lowStockCount > 0} />
-          <DashboardAlert href="/manager/inventory" label="Rupture stock" value={inventorySummary.outOfStockCount} active={inventorySummary.outOfStockCount > 0} />
-        </div>
-      </DashboardSection>
-
-      <DashboardSection title="Accès rapides">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <DashboardQuickLink href="/manager/commandes" icon={ClipboardList} label="Commandes" />
-          <DashboardQuickLink href="/manager/caisse" icon={Wallet} label="Caisse" />
-          <DashboardQuickLink href="/manager/tresorerie" icon={Banknote} label="Trésorerie" />
-          <DashboardQuickLink href="/manager/depenses" icon={ReceiptText} label="Dépenses" />
-          <DashboardQuickLink href="/manager/inventory" icon={PackageCheck} label="Inventaire" />
-        </div>
-      </DashboardSection>
-
-      {isLoading ? (
-        <div className="rounded-xl border bg-card p-6 text-center text-muted-foreground md:rounded-2xl md:p-8">Chargement...</div>
-      ) : null}
-    </main>
-  )
-}
-
-function DashboardSection({
-  title,
-  action,
-  children,
-}: {
-  title: string
-  action?: React.ReactNode
-  children: React.ReactNode
-}) {
-  return (
-    <section className="space-y-2 rounded-xl border bg-card/95 p-3 shadow-sm md:p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-black uppercase tracking-tight">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-function DashboardPilotCard({
-  href,
-  icon: Icon,
-  label,
-  value,
-  danger,
-}: {
-  href: string
-  icon: React.ElementType
-  label: string
-  value: React.ReactNode
-  danger?: boolean
-}) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "block rounded-xl border bg-background p-3 shadow-sm transition hover:border-primary/40 hover:bg-muted/30",
-        danger && "border-red-300 bg-red-50/80 hover:border-red-400 dark:border-red-900 dark:bg-red-950/20"
-      )}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-black uppercase text-muted-foreground">{label}</p>
-          <p className={cn("mt-1 truncate text-xl font-black leading-tight", danger && "text-red-600")}>{value}</p>
-        </div>
-        <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary", danger && "bg-red-100 text-red-600 dark:bg-red-500/15")}>
-          <Icon className="h-5 w-5" />
-        </span>
-      </div>
-    </Link>
-  )
-}
-
-function DashboardAlert({
-  href,
-  label,
-  value,
-  active,
-}: {
-  href: string
-  label: string
-  value: number
-  active: boolean
-}) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "flex min-h-12 items-center justify-between gap-3 rounded-xl border bg-background px-3 py-2 text-sm font-bold transition hover:border-primary/40 hover:bg-muted/30",
-        active && "border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/20 dark:text-red-300"
-      )}
-    >
-      <span className="min-w-0 truncate">{label}</span>
-      <span className={cn("rounded-full bg-muted px-2.5 py-1 text-xs font-black text-foreground", active && "bg-red-600 text-white")}>
-        {value}
-      </span>
-    </Link>
-  )
-}
-
-function DashboardQuickLink({
-  href,
-  icon: Icon,
-  label,
-}: {
-  href: string
-  icon: React.ElementType
-  label: string
-}) {
-  return (
-    <Button asChild variant="outline" className="h-12 justify-start gap-2 rounded-xl font-black">
-      <Link href={href}>
-        <Icon className="h-4 w-4" />
-        {label}
-      </Link>
-    </Button>
-  )
+  return <ManagerDashboardView
+    activeCashSession={Boolean(activeCashSession)}
+    activeOperationalCount={activeOperationalCount}
+    financialSummary={financialSummary}
+    inventorySummary={inventorySummary}
+    isLoading={isLoading}
+    orderCounts={orderCounts}
+    ordersError={Boolean(ordersError)}
+    pendingCashValidationCount={pendingCashValidationCount}
+    pendingSessionRequestCount={pendingSessionRequests.length}
+    periodLabel={periodLabel}
+  />
 }
 
 function getDashboardInventorySummary(items: any[], alerts: any[]) {
@@ -2205,9 +2109,17 @@ function ManagerOrdersPage({ restaurantId }: { restaurantId: string | null }) {
     () => activeTabOrders.slice(0, visibleLimit),
     [activeTabOrders, visibleLimit]
   )
+  const visibleOrderItems = React.useMemo(
+    () => visibleOrders.map((order) => createManagerOrderViewModel(order, now, orderRange)),
+    [now, orderRange, visibleOrders]
+  )
   const selectedOrderDetail = React.useMemo(
     () => orderedOrders.find((order: any) => order.id === selectedOrderDetailId) ?? null,
     [orderedOrders, selectedOrderDetailId]
+  )
+  const selectedOrderDetailViewModel = React.useMemo(
+    () => selectedOrderDetail ? createManagerOrderDetailPresentation(selectedOrderDetail, now, orderRange) : null,
+    [now, orderRange, selectedOrderDetail]
   )
   const hasMore = visibleOrders.length < activeTabOrders.length
 
@@ -2231,119 +2143,24 @@ function ManagerOrdersPage({ restaurantId }: { restaurantId: string | null }) {
   }
 
   return (
-    <main className="space-y-4 pb-20 md:pb-6">
-      <p className="text-xs font-bold text-muted-foreground">
-        Commandes nécessitant une action, avec les commandes terminées sur la période sélectionnée.
-      </p>
-
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        <ManagerOrderKpiCard active={activeTab === "pending"} label="En attente" count={counts.pending} tone="amber" onClick={() => setActiveTab("pending")} />
-        <ManagerOrderKpiCard active={activeTab === "preparing"} label="En préparation" count={counts.preparing} tone="amber" onClick={() => setActiveTab("preparing")} />
-        <ManagerOrderKpiCard active={activeTab === "ready"} label="Prêtes" count={counts.ready} tone="sky" onClick={() => setActiveTab("ready")} />
-        <ManagerOrderKpiCard active={activeTab === "cash_due"} label="À encaisser" count={counts.cash_due} tone="indigo" onClick={() => setActiveTab("cash_due")} />
-        <ManagerOrderKpiCard active={activeTab === "completed"} label="Terminées" count={counts.completed} tone="emerald" onClick={() => setActiveTab("completed")} />
-        <ManagerOrderKpiCard active={activeTab === "late"} label="Retard" count={counts.late} tone="red" onClick={() => setActiveTab("late")} />
-      </section>
-
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(normalizeOrderTab(value))} className="space-y-4">
-        {MANAGER_ORDER_TABS.map((tab) => (
-          <TabsContent key={tab} value={tab} className="space-y-3">
-            {ordersError ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm font-semibold text-red-700">
-                Impossible de charger les commandes operationnelles. Consultez la console pour le detail Firestore.
-              </div>
-            ) : isLoading ? (
-              <div className="rounded-xl border bg-card p-6 text-center text-muted-foreground">Chargement...</div>
-            ) : visibleOrders.length === 0 ? (
-              <div className="rounded-xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
-                Aucune commande dans cet etat.
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {visibleOrders.map((order: any) => (
-                    <ManagerOrderCard
-                      key={order.id}
-                      order={order}
-                      now={now}
-                      range={orderRange}
-                      onOpenDetails={() => setSelectedOrderDetailId(order.id)}
-                    />
-                  ))}
-                </div>
-                {hasMore ? (
-                  <div className="flex justify-center pt-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setVisibleLimit((current) => current + MANAGER_ORDERS_PAGE_SIZE)}
-                      disabled={isLoading}
-                    >
-                      Charger plus
-                    </Button>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </TabsContent>
-        ))}
-      </Tabs>
-
-      <ManagerOrderDetailDialog
-        order={selectedOrderDetail}
-        now={now}
-        range={orderRange}
-        onClose={() => setSelectedOrderDetailId(null)}
+    <>
+      <ManagerOrdersView
+        activeTab={activeTab}
+        counts={counts}
+        error={Boolean(ordersError)}
+        hasMore={hasMore}
+        isLoading={isLoading}
+        onActiveTabChange={setActiveTab}
+        onLoadMore={() => setVisibleLimit((current) => current + MANAGER_ORDERS_PAGE_SIZE)}
+        onOpenDetails={setSelectedOrderDetailId}
+        orders={visibleOrderItems}
+        totalResults={activeTabOrders.length}
       />
-    </main>
+
+      <ManagerOrderDetail detail={selectedOrderDetailViewModel} onOpenChange={(open) => { if (!open) setSelectedOrderDetailId(null) }} />
+    </>
   )
 }
-
-function ManagerOrderKpiCard({
-  label,
-  count,
-  tone,
-  active,
-  onClick,
-}: {
-  label: string
-  count: number
-  tone: "amber" | "sky" | "indigo" | "emerald" | "red"
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-xl border bg-card p-3 text-left shadow-sm transition hover:bg-muted/40",
-        active && "ring-2 ring-primary/30",
-        tone === "amber" && "border-amber-200",
-        tone === "sky" && "border-sky-200",
-        tone === "indigo" && "border-indigo-200",
-        tone === "emerald" && "border-emerald-200",
-        tone === "red" && "border-red-200"
-      )}
-    >
-      <p className="truncate text-[10px] font-black uppercase text-muted-foreground">{label}</p>
-      <p className={cn(
-        "mt-1 text-2xl font-black leading-none",
-        tone === "amber" && "text-amber-600",
-        tone === "sky" && "text-sky-600",
-        tone === "indigo" && "text-indigo-600",
-        tone === "emerald" && "text-emerald-600",
-        tone === "red" && "text-red-600"
-      )}>
-        {count}
-      </p>
-    </button>
-  )
-}
-
-type ManagerOrderTab = "pending" | "preparing" | "ready" | "cash_due" | "completed" | "late"
-
-type ManagerOrderCounts = Record<ManagerOrderTab, number>
 
 type ManagerOrderDateRange = {
   startDate: Date
@@ -2419,189 +2236,148 @@ function getManagerOperationalState(order: any, now: number, range: ManagerOrder
   return { state: null, label: formatManagerStatus(status), eventAtMs: getManagerOperationalEventMs(order, "pending", now) }
 }
 
-function ManagerOrderCard({
-  order,
-  now,
-  range,
-  onOpenDetails,
-}: {
-  order: any
-  now: number
-  range: ManagerOrderDateRange
-  onOpenDetails: () => void
-}) {
+function createManagerOrderViewModel(order: any, now: number, range: ManagerOrderDateRange): ManagerOrderListItem {
   const operationalState = getManagerOperationalState(order, now, range)
   const minutes = getManagerEventAgeMinutes(operationalState.eventAtMs, now)
   const late = isLateOrder(order, now)
   const nearLate = isNearLateOrder(order, now)
-  const items = order.items || []
-  const visibleItems = items.slice(0, 2)
-  const hiddenItemsCount = Math.max(0, items.length - visibleItems.length)
-  const orderType = getManagerOrderType(order)
-  const total = Number(order.total ?? order.totalAmount ?? 0)
+  const items = Array.isArray(order.items) ? order.items : []
   const itemCount = getManagerOrderItemCount(order)
-  const location = getManagerOrderLocation(order)
-  const preparationFlow = getManagerOrderPreparationFlow(order)
-  const cardClassName = [
-    "min-w-0 rounded-xl border bg-card p-3 shadow-sm transition",
-    late ? "border-red-300 bg-red-50/70 dark:border-red-900 dark:bg-red-950/20" : "",
-    !late && nearLate ? "border-amber-300 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-950/20" : "",
-  ].filter(Boolean).join(" ")
-
-  return (
-    <article className={cardClassName}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <h2 className="truncate text-base font-black leading-tight">{getOrderDisplayId(order)}</h2>
-          </div>
-          <p className="truncate text-[11px] font-bold uppercase leading-tight text-muted-foreground">
-            {orderType}
-          </p>
-        </div>
-        <div className="shrink-0 text-right">
-          <p className="text-base font-black leading-tight text-primary">{total.toLocaleString()}</p>
-          <p className="text-[10px] font-bold uppercase leading-tight text-muted-foreground">FCFA</p>
-        </div>
-      </div>
-
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <Badge variant="outline" className="h-6 px-2 text-[10px] font-black leading-none">
-          {operationalState.label}
-        </Badge>
-        <span className={cn(
-          "inline-flex h-6 items-center rounded-full px-2 text-[10px] font-black uppercase",
-          preparationFlow === "kitchen" && "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200",
-          preparationFlow === "direct" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
-          preparationFlow === "mixed" && "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200"
-        )}>
-          {formatManagerPreparationFlow(preparationFlow)}
-        </span>
-      </div>
-
-      <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-bold text-muted-foreground">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <MapPin className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{location}</span>
-        </span>
-        <span className="flex items-center justify-end gap-1.5">
-          <PackageCheck className="h-3.5 w-3.5 shrink-0" />
-          {itemCount} article{itemCount > 1 ? "s" : ""}
-        </span>
-      </div>
-
-      {late ? (
-        <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] font-bold leading-tight text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">Action en retard</span>
-        </div>
-      ) : null}
-
-      {!late && nearLate ? (
-        <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] font-bold leading-tight text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
-          <Clock className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">Proche retard</span>
-        </div>
-      ) : null}
-
-      <div className="mt-2 space-y-1 rounded-lg bg-muted/50 px-2.5 py-2">
-        {visibleItems.map((item: any, index: number) => (
-          <div key={`${order.id}-${item.productId || index}-${item.name || item.nameSnapshot}`} className="flex items-center justify-between gap-2 text-xs leading-tight">
-            <span className="min-w-0 truncate font-semibold">{item.quantity}x {item.name || item.nameSnapshot}</span>
-            <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{Number(item.total ?? ((item.priceSnapshot ?? 0) * item.quantity)).toLocaleString()}</span>
-          </div>
-        ))}
-        {hiddenItemsCount > 0 ? (
-          <p className="text-[11px] font-bold leading-tight text-muted-foreground">+{hiddenItemsCount} autres</p>
-        ) : null}
-        {items.length === 0 ? (
-          <p className="text-[11px] font-medium leading-tight text-muted-foreground">Aucun produit liste</p>
-        ) : null}
-      </div>
-
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <span className={`inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-black ${late ? "bg-red-500/10 text-red-600" : nearLate ? "bg-amber-500/10 text-amber-600" : "bg-muted text-muted-foreground"}`}>
-          <Clock className="h-3.5 w-3.5" /> {minutes} min
-        </span>
-        <div className="flex min-w-0 items-center gap-1.5">
-          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs font-black" onClick={onOpenDetails}>
-            Détail
-          </Button>
-        </div>
-      </div>
-    </article>
-  )
-}
-
-function ManagerOrderDetailDialog({
-  order,
-  now,
-  range,
-  onClose,
-}: {
-  order: any | null
-  now: number
-  range: ManagerOrderDateRange
-  onClose: () => void
-}) {
-  if (!order) return null
-
-  const operationalState = getManagerOperationalState(order, now, range)
-  const items = order.items || []
   const total = Number(order.total ?? order.totalAmount ?? 0)
-  const minutes = getManagerEventAgeMinutes(operationalState.eventAtMs, now)
+  const normalizedType = getNormalizedManagerOrderType(order)
+  const preparationFlow = getManagerOrderPreparationFlow(order)
+  const status = getOrderStatus(order)
+  const displayStatus = status === ORDER_OPERATION_STATUS.PENDING
+    ? "pending"
+    : status === ORDER_OPERATION_STATUS.IN_PREPARATION
+      ? "preparing"
+      : status === ORDER_OPERATION_STATUS.READY
+        ? "ready"
+        : status === ORDER_OPERATION_STATUS.SERVED
+          ? "served"
+          : status === ORDER_OPERATION_STATUS.PICKED_UP
+            ? "pickedUp"
+            : status === ORDER_OPERATION_STATUS.COMPLETED
+              ? "completed"
+              : "unknown"
+  const rawPaymentStatus = order.paymentStatus ?? order.payment?.status
+  const normalizedPaymentStatus = normalizePaymentStatus(rawPaymentStatus)
+  const paymentStatus = isOrderPaid(order)
+    ? "paid"
+    : rawPaymentStatus === "pending_verification"
+      ? "pendingVerification"
+      : normalizedPaymentStatus === "pending_cash"
+        ? "pendingCash"
+        : normalizedPaymentStatus === "pending_mobile"
+          ? "pendingMobile"
+          : normalizedPaymentStatus === "failed"
+            ? "failed"
+            : normalizedPaymentStatus === "unpaid"
+              ? "unpaid"
+              : "unknown"
+  const paymentLabel = paymentStatus === "paid"
+    ? "Payée"
+    : paymentStatus === "pendingCash"
+      ? "Espèces à encaisser"
+      : paymentStatus === "pendingMobile"
+        ? "Mobile Money en attente"
+        : paymentStatus === "pendingVerification"
+          ? "Paiement à vérifier"
+          : paymentStatus === "failed"
+            ? "Paiement échoué"
+            : paymentStatus === "unpaid"
+              ? "Non réglée"
+              : "Paiement inconnu"
+  const paymentMethod = normalizePaymentMethod(order.paymentMethod ?? order.paymentType)
+  const paymentMethodLabel = paymentMethod === "cash"
+    ? "Espèces"
+    : paymentMethod === "orange_money"
+      ? "Orange Money"
+      : paymentMethod === "mtn_money"
+        ? "MTN Money"
+        : paymentMethod === "wave"
+          ? "Wave"
+          : undefined
 
-  return (
-    <Dialog open={Boolean(order)} onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-black">{getOrderDisplayId(order)}</DialogTitle>
-          <DialogDescription>
-            Détail de supervision opérationnelle.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-2 text-sm sm:grid-cols-2">
-          <ManagerOrderDetailMeta label="Type" value={getManagerOrderType(order)} />
-          <ManagerOrderDetailMeta label="État manager" value={operationalState.label} />
-          <ManagerOrderDetailMeta label="Emplacement" value={getManagerOrderLocation(order)} />
-          <ManagerOrderDetailMeta label="Temps depuis événement" value={`${minutes} min`} />
-          <ManagerOrderDetailMeta label="Paiement" value={isOrderPaid(order) ? "Validé" : "Non validé"} />
-          <ManagerOrderDetailMeta label="Total" value={`${total.toLocaleString()} FCFA`} />
-        </div>
-
-        <section className="mt-4 rounded-xl border bg-muted/20 p-3">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <h3 className="text-sm font-black uppercase tracking-tight">Articles</h3>
-            <span className="text-xs font-bold text-muted-foreground">
-              {getManagerOrderItemCount(order)} article{getManagerOrderItemCount(order) > 1 ? "s" : ""}
-            </span>
-          </div>
-          {items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Aucun produit liste</p>
-          ) : (
-            <div className="space-y-2">
-              {items.map((item: any, index: number) => (
-                <div key={`${order.id}-detail-${item.productId || index}-${item.name || item.nameSnapshot}`} className="flex items-center justify-between gap-3 rounded-lg bg-background px-3 py-2 text-sm">
-                  <span className="min-w-0 truncate font-bold">{Number(item.quantity || 1)}x {item.name || item.nameSnapshot || "Article"}</span>
-                  <span className="shrink-0 font-black">{Number(item.total ?? ((item.priceSnapshot ?? item.unitPrice ?? 0) * Number(item.quantity || 1))).toLocaleString()} FCFA</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </DialogContent>
-    </Dialog>
-  )
+  return createManagerOrderListItem({
+    id: order.id,
+    reference: getOrderDisplayId(order),
+    title: getManagerOrderType(order),
+    subtitle: formatManagerPreparationFlow(preparationFlow),
+    status: { status: displayStatus, label: operationalState.label },
+    payment: { status: paymentStatus, label: paymentLabel, method: paymentMethodLabel },
+    channel: {
+      channel: normalizedType === "dine_in" ? "dineIn" : normalizedType === "delivery" ? "delivery" : "pickup",
+      label: getManagerOrderType(order),
+    },
+    age: {
+      label: late ? "Action en retard" : nearLate ? "Proche du retard" : "Depuis",
+      time: `${minutes} min`,
+      variant: late ? "overdue" : nearLate ? "warning" : "normal",
+    },
+    priority: late ? "overdue" : nearLate ? "warning" : "normal",
+    total: `${total.toLocaleString()} FCFA`,
+    itemCount: `${itemCount} article${itemCount > 1 ? "s" : ""}`,
+    destination: getManagerOrderLocation(order),
+    items: items.map((item: any) => ({
+      name: item.name || item.nameSnapshot || "Article",
+      quantity: Number(item.quantity || 1),
+      destination: item.destination || item.productionArea || undefined,
+    })),
+  })
 }
 
-function ManagerOrderDetailMeta({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border bg-background p-3">
-      <p className="text-[10px] font-black uppercase text-muted-foreground">{label}</p>
-      <p className="mt-1 text-sm font-black">{value}</p>
-    </div>
-  )
+function createManagerOrderDetailPresentation(order: any, now: number, range: ManagerOrderDateRange): ManagerOrderDetailViewModel {
+  const listItem = createManagerOrderViewModel(order, now, range)
+  const operationalState = getManagerOperationalState(order, now, range)
+  const total = Number(order.total ?? order.totalAmount ?? 0)
+  const history = Array.isArray(order.statusHistory) ? order.statusHistory : []
+  const timelineEvents: Array<{ id: string; label: string; timestamp?: string; actor?: string }> = history.flatMap((event: any, index: number) => {
+    const timestamp = getManagerTimestampMs(event?.at)
+    if (!event?.status) return []
+    const normalizedStatus = getOrderStatus({ kitchenStatus: event.status })
+    const source = event.source === "kitchen" ? "Cuisine" : event.source === "service" ? "Service" : event.source === "order" ? "Commande" : undefined
+    return [{
+      id: `${index}-${String(event.status)}`,
+      label: formatManagerStatus(normalizedStatus),
+      timestamp: timestamp ? new Date(timestamp).toLocaleString("fr-FR") : undefined,
+      actor: source,
+    }]
+  })
+  const timeline = timelineEvents.map((event, index) => ({
+    ...event,
+    state: index === timelineEvents.length - 1 ? "current" as const : "completed" as const,
+  }))
+
+  return createManagerOrderDetailViewModel({
+    reference: listItem.reference,
+    description: `${listItem.title} · ${listItem.destination}`,
+    status: listItem.status,
+    payment: listItem.payment,
+    channel: listItem.channel,
+    age: listItem.age,
+    info: [
+      { label: "Type", value: listItem.title },
+      { label: "État manager", value: operationalState.label },
+      { label: "Emplacement", value: listItem.destination },
+      { label: "Temps depuis événement", value: listItem.age.time },
+      { label: "Paiement", value: isOrderPaid(order) ? "Validé" : "Non validé" },
+      { label: "Total", value: `${total.toLocaleString()} FCFA` },
+    ],
+    items: (Array.isArray(order.items) ? order.items : []).map((item: any, index: number) => {
+      const quantity = Number(item.quantity || 1)
+      const itemTotal = Number(item.total ?? ((item.priceSnapshot ?? item.unitPrice ?? 0) * quantity))
+      return {
+        id: `${order.id}-${item.productId || index}-${item.name || item.nameSnapshot || "item"}`,
+        name: item.name || item.nameSnapshot || "Article",
+        quantity,
+        total: `${itemTotal.toLocaleString()} FCFA`,
+      }
+    }),
+    timeline,
+    currentTimelineId: timeline.at(-1)?.id,
+    total: `${total.toLocaleString()} FCFA`,
+  })
 }
 
 function ManagerFinancialCard({

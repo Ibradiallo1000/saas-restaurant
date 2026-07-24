@@ -1,11 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { Clock, LockKeyhole, ShoppingBag } from "lucide-react"
+import { LockKeyhole } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 import { PublicBadge, PublicButton } from "@/components/public-ui"
 import { getOptimizedImage } from "@/lib/image"
+import { getRestaurantOpenStatus } from "@/lib/restaurant-hours"
 
 type CoverPageProps = {
   restaurant: any
@@ -28,10 +29,7 @@ export default function CoverPage({ restaurant, isExiting, onEnterMenu }: CoverP
   const coverImage = restaurant?.coverImage || restaurant?.coverImageUrl || ""
   const hasCoverImage = Boolean(coverImage && !imageFailed)
   const hasLogo = Boolean(logo && !logoFailed)
-  const isOpen = restaurant?.isOpen !== false && restaurant?.status !== "closed"
-  const serviceTime = restaurant?.serviceTime || restaurant?.deliveryTime || restaurant?.estimatedTime
-  const serviceLabel = restaurant?.serviceType || restaurant?.serviceMode || restaurant?.orderType || restaurant?.type
-  const description = restaurant?.welcomeMessage || restaurant?.description || restaurant?.shortDescription || restaurant?.tagline
+  const openStatus = React.useMemo(() => getRestaurantOpenStatus({ openingHours: restaurant?.openingHours, timezone: restaurant?.timezone }), [restaurant?.openingHours, restaurant?.timezone])
   const initial = name.charAt(0).toUpperCase()
 
   React.useEffect(() => setImageFailed(false), [coverImage])
@@ -89,9 +87,9 @@ export default function CoverPage({ restaurant, isExiting, onEnterMenu }: CoverP
         inert={teamDialogOpen ? true : undefined}
         className="relative z-10 mx-auto flex min-h-full w-full max-w-3xl flex-col pl-[calc(var(--space-5)+var(--safe-left))] pr-[calc(var(--space-5)+var(--safe-right))] pt-[calc(var(--space-5)+var(--safe-top))] pb-[calc(var(--space-4)+var(--safe-bottom))] sm:pl-[calc(var(--space-8)+var(--safe-left))] sm:pr-[calc(var(--space-8)+var(--safe-right))]"
       >
-        <div className="flex flex-1 items-center justify-center py-[var(--space-4)]">
+        <div className="flex flex-1 items-center justify-center pb-[var(--space-4)] pt-0">
           <div className="mx-auto flex w-full max-w-lg flex-col items-center text-center">
-            <div className="flex size-20 items-center justify-center overflow-hidden rounded-[var(--radius-public-full)] border border-white/25 bg-white/15 text-2xl font-public-extrabold text-white shadow-[var(--shadow-public-md)] backdrop-blur-md sm:size-24">
+            <div className="-mt-12 flex size-20 items-center justify-center overflow-hidden rounded-[var(--radius-public-full)] border border-white/25 bg-white/15 text-2xl font-public-extrabold text-white shadow-[var(--shadow-public-md)] backdrop-blur-md sm:-mt-14 sm:size-24">
               {hasLogo ? (
                 <img
                   src={getOptimizedImage(logo, 192)}
@@ -104,40 +102,29 @@ export default function CoverPage({ restaurant, isExiting, onEnterMenu }: CoverP
               )}
             </div>
 
-            <h1 className="mt-3 line-clamp-2 max-w-xl break-words font-publicDisplay text-[28px] font-public-extrabold leading-[34px] text-white sm:mt-4 sm:text-[40px] sm:leading-[46px]">
+            <p className="mt-7 text-[14px] font-public-medium leading-5 text-white/75 sm:mt-8 sm:text-[15px]">
+              Bienvenue chez
+            </p>
+
+            <h1 className="mt-2 line-clamp-2 max-w-xl break-words font-publicDisplay text-[42px] font-public-extrabold leading-[46px] text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.35)] sm:text-[58px] sm:leading-[62px]">
               {name}
             </h1>
 
-            <p className="mt-2 line-clamp-2 max-w-md text-lg font-public-semibold leading-6 text-[var(--text-inverse-secondary)] sm:text-xl sm:leading-7">
-              {description || "Découvrez notre menu"}
-            </p>
+            <div className="mt-5 flex max-w-md flex-wrap justify-center gap-2 sm:mt-6">
+              <span
+                className={`inline-flex min-h-8 items-center gap-2 rounded-full border px-3.5 text-xs font-public-bold backdrop-blur-md ${
+                  openStatus.isOpenNow
+                    ? "border-emerald-300/25 bg-emerald-400/15 text-white shadow-[0_10px_26px_rgba(16,185,129,0.18)]"
+                    : "border-red-300/25 bg-red-400/15 text-white shadow-[0_10px_26px_rgba(239,68,68,0.16)]"
+                }`}
+              >
+                <span className={`size-2 rounded-full ${openStatus.isOpenNow ? "bg-emerald-300" : "bg-red-300"}`} />
+                {openStatus.label} · {openStatus.detail}
+              </span>
+            </div>
 
-            <div className="mt-4 flex max-w-md flex-wrap justify-center gap-2 sm:mt-5">
-              <PublicBadge
-                variant="inverse"
-                size="md"
-                label={isOpen ? "Ouvert" : "Fermé"}
-                icon={<span className={`size-2 rounded-full ${isOpen ? "bg-[var(--success)]" : "bg-[var(--danger)]"}`} />}
-                className="min-h-7 border border-white/15 px-3 text-xs backdrop-blur-md"
-              />
-              {serviceTime ? (
-                <PublicBadge
-                  variant="inverse"
-                  size="md"
-                  label={String(serviceTime)}
-                  icon={<Clock />}
-                  className="min-h-7 border border-white/15 px-3 text-xs backdrop-blur-md"
-                />
-              ) : null}
-              {serviceLabel ? (
-                <PublicBadge
-                  variant="inverse"
-                  size="md"
-                  label={String(serviceLabel)}
-                  icon={<ShoppingBag />}
-                  className="min-h-7 border border-white/15 px-3 text-xs backdrop-blur-md"
-                />
-              ) : null}
+            <div className="mt-7 max-w-sm text-[17px] font-public-semibold leading-6 text-[var(--text-inverse-secondary)] sm:mt-8 sm:text-lg sm:leading-7">
+              <p>Qu&apos;avez-vous envie de déguster aujourd&apos;hui ?</p>
             </div>
 
             <PublicButton
@@ -147,7 +134,7 @@ export default function CoverPage({ restaurant, isExiting, onEnterMenu }: CoverP
               shape="marketing"
               fullWidth
               onClick={onEnterMenu}
-              className="mt-5 max-w-sm shadow-[var(--shadow-public-lg)] sm:mt-6"
+              className="relative mt-8 max-w-sm overflow-hidden shadow-[0_18px_44px_rgba(0,0,0,0.34)] after:pointer-events-none after:absolute after:inset-y-0 after:left-[-45%] after:w-[34%] after:skew-x-[-18deg] after:bg-white/30 after:blur-sm after:content-[''] after:animate-[cover-cta-sheen_3.2s_ease-in-out_infinite] sm:mt-9"
             >
               Découvrir le menu
             </PublicButton>

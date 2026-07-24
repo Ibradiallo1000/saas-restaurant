@@ -22,6 +22,14 @@ service cloud.firestore {
         && userDoc().data.role in ["super_admin", "admin"];
     }
 
+    function canReadPlatformMenuLibrary() {
+      return isSuperAdmin()
+        || (
+          userExists()
+          && userDoc().data.role in ["owner", "manager"]
+        );
+    }
+
     function userRestaurantId() {
       return userExists()
         ? userDoc().data.restaurantId
@@ -515,14 +523,103 @@ service cloud.firestore {
         || isRestaurantOwnerEmail(restaurantId);
     }
 
+    function hasValidRestaurantGeoLocation() {
+      return !("location" in request.resource.data)
+        || request.resource.data.location is map
+        && (!("address" in request.resource.data.location) || request.resource.data.location.address is string)
+        && (!("googleMapsUrl" in request.resource.data.location) || request.resource.data.location.googleMapsUrl is string)
+        && (!("lat" in request.resource.data.location) || request.resource.data.location.lat == null || (request.resource.data.location.lat is number && request.resource.data.location.lat >= -90 && request.resource.data.location.lat <= 90))
+        && (!("lng" in request.resource.data.location) || request.resource.data.location.lng == null || (request.resource.data.location.lng is number && request.resource.data.location.lng >= -180 && request.resource.data.location.lng <= 180));
+    }
+
+    function hasValidRestaurantLocationFields() {
+      return request.resource.data.phone is string
+        && request.resource.data.countryCode is string
+        && request.resource.data.countryCode.size() > 0
+        && request.resource.data.countryName is string
+        && request.resource.data.cityId is string
+        && request.resource.data.cityName is string
+        && request.resource.data.cityName.size() > 0
+        && request.resource.data.communeId is string
+        && request.resource.data.communeName is string
+        && (!("districtName" in request.resource.data) || request.resource.data.districtName is string)
+        && (!("address" in request.resource.data) || request.resource.data.address is string)
+        && hasValidRestaurantGeoLocation();
+    }
+
+    function hasValidRestaurantOpeningHoursUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "openingHours",
+          "timezone",
+          "updatedAt"
+        ])
+        && (!("openingHours" in request.resource.data) || request.resource.data.openingHours is map)
+        && (!("timezone" in request.resource.data) || request.resource.data.timezone is string)
+        && (!("updatedAt" in request.resource.data) || request.resource.data.updatedAt is timestamp);
+    }
+
+    function hasValidRestaurantBrandingUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "name",
+          "logoUrl",
+          "coverImage",
+          "coverImageUrl",
+          "updatedAt"
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && (!("logoUrl" in request.resource.data) || request.resource.data.logoUrl is string)
+        && (!("coverImage" in request.resource.data) || request.resource.data.coverImage is string)
+        && (!("coverImageUrl" in request.resource.data) || request.resource.data.coverImageUrl is string)
+        && (!("updatedAt" in request.resource.data) || request.resource.data.updatedAt is timestamp);
+    }
+
+    function canUpdateRestaurantBranding(restaurantId) {
+      return (
+          isRestaurantOwner(restaurantId)
+          || (
+            userExists()
+            && userDoc().data.restaurantId == restaurantId
+            && userDoc().data.role == "owner"
+          )
+        )
+        && hasValidRestaurantBrandingUpdate();
+    }
+
+    function hasValidPlatformPublicFooter() {
+      return !("publicFooter" in request.resource.data)
+        || request.resource.data.publicFooter is map
+        && request.resource.data.publicFooter.description is string
+        && request.resource.data.publicFooter.phone is string
+        && request.resource.data.publicFooter.whatsapp is string
+        && request.resource.data.publicFooter.email is string
+        && request.resource.data.publicFooter.officeAddress is string
+        && request.resource.data.publicFooter.socialLinks is map
+        && request.resource.data.publicFooter.socialLinks.facebook is string
+        && request.resource.data.publicFooter.socialLinks.instagram is string
+        && request.resource.data.publicFooter.socialLinks.tiktok is string
+        && request.resource.data.publicFooter.socialLinks.linkedin is string
+        && request.resource.data.publicFooter.socialLinks.youtube is string
+        && request.resource.data.publicFooter.socialLinks.twitter is string
+        && request.resource.data.publicFooter.legalLinks is map
+        && request.resource.data.publicFooter.legalLinks.privacy is string
+        && request.resource.data.publicFooter.legalLinks.terms is string
+        && request.resource.data.publicFooter.legalLinks.legalNotice is string;
+    }
+
     match /restaurants/{restaurantId} {
       allow get: if true;
       allow list: if true;
 
-      allow create: if isSignedIn()
-        && request.resource.data.countryCode is string
-        && request.resource.data.countryCode.size() > 0;
-      allow update: if isSuperAdmin() || isRestaurantOwner(restaurantId);
+      allow create: if isSuperAdmin()
+        && hasValidRestaurantLocationFields();
+      allow update: if (isSuperAdmin()
+          && hasValidRestaurantGeoLocation())
+        || (
+          canManageRestaurantMenu(restaurantId)
+          && hasValidRestaurantOpeningHoursUpdate()
+        )
+        || canUpdateRestaurantBranding(restaurantId);
       allow delete: if isSuperAdmin();
 
       match /staff/{staffId} {
@@ -1058,7 +1155,8 @@ service cloud.firestore {
         && request.resource.data.supportWhatsapp is string
         && request.resource.data.logoUrl is string
         && request.resource.data.faviconUrl is string
-        && request.resource.data.maintenanceMode is bool;
+        && request.resource.data.maintenanceMode is bool
+        && hasValidPlatformPublicFooter();
       allow delete: if isSuperAdmin();
     }
 
@@ -1076,17 +1174,17 @@ service cloud.firestore {
     }
 
     match /platformMenuPacks/{packId} {
-      allow get, list: if isSuperAdmin();
+      allow get, list: if canReadPlatformMenuLibrary();
       allow create, update, delete: if isSuperAdmin();
     }
 
     match /platformMenuCategories/{categoryTemplateId} {
-      allow get, list: if isSuperAdmin();
+      allow get, list: if canReadPlatformMenuLibrary();
       allow create, update, delete: if isSuperAdmin();
     }
 
     match /platformMenuProducts/{productTemplateId} {
-      allow get, list: if isSuperAdmin();
+      allow get, list: if canReadPlatformMenuLibrary();
       allow create, update: if isSuperAdmin()
         && (!("preparationMode" in request.resource.data)
           || request.resource.data.preparationMode in ["kitchen", "direct", "bar"]);
@@ -1096,19 +1194,43 @@ service cloud.firestore {
     match /platformCountries/{countryId} {
       allow get, list: if isSignedIn();
       allow create: if isSuperAdmin()
+        && countryId == request.resource.data.code
         && request.resource.data.code is string
         && request.resource.data.name is string
         && request.resource.data.currency is string
         && request.resource.data.dialCode is string
         && request.resource.data.isActive is bool
+        && (!("order" in request.resource.data) || request.resource.data.order is number)
         && request.resource.data.createdAt is timestamp;
       allow update: if isSuperAdmin()
+        && countryId == request.resource.data.code
         && request.resource.data.code is string
         && request.resource.data.name is string
         && request.resource.data.currency is string
         && request.resource.data.dialCode is string
-        && request.resource.data.isActive is bool;
+        && request.resource.data.isActive is bool
+        && (!("order" in request.resource.data) || request.resource.data.order is number);
       allow delete: if isSuperAdmin();
+
+      match /cities/{cityId} {
+        allow get, list: if isSignedIn();
+        allow create, update: if isSuperAdmin()
+          && request.resource.data.name is string
+          && request.resource.data.normalizedName is string
+          && request.resource.data.isActive is bool
+          && request.resource.data.order is number;
+        allow delete: if isSuperAdmin();
+
+        match /communes/{communeId} {
+          allow get, list: if isSignedIn();
+          allow create, update: if isSuperAdmin()
+            && request.resource.data.name is string
+            && request.resource.data.normalizedName is string
+            && request.resource.data.isActive is bool
+            && request.resource.data.order is number;
+          allow delete: if isSuperAdmin();
+        }
+      }
     }
 
     match /platformPaymentMethods/{methodId} {
@@ -1169,6 +1291,29 @@ service cloud.firestore {
       allow get: if true;
       allow list: if isSuperAdmin();
       allow create, update, delete: if isSuperAdmin();
+    }
+
+    // Derived public Marketplace read model. Backend Admin SDK writes bypass rules;
+    // clients can only read explicitly discoverable projections.
+    match /marketplaceDishOffers/{offerId} {
+      allow read: if resource.data.discoverable == true
+        && resource.data.schemaVersion == 1;
+      allow write: if false;
+    }
+
+    match /marketplaceFoodCategories/{categoryId} {
+      allow read: if isSuperAdmin()
+        || (
+          resource.data.active == true
+          && resource.data.schemaVersion == 1
+        );
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /marketplaceRestaurantCategoryOffers/{offerId} {
+      allow read: if resource.data.discoverable == true
+        && resource.data.schemaVersion == 1;
+      allow write: if false;
     }
 
     match /{document=**} {

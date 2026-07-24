@@ -2,18 +2,16 @@
 
 import * as React from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { collection, doc, limit, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { ArrowLeft, Building2, Loader2, Save } from 'lucide-react';
-
+import { collection, doc, getDocs, limit, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase } from '@/firebase';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { COLLECTION_NAMES } from '@/lib/constants';
+import { buildRestaurantLocationPayload } from '@/lib/restaurant-location';
+import { PlatformErrorState, PlatformLoadingState, PlatformPage } from '@/components/platform-ui';
+import { PlatformRestaurantDetailView, type PlatformCityPresentation, type PlatformCommunePresentation } from './PlatformRestaurantDetailView';
 
 type PlatformCountry = {
+  id: string;
   code: string;
   name: string;
   currency: string;
@@ -29,11 +27,22 @@ export default function EditRestaurantPage() {
   const restaurantId = params?.restaurantId;
   const [isSaving, setIsSaving] = React.useState(false);
   const [countrySearch, setCountrySearch] = React.useState('');
+  const [cities, setCities] = React.useState<PlatformCityPresentation[]>([]);
+  const [communes, setCommunes] = React.useState<PlatformCommunePresentation[]>([]);
+  const [isGeoLoading, setIsGeoLoading] = React.useState(false);
   const [formData, setFormData] = React.useState({
     name: '',
-    city: '',
     phone: '',
     countryCode: '',
+    cityId: '',
+    cityName: '',
+    communeId: '',
+    communeName: '',
+    districtName: '',
+    address: '',
+    googleMapsUrl: '',
+    lat: '',
+    lng: '',
   });
 
   const restaurantRef = useMemoFirebase(() => {
@@ -71,27 +80,108 @@ export default function EditRestaurantPage() {
     if (!restaurant) return;
 
     const nextCountryCode = restaurant.countryCode || restaurant.country || '';
+    const nextLocation = restaurant.location || {};
 
     setFormData({
       name: restaurant.name || '',
-      city: restaurant.city || '',
       phone: restaurant.phone || '',
       countryCode: nextCountryCode,
+      cityId: restaurant.cityId || '',
+      cityName: restaurant.cityName || restaurant.city || '',
+      communeId: restaurant.communeId || '',
+      communeName: restaurant.communeName || '',
+      districtName: restaurant.districtName || '',
+      address: nextLocation.address || restaurant.address || '',
+      googleMapsUrl: nextLocation.googleMapsUrl || '',
+      lat: nextLocation.lat === null || nextLocation.lat === undefined ? '' : String(nextLocation.lat),
+      lng: nextLocation.lng === null || nextLocation.lng === undefined ? '' : String(nextLocation.lng),
     });
 
     const country = activeCountries.find((item) => item.code === nextCountryCode);
     if (country) setCountrySearch(country.name);
   }, [activeCountries, restaurant]);
 
+  React.useEffect(() => {
+    if (!db || !formData.countryCode) {
+      setCities([]);
+      return;
+    }
+
+    let cancelled = false;
+    setIsGeoLoading(true);
+    getDocs(query(
+      collection(db, COLLECTION_NAMES.PLATFORM_COUNTRIES, formData.countryCode, 'cities'),
+      orderBy('order', 'asc'),
+      limit(100)
+    ))
+      .then((snapshot) => {
+        if (cancelled) return;
+        setCities(snapshot.docs.map((document) => ({ id: document.id, ...document.data() } as PlatformCityPresentation)).filter((city) => city.isActive !== false));
+      })
+      .catch((error) => {
+        console.error(error);
+        if (!cancelled) setCities([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsGeoLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [db, formData.countryCode]);
+
+  React.useEffect(() => {
+    if (!db || !formData.countryCode || !formData.cityId) {
+      setCommunes([]);
+      return;
+    }
+
+    let cancelled = false;
+    setIsGeoLoading(true);
+    getDocs(query(
+      collection(db, COLLECTION_NAMES.PLATFORM_COUNTRIES, formData.countryCode, 'cities', formData.cityId, 'communes'),
+      orderBy('order', 'asc'),
+      limit(100)
+    ))
+      .then((snapshot) => {
+        if (cancelled) return;
+        setCommunes(snapshot.docs.map((document) => ({ id: document.id, ...document.data() } as PlatformCommunePresentation)).filter((commune) => commune.isActive !== false));
+      })
+      .catch((error) => {
+        console.error(error);
+        if (!cancelled) setCommunes([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsGeoLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [db, formData.cityId, formData.countryCode]);
+
   const selectedCountry = React.useMemo(() => {
     return activeCountries.find((country) => country.code === formData.countryCode);
   }, [activeCountries, formData.countryCode]);
 
+  const selectedCity = React.useMemo(() => {
+    return cities.find((city) => city.id === formData.cityId);
+  }, [cities, formData.cityId]);
+
+  const selectedCommune = React.useMemo(() => {
+    return communes.find((commune) => commune.id === formData.communeId);
+  }, [communes, formData.communeId]);
+
+  const latitudeValid = !formData.lat || (Number.isFinite(Number(formData.lat)) && Number(formData.lat) >= -90 && Number(formData.lat) <= 90);
+  const longitudeValid = !formData.lng || (Number.isFinite(Number(formData.lng)) && Number(formData.lng) >= -180 && Number(formData.lng) <= 180);
   const canSave =
     formData.name.trim().length > 2 &&
-    formData.city.trim().length > 1 &&
     formData.phone.trim().length > 5 &&
-    formData.countryCode.length > 0;
+    formData.countryCode.length > 0 &&
+    (formData.cityId.length > 0 || formData.cityName.trim().length > 1) &&
+    latitudeValid &&
+    longitudeValid;
 
   const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -101,11 +191,26 @@ export default function EditRestaurantPage() {
     setIsSaving(true);
 
     try {
+      const locationPayload = buildRestaurantLocationPayload({
+        phone: formData.phone,
+        countryCode: formData.countryCode,
+        countryName: selectedCountry?.name || restaurant?.countryName || restaurant?.country || '',
+        cityId: formData.cityId,
+        cityName: selectedCity?.name || formData.cityName,
+        communeId: formData.communeId,
+        communeName: selectedCommune?.name || formData.communeName,
+        districtName: formData.districtName,
+        location: {
+          address: formData.address,
+          googleMapsUrl: formData.googleMapsUrl,
+          lat: formData.lat,
+          lng: formData.lng,
+        },
+      });
+
       await updateDoc(restaurantRef, {
         name: formData.name.trim(),
-        city: formData.city.trim(),
-        phone: formData.phone.trim(),
-        countryCode: formData.countryCode,
+        ...locationPayload,
         updatedAt: serverTimestamp(),
       });
 
@@ -126,140 +231,10 @@ export default function EditRestaurantPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center p-20">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-      </div>
-    );
+    return <PlatformPage width="reading"><PlatformLoadingState label="Chargement du restaurant" /></PlatformPage>;
   }
 
-  return (
-    <div className="mx-auto max-w-3xl space-y-8 animate-in fade-in duration-500">
-      <div className="flex items-center gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          onClick={() => router.push('/platform/restaurants')}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-4xl font-black italic uppercase tracking-tighter text-primary">
-            Modifier restaurant
-          </h1>
-          <p className="font-medium text-muted-foreground">
-            Nom, ville, téléphone et pays de rattachement.
-          </p>
-        </div>
-      </div>
+  if (!restaurant) return <PlatformPage width="reading"><PlatformErrorState title="Restaurant indisponible" description="Le restaurant demandé n’a pas été trouvé ou ne peut pas être chargé." action={<button type="button" className="dashboard-focus-visible min-h-11 rounded-md border px-4" onClick={() => router.push('/platform/restaurants')}>Retour aux restaurants</button>} /></PlatformPage>;
 
-      <Card className="overflow-hidden border-none shadow-2xl">
-        <CardHeader className="border-b bg-primary/5 p-8">
-          <CardTitle className="flex items-center gap-3 text-2xl font-black italic uppercase">
-            <Building2 className="h-6 w-6 text-primary" />
-            Informations établissement
-          </CardTitle>
-        </CardHeader>
-
-        <form onSubmit={handleSave}>
-          <CardContent className="space-y-6 p-8">
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Nom</Label>
-                <Input
-                  value={formData.name}
-                  onChange={(event) => setFormData({ ...formData, name: event.target.value })}
-                  className="h-12"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Téléphone</Label>
-                <Input
-                  value={formData.phone}
-                  onChange={(event) => setFormData({ ...formData, phone: event.target.value })}
-                  className="h-12"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Ville</Label>
-                <Input
-                  value={formData.city}
-                  onChange={(event) => setFormData({ ...formData, city: event.target.value })}
-                  className="h-12"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Pays</Label>
-                <div className="space-y-2 rounded-xl border p-3">
-                  <Input
-                    placeholder="Rechercher un pays..."
-                    value={countrySearch}
-                    onChange={(event) => setCountrySearch(event.target.value)}
-                  />
-                  <div className="max-h-56 space-y-2 overflow-y-auto">
-                    {filteredCountries.map((country) => (
-                      <button
-                        key={country.id}
-                        type="button"
-                        onClick={() => {
-                          setFormData({ ...formData, countryCode: country.code });
-                          setCountrySearch(country.name);
-                        }}
-                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
-                          formData.countryCode === country.code
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border hover:bg-muted'
-                        }`}
-                      >
-                        <span className="font-bold">
-                          {countryFlag(country.code)} {country.name}
-                        </span>
-                        <span className="text-xs font-medium text-muted-foreground">
-                          {country.code} · {country.currency}
-                        </span>
-                      </button>
-                    ))}
-                    {filteredCountries.length === 0 && (
-                      <p className="p-3 text-sm text-muted-foreground">
-                        Aucun pays disponible.
-                      </p>
-                    )}
-                  </div>
-                </div>
-                {selectedCountry && (
-                  <p className="text-xs text-muted-foreground">
-                    Pays sélectionné : {countryFlag(selectedCountry.code)} {selectedCountry.name}
-                  </p>
-                )}
-              </div>
-            </div>
-          </CardContent>
-
-          <CardFooter className="p-8 pt-0">
-            <Button
-              type="submit"
-              disabled={!canSave || isSaving}
-              className="h-12 w-full font-black uppercase"
-            >
-              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Enregistrer
-            </Button>
-          </CardFooter>
-        </form>
-      </Card>
-    </div>
-  );
-}
-
-function countryFlag(code: string) {
-  if (!/^[A-Z]{2}$/.test(code)) return '🏳';
-
-  return code
-    .split('')
-    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
-    .join('');
+  return <PlatformRestaurantDetailView value={formData} countrySearch={countrySearch} countries={filteredCountries} selectedCountry={selectedCountry} cities={cities} communes={communes} isGeoLoading={isGeoLoading} canSave={canSave} isSaving={isSaving} onBack={() => router.push('/platform/restaurants')} onSubmit={handleSave} onValueChange={setFormData} onCountrySearchChange={setCountrySearch} onCountrySelect={(country) => { setFormData({ ...formData, countryCode: country.code, cityId: '', cityName: '', communeId: '', communeName: '' }); setCountrySearch(country.name); setCommunes([]) }} onCitySelect={(cityId) => setFormData({ ...formData, cityId, cityName: cities.find((city) => city.id === cityId)?.name || '', communeId: '', communeName: '' })} onCommuneSelect={(communeId) => setFormData({ ...formData, communeId, communeName: communes.find((commune) => commune.id === communeId)?.name || '' })} coordinatesValid={latitudeValid && longitudeValid} />;
 }

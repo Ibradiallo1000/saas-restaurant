@@ -9,19 +9,14 @@ import {
   Banknote, 
   CheckCircle2,
   ShoppingCart, 
-  Zap, 
   Loader2,
   X,
   ChevronLeft,
   ChevronRight,
-  Search,
-  Grid2X2,
-  Rows3,
   Clock3,
   CookingPot,
   Inbox,
   PackageCheck,
-  Ticket,
   Percent,
   Utensils,
   UserRound
@@ -37,6 +32,8 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PosCatalog, PosSessionClosingDialog, PosVarianceDisplay } from "@/components/pos-ui"
+import { PublicSheet } from "@/components/public-ui"
 import { useToast } from "@/hooks/use-toast"
 import { OrderService } from "@/services/order.service"
 import {
@@ -46,6 +43,7 @@ import {
 } from "@/services/table-session.service"
 import { cn } from "@/lib/utils"
 import { getOptimizedImage } from "@/lib/image"
+import { formatTableDisplayName, getRestaurantTableDisplayPrefix } from "@/lib/table-display"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { getOrderDisplayId } from "@/lib/order-display-id"
 import {
@@ -104,6 +102,7 @@ import type { POSTab } from "./POSHeader"
 import CategorySidebar from "./CategorySidebar"
 import ProductGrid from "./ProductGrid"
 import CartPanel, { type PosPaymentMode } from "./CartPanel"
+import POSPaymentFlow from "./POSPaymentFlow"
 
 const STATUS_LABELS = {
   pending: "En attente",
@@ -152,7 +151,7 @@ const POS_COLUMN_UI = {
 } as const
 
 const warnedMissingKitchenStatusOrders = new Set<string>()
-const POS_PRODUCT_ROWS_PER_PAGE = 2
+const POS_PRODUCT_ROWS_PER_PAGE = 3
 
 export default function POSPage() {
   const { restaurantId } = useRestaurant()
@@ -200,12 +199,18 @@ function POSPageContent() {
   const [collectingOrderId, setCollectingOrderId] = React.useState<string | null>(null)
   const [activeTab, setActiveTab] = React.useState<POSTab>("cashier")
   const [requestingSession, setRequestingSession] = React.useState(false)
-  const [turboMode, setTurboMode] = React.useState(false)
+  const turboMode = false
   const [discountRate, setDiscountRate] = React.useState(0)
   const [selectedPaymentMode, setSelectedPaymentMode] = React.useState<PosPaymentMode | null>(null)
   const [cashReceivedInput, setCashReceivedInput] = React.useState("")
+  const [paymentDialogOpen, setPaymentDialogOpen] = React.useState(false)
+  const [paymentFlowError, setPaymentFlowError] = React.useState<string | null>(null)
+  const [paymentFlowSuccess, setPaymentFlowSuccess] = React.useState(false)
+  const checkoutLockRef = React.useRef(false)
+  const closeSessionLockRef = React.useRef(false)
   const [closeDialogOpen, setCloseDialogOpen] = React.useState(false)
   const [selectedOrderDetailId, setSelectedOrderDetailId] = React.useState<string | null>(null)
+  const [mobileOrderStatus, setMobileOrderStatus] = React.useState<string>(ORDER_OPERATION_STATUS.PENDING)
   const [showAllCompletedOrders, setShowAllCompletedOrders] = React.useState(false)
   const [declaredCashInput, setDeclaredCashInput] = React.useState("")
   const [declaredMobileInput, setDeclaredMobileInput] = React.useState("")
@@ -218,10 +223,12 @@ function POSPageContent() {
   const hasInitializedOrderSoundRef = React.useRef(false)
   
   const [currentPage, setCurrentPage] = React.useState(0)
-  const productsPerPage = usePOSProductsPerPage()
-  const [productSearch, setProductSearch] = React.useState("")
+  const { isPhoneViewport, productsPerPage } = usePOSProductsPerPage()
+  const [mobileCartOpen, setMobileCartOpen] = React.useState(false)
+  const productSearch = ""
 
   const tables = safeTables as RestaurantTableRecord[]
+  const tableLabelPrefix = getRestaurantTableDisplayPrefix(restaurant)
   const initialTableId = searchParams?.get("tableId")
   const activeCashSession = React.useMemo(() => {
     return safeCashSessions.find((session: any) => {
@@ -313,9 +320,10 @@ function POSPageContent() {
     return buildServedTableSessionGroups(
       posOrders[ORDER_OPERATION_STATUS.SERVED] ?? [],
       safeTableSessions,
-      tables
+      tables,
+      tableLabelPrefix
     )
-  }, [posOrders, safeTableSessions, tables])
+  }, [posOrders, safeTableSessions, tableLabelPrefix, tables])
 
   const unpaidServedCount = React.useMemo(() => {
     return posVisibleOrders.filter((order: any) => {
@@ -670,7 +678,14 @@ function POSPageContent() {
     void printService
       .print(order, type, { restaurant })
       .then((printed) => {
-        if (printed) toast({ title: "Ticket imprimé" })
+        if (printed) {
+          toast({ title: "Ticket imprimé" })
+        } else {
+          toast({ variant: "destructive", title: "Commande enregistrée", description: "Le ticket n'a pas pu être imprimé. Utilisez la réimpression sans recréer la commande." })
+        }
+      })
+      .catch(() => {
+        toast({ variant: "destructive", title: "Commande enregistrée", description: "L'impression a échoué. Utilisez la réimpression sans recréer la commande." })
       })
   }, [restaurant, toast])
 
@@ -841,7 +856,7 @@ function POSPageContent() {
   }
 
   const handleCheckout = async (method: "cash" | "mobile") => {
-    if (!db || !restaurantId || !user || cart.length === 0) return
+    if (!db || !restaurantId || !user || cart.length === 0 || processing || checkoutLockRef.current) return false
 
     if (!activeCashSession) {
       toast({
@@ -849,7 +864,7 @@ function POSPageContent() {
         description: "Ouvrez une session de caisse avant de vendre.",
         variant: "destructive",
       })
-      return
+      return false
     }
     
     if (orderType === "dine-in" && !tableNumber) {
@@ -858,9 +873,10 @@ function POSPageContent() {
         description: "Veuillez sélectionner une table.",
         variant: "destructive",
       })
-      return
+      return false
     }
     
+    checkoutLockRef.current = true
     setProcessing(true)
     
     const orderService = new OrderService(db)
@@ -1012,10 +1028,13 @@ function POSPageContent() {
       if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate(100)
       }
+      return true
     } catch (error) {
       console.error("POS checkout error:", error)
       toast({ variant: "destructive", title: "Erreur", description: "Impossible de finaliser la vente." })
+      return false
     } finally {
+      checkoutLockRef.current = false
       setProcessing(false)
     }
   }
@@ -1083,8 +1102,9 @@ function POSPageContent() {
   }
 
   const closeMyCashSession = async () => {
-    if (!db || !restaurantId || !activeCashSession?.id || processing) return
+    if (!db || !restaurantId || !activeCashSession?.id || processing || closeSessionLockRef.current) return
 
+    closeSessionLockRef.current = true
     setProcessing(true)
     try {
       const ledger = new PaymentLedgerService(db)
@@ -1109,6 +1129,7 @@ function POSPageContent() {
         description: error.message || "Clôture impossible.",
       })
     } finally {
+      closeSessionLockRef.current = false
       setProcessing(false)
     }
   }
@@ -1476,14 +1497,14 @@ function POSPageContent() {
     toast({ title: "Panier mis en attente", description: "La vente courante a ete retiree de l'ecran caisse." })
   }
 
-  const handleCheckoutSelectedPayment = () => {
+  const handleCheckoutSelectedPayment = async () => {
     if (!selectedPaymentMode) {
       toast({
         title: "Mode de paiement requis",
         description: "Sélectionnez Espèces ou Mobile Money avant d'encaisser.",
         variant: "destructive",
       })
-      return
+      return false
     }
 
     if (selectedPaymentMode === "cash") {
@@ -1493,10 +1514,9 @@ function POSPageContent() {
           description: "Le montant reçu doit couvrir le total à payer.",
           variant: "destructive",
         })
-        return
+        return false
       }
-      void handleCheckout("cash")
-      return
+      return handleCheckout("cash")
     }
 
     if (selectedPaymentMode === "mobile") {
@@ -1506,10 +1526,28 @@ function POSPageContent() {
           description: "Selectionnez le moyen Mobile Money utilise.",
           variant: "destructive",
         })
-        return
+        return false
       }
-      void handleCheckout("mobile")
-      return
+      return handleCheckout("mobile")
+    }
+    return false
+  }
+
+  const openPaymentDialog = () => {
+    if (processing || cart.length === 0) return
+    setPaymentFlowError(null)
+    setPaymentFlowSuccess(false)
+    setPaymentDialogOpen(true)
+  }
+
+  const submitPayment = async () => {
+    if (processing) return
+    setPaymentFlowError(null)
+    const succeeded = await handleCheckoutSelectedPayment()
+    if (succeeded) {
+      setPaymentFlowSuccess(true)
+    } else {
+      setPaymentFlowError("Impossible de finaliser la transaction. Vérifiez les informations puis réessayez.")
     }
   }
 
@@ -1547,61 +1585,26 @@ function POSPageContent() {
       canCloseSession={Boolean(activeCashSession) && cart.length === 0 && !processing}
       onCloseSession={openCloseCashSessionDialog}
       onLogout={handleLogout}
-      sidebar={
-        activeTab === "cashier" && activeCashSession ? (
-          <CategorySidebar
-            categories={safeCategories}
-            selectedCategoryId={selectedCategoryId}
-            onSelectCategory={setSelectedCategoryId}
-          />
-        ) : undefined
-      }
       center={
         activeTab === "cashier" && activeCashSession ? (
-          <div className="flex h-full min-h-0 flex-col">
-            <div className="mb-3 flex shrink-0 items-center gap-3 rounded-[1.35rem] border bg-card/95 px-3 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.06)] backdrop-blur">
-              <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={productSearch}
-                  onChange={(event) => setProductSearch(event.target.value)}
-                  placeholder="Rechercher un produit..."
-                  className="h-12 rounded-full border-transparent bg-muted/60 pl-12 pr-4 text-sm font-semibold shadow-inner focus-visible:ring-[var(--brand-primary)]/25"
-                />
+          <PosCatalog
+            className="h-[calc(100%-5.5rem)] md:h-full lg:h-auto lg:self-start lg:overflow-visible"
+            contentClassName="lg:h-auto lg:flex-none lg:overflow-y-visible lg:overscroll-auto lg:p-2.5"
+            categories={<CategorySidebar categories={safeCategories} selectedCategoryId={selectedCategoryId} onSelectCategory={setSelectedCategoryId} />}
+            footer={totalPages > 1 ? (
+              <div className="flex items-center justify-center gap-2 bg-[var(--pos-catalog)] sm:gap-3">
+                <Button variant="outline" size="sm" className="min-h-11 gap-1 rounded-full px-3 text-xs font-black" disabled={safeCurrentPage === 0} onClick={() => setCurrentPage((page) => page - 1)}>
+                  <ChevronLeft className="h-4 w-4" />Préc.
+                </Button>
+                <span className="min-w-20 text-center text-xs font-black text-muted-foreground sm:min-w-24">Page {safeCurrentPage + 1} / {totalPages}</span>
+                <Button variant="outline" size="sm" className="min-h-11 gap-1 rounded-full px-3 text-xs font-black" disabled={safeCurrentPage === totalPages - 1} onClick={() => setCurrentPage((page) => page + 1)}>
+                  Suiv.<ChevronRight className="h-4 w-4" />
+                </Button>
               </div>
-              <Button
-                variant={turboMode ? "default" : "outline"}
-                size="sm"
-                onClick={() => setTurboMode(!turboMode)}
-                className={cn(
-                  "h-12 shrink-0 rounded-full px-4 text-xs font-black",
-                  turboMode
-                    ? "bg-[var(--brand-primary)] text-white hover:bg-[var(--brand-primary)] hover:brightness-95"
-                    : "border-border bg-background hover:bg-muted"
-                )}
-              >
-                <Zap className="h-4 w-4" />
-                {turboMode ? "Turbo" : "Normal"}
-              </Button>
-              <div className="flex h-12 shrink-0 items-center gap-1 rounded-full border bg-background p-1 shadow-sm">
-                <button
-                  type="button"
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-primary)] text-white shadow-sm"
-                  aria-label="Vue grille"
-                >
-                  <Grid2X2 className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label="Vue liste"
-                >
-                  <Rows3 className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
+            ) : null}
+          >
 
-            <div className="min-h-0 flex-1 overflow-hidden">
+            <div className="min-h-0">
               <ProductGrid
                 products={paginatedProducts}
                 categories={safeCategories}
@@ -1609,41 +1612,6 @@ function POSPageContent() {
                 formatPrice={formatDisplayPrice}
                 onProductClick={openProductSelector}
               />
-            </div>
-
-            {totalPages > 1 ? (
-              <div className="mt-3 flex shrink-0 items-center justify-center gap-3 rounded-full border bg-card/95 px-3 py-2 shadow-sm">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 gap-1 rounded-full px-3 text-xs font-black"
-                  disabled={safeCurrentPage === 0}
-                  onClick={() => setCurrentPage((page) => page - 1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Préc.
-                </Button>
-                <span className="min-w-24 text-center text-xs font-black text-muted-foreground">
-                  Page {safeCurrentPage + 1} / {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 gap-1 rounded-full px-3 text-xs font-black"
-                  disabled={safeCurrentPage === totalPages - 1}
-                  onClick={() => setCurrentPage((page) => page + 1)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                  Suiv.
-                </Button>
-              </div>
-            ) : null}
-
-            <div className="mt-3 grid shrink-0 grid-cols-4 gap-3">
-              <POSFooterCard icon={<Clock3 />} label="Début" value={formatSessionDateTime(activeCashSession.openedAt)} />
-              <POSFooterCard icon={<Ticket />} label="Ticket" value={`${cart.length} article${cart.length > 1 ? "s" : ""}`} />
-              <POSFooterCard icon={<Percent />} label="Remise" value={discountRate > 0 ? `${Math.round(discountRate * 100)}%` : "0%"} />
-              <POSFooterCard icon={<UserRound />} label="Caissier" value={staffSnapshot.staffName} />
             </div>
 
             {configProduct ? (
@@ -1660,12 +1628,13 @@ function POSPageContent() {
                 validationError={configValidationError}
               />
             ) : null}
-          </div>
+          </PosCatalog>
         ) : undefined
       }
       right={
-        activeTab === "cashier" && activeCashSession ? (
-          <CartPanel
+        activeTab === "cashier" && activeCashSession && !isPhoneViewport ? (
+          <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden"><CartPanel
             cart={cart}
             subtotal={subtotal}
             discountAmount={discountAmount}
@@ -1674,22 +1643,12 @@ function POSPageContent() {
             canCheckout={
               Boolean(activeCashSession) &&
               cart.length > 0 &&
-              Boolean(selectedPaymentMode) &&
-              !(selectedPaymentMode === "cash" && cashReceivedAmount < total) &&
-              !(selectedPaymentMode === "mobile" && !selectedMobileMethodCode) &&
               !(orderType === "dine-in" && !tableNumber)
             }
             orderType={orderType}
             tableNumber={tableNumber}
+            tableLabelPrefix={tableLabelPrefix}
             tables={tables}
-            paymentMode={selectedPaymentMode}
-            mobilePaymentMethods={mobilePaymentMethods}
-            selectedMobileMethodCode={selectedMobileMethodCode}
-            cashReceivedInput={cashReceivedInput}
-            cashReceivedAmount={cashReceivedAmount}
-            onPaymentModeChange={handlePaymentModeChange}
-            onMobileMethodChange={setSelectedMobileMethodCode}
-            onCashReceivedChange={setCashReceivedInput}
             onOrderTypeChange={handleOrderTypeChange}
             onTableSelect={handleTableSelect}
             onIncrease={increaseCartItem}
@@ -1708,8 +1667,14 @@ function POSPageContent() {
             }}
             onHold={handleHoldCart}
             onDiscount={handleApplyDiscount}
-            onCheckout={handleCheckoutSelectedPayment}
-          />
+            onCheckout={openPaymentDialog}
+          /></div>
+          <div aria-label="Résumé de session" className="grid shrink-0 grid-cols-3 gap-2">
+            <POSFooterCard icon={<Clock3 />} label="Début" value={formatSessionDateTime(activeCashSession.openedAt)} />
+            <POSFooterCard icon={<Percent />} label="Remise" value={discountRate > 0 ? `${Math.round(discountRate * 100)}%` : "0%"} />
+            <POSFooterCard icon={<UserRound />} label="Caissier" value={staffSnapshot.staffName} />
+          </div>
+          </div>
         ) : undefined
       }
       left={
@@ -1727,7 +1692,16 @@ function POSPageContent() {
           ) : null}
 
           <div className={cn("flex-1 flex flex-col min-h-0", activeTab !== "orders" && "hidden")}>
-            <div className="grid h-full min-h-0 grid-cols-1 gap-5 overflow-y-auto p-4 xl:grid-cols-5 xl:overflow-hidden">
+            <POSMobileOrders
+              activeStatus={mobileOrderStatus}
+              columns={posColumns.slice(0, 4)}
+              ordersByStatus={posOrders}
+              tableLabelPrefix={tableLabelPrefix}
+              tables={tables}
+              onStatusChange={setMobileOrderStatus}
+              onSelectOrder={setSelectedOrderDetailId}
+            />
+            <div className="hidden h-full min-h-0 grid-cols-1 gap-5 overflow-y-auto p-4 md:grid xl:grid-cols-5 xl:overflow-hidden">
               {posColumns.map((column) => {
                 const columnOrders = posOrders[column.id] ?? []
                 const isServedColumn = column.id === ORDER_OPERATION_STATUS.SERVED
@@ -1816,7 +1790,7 @@ function POSPageContent() {
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
                                 <p className="text-xs font-black">
-                                  Table {group.tableLabel || "-"} / {sessionStatusLabel}
+                                  {group.tableLabel || tableLabelPrefix} / {sessionStatusLabel}
                                 </p>
                               </div>
                               <p className="shrink-0 text-xs font-black text-primary">
@@ -1939,11 +1913,10 @@ function POSPageContent() {
                         const normalizedType = normalizeOrderType(order.orderType || order.type)
                         const currentOrderStatus = getPOSOperationStatus(order)
                         const canComplete = false
-                        const tableLabel =
-                          tables.find((table) => table.id === order.tableId)?.name ||
-                          order.tableNumber ||
-                          order.table ||
-                          (order.tableId ? order.tableId.slice(-2).toUpperCase() : "")
+                        const tableLabel = formatTableDisplayName({
+                          name: tables.find((table) => table.id === order.tableId)?.name || order.tableNumber || order.table,
+                          id: order.tableId,
+                        }, tableLabelPrefix)
                         const orderItems = Array.isArray(order.items) ? order.items : []
                         const previewItems = orderItems.slice(0, 3)
                         const hiddenItemsCount = Math.max(0, orderItems.length - previewItems.length)
@@ -2127,11 +2100,125 @@ function POSPageContent() {
       }
     />
 
+    {isPhoneViewport && activeTab === "cashier" && activeCashSession ? (
+      <>
+        <section
+          aria-label="Résumé du ticket"
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--pos-border)] bg-[var(--pos-elevated)] px-[max(.75rem,var(--safe-left,0px))] pb-[max(.75rem,var(--safe-bottom,0px))] pt-2 shadow-[var(--shadow-public-top)] md:hidden"
+        >
+          <div className="mx-auto flex max-w-xl items-center gap-3">
+            <ShoppingCart aria-hidden="true" className="size-5 shrink-0 text-[var(--brand-primary)]" />
+            <div className="min-w-0 flex-1" aria-live="polite" aria-atomic="true">
+              <p className="truncate text-sm font-semibold">{cart.length ? `${cart.length} article${cart.length > 1 ? "s" : ""}` : "Ticket vide"}</p>
+              <p className="text-sm font-bold tabular-nums">{total.toLocaleString("fr-FR")} FCFA</p>
+            </div>
+            <Button
+              type="button"
+              className="min-h-12 shrink-0 px-4"
+              disabled={!cart.length}
+              onClick={() => setMobileCartOpen(true)}
+              aria-label={cart.length ? `Voir le ticket, ${cart.length} article${cart.length > 1 ? "s" : ""}, total ${total.toLocaleString("fr-FR")} FCFA` : "Voir le ticket, ticket vide"}
+            >
+              Voir le ticket
+            </Button>
+          </div>
+        </section>
+
+        <PublicSheet
+          open={mobileCartOpen}
+          onOpenChange={setMobileCartOpen}
+          title="Ticket en cours"
+          description={`${cart.length} article${cart.length > 1 ? "s" : ""} · ${total.toLocaleString("fr-FR")} FCFA`}
+          closeLabel="Fermer le ticket"
+          className="max-h-[92dvh] w-full max-w-none md:hidden"
+          contentClassName="overflow-hidden p-0"
+        >
+          <CartPanel
+            cart={cart}
+            subtotal={subtotal}
+            discountAmount={discountAmount}
+            total={total}
+            processing={processing}
+            canCheckout={
+              Boolean(activeCashSession) &&
+              cart.length > 0 &&
+              !(orderType === "dine-in" && !tableNumber)
+            }
+            orderType={orderType}
+            tableNumber={tableNumber}
+            tableLabelPrefix={tableLabelPrefix}
+            tables={tables}
+            mobileSheet
+            sessionInfo={
+              <div aria-label="Résumé de session" className="grid grid-cols-3 gap-2">
+                <POSFooterCard icon={<Clock3 />} label="Début" value={formatSessionDateTime(activeCashSession.openedAt)} />
+                <POSFooterCard icon={<Percent />} label="Remise" value={discountRate > 0 ? `${Math.round(discountRate * 100)}%` : "0%"} />
+                <POSFooterCard icon={<UserRound />} label="Caissier" value={staffSnapshot.staffName} />
+              </div>
+            }
+            onOrderTypeChange={handleOrderTypeChange}
+            onTableSelect={handleTableSelect}
+            onIncrease={increaseCartItem}
+            onDecrease={removeFromCart}
+            onRemove={(itemId) =>
+              setCart((current) =>
+                current.filter((item) => !getCartLinesForBundleRemoval(current, itemId).includes(item.id))
+              )
+            }
+            onClear={() => {
+              setCart([])
+              setDiscountRate(0)
+              setCashReceivedInput("")
+              setSelectedPaymentMode(null)
+              setSelectedMobileMethodCode(null)
+            }}
+            onHold={handleHoldCart}
+            onDiscount={handleApplyDiscount}
+            onCheckout={openPaymentDialog}
+          />
+        </PublicSheet>
+      </>
+    ) : null}
+
+    <POSPaymentFlow
+      open={paymentDialogOpen}
+      onOpenChange={(open) => {
+        setPaymentDialogOpen(open)
+        if (!open) {
+          setPaymentFlowError(null)
+          setPaymentFlowSuccess(false)
+        }
+      }}
+      total={total}
+      paymentMode={selectedPaymentMode}
+      onPaymentModeChange={handlePaymentModeChange}
+      mobilePaymentMethods={mobilePaymentMethods}
+      selectedMobileMethodCode={selectedMobileMethodCode}
+      onMobileMethodChange={setSelectedMobileMethodCode}
+      cashReceivedInput={cashReceivedInput}
+      cashReceivedAmount={cashReceivedAmount}
+      onCashReceivedChange={setCashReceivedInput}
+      processing={processing}
+      success={paymentFlowSuccess}
+      error={paymentFlowError}
+      canSubmit={
+        Boolean(activeCashSession) &&
+        cart.length > 0 &&
+        Boolean(selectedPaymentMode) &&
+        !(selectedPaymentMode === "cash" && cashReceivedInput.trim().length === 0) &&
+        !(selectedPaymentMode === "cash" && cashReceivedAmount < total) &&
+        !(selectedPaymentMode === "mobile" && !selectedMobileMethodCode) &&
+        !(orderType === "dine-in" && !tableNumber)
+      }
+      onSubmit={submitPayment}
+    />
+
     <CashierOrderDetailDialog
       order={selectedOrderDetail}
       paymentSession={selectedOrderPaymentSession}
       paymentMethods={mobilePaymentMethods}
       tables={tables}
+      tableLabelPrefix={tableLabelPrefix}
       processing={processing}
       onClose={() => setSelectedOrderDetailId(null)}
       onPrint={() => {
@@ -2148,81 +2235,26 @@ function POSPageContent() {
       }}
     />
 
-    <Dialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Clôture de caisse</DialogTitle>
-          <DialogDescription>
-            Vérifiez le résumé système, saisissez les montants réels, puis confirmez la fermeture.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div className="rounded-lg border bg-muted/40 p-3">
-            <p className="mb-2 text-[10px] font-black uppercase text-muted-foreground">Résumé avant validation</p>
-            <div className="grid grid-cols-3 gap-2 text-sm">
-              <CloseAmount label="Espèces" value={closeSessionDiff.systemCash} />
-              <CloseAmount label="Mobile money" value={closeSessionDiff.systemMobile} />
-              <CloseAmount label="Total global" value={closeSessionDiff.systemTotal} strong />
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="declared-cash">Montant réel cash</Label>
-              <Input
-                id="declared-cash"
-                inputMode="numeric"
-                type="number"
-                min={0}
-                value={declaredCashInput}
-                onChange={(event) => setDeclaredCashInput(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="declared-mobile">Montant réel mobile money</Label>
-              <Input
-                id="declared-mobile"
-                inputMode="numeric"
-                type="number"
-                min={0}
-                value={declaredMobileInput}
-                onChange={(event) => setDeclaredMobileInput(event.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 text-sm">
-            <DiffAmount label="Écart cash" value={closeSessionDiff.cash} />
-            <DiffAmount label="Écart mobile" value={closeSessionDiff.mobile} />
-            <DiffAmount label="Écart total" value={closeSessionDiff.total} strong />
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" disabled={processing} onClick={() => setCloseDialogOpen(false)}>
-            Annuler
-          </Button>
-          <Button disabled={processing} onClick={closeMyCashSession}>
-            {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Confirmer clôture
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <PosSessionClosingDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} title="Clôture de caisse" description="Vérifiez le résumé système, saisissez les montants comptés, puis confirmez la fermeture." summary={<div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><CloseAmount label="Espèces attendues" value={closeSessionDiff.systemCash}/><CloseAmount label="Mobile Money" value={closeSessionDiff.systemMobile}/><CloseAmount label="Total session" value={closeSessionDiff.systemTotal} strong/></div>} expectedCash={<div><Label htmlFor="declared-cash">Espèces comptées</Label><Input autoFocus id="declared-cash" inputMode="numeric" type="number" min={0} value={declaredCashInput} onChange={(event) => setDeclaredCashInput(event.target.value)} className="mt-1 min-h-12 text-right text-xl font-bold tabular-nums" aria-invalid={closeSessionDiff.cash !== 0}/></div>} declaredCash={<div><Label htmlFor="declared-mobile">Mobile Money compté</Label><Input id="declared-mobile" inputMode="numeric" type="number" min={0} value={declaredMobileInput} onChange={(event) => setDeclaredMobileInput(event.target.value)} className="mt-1 min-h-12 text-right text-xl font-bold tabular-nums" aria-invalid={closeSessionDiff.mobile !== 0}/></div>} variance={<div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><VarianceCard label="Écart espèces" expected={closeSessionDiff.systemCash} received={declaredCashAmount} variance={closeSessionDiff.cash}/><VarianceCard label="Écart Mobile Money" expected={closeSessionDiff.systemMobile} received={declaredMobileAmount} variance={closeSessionDiff.mobile}/><VarianceCard label="Écart total" expected={closeSessionDiff.systemTotal} received={closeSessionDiff.declaredTotal} variance={closeSessionDiff.total}/></div>} footer={<><Button variant="outline" className="min-h-12" disabled={processing} onClick={() => setCloseDialogOpen(false)}>Annuler</Button><Button className="min-h-12" disabled={processing} onClick={closeMyCashSession}>{processing ? <Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none"/> : null}Confirmer clôture</Button></>} />
     </>
   )
 }
 
 function CloseAmount({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
   return (
-    <div>
+    <div className="rounded-[var(--radius-dashboard-widget)] border border-[var(--pos-border)] bg-[var(--pos-muted)] p-3">
       <p className="text-[10px] font-black uppercase text-muted-foreground">{label}</p>
       <p className={cn("mt-1 font-black", strong ? "text-base text-primary" : "text-sm")}>
         {value.toLocaleString("fr-FR")} FCFA
       </p>
     </div>
   )
+}
+
+function VarianceCard({ label, expected, received, variance }: { label: string; expected: number; received: number; variance: number }) {
+  const state = variance === 0 ? "balanced" : variance > 0 ? "positive" : "negative"
+  const stateLabel = variance === 0 ? `${label} · Correct` : variance > 0 ? `${label} · Excédent` : `${label} · Manque`
+  return <PosVarianceDisplay label={stateLabel} expected={`${expected.toLocaleString("fr-FR")} FCFA`} received={`${received.toLocaleString("fr-FR")} FCFA`} variance={`${variance.toLocaleString("fr-FR")} FCFA`} state={state} />
 }
 
 function POSFooterCard({
@@ -2247,17 +2279,141 @@ function POSFooterCard({
   )
 }
 
-function DiffAmount({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
-  const hasDiff = value !== 0
+function POSMobileOrders({
+  activeStatus,
+  columns,
+  ordersByStatus,
+  tableLabelPrefix,
+  tables,
+  onStatusChange,
+  onSelectOrder,
+}: {
+  activeStatus: string
+  columns: Array<{ id: string }>
+  ordersByStatus: Record<string, any[]>
+  tableLabelPrefix: string
+  tables: RestaurantTableRecord[]
+  onStatusChange: (status: string) => void
+  onSelectOrder: (orderId: string) => void
+}) {
+  const visibleOrders = ordersByStatus[activeStatus] ?? []
+  const activeUi = getPOSColumnUi(activeStatus)
 
   return (
-    <div className={cn("rounded-lg border p-2", hasDiff ? "border-amber-300 bg-amber-500/10" : "bg-muted/40")}>
-      <p className="text-[10px] font-black uppercase text-muted-foreground">{label}</p>
-      <p className={cn("mt-1 font-black", strong ? "text-base" : "text-sm", hasDiff ? "text-amber-600" : "text-foreground")}>
-        {value.toLocaleString("fr-FR")} FCFA
-      </p>
-    </div>
+    <section aria-label="Commandes du point de vente" className="flex h-full min-h-0 flex-col md:hidden">
+      <div className="shrink-0 border-b border-[var(--pos-divider)] bg-[var(--pos-canvas)] px-3 pb-2 pt-1">
+        <div role="tablist" aria-label="Statut des commandes" className="flex gap-2 overflow-x-auto pb-1">
+          {columns.map((column) => {
+            const selected = activeStatus === column.id
+            const count = ordersByStatus[column.id]?.length ?? 0
+            const servedWithOrders = column.id === ORDER_OPERATION_STATUS.SERVED && count > 0
+            const label = getMobileOrderTabLabel(column.id)
+
+            return (
+              <button
+                key={column.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-controls="pos-mobile-orders-panel"
+                onClick={() => onStatusChange(column.id)}
+                className={cn(
+                  "dashboard-focus-visible flex min-h-11 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-semibold",
+                  selected
+                    ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-[var(--action-primary-fg)]"
+                    : "border-[var(--pos-border)] bg-[var(--pos-panel)] text-[var(--dashboard-title)]"
+                )}
+              >
+                <span>{label}</span>
+                <span
+                  aria-label={`${count} commande${count > 1 ? "s" : ""}`}
+                  className={cn(
+                    "flex min-h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-[11px] font-bold tabular-nums",
+                    selected ? "bg-white/20 text-current" : "bg-[var(--pos-muted)]",
+                    servedWithOrders && "bg-orange-500 text-white motion-safe:animate-pulse"
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div
+        id="pos-mobile-orders-panel"
+        role="tabpanel"
+        aria-label={getMobileOrderTabLabel(activeStatus)}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3"
+      >
+        {visibleOrders.length ? (
+          <div className="space-y-3">
+            {visibleOrders.map((order: any) => {
+              const normalizedType = normalizeOrderType(order.orderType || order.type)
+              const tableLabel = formatTableDisplayName({
+                name: tables.find((table) => table.id === order.tableId)?.name || order.tableNumber || order.table,
+                id: order.tableId,
+              }, tableLabelPrefix)
+              const locationLabel = getPOSOrderMetaLabel(normalizedType, tableLabel)
+              const itemCount = countOrderItems(order)
+              const orderTotal = getOrderComputedTotal(order)
+
+              return (
+                <button
+                  key={order.id}
+                  type="button"
+                  onClick={() => onSelectOrder(order.id)}
+                  className="dashboard-focus-visible block min-h-32 w-full rounded-[var(--radius-dashboard-widget)] border border-[var(--pos-border)] bg-[var(--pos-panel)] p-4 text-left shadow-[var(--shadow-dashboard-surface)] transition-colors hover:border-[var(--brand-primary)]"
+                  aria-label={`${getOrderDisplayId(order)}, ${locationLabel}, ${itemCount} article${itemCount > 1 ? "s" : ""}, ${orderTotal.toLocaleString("fr-FR")} FCFA`}
+                >
+                  <span className="flex items-start justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block truncate text-base font-bold">{getOrderDisplayId(order)}</span>
+                      <span className="mt-1 block truncate text-sm font-semibold text-[var(--dashboard-subtitle)]">{locationLabel}</span>
+                    </span>
+                    <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold", activeUi.badgeClass)}>
+                      {getMobileOrderTabLabel(activeStatus)}
+                    </span>
+                  </span>
+                  <span className="mt-4 grid grid-cols-[1fr_auto] items-end gap-3">
+                    <span>
+                      <span className="block text-sm text-[var(--dashboard-muted)]">
+                        {itemCount} article{itemCount > 1 ? "s" : ""} · {formatPOSOrderTime(order.createdAt)}
+                      </span>
+                      <span className="mt-1 block text-lg font-bold tabular-nums">{orderTotal.toLocaleString("fr-FR")} FCFA</span>
+                    </span>
+                    <span className="text-sm font-semibold text-[var(--brand-primary)]">Voir →</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="flex h-full min-h-72 flex-col items-center justify-center rounded-[var(--radius-dashboard-widget)] border border-dashed border-[var(--pos-border)] bg-[var(--pos-panel)] px-6 text-center">
+            <span className={cn("flex size-14 items-center justify-center rounded-full", activeUi.iconClass)}>
+              <Inbox aria-hidden="true" className="size-6" />
+            </span>
+            <p className="mt-4 text-base font-semibold">Aucune commande</p>
+            <p className="mt-1 text-sm text-[var(--dashboard-muted)]">{activeUi.emptyText}</p>
+          </div>
+        )}
+      </div>
+    </section>
   )
+}
+
+function getMobileOrderTabLabel(status: string) {
+  if (status === ORDER_OPERATION_STATUS.IN_PREPARATION) return "Préparation"
+  if (status === ORDER_OPERATION_STATUS.READY) return "Prêt"
+  if (status === ORDER_OPERATION_STATUS.SERVED) return "Servi"
+  return "En attente"
+}
+
+function formatPOSOrderTime(value: any) {
+  const date = value?.toDate?.() ?? (value ? new Date(value) : null)
+  if (!date || Number.isNaN(date.getTime())) return "--:--"
+  return date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
 }
 
 function CashierOrderDetailDialog({
@@ -2265,6 +2421,7 @@ function CashierOrderDetailDialog({
   paymentSession,
   paymentMethods,
   tables,
+  tableLabelPrefix,
   processing,
   onClose,
   onPrint,
@@ -2274,6 +2431,7 @@ function CashierOrderDetailDialog({
   paymentSession: any | null
   paymentMethods: any[]
   tables: RestaurantTableRecord[]
+  tableLabelPrefix: string
   processing: boolean
   onClose: () => void
   onPrint: () => void
@@ -2303,11 +2461,10 @@ function CashierOrderDetailDialog({
       order.paymentStatus === "pending_cash" ||
       order.paymentStatus === "pending"
     )
-  const tableLabel =
-    tables.find((table) => table.id === order.tableId)?.name ||
-    order.tableNumber ||
-    order.table ||
-    (order.tableId ? order.tableId.slice(-2).toUpperCase() : "")
+  const tableLabel = formatTableDisplayName({
+    name: tables.find((table) => table.id === order.tableId)?.name || order.tableNumber || order.table,
+    id: order.tableId,
+  }, tableLabelPrefix)
   const phone = order.customer?.phone || order.customerPhone || order.phoneNumber
   const deliveryAddress = formatDeliveryAddress(order.deliveryAddress)
 
@@ -2322,7 +2479,7 @@ function CashierOrderDetailDialog({
               <DialogTitle>{getOrderDisplayId(order)}</DialogTitle>
               <DialogDescription>
                 {getCashierOrderTypeLabel(order)}
-                {normalizedType === "dine_in" && tableLabel ? ` · Table ${tableLabel}` : ""}
+                {normalizedType === "dine_in" && tableLabel ? ` · ${tableLabel}` : ""}
               </DialogDescription>
             </div>
             <div className="text-right">
@@ -2684,20 +2841,17 @@ function getConfiguredPaymentMethodLabel(order: any, paymentSession: any | null,
   return formatCashierPaymentMethod(code)
 }
 
-function buildServedTableSessionGroups(orders: any[], tableSessions: any[], tables: RestaurantTableRecord[]) {
+function buildServedTableSessionGroups(orders: any[], tableSessions: any[], tables: RestaurantTableRecord[], tableLabelPrefix: string) {
   const groups = new Map<string, any>()
 
   orders.forEach((order: any) => {
     const sessionId = order?.tableSessionId || order?.sessionId || `order:${order?.id}`
     const paymentSession = tableSessions.find((session: any) => session.id === sessionId) ?? null
     const tableId = paymentSession?.tableId || order?.tableId || null
-    const tableLabel =
-      tables.find((table) => table.id === tableId)?.name ||
-      paymentSession?.tableNumber ||
-      paymentSession?.tableName ||
-      order?.tableNumber ||
-      order?.table ||
-      (tableId ? String(tableId).slice(-2).toUpperCase() : "")
+    const tableLabel = formatTableDisplayName({
+      name: tables.find((table) => table.id === tableId)?.name || paymentSession?.tableNumber || paymentSession?.tableName || order?.tableNumber || order?.table,
+      id: tableId,
+    }, tableLabelPrefix)
 
     if (!groups.has(sessionId)) {
       groups.set(sessionId, {
@@ -2750,7 +2904,7 @@ function getPOSColumnUi(status: string) {
 }
 
 function getPOSOrderMetaLabel(type: string, tableLabel?: string | null) {
-  if (type === "dine_in") return `Sur place${tableLabel ? ` • Table ${tableLabel}` : ""}`
+  if (type === "dine_in") return `Sur place${tableLabel ? ` • ${tableLabel}` : ""}`
   if (type === "delivery") return "Livraison"
   return "A emporter"
 }
@@ -2770,12 +2924,22 @@ function formatPOSOrderDateTime(value: any) {
 
 function usePOSProductsPerPage() {
   const [productsPerPage, setProductsPerPage] = React.useState(10)
+  const [isPhoneViewport, setIsPhoneViewport] = React.useState(false)
 
   React.useEffect(() => {
     const updateProductsPerPage = () => {
       const width = window.innerWidth
-      const columns = width >= 1200 ? 5 : width >= 1024 ? 4 : width >= 768 ? 3 : 2
-      setProductsPerPage(columns * POS_PRODUCT_ROWS_PER_PAGE)
+      setIsPhoneViewport(width < 768)
+      if (width >= 1440) {
+        setProductsPerPage(12)
+      } else if (width >= 1180) {
+        setProductsPerPage(10)
+      } else if (width >= 1024) {
+        setProductsPerPage(8)
+      } else {
+        const columns = width >= 768 ? 3 : 2
+        setProductsPerPage(columns * POS_PRODUCT_ROWS_PER_PAGE)
+      }
     }
 
     updateProductsPerPage()
@@ -2785,7 +2949,7 @@ function usePOSProductsPerPage() {
     }
   }, [])
 
-  return productsPerPage
+  return { isPhoneViewport, productsPerPage }
 }
 
 function formatSessionDateTime(value: any) {

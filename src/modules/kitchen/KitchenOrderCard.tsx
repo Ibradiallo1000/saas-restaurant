@@ -1,523 +1,118 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle, Clock, CookingPot, Package, Users } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+  KitchenActionBar,
+  KitchenNote,
+  KitchenOrderCard as KitchenOrderCardPrimitive,
+  KitchenStatusBadge,
+} from "@/components/kitchen-ui"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
-import {
-  ORDER_ITEM_STATUS,
-  ORDER_OPERATION_STATUS,
-  type OrderOperationStatus,
-  nextOrderStatus,
-  normalizeOrderItemStatus,
-  normalizeOrderType,
-  orderStatusFromKitchenStatus,
-  isOrderPaid,
-} from "@/lib/order-lifecycle"
-import { getOrderDisplayId } from "@/lib/order-display-id"
-import { cn } from "@/lib/utils"
+import { nextOrderStatus, type OrderOperationStatus } from "@/lib/order-lifecycle"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
-import { getKitchenOrderItems } from "@/utils/preparation-logic"
+import {
+  actionLabels,
+  createKitchenCardViewModel,
+  getKitchenCardSignature,
+  getKitchenOrderTypeValue,
+} from "./kitchen-view-model"
 
 type KitchenOrderCardProps = {
   order: RestaurantOrder
   onUpdateStatus: (orderId: string, status: OrderOperationStatus) => Promise<void>
+  nowMs?: number
   isNew?: boolean
 }
 
-const statusLabels: Record<string, string> = {
-  pending: "EN ATTENTE",
-  preparing: "EN PR\u00c9PARATION",
-  ready: "PR\u00caTES",
-  served: "SERVIES",
-  picked_up: "R\u00c9CUP\u00c9R\u00c9ES",
-  completed: "TERMIN\u00c9ES",
-}
-
-const actionLabels: Record<string, string> = {
-  pending: "EN ATTENTE",
-  preparing: "EN PR\u00c9PARATION",
-  ready: "PR\u00caTES",
-  served: "SERVIES",
-  picked_up: "R\u00c9CUP\u00c9R\u00c9ES",
-  completed: "TERMIN\u00c9ES",
-  en_preparation: "EN PR\u00c9PARATION",
-  pretes: "PR\u00caTES",
-  servies: "SERVIES",
-}
-
-const statusColors: Record<string, string> = {
-  pending: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  preparing: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  ready: "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-  served: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  picked_up: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  completed: "border-slate-500/40 bg-slate-500/10 text-slate-700 dark:text-slate-300",
-}
-
-const statusIcons: Record<string, React.ReactNode> = {
-  pending: <Clock className="h-3 w-3" />,
-  preparing: <CookingPot className="h-3 w-3" />,
-  ready: <CheckCircle className="h-3 w-3" />,
-  served: <CheckCircle className="h-3 w-3" />,
-  picked_up: <CheckCircle className="h-3 w-3" />,
-  completed: <CheckCircle className="h-3 w-3" />,
-}
-
-type KitchenDisplayOrderType = "dine_in" | "pickup" | "delivery"
-
-function getKitchenDisplayOrderType(order: RestaurantOrder): KitchenDisplayOrderType {
-  const normalizedType = normalizeOrderType(getKitchenOrderTypeValue(order))
-  const details = order as RestaurantOrder & {
-    publicOrderType?: "pickup" | "delivery" | null
-    type?: string
-  }
-
-  if (
-    order.table ||
-    order.tableId ||
-    normalizedType === "dine_in" ||
-    details.type === "table"
-  ) {
-    return "dine_in"
-  }
-
-  if (normalizedType === "delivery" || details.publicOrderType === "delivery") {
-    return "delivery"
-  }
-
-  return "pickup"
-}
-
-const orderTypeLabels: Record<KitchenDisplayOrderType, string> = {
-  dine_in: "SUR PLACE",
-  pickup: "\u00c0 EMPORTER",
-  delivery: "LIVRAISON",
-}
-
-function isPaymentLockedForKitchen(order: RestaurantOrder) {
-  return normalizeOrderType(getKitchenOrderTypeValue(order)) !== "dine_in" && !isOrderPaid(order)
-}
-
-function getKitchenOrderTypeValue(order: RestaurantOrder) {
-  const details = order as RestaurantOrder & {
-    publicOrderType?: string | null
-    type?: string | null
-    mode?: string | null
-  }
-
-  return order.orderType ?? details.publicOrderType ?? details.type ?? details.mode
-}
-
-function getCreatedAtMs(order: RestaurantOrder) {
-  return (
-    order.createdAt?.toMillis?.() ??
-    order.createdAt?.toDate?.().getTime?.() ??
-    Date.now()
-  )
-}
-
-function formatElapsedTime(createdAtMs: number, nowMs: number) {
-  const elapsedMinutes = Math.max(0, Math.floor((nowMs - createdAtMs) / 60000))
-
-  if (elapsedMinutes < 1) return "moins d'1 min"
-  if (elapsedMinutes < 60) return `${elapsedMinutes} min`
-
-  const hours = Math.floor(elapsedMinutes / 60)
-  const minutes = elapsedMinutes % 60
-
-  return minutes > 0 ? `${hours}h ${minutes}min` : `${hours}h`
-}
-
-function getElapsedMinutes(createdAtMs: number, nowMs: number) {
-  return Math.max(0, Math.floor((nowMs - createdAtMs) / 60000))
-}
-
-function getKitchenContextLines(order: RestaurantOrder, type: KitchenDisplayOrderType) {
-  const details = order as RestaurantOrder & {
-    customerName?: string | null
-    phoneNumber?: string | null
-    customerPhone?: string | null
-    tableNumber?: string | null
-    deliveryAddress?: string | { street?: string; label?: string; zone?: string; city?: string } | null
-  }
-  const customerName = details.customer?.name || details.customerName || null
-  const phoneNumber =
-    details.customer?.phone || details.phoneNumber || details.customerPhone || null
-  const tableNumber = details.table || details.tableNumber || details.tableId || null
-  const deliveryAddress = formatDeliveryAddress(details.deliveryAddress)
-
-  if (type === "dine_in") {
-    return [`SUR PLACE${tableNumber ? ` • Table ${tableNumber}` : ""}`]
-  }
-
-  if (type === "delivery") {
-    return [
-      "LIVRAISON",
-      customerName ? `Client : ${customerName}` : null,
-      phoneNumber ? `Tel : ${phoneNumber}` : null,
-      deliveryAddress ? `Adresse : ${deliveryAddress}` : null,
-    ].filter(Boolean) as string[]
-  }
-
-  return ["\u00c0 EMPORTER"]
-}
-
-function formatDeliveryAddress(
-  value: string | { street?: string; label?: string; zone?: string; city?: string } | null | undefined
-) {
-  if (!value) return null
-  if (typeof value === "string") return value
-
-  return [value.label, value.street, value.zone, value.city].filter(Boolean).join(", ") || null
-}
-
-function KitchenOrderCardComponent({ order, onUpdateStatus, isNew = false }: KitchenOrderCardProps) {
+function KitchenOrderCardComponent({ isNew = false, nowMs, onUpdateStatus, order }: KitchenOrderCardProps) {
   const { toast } = useToast()
   const [isUpdating, setIsUpdating] = React.useState(false)
   const [isDetailOpen, setIsDetailOpen] = React.useState(false)
-  const [nowMs, setNowMs] = React.useState(() => Date.now())
-  const [isPaymentJustVerified, setIsPaymentJustVerified] = React.useState(false)
-
-  if (!order.kitchenStatus) console.warn("Missing kitchenStatus", order.id)
-  const orderStatus = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
-  const status = orderStatus
-  const effectiveOrderType = getKitchenOrderTypeValue(order)
-  const followingStatus = nextOrderStatus(orderStatus, effectiveOrderType)
-  const nextAction = followingStatus
-    ? {
-        label: actionLabels[followingStatus] || statusLabels[status] || followingStatus,
-        status: followingStatus,
-      }
-    : null
-
-  const kitchenItems = React.useMemo(
-    () => getKitchenOrderItems(order.items || []),
-    [order.items]
-  )
-  const totalItems = kitchenItems.reduce((acc, item) => acc + item.quantity, 0)
-  const displayOrderType = getKitchenDisplayOrderType(order)
-  const isTableOrder = displayOrderType === "dine_in"
-  const orderCode = getOrderDisplayId(order)
-  const orderTypeLabel = orderTypeLabels[displayOrderType]
-  const contextLines = getKitchenContextLines(order, displayOrderType)
-  const isPaymentLocked = isPaymentLockedForKitchen(order)
-  const previousPaymentLockedRef = React.useRef(isPaymentLocked)
-  const createdAtMs = getCreatedAtMs(order)
-  const elapsedTime = formatElapsedTime(createdAtMs, nowMs)
-  const elapsedMinutes = getElapsedMinutes(createdAtMs, nowMs)
-  const isPaymentDelayed = isPaymentLocked && elapsedMinutes > 10
-  const isPaidNonTableOrder = normalizeOrderType(effectiveOrderType) !== "dine_in" && !isPaymentLocked
-  const isPaid = isOrderPaid(order)
-
-  const lastItemAddedAt = React.useMemo(() => {
-    const itemTimes = kitchenItems.map((item: any) => {
-      if (item.createdAt?.toMillis) return item.createdAt.toMillis()
-      if (item.createdAt?.getTime) return item.createdAt.getTime()
-      if (typeof item.createdAt === "number") return item.createdAt
-      return 0
-    })
-    return Math.max(0, ...itemTimes, createdAtMs)
-  }, [kitchenItems, createdAtMs])
-
-  const isRecentActivity = (nowMs - lastItemAddedAt) < 20000 // 20 secondes
-  const isNewOrder = (lastItemAddedAt - createdAtMs) < 10000 // dans les 10s apres creation
-
-  React.useEffect(() => {
-    const interval = window.setInterval(() => {
-      setNowMs(Date.now())
-    }, 30000)
-
-    return () => window.clearInterval(interval)
-  }, [])
+  const effectiveNowMs = nowMs ?? Date.now()
+  const model = React.useMemo(() => createKitchenCardViewModel(order, effectiveNowMs), [effectiveNowMs, order])
+  const nextStatus = nextOrderStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus, getKitchenOrderTypeValue(order))
+  const previousPaymentLockedRef = React.useRef(model.isPaymentLocked)
 
   React.useEffect(() => {
     const wasLocked = previousPaymentLockedRef.current
+    previousPaymentLockedRef.current = model.isPaymentLocked
+    if (!wasLocked || model.isPaymentLocked) return
+    toast({ title: "Paiement vérifié", description: `${model.reference} peut passer en préparation.` })
+  }, [model.isPaymentLocked, model.reference, toast])
 
-    if (wasLocked && !isPaymentLocked) {
-      setIsPaymentJustVerified(true)
-      toast({
-        title: "Paiement verifie",
-        description: `${orderCode} peut passer en preparation.`,
-      })
-
-      const timeout = window.setTimeout(() => {
-        setIsPaymentJustVerified(false)
-      }, 2500)
-
-      previousPaymentLockedRef.current = isPaymentLocked
-      return () => window.clearTimeout(timeout)
-    }
-
-    previousPaymentLockedRef.current = isPaymentLocked
-    return undefined
-  }, [isPaymentLocked, orderCode, toast])
-
-  const handleAction = async (event?: React.MouseEvent<HTMLButtonElement>) => {
-    event?.stopPropagation()
-    if (!nextAction || isUpdating) return
-    if (isPaymentLocked) {
-      toast({
-        title: "Paiement en attente",
-        description: "Cette commande doit etre verifiee avant preparation.",
-        variant: "destructive",
-      })
+  const handleAction = React.useCallback(async () => {
+    if (!nextStatus || isUpdating) return
+    if (model.isPaymentLocked) {
+      toast({ title: "Paiement en attente", description: "Cette commande doit être vérifiée avant préparation.", variant: "destructive" })
       return
     }
-
     setIsUpdating(true)
     try {
-      await onUpdateStatus(order.id, nextAction.status)
-      toast({
-        title: "Statut mis a jour",
-        description: `${orderCode} -> ${nextAction.label}`,
-      })
+      await onUpdateStatus(order.id, nextStatus)
+      toast({ title: "Statut mis à jour", description: `${model.reference} → ${actionLabels[nextStatus] || nextStatus}` })
     } catch (error) {
       console.error(error)
-      toast({
-        title: "Mise à jour refusée",
-        description: "Impossible de synchroniser la commande avec la cuisine.",
-        variant: "destructive",
-      })
+      toast({ title: "Mise à jour refusée", description: "Impossible de synchroniser la commande avec la cuisine.", variant: "destructive" })
     } finally {
       setIsUpdating(false)
     }
-  }
+  }, [isUpdating, model.isPaymentLocked, model.reference, nextStatus, onUpdateStatus, order.id, toast])
+
+  const notes = (
+    <>
+      {model.note ? <KitchenNote label="Note client" content={model.note} variant="attention" /> : null}
+      {model.isPaymentLocked ? <KitchenNote label={model.isPaymentDelayed ? "Retard de paiement" : "Paiement en attente"} content={model.isPaymentDelayed ? `En attente depuis ${String(model.timer.value)}` : "Vérification requise avant préparation."} variant={model.isPaymentDelayed ? "critical" : "attention"} /> : null}
+      {model.isRecentActivity ? <KitchenNote label="Activité récente" content={model.isNewOrder ? "Nouvelle commande" : "Article ajouté à la commande"} variant="neutral" /> : null}
+    </>
+  )
+
+  const actions = nextStatus && !model.isPaymentLocked ? (
+    <KitchenActionBar
+      primary={{ id: nextStatus, label: actionLabels[nextStatus] || nextStatus, onSelect: handleAction, loading: isUpdating, disabled: isUpdating }}
+      density="comfortable"
+    />
+  ) : undefined
 
   return (
     <>
-      <article
-        role="button"
-        tabIndex={0}
-        onClick={() => setIsDetailOpen(true)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault()
-            setIsDetailOpen(true)
-          }
-        }}
-        className={cn(
-          "cursor-pointer rounded-[18px] border border-border/70 bg-card/95 p-3.5 text-card-foreground shadow-[0_10px_26px_rgba(15,23,42,0.07)] outline-none ring-primary/40 transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01] hover:border-primary/25 hover:shadow-[0_16px_34px_rgba(15,23,42,0.12)] active:translate-y-0 active:scale-[0.99] focus:ring-2 dark:shadow-[0_12px_28px_rgba(0,0,0,0.24)]",
-          isNew && "animate-in fade-in slide-in-from-bottom-2 duration-500",
-          isPaymentLocked && "cursor-not-allowed opacity-50",
-          isPaymentDelayed && "border-red-500/50 ring-1 ring-red-500/20",
-          isPaidNonTableOrder && "border-emerald-500/40 ring-1 ring-emerald-500/20",
-          isPaymentJustVerified && "animate-pulse border-emerald-500 ring-2 ring-emerald-500/50",
-          isRecentActivity && "border-amber-500 ring-2 ring-amber-500/50 animate-pulse bg-amber-500/5"
-        )}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h3 className="truncate text-sm font-black">{orderCode}</h3>
-            <div className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-              {isTableOrder ? (
-                <Users className="h-3.5 w-3.5 shrink-0 text-primary" />
-              ) : (
-                <Package className="h-3.5 w-3.5 shrink-0 text-primary" />
-              )}
-              <span className="line-clamp-2 text-[11px] font-black uppercase leading-tight text-foreground">
-                {contextLines[0] || orderTypeLabel}
-              </span>
-            </div>
-            {contextLines.length > 1 ? (
-              <div className="mt-2 space-y-0.5 text-[10px] font-semibold leading-tight text-muted-foreground">
-                {contextLines.slice(1).map((line) => (
-                  <p key={line} className="line-clamp-1">
-                    {line}
-                  </p>
-                ))}
-              </div>
-            ) : null}
-            
-            {(order as any).notes || (order as any).customerNote || (order as any).customerNotes ? (
-              <div className="mt-2 rounded bg-amber-500/10 px-2 py-1 text-[10px] font-semibold italic text-amber-700 dark:text-amber-300">
-                Note : {(order as any).notes || (order as any).customerNote || (order as any).customerNotes}
-              </div>
-            ) : null}
-
-            {isRecentActivity && (
-              <p className="mt-1.5 text-[10px] font-black text-amber-600 dark:text-amber-400">
-                {isNewOrder ? "🆕 Nouvelle commande" : "🆕 Ajout à la commande"}
-              </p>
-            )}
-          </div>
-
-          <Badge
-            variant="outline"
-            className={cn("shrink-0 gap-1 text-[10px] font-black uppercase", statusColors[status])}
-          >
-            {statusIcons[status]}
-            {statusLabels[status] || status}
-          </Badge>
-        </div>
-
-        {isPaymentLocked ? (
-          <Badge
-            variant="outline"
-            className={cn(
-              "mt-3 w-fit text-[10px] font-black uppercase",
-              isPaymentDelayed
-                ? "border-red-500/50 bg-red-500/10 text-red-700 dark:text-red-300"
-                : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-            )}
-          >
-            {isPaymentDelayed ? "RETARD PAIEMENT" : "EN ATTENTE DE PAIEMENT"} - {elapsedTime}
-          </Badge>
-        ) : null}
-
-        {isPaid ? (
-          <Badge
-            variant="outline"
-            className="mt-3 w-fit border-emerald-500/40 bg-emerald-500/10 text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-300"
-          >
-            ✔ Déjà payé
-          </Badge>
-        ) : null}
-
-        <ul className="mt-3 space-y-2">
-          {kitchenItems.slice(0, 5).map((item, index) => {
-            const itemStatus = normalizeOrderItemStatus((item as any).status ?? order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
-            const { options, extras, note } = parseItemDetails(item)
-            
-            return (
-            <li
-              key={`${order.id}-${item.productId ?? index}-${item.name}`}
-              className={cn(
-                "flex flex-col gap-1 rounded-xl px-2.5 py-2 text-xs leading-tight",
-                itemStatus === ORDER_ITEM_STATUS.SERVED && "bg-muted text-muted-foreground line-through opacity-70",
-                itemStatus === ORDER_ITEM_STATUS.PENDING && "bg-amber-500/10 text-card-foreground ring-1 ring-amber-500/20",
-                itemStatus !== ORDER_ITEM_STATUS.SERVED &&
-                  itemStatus !== ORDER_ITEM_STATUS.PENDING &&
-                  "text-card-foreground"
-              )}
-            >
-              <div className="flex items-start justify-between font-bold">
-                <span>{item.quantity}x {item.name}</span>
-                <span className="ml-2 shrink-0 text-[9px] font-black uppercase opacity-70">
-                  {formatItemStatus(itemStatus)}
-                </span>
-              </div>
-
-              {options.length > 0 ? (
-                <div className="text-[10px] text-muted-foreground">
-                  {options.map((opt, idx) => (
-                    <div key={idx}>({opt.name} : {opt.value})</div>
-                  ))}
-                </div>
-              ) : null}
-
-              {extras.length > 0 ? (
-                <div className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 space-y-0.5">
-                  {extras.map((ext, idx) => (
-                    <div key={idx}>+ {ext.name}</div>
-                  ))}
-                </div>
-              ) : null}
-
-              {note ? (
-                <div className="mt-1 inline-block w-fit rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-red-700 dark:text-red-400 border border-red-500/20">
-                  NOTE : {note}
-                </div>
-              ) : null}
-            </li>
-            )
-          })}
-        </ul>
-
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <span className="text-xs font-bold text-muted-foreground">
-            {totalItems} produit{totalItems !== 1 ? "s" : ""}
-          </span>
-
-          {nextAction && !isPaymentLocked ? (
-            <button
-              type="button"
-              onClick={handleAction}
-              disabled={isUpdating}
-              className="h-8 rounded-full bg-primary px-3.5 text-[10px] font-black uppercase text-primary-foreground shadow-sm transition hover:bg-primary/90 hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isUpdating ? "..." : nextAction.label}
-            </button>
-          ) : null}
-        </div>
-      </article>
+      <KitchenOrderCardPrimitive
+        reference={model.reference}
+        context={<div className="space-y-0.5">{model.contextLines.map((line) => <div key={line}>{line}</div>)}</div>}
+        status={model.status}
+        timer={model.timer}
+        destination={model.destination}
+        priority={model.priority}
+        items={model.items.slice(0, 5)}
+        notes={notes}
+        actions={actions}
+        loading={isUpdating}
+        disabled={false}
+        onOpen={() => setIsDetailOpen(true)}
+        className={isNew ? "animate-in fade-in [animation-duration:var(--motion-kitchen-card-entry)] motion-reduce:animate-none" : undefined}
+        footer={<span className="text-sm font-semibold text-[var(--dashboard-muted)]">{model.totalItems} produit{model.totalItems !== 1 ? "s" : ""} Cuisine</span>}
+      />
 
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-        <DialogContent className="max-w-md border-border bg-card text-card-foreground">
+        <DialogContent className="max-h-[calc(100dvh_-_var(--safe-top,0px)_-_var(--safe-bottom,0px))] max-w-lg overflow-x-hidden overflow-y-auto border-[var(--kitchen-border)] bg-[var(--kitchen-card)] text-[var(--dashboard-title)]">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between gap-3 text-lg font-black">
-              <span>{orderCode}</span>
-              <Badge
-                variant="outline"
-                className={cn("gap-1 text-[10px] font-black uppercase", statusColors[status])}
-              >
-                {statusIcons[status]}
-                {statusLabels[status] || status}
-              </Badge>
+            <DialogTitle className="flex flex-wrap items-center justify-between gap-3 text-xl font-black">
+              <span>{model.reference}</span>
+              <KitchenStatusBadge {...model.status} />
             </DialogTitle>
-            <DialogDescription>
-              Détails opérationnels de la commande, produits, statut cuisine et informations client.
-            </DialogDescription>
+            <DialogDescription>Détails opérationnels de la commande, produits, statut Cuisine et informations client.</DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4">
-            <div className="rounded-lg border border-border bg-muted p-3 text-sm">
-              <div className="space-y-1">
-                {contextLines.map((line, index) => (
-                  <p
-                    key={line}
-                    className={cn(
-                      index === 0
-                        ? "text-sm font-black uppercase text-foreground"
-                        : "text-xs font-semibold text-muted-foreground"
-                    )}
-                  >
-                    {line}
-                  </p>
-                ))}
-              </div>
-              <div className="mt-2 flex justify-between gap-3">
-                <span className="text-muted-foreground">Temps ecoule</span>
-                <span className="font-bold text-foreground">{elapsedTime}</span>
-              </div>
+            <div className="rounded-[var(--radius-dashboard-button)] border border-[var(--kitchen-border)] bg-[var(--kitchen-card-muted)] p-3">
+              {model.contextLines.map((line) => <p key={line} className="break-words text-sm font-semibold">{line}</p>)}
+              <p className="mt-2 text-sm text-[var(--dashboard-muted)]">Temps écoulé : <strong className="text-[var(--dashboard-title)]">{model.timer.value}</strong></p>
             </div>
-
-            {isPaymentLocked ? (
-              <div
-                className={cn(
-                  "rounded-lg border p-3 text-xs font-black uppercase",
-                  isPaymentDelayed
-                    ? "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
-                    : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                )}
-              >
-                {isPaymentDelayed ? "RETARD PAIEMENT" : "EN ATTENTE DE PAIEMENT"}
-              </div>
-            ) : null}
-
             <div>
-              <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-muted-foreground">
-                Produits
-              </h3>
-              <div className="space-y-2">
-                {kitchenItems.map((item, index) => (
-                  <OrderItemDetail
-                    key={`${order.id}-detail-${item.productId ?? index}-${item.name}`}
-                    item={item}
-                  />
-                ))}
-              </div>
+              <h3 className="mb-2 text-sm font-bold">Produits Cuisine</h3>
+              <div className="space-y-2">{model.items.map((item) => <div key={item.id} className="rounded-[var(--radius-dashboard-button)] border border-[var(--kitchen-border)] bg-[var(--kitchen-card-muted)] p-3"><div className="flex gap-3"><span className="text-lg font-black tabular-nums">{item.quantity}×</span><div className="min-w-0"><p className="break-words font-bold">{item.name}</p>{item.options ? <p className="mt-1 break-words text-sm text-[var(--dashboard-subtitle)]">{item.options}</p> : null}{item.note ? <KitchenNote className="mt-2" label="Note article" content={item.note} variant="attention" /> : null}</div></div></div>)}</div>
             </div>
-
-            <OrderNotes order={order} />
+            {notes}
           </div>
         </DialogContent>
       </Dialog>
@@ -527,226 +122,5 @@ function KitchenOrderCardComponent({ order, onUpdateStatus, isNew = false }: Kit
 
 export const KitchenOrderCard = React.memo(
   KitchenOrderCardComponent,
-  (previous, next) =>
-    previous.isNew === next.isNew &&
-    previous.onUpdateStatus === next.onUpdateStatus &&
-    getKitchenOrderCardSignature(previous.order) === getKitchenOrderCardSignature(next.order)
+  (previous, next) => previous.isNew === next.isNew && previous.nowMs === next.nowMs && previous.onUpdateStatus === next.onUpdateStatus && getKitchenCardSignature(previous.order) === getKitchenCardSignature(next.order)
 )
-
-function getKitchenOrderCardSignature(order: RestaurantOrder) {
-  const details = order as RestaurantOrder & {
-    status?: string | null
-    orderStatus?: string | null
-    paymentStatus?: string | null
-    total?: number | null
-    totalAmount?: number | null
-    updatedAt?: unknown
-    timestamps?: {
-      servedAt?: unknown
-      pickedUpAt?: unknown
-    }
-    servedAt?: unknown
-    pickedUpAt?: unknown
-    publicOrderType?: string | null
-    type?: string | null
-    mode?: string | null
-    customerName?: string | null
-    customerPhone?: string | null
-    phoneNumber?: string | null
-    notes?: string | null
-    customerNote?: string | null
-    customerNotes?: string | null
-    deliveryAddress?: unknown
-  }
-  const itemsSignature = (order.items || [])
-    .map((item: any) =>
-      [
-        item.id,
-        item.productId,
-        item.name,
-        item.quantity,
-        item.status,
-        item.itemStatus,
-        item.preparationMode,
-        item.destination,
-        item.productionArea,
-        item.note,
-        item.notes,
-        stableJson(item.options),
-        stableJson(item.extras),
-        stableJson(item.selectedOptions),
-        stableJson(item.supplements),
-        stableJson(item.supplementNames),
-        toComparableTimestamp(item.createdAt),
-        toComparableTimestamp(item.servedAt),
-      ].join(":")
-    )
-    .join("|")
-
-  return [
-    order.id,
-    order.kitchenStatus,
-    details.status,
-    details.orderStatus,
-    details.paymentStatus,
-    order.orderType,
-    details.publicOrderType,
-    details.type,
-    details.mode,
-    details.total,
-    details.totalAmount,
-    order.table,
-    order.tableId,
-    details.customer?.name,
-    details.customer?.phone,
-    details.customerName,
-    details.customerPhone,
-    details.phoneNumber,
-    details.notes,
-    details.customerNote,
-    details.customerNotes,
-    stableJson(details.deliveryAddress),
-    toComparableTimestamp(order.createdAt),
-    toComparableTimestamp(details.updatedAt),
-    toComparableTimestamp(details.timestamps?.servedAt),
-    toComparableTimestamp(details.timestamps?.pickedUpAt),
-    toComparableTimestamp(details.servedAt),
-    toComparableTimestamp(details.pickedUpAt),
-    itemsSignature,
-  ].join("||")
-}
-
-function toComparableTimestamp(value: unknown) {
-  if (!value) return ""
-  if (typeof value === "number") return Number.isFinite(value) ? String(value) : ""
-  if (value instanceof Date) {
-    const timestamp = value.getTime()
-    return Number.isFinite(timestamp) ? String(timestamp) : ""
-  }
-
-  const timestampValue = value as {
-    toMillis?: () => number
-    toDate?: () => Date
-  }
-  const timestamp =
-    timestampValue.toMillis?.() ?? timestampValue.toDate?.().getTime()
-
-  return typeof timestamp === "number" && Number.isFinite(timestamp)
-    ? String(timestamp)
-    : ""
-}
-
-function stableJson(value: unknown) {
-  if (value === undefined || value === null) return ""
-
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return String(value)
-  }
-}
-
-function parseItemDetails(item: any) {
-  const options: Array<{ name: string; value: string }> = item.options || []
-  const extras: Array<{ name: string; price?: number }> = item.extras || []
-  const note: string | null = item.note || item.notes || null
-
-  if (!item.options && !item.extras && item.selectedOptions) {
-    item.selectedOptions.forEach((opt: any) => {
-      const name = String(opt.optionName || "").toLowerCase().trim()
-      if (name && name !== "supplement" && name !== "supplément" && name !== "extra") {
-        options.push({ name: opt.optionName || "Option", value: opt.choiceName })
-      } else {
-        extras.push({ name: opt.choiceName, price: opt.price })
-      }
-    })
-  }
-
-  if (extras.length === 0 && (item.supplements || item.supplementNames)?.length > 0) {
-    const sups = item.supplements || item.supplementNames
-    sups.forEach((sup: any) => {
-      if (typeof sup === "string") {
-        extras.push({ name: sup, price: 0 })
-      } else {
-        extras.push({ name: `${sup.quantity ? `${sup.quantity}x ` : ""}${sup.name || ""}`, price: 0 })
-      }
-    })
-  }
-
-  return { options, extras, note }
-}
-
-function OrderItemDetail({ item }: { item: RestaurantOrder["items"][number] }) {
-  const itemStatus = normalizeOrderItemStatus((item as any).status)
-  const { options, extras, note } = parseItemDetails(item)
-
-  return (
-    <div
-      className={cn(
-        "rounded-lg border border-border bg-muted p-3",
-        itemStatus === ORDER_ITEM_STATUS.SERVED && "opacity-60",
-        itemStatus === ORDER_ITEM_STATUS.PENDING && "border-amber-500/30 bg-amber-500/10"
-      )}
-    >
-      <div className="flex justify-between gap-3">
-        <span className="font-bold text-foreground">
-          {item.quantity}x {item.name}
-        </span>
-        <span className="shrink-0 text-[10px] font-black uppercase text-muted-foreground">
-          {formatItemStatus(itemStatus)}
-        </span>
-      </div>
-
-      {options.length > 0 ? (
-        <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
-          {options.map((opt, idx) => (
-             <div key={idx}>({opt.name} : {opt.value})</div>
-          ))}
-        </div>
-      ) : null}
-
-      {extras.length > 0 ? (
-        <div className="mt-1.5 space-y-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
-          {extras.map((ext, idx) => (
-             <div key={idx}>+ {ext.name}</div>
-          ))}
-        </div>
-      ) : null}
-
-      {note ? (
-        <div className="mt-2 inline-block rounded bg-red-500/10 px-2 py-1 text-[11px] font-black uppercase text-red-700 dark:text-red-400 border border-red-500/20">
-          NOTE : {note}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function formatItemStatus(status: string) {
-  if (status === ORDER_ITEM_STATUS.PREPARING) return "Preparation"
-  if (status === ORDER_ITEM_STATUS.READY) return "Pret"
-  if (status === ORDER_ITEM_STATUS.SERVED) return "Servi"
-  return "Nouveau"
-}
-
-function OrderNotes({ order }: { order: RestaurantOrder }) {
-  const details = order as RestaurantOrder & {
-    notes?: string
-    customerNote?: string
-    customerNotes?: string
-  }
-  const note = details.notes || details.customerNote || details.customerNotes
-
-  if (!note) return null
-
-  return (
-    <div>
-      <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-muted-foreground">
-        Notes client
-      </h3>
-      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm font-semibold text-amber-700 dark:text-amber-200">
-        {note}
-      </div>
-    </div>
-  )
-}

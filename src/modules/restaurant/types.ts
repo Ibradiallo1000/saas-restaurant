@@ -7,6 +7,7 @@ import type {
   OrderItemStatus,
   OrderPaymentLifecycleStatus,
 } from "@/lib/order-lifecycle"
+import type { RestaurantOpeningHours } from "@/lib/restaurant-hours"
 
 export type Product = {
   id: string
@@ -14,6 +15,7 @@ export type Product = {
   basePrice: number
   imageUrl?: string
   categoryId: string
+  marketplaceCategoryId?: string | null
   isActive: boolean
   preparationMode?: "kitchen" | "direct" | "bar"
 }
@@ -21,9 +23,12 @@ export type Product = {
 export type Category = {
   id: string
   name: string
+  marketplaceCategoryId?: string | null
   order?: number
   isActive?: boolean
 }
+
+export type RestaurantBusinessHours = RestaurantOpeningHours
 
 export type OrderStatus = CanonicalOrderStatus
 

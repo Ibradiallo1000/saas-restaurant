@@ -1,22 +1,41 @@
 'use client';
 
 import * as React from 'react';
-import { collection, limit, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 
 import { useAuth, useCollectionOnce, useFirestore, useMemoFirebase } from '@/firebase';
+import { RestaurantLocationPicker } from '@/components/platform/RestaurantLocationPicker';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { COLLECTION_NAMES } from '@/lib/constants';
 
 type PlatformCountry = {
+  id: string;
   code: string;
   name: string;
   currency: string;
   dialCode: string;
   isActive: boolean;
+};
+
+type PlatformCity = {
+  id: string;
+  name: string;
+  normalizedName?: string;
+  isActive: boolean;
+  order?: number;
+};
+
+type PlatformCommune = {
+  id: string;
+  name: string;
+  normalizedName?: string;
+  isActive: boolean;
+  order?: number;
 };
 
 export default function NewRestaurantPage() {
@@ -27,6 +46,9 @@ export default function NewRestaurantPage() {
   const [loading, setLoading] = React.useState(false);
   const [inviteLink, setInviteLink] = React.useState<string | null>(null);
   const [countrySearch, setCountrySearch] = React.useState('');
+  const [cities, setCities] = React.useState<PlatformCity[]>([]);
+  const [communes, setCommunes] = React.useState<PlatformCommune[]>([]);
+  const [isGeoLoading, setIsGeoLoading] = React.useState(false);
 
   const [formData, setFormData] = React.useState({
     name: '',
@@ -34,10 +56,14 @@ export default function NewRestaurantPage() {
     ownerEmail: '',
     context: 'standalone' as 'standalone' | 'hotel' | 'lodge',
     countryCode: '',
-    city: '',
+    cityId: '',
+    communeId: '',
+    districtName: '',
     phone: '',
     address: '',
     googleMapsUrl: '',
+    lat: '',
+    lng: '',
   });
 
   const countriesQuery = useMemoFirebase(() => {
@@ -69,6 +95,74 @@ export default function NewRestaurantPage() {
     return activeCountries.find((country) => country.code === formData.countryCode);
   }, [activeCountries, formData.countryCode]);
 
+  const selectedCity = React.useMemo(() => {
+    return cities.find((city) => city.id === formData.cityId);
+  }, [cities, formData.cityId]);
+
+  const selectedCommune = React.useMemo(() => {
+    return communes.find((commune) => commune.id === formData.communeId);
+  }, [communes, formData.communeId]);
+
+  React.useEffect(() => {
+    if (!db || !formData.countryCode) {
+      setCities([]);
+      return;
+    }
+
+    let cancelled = false;
+    setIsGeoLoading(true);
+    getDocs(query(
+      collection(db, COLLECTION_NAMES.PLATFORM_COUNTRIES, formData.countryCode, 'cities'),
+      orderBy('order', 'asc'),
+      limit(100)
+    ))
+      .then((snapshot) => {
+        if (cancelled) return;
+        setCities(snapshot.docs.map((document) => ({ id: document.id, ...document.data() } as PlatformCity)).filter((city) => city.isActive !== false));
+      })
+      .catch((error) => {
+        console.error(error);
+        if (!cancelled) setCities([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsGeoLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [db, formData.countryCode]);
+
+  React.useEffect(() => {
+    if (!db || !formData.countryCode || !formData.cityId) {
+      setCommunes([]);
+      return;
+    }
+
+    let cancelled = false;
+    setIsGeoLoading(true);
+    getDocs(query(
+      collection(db, COLLECTION_NAMES.PLATFORM_COUNTRIES, formData.countryCode, 'cities', formData.cityId, 'communes'),
+      orderBy('order', 'asc'),
+      limit(100)
+    ))
+      .then((snapshot) => {
+        if (cancelled) return;
+        setCommunes(snapshot.docs.map((document) => ({ id: document.id, ...document.data() } as PlatformCommune)).filter((commune) => commune.isActive !== false));
+      })
+      .catch((error) => {
+        console.error(error);
+        if (!cancelled) setCommunes([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsGeoLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [db, formData.cityId, formData.countryCode]);
+
   const generateSlug = (text: string) => {
     return text
       .toLowerCase()
@@ -79,12 +173,17 @@ export default function NewRestaurantPage() {
       .replace(/\s+/g, '-');
   };
 
+  const latitudeValid = !formData.lat || (Number.isFinite(Number(formData.lat)) && Number(formData.lat) >= -90 && Number(formData.lat) <= 90);
+  const longitudeValid = !formData.lng || (Number.isFinite(Number(formData.lng)) && Number(formData.lng) >= -180 && Number(formData.lng) <= 180);
   const isValid =
-    formData.name.length > 2 &&
+    formData.name.trim().length > 2 &&
     formData.ownerEmail.includes('@') &&
     formData.countryCode.length > 0 &&
-    formData.city.length > 1 &&
-    formData.phone.length > 5;
+    formData.cityId.length > 0 &&
+    formData.communeId.length > 0 &&
+    formData.phone.trim().length > 5 &&
+    latitudeValid &&
+    longitudeValid;
 
   const handleCreate = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -120,8 +219,19 @@ export default function NewRestaurantPage() {
           name: formData.name,
           slug: formData.slug,
           countryCode: formData.countryCode,
-          city: formData.city,
+          countryName: selectedCountry?.name || '',
+          cityId: formData.cityId,
+          cityName: selectedCity?.name || '',
+          communeId: formData.communeId,
+          communeName: selectedCommune?.name || '',
+          districtName: formData.districtName,
           phone: formData.phone,
+          location: {
+            address: formData.address,
+            googleMapsUrl: formData.googleMapsUrl,
+            lat: formData.lat,
+            lng: formData.lng,
+          },
         }),
       });
 
@@ -147,24 +257,38 @@ export default function NewRestaurantPage() {
   };
 
   return (
-    <div className="max-w-xl mx-auto py-10">
+    <div className="mx-auto max-w-4xl py-10">
       <Card>
         <CardHeader>
           <CardTitle>Créer un restaurant</CardTitle>
         </CardHeader>
 
         <form onSubmit={handleCreate}>
-          <CardContent className="space-y-4">
-            <div>
-              <Label>Email propriétaire</Label>
-              <Input
-                type="email"
-                required
-                value={formData.ownerEmail}
-                onChange={(event) =>
-                  setFormData({ ...formData, ownerEmail: event.target.value })
-                }
-              />
+          <CardContent className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label>Email propriétaire</Label>
+                <Input
+                  type="email"
+                  required
+                  value={formData.ownerEmail}
+                  onChange={(event) =>
+                    setFormData({ ...formData, ownerEmail: event.target.value })
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Téléphone</Label>
+                <Input
+                  required
+                  inputMode="tel"
+                  value={formData.phone}
+                  onChange={(event) =>
+                    setFormData({ ...formData, phone: event.target.value })
+                  }
+                />
+              </div>
             </div>
 
             <div>
@@ -183,7 +307,7 @@ export default function NewRestaurantPage() {
               />
 
               {formData.slug && (
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="mt-1 text-xs text-muted-foreground">
                   URL publique : <b>/{formData.slug}</b>
                 </p>
               )}
@@ -203,8 +327,9 @@ export default function NewRestaurantPage() {
                       key={country.id}
                       type="button"
                       onClick={() => {
-                        setFormData({ ...formData, countryCode: country.code });
+                        setFormData({ ...formData, countryCode: country.code, cityId: '', communeId: '' });
                         setCountrySearch(country.name);
+                        setCommunes([]);
                       }}
                       className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
                         formData.countryCode === country.code
@@ -227,63 +352,103 @@ export default function NewRestaurantPage() {
                   )}
                 </div>
               </div>
-              {selectedCountry && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Pays sélectionné : {countryFlag(selectedCountry.code)} {selectedCountry.name}
-                </p>
-              )}
             </div>
 
-            <div>
-              <Label>Ville</Label>
-              <Input
-                required
-                value={formData.city}
-                onChange={(event) =>
-                  setFormData({ ...formData, city: event.target.value })
-                }
-              />
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Ville</Label>
+                <Select
+                  value={formData.cityId}
+                  disabled={!formData.countryCode || cities.length === 0}
+                  onValueChange={(cityId) => setFormData({ ...formData, cityId, communeId: '' })}
+                >
+                  <SelectTrigger className="min-h-11">
+                    <SelectValue placeholder={isGeoLoading ? 'Chargement...' : 'Choisir une ville'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cities.map((city) => (
+                      <SelectItem key={city.id} value={city.id}>{city.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Commune</Label>
+                <Select
+                  value={formData.communeId}
+                  disabled={!formData.cityId || communes.length === 0}
+                  onValueChange={(communeId) => setFormData({ ...formData, communeId })}
+                >
+                  <SelectTrigger className="min-h-11">
+                    <SelectValue placeholder={isGeoLoading ? 'Chargement...' : 'Choisir une commune'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {communes.map((commune) => (
+                      <SelectItem key={commune.id} value={commune.id}>{commune.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            <div>
-              <Label>Téléphone</Label>
-              <Input
-                required
-                value={formData.phone}
-                onChange={(event) =>
-                  setFormData({ ...formData, phone: event.target.value })
-                }
-              />
-            </div>
-
-            <div className="pt-4 border-t">
-              <p className="text-sm font-bold">Localisation (optionnel)</p>
-
-              <div className="mt-2 space-y-3">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Quartier</Label>
                 <Input
-                  placeholder="Adresse"
+                  placeholder="Ex: ACI 2000"
+                  value={formData.districtName}
+                  onChange={(event) =>
+                    setFormData({ ...formData, districtName: event.target.value })
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Adresse</Label>
+                <Input
+                  placeholder="Rue, porte, repère..."
                   value={formData.address}
                   onChange={(event) =>
                     setFormData({ ...formData, address: event.target.value })
                   }
                 />
+              </div>
+            </div>
 
+            <div className="space-y-3 rounded-xl border p-4">
+              <div className="space-y-2">
+                <Label>Lien Google Maps</Label>
                 <Input
-                  placeholder="Lien Google Maps"
+                  placeholder="https://maps.google.com/..."
                   value={formData.googleMapsUrl}
                   onChange={(event) =>
                     setFormData({ ...formData, googleMapsUrl: event.target.value })
                   }
                 />
               </div>
+
+              <RestaurantLocationPicker
+                value={{ lat: formData.lat, lng: formData.lng }}
+                onChange={(coords) => setFormData({ ...formData, ...coords })}
+                countryCode={formData.countryCode}
+                countryName={selectedCountry?.name}
+                cityName={selectedCity?.name}
+              />
+
+              {(!latitudeValid || !longitudeValid) && (
+                <p className="text-sm font-semibold text-destructive">
+                  Latitude entre -90 et 90, longitude entre -180 et 180.
+                </p>
+              )}
             </div>
 
             {inviteLink && (
-              <div className="mt-6 p-4 border rounded-xl space-y-3 bg-gray-50">
+              <div className="mt-6 space-y-3 rounded-xl border bg-gray-50 p-4">
                 <p className="font-semibold">Lien d’invitation</p>
                 <Input value={inviteLink} readOnly />
 
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
                     onClick={() => navigator.clipboard.writeText(inviteLink)}

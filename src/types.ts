@@ -100,6 +100,7 @@ export interface PlatformSettings {
   name: string
   logoUrl: string
   faviconUrl: string
+  marketplaceHero: PlatformMarketplaceHero
   primaryColor: string
   secondaryColor: string
   supportEmail: string
@@ -107,7 +108,33 @@ export interface PlatformSettings {
   supportWhatsapp: string
   maintenanceMode: boolean
   defaultGraceDays: number
+  publicFooter: PlatformPublicFooter
   updatedAt?: Timestamp
+}
+
+export interface PlatformMarketplaceHero {
+  coverImageUrl: string
+}
+
+export interface PlatformPublicFooter {
+  description: string
+  phone: string
+  whatsapp: string
+  email: string
+  officeAddress: string
+  socialLinks: {
+    facebook: string
+    instagram: string
+    tiktok: string
+    linkedin: string
+    youtube: string
+    twitter: string
+  }
+  legalLinks: {
+    privacy: string
+    terms: string
+    legalNotice: string
+  }
 }
 
 export interface Company {

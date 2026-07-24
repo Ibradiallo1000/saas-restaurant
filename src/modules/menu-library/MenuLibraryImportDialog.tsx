@@ -232,6 +232,7 @@ export default function MenuLibraryImportDialog({
           description: category.description || "",
           imageUrl: category.imageUrl || null,
           imageId: category.imageMediaId || "",
+          marketplaceCategoryId: category.marketplaceCategoryId || null,
           order: category.order ?? 0,
           isActive: category.isActive !== false,
           source: "platform_menu_library",
@@ -252,6 +253,7 @@ export default function MenuLibraryImportDialog({
         const mappedCategoryId =
           categoryIdMap.get(product.categoryTemplateId) ||
           existingCategoryByTemplate.get(product.categoryTemplateId)
+        const categoryTemplate = activeCategories.find((category) => category.id === product.categoryTemplateId)
 
         if (!mappedCategoryId) return
 
@@ -261,6 +263,7 @@ export default function MenuLibraryImportDialog({
           name: product.name,
           description: product.description || "",
           categoryId: mappedCategoryId,
+          marketplaceCategoryId: product.marketplaceCategoryId || categoryTemplate?.marketplaceCategoryId || null,
           imageUrl: product.imageUrl || "",
           imageId: product.imageMediaId || "",
           basePrice: Math.max(0, Number(product.basePrice || 0)),

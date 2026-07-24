@@ -1,6 +1,9 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
+  // Keep Turbopack development artifacts isolated from production builds.
+  // This prevents `next build` from invalidating chunks served by `next dev`.
+  distDir: process.env.NEXT_DIST_DIR || (process.env.NODE_ENV === "development" ? ".next-dev" : ".next"),
   async redirects() {
     return [
       {

@@ -3,7 +3,7 @@
 import * as React from "react"
 import { doc } from "firebase/firestore"
 
-import { useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
+import { invalidateDocOnceCache, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
 
@@ -24,6 +24,7 @@ type RestaurantContextType = {
   role: string
   isSuperAdmin: boolean
   restaurant: Restaurant | null
+  refreshRestaurant: () => void
   loading: boolean
 }
 
@@ -35,6 +36,7 @@ const RestaurantContext = React.createContext<RestaurantContextType>({
   role: ROLES.SERVER,
   isSuperAdmin: false,
   restaurant: null,
+  refreshRestaurant: () => undefined,
   loading: false,
 })
 
@@ -47,7 +49,12 @@ export function RestaurantProvider({ children }: { children: React.ReactNode }) 
     return doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId)
   }, [db, restaurantId])
 
-  const { data, isLoading } = useDocOnce<Restaurant>(restaurantRef)
+  const { data, isLoading, refetch } = useDocOnce<Restaurant>(restaurantRef)
+
+  const refreshRestaurant = React.useCallback(() => {
+    if (restaurantRef) invalidateDocOnceCache(restaurantRef)
+    refetch()
+  }, [refetch, restaurantRef])
 
   React.useEffect(() => {
     if (restaurantId && data) {
@@ -65,9 +72,10 @@ export function RestaurantProvider({ children }: { children: React.ReactNode }) 
       role,
       isSuperAdmin,
       restaurant,
+      refreshRestaurant,
       loading: Boolean(restaurantId && isLoading && !restaurant),
     }),
-    [profile, restaurantId, role, isSuperAdmin, restaurant, isLoading]
+    [profile, restaurantId, role, isSuperAdmin, restaurant, refreshRestaurant, isLoading]
   )
 
   return (

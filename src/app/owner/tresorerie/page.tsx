@@ -2,21 +2,18 @@
 
 import * as React from "react"
 import { collection, query, where } from "firebase/firestore"
-import { AlertTriangle, Banknote, CheckCircle2, ListFilter, ReceiptText, Wallet } from "lucide-react"
-
-import { OwnerTimeFilterBar } from "@/app/owner/_components/OwnerTimeFilterBar"
-import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
-import { Card, CardContent } from "@/components/ui/card"
+import { ReportsLoadingState } from "@/components/reports-ui"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { getDateRange, useTimeFilter } from "@/contexts/time-filter-context"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { COLLECTION_NAMES } from "@/lib/constants"
-import { cn } from "@/lib/utils"
 import {
   DEFAULT_TREASURY_ACCOUNTS,
   getTreasuryAccountLabel,
   type TreasuryAccount,
 } from "@/services/treasury.service"
+import { OwnerReportsView } from "./OwnerReportsView"
+import { buildOwnerReportsViewModel, type OwnerTreasuryMovementReport } from "./owner-reports-view-model"
 
 type MovementDirection = "in" | "out" | "transfer"
 type MovementDirectionFilter = "all" | MovementDirection
@@ -24,7 +21,7 @@ type MovementDirectionFilter = "all" | MovementDirection
 export default function OwnerTresoreriePage() {
   const db = useFirestore()
   const { restaurantId, loading } = useRestaurant()
-  const { filter } = useTimeFilter()
+  const { dateRange, filter, setDateRange, setType, type } = useTimeFilter()
   const range = React.useMemo(() => getDateRange(filter), [filter])
   const [directionFilter, setDirectionFilter] = React.useState<MovementDirectionFilter>("all")
   const [accountFilter, setAccountFilter] = React.useState("all")
@@ -34,7 +31,7 @@ export default function OwnerTresoreriePage() {
     if (!db || !restaurantId) return null
     return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TREASURY_ACCOUNTS)
   }, [db, restaurantId])
-  const { data: accounts, isLoading: isLoadingAccounts } = useCollection<TreasuryAccount>(accountsQuery)
+  const { data: accounts, error: accountsError, isLoading: isLoadingAccounts } = useCollection<TreasuryAccount>(accountsQuery)
 
   const movementsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
@@ -44,13 +41,13 @@ export default function OwnerTresoreriePage() {
       where("createdAt", "<=", range.endDate)
     )
   }, [db, restaurantId, range.endDate, range.startDate])
-  const { data: movements, isLoading: isLoadingMovements } = useCollection<any>(movementsQuery)
+  const { data: movements, error: movementsError, isLoading: isLoadingMovements } = useCollection<any>(movementsQuery)
 
   const cashSessionsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
     return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS)
   }, [db, restaurantId])
-  const { data: cashSessions, isLoading: isLoadingCashSessions } = useCollection<any>(cashSessionsQuery)
+  const { data: cashSessions, error: sessionsError, isLoading: isLoadingCashSessions } = useCollection<any>(cashSessionsQuery)
 
   const sessionById = React.useMemo(() => {
     return new Map((cashSessions || []).map((session: any) => [session.id, session]))
@@ -60,6 +57,10 @@ export default function OwnerTresoreriePage() {
       .sort((a, b) => getTimeMs(b.createdAt) - getTimeMs(a.createdAt))
   }, [movements, sessionById])
   const accountFallbackTotals = React.useMemo(() => buildAccountTotals(safeMovements), [safeMovements])
+  const usesAccountFallback = React.useMemo(() => DEFAULT_TREASURY_ACCOUNTS.some((defaultAccount) => {
+    const sourceAccount = (accounts || []).find((account) => account.id === defaultAccount.id)
+    return Number(sourceAccount?.balance || 0) === 0 && Number(accountFallbackTotals[defaultAccount.id] || 0) !== 0
+  }), [accountFallbackTotals, accounts])
   const safeAccounts = React.useMemo(
     () => normalizeAccounts(accounts || [], accountFallbackTotals),
     [accounts, accountFallbackTotals]
@@ -86,243 +87,24 @@ export default function OwnerTresoreriePage() {
   const sourceOptions = React.useMemo(() => {
     return Array.from(new Set(safeMovements.map((movement) => String(movement.source || "manual")))).sort()
   }, [safeMovements])
+  const viewModel = React.useMemo(() => buildOwnerReportsViewModel({
+    periodLabel: getPeriodLabel(type, range.startDate, range.endDate),
+    displayBalance,
+    incoming: summary.in,
+    outgoing: summary.out,
+    transfers: summary.transfer,
+    balanceUsesMovementFallback: usesAccountFallback || accountTotal === 0,
+    containsExpandedLegacyMovements: (movements || []).some(isLegacySessionMovement),
+    accounts: safeAccounts.map((account) => ({ id: account.id, name: account.name, kind: formatAccountKind(account.kind), balance: Number(account.balance || 0) })),
+    sessionControls,
+    movements: filteredMovements.map(toMovementReport),
+  }), [accountTotal, displayBalance, filteredMovements, movements, range.endDate, range.startDate, safeAccounts, sessionControls, summary.in, summary.out, summary.transfer, type, usesAccountFallback])
 
   if (loading || !restaurantId || isLoadingAccounts || isLoadingMovements || isLoadingCashSessions) {
-    return <AdminRouteSkeleton />
+    return <ReportsLoadingState label="Chargement des rapports financiers Owner" />
   }
 
-  return (
-    <main className="space-y-4 pb-20 md:space-y-6 md:pb-6">
-      <header className="rounded-2xl border bg-card p-4 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h1 className="text-2xl font-black tracking-tight md:text-3xl">Trésorerie owner</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Supervision des soldes, validations caisse et mouvements financiers du restaurant.
-            </p>
-          </div>
-          <BusinessHealthBadge pending={sessionControls.pending} negativeBalance={displayBalance < 0} />
-        </div>
-      </header>
-
-      <OwnerTimeFilterBar />
-
-      <section className="grid gap-3 md:grid-cols-4">
-        <TreasuryCard icon={Wallet} label="Solde total" value={displayBalance} priority danger={displayBalance < 0} />
-        <TreasuryCard icon={ReceiptText} label="Entrées période" value={summary.in} />
-        <TreasuryCard icon={Banknote} label="Sorties période" value={summary.out} danger={summary.out > 0} />
-        <TreasuryCard icon={ListFilter} label="Transferts internes" value={summary.transfer} />
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-[1.4fr_.9fr]">
-        <section className="rounded-2xl border bg-card p-4 shadow-sm">
-          <div className="mb-4">
-            <h2 className="text-lg font-black uppercase tracking-tight">Répartition par source</h2>
-            <p className="text-sm text-muted-foreground">
-              Lecture consolidée des comptes de trésorerie. Les anciennes validations sont réparties depuis la session caisse quand possible.
-            </p>
-          </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            {safeAccounts.map((account) => (
-              <article key={account.id} className="rounded-xl border bg-background p-4">
-                <p className="text-xs font-black uppercase text-muted-foreground">{account.name}</p>
-                <p className="mt-2 text-2xl font-black">{formatMoney(account.balance)} FCFA</p>
-                <p className="mt-1 text-xs font-bold text-muted-foreground">{formatAccountKind(account.kind)}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border bg-card p-4 shadow-sm">
-          <div className="mb-4">
-            <h2 className="text-lg font-black uppercase tracking-tight">Contrôle caisse</h2>
-            <p className="text-sm text-muted-foreground">Suivi owner des validations et anomalies.</p>
-          </div>
-          <div className="grid gap-3">
-            <ControlRow label="Sessions validées" value={sessionControls.validated} tone="good" />
-            <ControlRow label="En attente validation" value={sessionControls.pending} tone={sessionControls.pending > 0 ? "warning" : "neutral"} />
-            <ControlRow label="Écarts détectés" value={sessionControls.discrepancies} tone={sessionControls.discrepancies > 0 ? "warning" : "neutral"} />
-          </div>
-        </section>
-      </section>
-
-      <section className="rounded-2xl border bg-card p-4 shadow-sm">
-        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <h2 className="text-lg font-black uppercase tracking-tight">Historique financier</h2>
-            <p className="text-sm text-muted-foreground">
-              Date, source, compte impacté, montant et responsable de chaque mouvement.
-            </p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <FilterSelect label="Type" value={directionFilter} onChange={(value) => setDirectionFilter(value as MovementDirectionFilter)}>
-              <option value="all">Tous</option>
-              <option value="in">Entrées</option>
-              <option value="out">Sorties</option>
-              <option value="transfer">Transferts</option>
-            </FilterSelect>
-            <FilterSelect label="Compte" value={accountFilter} onChange={setAccountFilter}>
-              <option value="all">Tous</option>
-              {safeAccounts.map((account) => (
-                <option key={account.id} value={account.id}>{account.name}</option>
-              ))}
-            </FilterSelect>
-            <FilterSelect label="Source" value={sourceFilter} onChange={setSourceFilter}>
-              <option value="all">Toutes</option>
-              {sourceOptions.map((source) => (
-                <option key={source} value={source}>{formatSource(source)}</option>
-              ))}
-            </FilterSelect>
-          </div>
-        </div>
-
-        {filteredMovements.length === 0 ? (
-          <div className="rounded-xl border border-dashed bg-background p-8 text-center text-sm text-muted-foreground">
-            Aucune donnée pour cette période
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-left text-sm">
-              <thead className="border-b text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="py-3 pr-3">Date</th>
-                  <th className="py-3 pr-3">Type</th>
-                  <th className="py-3 pr-3">Libellé</th>
-                  <th className="py-3 pr-3">Compte</th>
-                  <th className="py-3 pr-3 text-right">Entrée</th>
-                  <th className="py-3 pr-3 text-right">Sortie</th>
-                  <th className="py-3 pr-3">Source</th>
-                  <th className="py-3 pr-3">Validé par</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {filteredMovements.map((movement) => {
-                  const direction = getMovementDirection(movement)
-                  const amount = Number(movement.amount || 0)
-                  return (
-                    <tr key={movement.id} className="align-top">
-                      <td className="py-3 pr-3 font-semibold">{formatDateTime(movement.occurredAt || movement.createdAt)}</td>
-                      <td className="py-3 pr-3">
-                        <span className={cn(
-                          "rounded-full px-2 py-1 text-xs font-black uppercase",
-                          direction === "in" && "bg-emerald-100 text-emerald-700",
-                          direction === "out" && "bg-amber-100 text-amber-700",
-                          direction === "transfer" && "bg-blue-100 text-blue-700"
-                        )}>
-                          {formatDirection(direction)}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-3 font-bold">{getMovementLabel(movement)}</td>
-                      <td className="py-3 pr-3">{getTreasuryAccountLabel(getMovementAccountId(movement))}</td>
-                      <td className="py-3 pr-3 text-right font-black text-emerald-700">
-                        {direction === "in" ? `+${formatMoney(amount)} FCFA` : "-"}
-                      </td>
-                      <td className="py-3 pr-3 text-right font-black text-amber-700">
-                        {direction === "out" ? `-${formatMoney(amount)} FCFA` : "-"}
-                      </td>
-                      <td className="py-3 pr-3">{formatSource(movement.source)}</td>
-                      <td className="py-3 pr-3">{movement.createdBy || movement.validatedBy || "-"}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </main>
-  )
-}
-
-function TreasuryCard({
-  icon: Icon,
-  label,
-  value,
-  priority,
-  danger,
-}: {
-  icon: React.ElementType
-  label: string
-  value: number
-  priority?: boolean
-  danger?: boolean
-}) {
-  return (
-    <Card className={cn(priority && "md:col-span-1", danger && "border-amber-300")}>
-      <CardContent className="p-4">
-        <Icon className={cn("mb-3 h-5 w-5", danger ? "text-amber-600" : "text-primary")} />
-        <p className="text-xs font-black uppercase text-muted-foreground">{label}</p>
-        <p className={cn("mt-1 font-black", priority ? "text-3xl" : "text-2xl", danger ? "text-amber-600" : "text-foreground")}>
-          {formatMoney(value)} FCFA
-        </p>
-      </CardContent>
-    </Card>
-  )
-}
-
-function BusinessHealthBadge({ pending, negativeBalance }: { pending: number; negativeBalance: boolean }) {
-  if (negativeBalance) {
-    return (
-      <span className="inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-1 text-xs font-black text-red-700">
-        <AlertTriangle className="h-4 w-4" />
-        Problème trésorerie
-      </span>
-    )
-  }
-  if (pending > 0) {
-    return (
-      <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700">
-        <AlertTriangle className="h-4 w-4" />
-        Validation à suivre
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">
-      <CheckCircle2 className="h-4 w-4" />
-      Situation claire
-    </span>
-  )
-}
-
-function ControlRow({ label, value, tone }: { label: string; value: number; tone: "good" | "warning" | "neutral" }) {
-  return (
-    <div className="flex items-center justify-between rounded-xl border bg-background p-3">
-      <span className="text-sm font-bold text-muted-foreground">{label}</span>
-      <span className={cn(
-        "text-lg font-black",
-        tone === "good" && "text-emerald-700",
-        tone === "warning" && "text-amber-700"
-      )}>
-        {value}
-      </span>
-    </div>
-  )
-}
-
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  children: React.ReactNode
-}) {
-  return (
-    <label className="space-y-1 text-xs font-black uppercase text-muted-foreground">
-      <span>{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-md border bg-background px-3 text-sm font-bold normal-case text-foreground"
-      >
-        {children}
-      </select>
-    </label>
-  )
+  return <OwnerReportsView model={viewModel} errors={[accountsError && "comptes de trésorerie", movementsError && "mouvements financiers", sessionsError && "sessions de caisse"].filter(Boolean) as string[]} period={type} customRange={dateRange} onPeriodChange={setType} onCustomRangeChange={setDateRange} directionFilter={directionFilter} accountFilter={accountFilter} sourceFilter={sourceFilter} accountOptions={safeAccounts.map((account) => ({ id: account.id, label: account.name }))} sourceOptions={sourceOptions.map((source) => ({ id: source, label: formatSource(source) }))} onDirectionFilterChange={(value) => setDirectionFilter(value as MovementDirectionFilter)} onAccountFilterChange={setAccountFilter} onSourceFilterChange={setSourceFilter} />
 }
 
 function normalizeAccounts(accounts: TreasuryAccount[], fallbackTotals: Record<string, number>) {
@@ -483,6 +265,30 @@ function formatAccountKind(kind: string) {
   if (kind === "mobile_money") return "Compte mobile money"
   if (kind === "bank") return "Compte bancaire"
   return kind
+}
+
+function toMovementReport(movement: any): OwnerTreasuryMovementReport {
+  const direction = getMovementDirection(movement)
+  const amount = Number(movement.amount || 0)
+  return {
+    id: movement.id,
+    date: formatDateTime(movement.occurredAt || movement.createdAt),
+    direction,
+    directionLabel: formatDirection(direction),
+    label: getMovementLabel(movement),
+    account: getTreasuryAccountLabel(getMovementAccountId(movement)),
+    incoming: direction === "in" ? `+${formatMoney(amount)} FCFA` : "-",
+    outgoing: direction === "out" ? `-${formatMoney(amount)} FCFA` : "-",
+    source: formatSource(movement.source),
+    validatedBy: movement.createdBy || movement.validatedBy || "-",
+  }
+}
+
+function getPeriodLabel(type: string, startDate: Date, endDate: Date) {
+  if (type === "today") return "Aujourd’hui"
+  if (type === "week") return "7 derniers jours"
+  if (type === "month") return "30 derniers jours"
+  return `${startDate.toLocaleDateString("fr-FR")} – ${endDate.toLocaleDateString("fr-FR")}`
 }
 
 function formatMoney(value: unknown) {

@@ -56,6 +56,7 @@ export function isRouteAllowedForRole(pathname: string, role: AppRouteRole | nul
         pathname.startsWith("/manager/menu") ||
         pathname.startsWith("/manager/tables") ||
         pathname.startsWith("/manager/images") ||
+        pathname.startsWith("/manager/hours") ||
         pathname.startsWith("/manager/inventory") ||
         pathname.startsWith("/manager/expenses") ||
         pathname.startsWith("/manager/depenses") ||

@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { COLLECTION_NAMES } from '@/lib/constants';
+import { PlatformConfirmationDialog, PlatformHeader, PlatformPage } from '@/components/platform-ui';
 
 type VariantType = 'ussd' | 'link';
 
@@ -72,6 +73,7 @@ export default function PlatformPaymentVariantsPage() {
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
   const [pendingId, setPendingId] = React.useState<string | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = React.useState<string | null>(null);
 
   const methodsQuery = useMemoFirebase(() => {
     if (!db) return null;
@@ -222,19 +224,13 @@ export default function PlatformPaymentVariantsPage() {
       });
     } finally {
       setPendingId(null);
+      setDeleteCandidate(null);
     }
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-4xl font-black italic uppercase tracking-tighter text-primary">
-          Variantes de paiement
-        </h1>
-        <p className="text-muted-foreground font-medium">
-          Associez les moyens de paiement aux pays et configurez les formats USSD.
-        </p>
-      </div>
+    <PlatformPage>
+      <PlatformHeader title="Variantes de paiement" subtitle="Associez les moyens de paiement aux pays et configurez les formats USSD." />
 
       <Card className="border-none shadow-2xl">
         <CardHeader>
@@ -246,11 +242,12 @@ export default function PlatformPaymentVariantsPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-6">
             <div className="space-y-2 md:col-span-2">
-              <Label>Méthode</Label>
+              <Label htmlFor="platform-payment-variant-method">Méthode</Label>
               <select
+                id="platform-payment-variant-method"
                 value={formData.methodCode}
                 onChange={(event) => setFormData({ ...formData, methodCode: event.target.value })}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">Sélectionner</option>
                 {activeMethods.map((method) => (
@@ -262,11 +259,12 @@ export default function PlatformPaymentVariantsPage() {
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label>Pays</Label>
+              <Label htmlFor="platform-payment-variant-country">Pays</Label>
               <select
+                id="platform-payment-variant-country"
                 value={formData.countryCode}
                 onChange={(event) => setFormData({ ...formData, countryCode: event.target.value })}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">Sélectionner</option>
                 {activeCountries.map((country) => (
@@ -278,13 +276,14 @@ export default function PlatformPaymentVariantsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Type</Label>
+              <Label htmlFor="platform-payment-variant-type">Type</Label>
               <select
+                id="platform-payment-variant-type"
                 value={formData.type}
                 onChange={(event) =>
                   setFormData({ ...formData, type: event.target.value as VariantType })
                 }
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="ussd">USSD</option>
                 <option value="link">Lien</option>
@@ -292,9 +291,10 @@ export default function PlatformPaymentVariantsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Actif</Label>
+              <Label htmlFor="platform-payment-variant-active">Actif</Label>
               <div className="flex h-10 items-center">
                 <Switch
+                  id="platform-payment-variant-active"
                   checked={formData.isActive}
                   onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
                 />
@@ -302,8 +302,9 @@ export default function PlatformPaymentVariantsPage() {
             </div>
 
             <div className="space-y-2 md:col-span-6">
-              <Label>Template USSD / lien</Label>
+              <Label htmlFor="platform-payment-variant-template">Template USSD / lien</Label>
               <Input
+                id="platform-payment-variant-template"
                 placeholder="*144*8*{merchant}*{amount}#"
                 value={formData.ussdTemplate}
                 onChange={(event) =>
@@ -408,6 +409,7 @@ export default function PlatformPaymentVariantsPage() {
                       Actif
                     </Label>
                     <Switch
+                      aria-label={`${variant.isActive ? 'Désactiver' : 'Activer'} la variante ${variant.methodCode} ${variant.countryCode}`}
                       checked={variant.isActive}
                       disabled={pendingId === variant.id}
                       onCheckedChange={(checked) => toggleVariant(variant.id, checked)}
@@ -419,6 +421,7 @@ export default function PlatformPaymentVariantsPage() {
                       type="button"
                       variant="outline"
                       size="icon"
+                      className="min-h-11 min-w-11"
                       disabled={pendingId === variant.id}
                       onClick={() => startEdit(variant)}
                       aria-label="Modifier la variante"
@@ -429,8 +432,9 @@ export default function PlatformPaymentVariantsPage() {
                       type="button"
                       variant="outline"
                       size="icon"
+                      className="min-h-11 min-w-11"
                       disabled={pendingId === variant.id}
-                      onClick={() => deleteVariant(variant.id)}
+                      onClick={() => setDeleteCandidate(variant.id)}
                       aria-label="Supprimer la variante"
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
@@ -449,7 +453,8 @@ export default function PlatformPaymentVariantsPage() {
           </Card>
         )}
       </div>
-    </div>
+      <PlatformConfirmationDialog open={Boolean(deleteCandidate)} onOpenChange={(open) => { if (!open && !pendingId) setDeleteCandidate(null) }} title="Supprimer cette variante de paiement ?" description="La variante sera supprimée de la configuration plateforme." consequence="Les usages dépendants ne sont pas analysés automatiquement par le flux existant." confirmLabel="Supprimer" loading={Boolean(pendingId)} onConfirm={() => { if (deleteCandidate) void deleteVariant(deleteCandidate) }} />
+    </PlatformPage>
   );
 }
 
@@ -462,10 +467,11 @@ function ToggleField({
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
 }) {
+  const id = React.useId();
   return (
     <div className="flex items-center justify-between rounded-xl bg-secondary/30 p-4">
-      <Label className="font-bold">{label}</Label>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+      <Label htmlFor={id} className="font-bold">{label}</Label>
+      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
     </div>
   );
 }

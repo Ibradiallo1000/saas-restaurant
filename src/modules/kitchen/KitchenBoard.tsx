@@ -9,12 +9,21 @@ import {
   ChefHat,
   Clock3,
   CookingPot,
-  Inbox,
   LogOut,
+  Maximize2,
+  Minimize2,
   Utensils,
   type LucideIcon,
 } from "lucide-react"
 
+import {
+  KitchenBoard as KitchenBoardLayout,
+  KitchenColumn,
+  KitchenEmptyState,
+  KitchenHeader,
+  KitchenLoadSummary,
+  KitchenPage,
+} from "@/components/kitchen-ui"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
@@ -31,8 +40,8 @@ import {
 } from "@/lib/order-lifecycle"
 import { getOrderDisplayId } from "@/lib/order-display-id"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
-import { cn } from "@/lib/utils"
 import { KitchenOrderCard } from "@/modules/kitchen/KitchenOrderCard"
+import { isKitchenPaymentDelayed } from "@/modules/kitchen/kitchen-view-model"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
 import { playNewOrderNotificationSound } from "@/services/notification-sound.service"
 import { isKitchenItem, orderHasKitchenItems } from "@/utils/preparation-logic"
@@ -55,45 +64,30 @@ const KITCHEN_COLUMNS: Array<{
   status: KitchenColumnStatus
   title: string
   icon: LucideIcon
-  shellClass: string
-  iconClass: string
-  badgeClass: string
   emptyDescription: string
 }> = [
   {
     status: ORDER_OPERATION_STATUS.PENDING,
     title: "En attente",
     icon: Clock3,
-    shellClass: "border-slate-200/80 bg-slate-50/90 dark:border-slate-700/70 dark:bg-slate-900/45",
-    iconClass: "bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
-    badgeClass: "bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:text-slate-100",
     emptyDescription: "Les nouvelles commandes apparaîtront ici.",
   },
   {
     status: ORDER_OPERATION_STATUS.IN_PREPARATION,
     title: "En préparation",
     icon: CookingPot,
-    shellClass: "border-orange-200/70 bg-orange-50/55 dark:border-orange-500/20 dark:bg-orange-500/10",
-    iconClass: "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
-    badgeClass: "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-200",
     emptyDescription: "Les commandes en préparation apparaîtront ici.",
   },
   {
     status: ORDER_OPERATION_STATUS.READY,
     title: "Prêtes",
     icon: Utensils,
-    shellClass: "border-emerald-200/70 bg-emerald-50/55 dark:border-emerald-500/20 dark:bg-emerald-500/10",
-    iconClass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
-    badgeClass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
     emptyDescription: "Les commandes prêtes à servir apparaîtront ici.",
   },
   {
     status: ORDER_OPERATION_STATUS.SERVED,
     title: "Servies",
     icon: CheckCircle2,
-    shellClass: "border-sky-200/70 bg-sky-50/55 dark:border-sky-500/20 dark:bg-sky-500/10",
-    iconClass: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
-    badgeClass: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200",
     emptyDescription: "Les commandes servies resteront visibles ici.",
   },
 ]
@@ -117,6 +111,21 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
   const [enteringOrderIds, setEnteringOrderIds] = React.useState<Set<string>>(
     () => new Set()
   )
+  const [nowMs, setNowMs] = React.useState(() => Date.now())
+  const [isFullScreen, setIsFullScreen] = React.useState(false)
+  const pageRef = React.useRef<HTMLElement>(null)
+
+  React.useEffect(() => {
+    const interval = window.setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  React.useEffect(() => {
+    const handleFullScreenChange = () => setIsFullScreen(document.fullscreenElement === pageRef.current)
+    document.addEventListener("fullscreenchange", handleFullScreenChange)
+    handleFullScreenChange()
+    return () => document.removeEventListener("fullscreenchange", handleFullScreenChange)
+  }, [])
 
   React.useEffect(() => {
     ordersRef.current = orders
@@ -126,6 +135,23 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     await signOut(auth)
     router.push("/login")
   }, [auth, router])
+
+  const handleFullScreen = React.useCallback(async () => {
+    try {
+      if (document.fullscreenElement === pageRef.current) {
+        await document.exitFullscreen()
+        return
+      }
+      await pageRef.current?.requestFullscreen()
+    } catch (error) {
+      console.error(error)
+      toast({
+        title: "Plein écran indisponible",
+        description: "Le navigateur n’a pas autorisé le passage en plein écran.",
+        variant: "destructive",
+      })
+    }
+  }, [toast])
 
   const kitchenOrders = React.useMemo(() => {
     debugKitchenBoardStage("received orders from OrdersProvider", orders)
@@ -303,135 +329,71 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     })
   }, [db, restaurantId])
 
+  const delayedCount = React.useMemo(
+    () => kitchenOrders.filter((order) => isKitchenPaymentDelayed(order, nowMs)).length,
+    [kitchenOrders, nowMs]
+  )
+  const loadMetrics = React.useMemo(() => [
+    { id: "pending", label: "Nouvelles", value: groupedOrders.pending.length },
+    { id: "preparing", label: "Préparation", value: groupedOrders.preparing.length },
+    { id: "ready", label: "Prêtes", value: groupedOrders.ready.length, tone: "ready" as const },
+    { id: "overdue", label: "Retard", value: delayedCount, tone: delayedCount ? "overdue" as const : "normal" as const },
+    { id: "total", label: "Visibles", value: kitchenOrders.length },
+  ], [delayedCount, groupedOrders, kitchenOrders.length])
+
   return (
-    <main className="flex h-screen min-h-screen flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex h-16 shrink-0 items-center justify-between bg-primary px-6 text-white">
-        {/* LEFT */}
-        <div className="flex items-center gap-3">
-          {restaurant?.logoUrl ? (
-            <img
-              src={restaurant.logoUrl}
-              alt={restaurant?.name || "Restaurant"}
-              className="h-10 w-10 rounded-lg object-cover"
-            />
-          ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/15 text-white ring-1 ring-white/20">
-              <ChefHat className="h-5 w-5" />
-            </div>
-          )}
-          <div className="min-w-0">
-            <p className="truncate text-sm font-black">
-              {restaurant?.name || "Restaurant"}
-            </p>
-            <p className="text-xs font-bold text-white/70 uppercase tracking-wide">
-              CUISINE
-            </p>
-          </div>
-        </div>
-
-        {/* RIGHT */}
-        <div className="flex items-center gap-4">
-          <div className="hidden items-center gap-2 rounded-full border border-white/30 bg-white/15 px-3 py-1.5 text-xs font-black uppercase text-white sm:flex">
-            <span className="h-2 w-2 rounded-full bg-emerald-300" />
-            service actif
-          </div>
-
-          {/* THEME */}
-          <div className="[&_button]:text-white [&_button:hover]:bg-white/15 [&_button:hover]:text-white">
-            <ThemeToggle />
-          </div>
-
-          {/* USER */}
-          <div className="hidden text-right sm:block">
-            <p className="text-sm font-bold">{user?.displayName || user?.email?.split("@")[0] || "Cuisine"}</p>
-            <p className="text-xs text-white/70">Chef</p>
-          </div>
-
-          {/* LOGOUT */}
-          <button
-            onClick={handleLogout}
-            className="rounded-md p-2 text-white hover:bg-white/15 transition-colors"
-          >
-            <LogOut size={16} />
-          </button>
-        </div>
-      </header>
-
-      <section className="min-h-0 flex-1 overflow-hidden p-4">
-        <div className="grid h-full min-h-0 grid-cols-1 gap-5 overflow-y-auto lg:grid-cols-4 lg:overflow-hidden">
-          {KITCHEN_COLUMNS.map((column) => {
-            const columnOrders = groupedOrders[column.status]
-            const Icon = column.icon
-
-            return (
-              <section
-                key={column.status}
-                className={cn(
-                  "flex min-h-[420px] flex-col overflow-hidden rounded-[20px] border text-card-foreground shadow-[0_18px_42px_rgba(15,23,42,0.08)] ring-1 ring-white/60 backdrop-blur dark:shadow-[0_18px_42px_rgba(0,0,0,0.24)] dark:ring-white/5 lg:min-h-0",
-                  column.shellClass
-                )}
-              >
-                <header className="flex shrink-0 items-center justify-between border-b border-white/70 px-4 py-4 dark:border-white/10">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span
-                      className={cn(
-                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-sm",
-                        column.iconClass
-                      )}
-                    >
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <h2 className="truncate text-base font-semibold leading-tight text-foreground">
-                      {column.title}
-                    </h2>
-                  </div>
-                  <span
-                    className={cn(
-                      "flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full px-2 text-sm font-black shadow-sm",
-                      column.badgeClass
-                    )}
-                  >
-                    {columnOrders.length}
-                  </span>
-                </header>
-
-                <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
-                  {columnOrders.length === 0 ? (
-                    <div className="flex h-full min-h-[300px] flex-col items-center justify-center rounded-[18px] border border-dashed border-foreground/10 bg-white/45 px-5 text-center shadow-inner dark:bg-black/10">
-                      <span
-                        className={cn(
-                          "flex h-16 w-16 items-center justify-center rounded-full",
-                          column.iconClass
-                        )}
-                      >
-                        <Inbox className="h-7 w-7" />
-                      </span>
-                      <p className="mt-4 text-base font-semibold text-foreground">
-                        Aucune commande
-                      </p>
-                      <p className="mt-1 max-w-[14rem] text-sm font-medium leading-5 text-muted-foreground">
-                        {column.emptyDescription}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-3.5">
-                      {columnOrders.map((order) => (
-                        <KitchenOrderCard
-                          key={order.id}
-                          order={order}
-                          onUpdateStatus={updateStatus}
-                          isNew={enteringOrderIds.has(order.id)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </section>
-            )
-          })}
-        </div>
-      </section>
-    </main>
+    <KitchenPage
+      ref={pageRef}
+      fullScreen={isFullScreen}
+      header={
+        <KitchenHeader
+          title={<span className="inline-flex items-center gap-2"><ChefHat aria-hidden="true" className="size-6" />Cuisine</span>}
+          description={restaurant?.name || "Restaurant"}
+          load={<KitchenLoadSummary items={loadMetrics} />}
+          actions={
+            <>
+              <span className="hidden text-sm font-semibold text-[var(--dashboard-subtitle)] sm:inline">{user?.displayName || user?.email?.split("@")[0] || "Cuisine"}</span>
+              <ThemeToggle />
+              <button type="button" onClick={handleLogout} className="dashboard-focus-visible inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-dashboard-button)] border border-[var(--kitchen-border)] px-3 text-sm font-semibold hover:bg-[var(--kitchen-card-muted)]">
+                <LogOut aria-hidden="true" className="size-4" />
+                <span className="hidden sm:inline">Déconnexion</span>
+                <span className="sr-only sm:hidden">Se déconnecter</span>
+              </button>
+            </>
+          }
+          fullScreenAction={
+            <button type="button" onClick={handleFullScreen} aria-pressed={isFullScreen} className="dashboard-focus-visible inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-dashboard-button)] border border-[var(--kitchen-border)] px-3 text-sm font-semibold hover:bg-[var(--kitchen-card-muted)]">
+              {isFullScreen ? <Minimize2 aria-hidden="true" className="size-4" /> : <Maximize2 aria-hidden="true" className="size-4" />}
+              <span className="hidden sm:inline">{isFullScreen ? "Quitter le plein écran" : "Plein écran"}</span>
+              <span className="sr-only sm:hidden">{isFullScreen ? "Quitter le plein écran" : "Passer en plein écran"}</span>
+            </button>
+          }
+        />
+      }
+    >
+      <KitchenBoardLayout layout="adaptive" className="h-full overflow-y-auto md:auto-rows-[minmax(24rem,1fr)] xl:grid-cols-4 xl:auto-rows-fr xl:overflow-hidden">
+        {KITCHEN_COLUMNS.map((column) => {
+          const columnOrders = groupedOrders[column.status]
+          const Icon = column.icon
+          return (
+            <KitchenColumn
+              key={column.status}
+              id={`kitchen-${column.status}`}
+              title={<span className="inline-flex items-center gap-2"><Icon aria-hidden="true" className="size-5" />{column.title}</span>}
+              count={columnOrders.length}
+              description={column.emptyDescription}
+              variant={column.status}
+              emptyState={<KitchenEmptyState title="Aucune commande" description={column.emptyDescription} className="min-h-52 border-0 bg-transparent" />}
+              className="min-h-[24rem] xl:min-h-0"
+            >
+              {columnOrders.map((order) => (
+                <KitchenOrderCard key={order.id} order={order} nowMs={nowMs} onUpdateStatus={updateStatus} isNew={enteringOrderIds.has(order.id)} />
+              ))}
+            </KitchenColumn>
+          )
+        })}
+      </KitchenBoardLayout>
+    </KitchenPage>
   )
 }
 

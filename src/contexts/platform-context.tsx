@@ -16,11 +16,34 @@ import { COLLECTION_NAMES } from "@/lib/constants"
 import type { PlatformSettings } from "@/types"
 
 const SETTINGS_DOC_ID = "default"
+const DEFAULT_PUBLIC_FOOTER = {
+  description: "",
+  phone: "",
+  whatsapp: "",
+  email: "",
+  officeAddress: "",
+  socialLinks: {
+    facebook: "",
+    instagram: "",
+    tiktok: "",
+    linkedin: "",
+    youtube: "",
+    twitter: "",
+  },
+  legalLinks: {
+    privacy: "/privacy",
+    terms: "/terms",
+    legalNotice: "/legal",
+  },
+}
 
 const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
   name: "Plateforme",
   logoUrl: "",
   faviconUrl: "",
+  marketplaceHero: {
+    coverImageUrl: "",
+  },
   primaryColor: DEFAULT_BRAND_PRIMARY,
   secondaryColor: DEFAULT_BRAND_SECONDARY,
   supportEmail: "",
@@ -28,6 +51,7 @@ const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
   supportWhatsapp: "",
   maintenanceMode: false,
   defaultGraceDays: 7,
+  publicFooter: DEFAULT_PUBLIC_FOOTER,
 }
 
 interface PlatformContextValue {
@@ -165,8 +189,43 @@ function normalizePlatformSettings(settings: Partial<PlatformSettings>): Platfor
     name: settings.name?.trim() || DEFAULT_PLATFORM_SETTINGS.name,
     logoUrl: settings.logoUrl || "",
     faviconUrl: settings.faviconUrl || "",
+    marketplaceHero: normalizeMarketplaceHero(settings.marketplaceHero),
     primaryColor: sanitizeHexColor(settings.primaryColor || "") ?? DEFAULT_BRAND_PRIMARY,
     secondaryColor: sanitizeHexColor(settings.secondaryColor || "") ?? DEFAULT_BRAND_SECONDARY,
     defaultGraceDays: normalizeGraceDays(settings.defaultGraceDays ?? DEFAULT_PLATFORM_SETTINGS.defaultGraceDays),
+    publicFooter: normalizePublicFooter(settings.publicFooter),
   }
+}
+
+function normalizeMarketplaceHero(value: Partial<PlatformSettings["marketplaceHero"]> | undefined): PlatformSettings["marketplaceHero"] {
+  return {
+    coverImageUrl: text(value?.coverImageUrl),
+  }
+}
+
+function normalizePublicFooter(value: Partial<PlatformSettings["publicFooter"]> | undefined): PlatformSettings["publicFooter"] {
+  return {
+    description: text(value?.description),
+    phone: text(value?.phone),
+    whatsapp: text(value?.whatsapp),
+    email: text(value?.email),
+    officeAddress: text(value?.officeAddress),
+    socialLinks: {
+      facebook: text(value?.socialLinks?.facebook),
+      instagram: text(value?.socialLinks?.instagram),
+      tiktok: text(value?.socialLinks?.tiktok),
+      linkedin: text(value?.socialLinks?.linkedin),
+      youtube: text(value?.socialLinks?.youtube),
+      twitter: text(value?.socialLinks?.twitter),
+    },
+    legalLinks: {
+      privacy: text(value?.legalLinks?.privacy) || DEFAULT_PUBLIC_FOOTER.legalLinks.privacy,
+      terms: text(value?.legalLinks?.terms) || DEFAULT_PUBLIC_FOOTER.legalLinks.terms,
+      legalNotice: text(value?.legalLinks?.legalNotice) || DEFAULT_PUBLIC_FOOTER.legalLinks.legalNotice,
+    },
+  }
+}
+
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : ""
 }

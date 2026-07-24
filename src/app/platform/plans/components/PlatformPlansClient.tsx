@@ -6,18 +6,9 @@ import { collection, addDoc, Timestamp, query, where, getDocs, limit } from "fir
 
 import { PLAN_TEMPLATES } from "@/config/planTemplates"
 
-import {
-  Card, CardContent, CardHeader, CardTitle
-} from "@/components/ui/card"
-
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
-} from "@/components/ui/select"
-
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2 } from "lucide-react"
+import { PlatformPlansView } from "./PlatformPlansView"
+import { buildPlatformPlanTemplateViewModel } from "./platform-plans-view-model"
 
 type PlanKey = keyof typeof PLAN_TEMPLATES
 
@@ -30,6 +21,7 @@ export default function AdminPlansPage() {
   const [loading, setLoading] = React.useState(false)
 
   const template = PLAN_TEMPLATES[selectedPlan]
+  const viewModel = React.useMemo(() => buildPlatformPlanTemplateViewModel(selectedPlan, template), [selectedPlan, template])
 
   React.useEffect(() => {
     if (template) {
@@ -106,54 +98,5 @@ export default function AdminPlansPage() {
     }
   }
 
-  return (
-    <div className="max-w-xl mx-auto space-y-6">
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Créer un plan (automatique)</CardTitle>
-        </CardHeader>
-
-        <CardContent className="space-y-4">
-
-          {/* SELECT PLAN */}
-          <Select
-            value={selectedPlan}
-            onValueChange={(val) => setSelectedPlan(val as PlanKey)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Choisir un plan" />
-            </SelectTrigger>
-
-            <SelectContent>
-              <SelectItem value="starter">Starter</SelectItem>
-              <SelectItem value="pro">Pro</SelectItem>
-              <SelectItem value="enterprise">Enterprise</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {/* PRICE */}
-          <Input
-            type="number"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-          />
-
-          {/* PREVIEW */}
-          <div className="text-sm text-muted-foreground">
-            Features :
-            <pre className="bg-muted p-2 rounded mt-1 text-xs">
-              {JSON.stringify(template.features, null, 2)}
-            </pre>
-          </div>
-
-          <Button onClick={handleCreate} disabled={loading}>
-            {loading ? <Loader2 className="animate-spin" /> : "Créer le plan"}
-          </Button>
-
-        </CardContent>
-      </Card>
-
-    </div>
-  )
+  return <PlatformPlansView selectedPlan={selectedPlan} price={price} loading={loading} template={viewModel} onSelectedPlanChange={(value) => setSelectedPlan(value as PlanKey)} onPriceChange={setPrice} onCreate={() => void handleCreate()} />
 }

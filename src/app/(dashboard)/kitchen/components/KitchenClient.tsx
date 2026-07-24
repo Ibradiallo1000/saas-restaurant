@@ -4,7 +4,7 @@ import { OrdersProvider, useOrders } from "@/modules/orders/OrdersProvider"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { KitchenBoard } from "@/modules/kitchen/KitchenBoard"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
-import { KitchenRouteSkeleton } from "@/components/performance/route-skeletons"
+import { KitchenErrorState, KitchenLoadingState, KitchenOrderCardSkeleton, KitchenPage as KitchenPageShell } from "@/components/kitchen-ui"
 
 export default function KitchenPage() {
   const { restaurantId } = useRestaurant()
@@ -21,11 +21,18 @@ function KitchenPageContent() {
   const { orders, isLoading } = useOrders()
 
   if (isLoading) {
-    return <KitchenRouteSkeleton />
+    return (
+      <KitchenPageShell>
+        <KitchenLoadingState label="Chargement des commandes Cuisine" />
+        <div className="mt-4 grid gap-[var(--kitchen-column-gap)] md:grid-cols-2 xl:grid-cols-4" aria-hidden="true">
+          {Array.from({ length: 4 }, (_, index) => <KitchenOrderCardSkeleton key={index} />)}
+        </div>
+      </KitchenPageShell>
+    )
   }
 
   if (!restaurantId) {
-    return <div className="p-6">Restaurant non disponible.</div>
+    return <KitchenPageShell><KitchenErrorState title="Restaurant non disponible" description="Impossible d’ouvrir l’écran Cuisine pour le moment." /></KitchenPageShell>
   }
 
   return (

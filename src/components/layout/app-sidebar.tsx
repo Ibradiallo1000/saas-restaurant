@@ -21,6 +21,7 @@ import {
   ShieldAlert,
   Store,
   Table2,
+  Tags,
   Users,
   Users2,
   Wallet,
@@ -91,6 +92,7 @@ const AppSidebarComponent = () => {
           label: "Configuration",
           items: [
             { name: "Pays", href: "/platform/settings/countries", icon: Globe2 },
+            { name: "Catégories marketplace", href: "/platform/settings/marketplace-categories", icon: Tags },
             { name: "Paiements", href: "/platform/settings/payment-methods", icon: WalletCards },
             { name: "Variantes paiement", href: "/platform/settings/payment-variants", icon: GitBranch },
           ],

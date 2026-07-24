@@ -2,29 +2,27 @@
 
 import * as React from "react"
 import { collection, query, where } from "firebase/firestore"
-import { Banknote, CreditCard, ListFilter, ReceiptText, Wallet } from "lucide-react"
-
-import { Card, CardContent } from "@/components/ui/card"
-import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
+import { ReportsLoadingState } from "@/components/reports-ui"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { getDateRange, useTimeFilter } from "@/contexts/time-filter-context"
 import { getFinancialSummary } from "@/lib/finance/financial-summary"
-import { cn } from "@/lib/utils"
 import {
   DEFAULT_TREASURY_ACCOUNTS,
   TreasuryService,
   getTreasuryAccountLabel,
   type TreasuryAccount,
 } from "@/services/treasury.service"
+import { ManagerReportsView } from "./ManagerReportsView"
+import { buildManagerReportsViewModel, type ManagerTreasuryMovementReport } from "./manager-reports-view-model"
 
 type MovementDirectionFilter = "all" | "in" | "out" | "transfer"
 
 export default function ManagerTreasuryPage() {
   const db = useFirestore()
   const { restaurantId } = useRestaurant()
-  const { filter } = useTimeFilter()
+  const { dateRange, filter, setDateRange, setType, type } = useTimeFilter()
   const range = React.useMemo(() => getDateRange(filter), [filter])
   const [directionFilter, setDirectionFilter] = React.useState<MovementDirectionFilter>("all")
   const [accountFilter, setAccountFilter] = React.useState("all")
@@ -42,7 +40,7 @@ export default function ManagerTreasuryPage() {
     if (!db || !restaurantId) return null
     return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TREASURY_ACCOUNTS)
   }, [db, restaurantId])
-  const { data: accounts, isLoading: isLoadingAccounts } = useCollection<TreasuryAccount>(accountsQuery)
+  const { data: accounts, error: accountsError, isLoading: isLoadingAccounts } = useCollection<TreasuryAccount>(accountsQuery)
 
   const movementsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
@@ -52,19 +50,19 @@ export default function ManagerTreasuryPage() {
       where("createdAt", "<=", range.endDate)
     )
   }, [db, restaurantId, range.endDate, range.startDate])
-  const { data: movements, isLoading: isLoadingMovements } = useCollection<any>(movementsQuery)
+  const { data: movements, error: movementsError, isLoading: isLoadingMovements } = useCollection<any>(movementsQuery)
 
   const cashSessionsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
     return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS)
   }, [db, restaurantId])
-  const { data: cashSessions, isLoading: isLoadingCashSessions } = useCollection<any>(cashSessionsQuery)
+  const { data: cashSessions, error: sessionsError, isLoading: isLoadingCashSessions } = useCollection<any>(cashSessionsQuery)
 
   const paymentsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
     return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.PAYMENTS)
   }, [db, restaurantId])
-  const { data: payments, isLoading: isLoadingPayments } = useCollection<any>(paymentsQuery)
+  const { data: payments, error: paymentsError, isLoading: isLoadingPayments } = useCollection<any>(paymentsQuery)
 
   const sessionById = React.useMemo(() => {
     return new Map((cashSessions || []).map((session: any) => [session.id, session]))
@@ -78,6 +76,10 @@ export default function ManagerTreasuryPage() {
     [movements, payments]
   )
   const historicalAccountTotals = React.useMemo(() => buildAccountTotals(safeMovements), [safeMovements])
+  const usesAccountFallback = React.useMemo(() => DEFAULT_TREASURY_ACCOUNTS.some((defaultAccount) => {
+    const sourceAccount = (accounts || []).find((account) => account.id === defaultAccount.id)
+    return Number(sourceAccount?.balance || 0) <= 0 && Number(historicalAccountTotals[defaultAccount.id] || 0) !== 0
+  }), [accounts, historicalAccountTotals])
   const safeAccounts = React.useMemo(
     () => normalizeAccounts(accounts || [], historicalAccountTotals),
     [accounts, historicalAccountTotals]
@@ -102,210 +104,19 @@ export default function ManagerTreasuryPage() {
   const sourceOptions = React.useMemo(() => {
     return Array.from(new Set(safeMovements.map((movement) => String(movement.source || "manual")))).sort()
   }, [safeMovements])
+  const viewModel = React.useMemo(() => buildManagerReportsViewModel({
+    periodLabel: getPeriodLabel(type, range.startDate, range.endDate), balance: displayBalance, deposits: displayDeposits, expenses: displayExpenses,
+    balanceUsesFallback: usesAccountFallback || accountTotal <= 0, movementsUseFallback: movementSummary.in <= 0 || movementSummary.out <= 0,
+    containsLegacyExpansion: safeMovements.some((movement) => Boolean(movement.legacyExpandedFrom)),
+    accounts: safeAccounts.map((account) => ({ id: account.id, name: account.name, kind: formatAccountKind(account.kind), balance: Number(account.balance || 0) })),
+    movements: filteredMovements.map(toMovementReport),
+  }), [accountTotal, displayBalance, displayDeposits, displayExpenses, filteredMovements, movementSummary.in, movementSummary.out, range.endDate, range.startDate, safeAccounts, safeMovements, type, usesAccountFallback])
 
   if (!restaurantId || isLoadingAccounts || isLoadingMovements || isLoadingPayments || isLoadingCashSessions) {
-    return <AdminRouteSkeleton />
+    return <ReportsLoadingState label="Chargement des rapports financiers Manager" />
   }
 
-  return (
-    <main className="space-y-4 pb-20 md:pb-6">
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <TreasuryCard
-          icon={Wallet}
-          label="Solde total"
-          value={displayBalance}
-          priority
-          danger={displayBalance < 0}
-        />
-        <TreasuryCard icon={ReceiptText} label="Entrées totales" value={displayDeposits} />
-        <TreasuryCard icon={Banknote} label="Dépenses totales" value={displayExpenses} danger={displayExpenses > 0} />
-      </section>
-
-      <section className="rounded-xl border bg-card p-3 shadow-sm">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-black uppercase tracking-tight">Répartition par compte</h2>
-          {accountTotal <= 0 && legacySummary.balance > 0 ? (
-            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-black text-amber-700 dark:bg-amber-500/15 dark:text-amber-200">
-              Solde historique affiché en fallback
-            </span>
-          ) : null}
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          {safeAccounts.map((account) => (
-            <TreasuryAccountCard key={account.id} account={account} />
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-xl border bg-card p-3 shadow-sm">
-        <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0">
-            <h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-tight">
-              <ListFilter className="h-4 w-4 text-primary" />
-              Historique des mouvements
-            </h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Source : cashMovements enrichi, compatible avec les anciens mouvements.
-            </p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[560px]">
-            <FilterSelect label="Type" value={directionFilter} onChange={(value) => setDirectionFilter(value as MovementDirectionFilter)}>
-              <option value="all">Tous</option>
-              <option value="in">Entrées</option>
-              <option value="out">Sorties</option>
-              <option value="transfer">Transferts</option>
-            </FilterSelect>
-            <FilterSelect label="Compte" value={accountFilter} onChange={setAccountFilter}>
-              <option value="all">Tous</option>
-              {safeAccounts.map((account) => (
-                <option key={account.id} value={account.id}>{account.name}</option>
-              ))}
-            </FilterSelect>
-            <FilterSelect label="Source" value={sourceFilter} onChange={setSourceFilter}>
-              <option value="all">Toutes</option>
-              {sourceOptions.map((source) => (
-                <option key={source} value={source}>{formatSource(source)}</option>
-              ))}
-            </FilterSelect>
-          </div>
-        </div>
-
-        {filteredMovements.length === 0 ? (
-          <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-4 text-center text-sm font-semibold text-muted-foreground">
-            Aucune donnée pour cette période
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-xl border">
-            <table className="w-full min-w-[900px] text-left text-sm">
-              <thead className="bg-muted/50 text-[10px] uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2">Date</th>
-                  <th className="px-3 py-2">Type</th>
-                  <th className="px-3 py-2">Libellé</th>
-                  <th className="px-3 py-2">Compte</th>
-                  <th className="px-3 py-2 text-right">Entrée</th>
-                  <th className="px-3 py-2 text-right">Sortie</th>
-                  <th className="px-3 py-2">Source</th>
-                  <th className="px-3 py-2">Utilisateur</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y bg-background">
-                {filteredMovements.map((movement) => {
-                  const direction = getMovementDirection(movement)
-                  const amount = Number(movement.amount || 0)
-                  return (
-                    <tr key={movement.id} className="align-middle transition-colors hover:bg-muted/30">
-                      <td className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-muted-foreground">{formatDateTime(movement.occurredAt || movement.createdAt)}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={cn(
-                          "inline-flex rounded-full px-2 py-1 text-[10px] font-black uppercase",
-                          direction === "in" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
-                          direction === "out" && "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200",
-                          direction === "transfer" && "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200"
-                        )}>
-                          {formatDirection(direction)}
-                        </span>
-                      </td>
-                      <td className="max-w-[260px] truncate px-3 py-2.5 font-bold">{getMovementLabel(movement)}</td>
-                      <td className="px-3 py-2.5 text-xs font-semibold text-muted-foreground">{getTreasuryAccountLabel(getMovementAccountId(movement))}</td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-emerald-700 dark:text-emerald-300">
-                        {direction === "in" ? `+${formatMoney(amount)} FCFA` : "-"}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-amber-700 dark:text-amber-300">
-                        {direction === "out" ? `-${formatMoney(amount)} FCFA` : "-"}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className="inline-flex rounded-full bg-muted px-2 py-1 text-[10px] font-black uppercase text-muted-foreground">
-                          {formatSource(movement.source)}
-                        </span>
-                      </td>
-                      <td className="max-w-[180px] truncate px-3 py-2.5 text-xs font-semibold text-muted-foreground">{movement.createdBy || "-"}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </main>
-  )
-}
-
-function TreasuryCard({
-  icon: Icon,
-  label,
-  value,
-  priority,
-  danger,
-}: {
-  icon: React.ElementType
-  label: string
-  value: number
-  priority?: boolean
-  danger?: boolean
-}) {
-  return (
-    <Card className={cn("rounded-xl", priority && "md:order-first", danger && "border-amber-300")}>
-      <CardContent className="flex min-h-24 flex-col justify-between p-3">
-        <Icon className={cn("h-4 w-4", danger ? "text-amber-600" : "text-primary")} />
-        <p className="mt-2 text-[10px] font-black uppercase text-muted-foreground">{label}</p>
-        <p className={cn("mt-0.5 text-lg font-black leading-tight sm:text-xl", danger ? "text-amber-600" : "text-foreground")}>
-          {formatMoney(value)} FCFA
-        </p>
-      </CardContent>
-    </Card>
-  )
-}
-
-function TreasuryAccountCard({ account }: { account: TreasuryAccount }) {
-  const isMobile = account.kind === "mobile_money"
-  const Icon = isMobile ? CreditCard : Banknote
-
-  return (
-    <article className="rounded-xl border bg-background p-3 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
-            isMobile ? "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
-          )}>
-            <Icon className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-black">{account.name}</p>
-            <p className="mt-0.5 text-xs font-bold text-muted-foreground">{formatAccountKind(account.kind)}</p>
-          </div>
-        </div>
-        <p className="whitespace-nowrap text-xl font-black">{formatMoney(account.balance)} FCFA</p>
-      </div>
-    </article>
-  )
-}
-
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  children: React.ReactNode
-}) {
-  return (
-    <label className="space-y-1 text-[10px] font-black uppercase text-muted-foreground">
-      <span>{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-9 w-full rounded-lg border bg-background px-3 text-xs font-bold normal-case text-foreground"
-      >
-        {children}
-      </select>
-    </label>
-  )
+  return <ManagerReportsView model={viewModel} errors={[accountsError && "comptes", movementsError && "mouvements", sessionsError && "sessions", paymentsError && "paiements"].filter(Boolean) as string[]} period={type} customRange={dateRange} onPeriodChange={setType} onCustomRangeChange={setDateRange} directionFilter={directionFilter} accountFilter={accountFilter} sourceFilter={sourceFilter} accountOptions={safeAccounts.map((account) => ({ id: account.id, label: account.name }))} sourceOptions={sourceOptions.map((source) => ({ id: source, label: formatSource(source) }))} onDirectionFilterChange={(value) => setDirectionFilter(value as MovementDirectionFilter)} onAccountFilterChange={setAccountFilter} onSourceFilterChange={setSourceFilter} />
 }
 
 function normalizeAccounts(accounts: TreasuryAccount[], fallbackTotals: Record<string, number> = {}) {
@@ -447,6 +258,19 @@ function formatAccountKind(kind: string) {
   if (kind === "mobile_money") return "Compte mobile money"
   if (kind === "bank") return "Compte bancaire"
   return kind
+}
+
+function toMovementReport(movement: any): ManagerTreasuryMovementReport {
+  const direction = getMovementDirection(movement)
+  const amount = Number(movement.amount || 0)
+  return { id: movement.id, date: formatDateTime(movement.occurredAt || movement.createdAt), type: formatDirection(direction), label: getMovementLabel(movement), account: getTreasuryAccountLabel(getMovementAccountId(movement)), incoming: direction === "in" ? `+${formatMoney(amount)} FCFA` : "-", outgoing: direction === "out" ? `-${formatMoney(amount)} FCFA` : "-", source: formatSource(movement.source), user: movement.createdBy || "-" }
+}
+
+function getPeriodLabel(type: string, startDate: Date, endDate: Date) {
+  if (type === "today") return "Aujourd’hui"
+  if (type === "week") return "7 derniers jours"
+  if (type === "month") return "30 derniers jours"
+  return `${startDate.toLocaleDateString("fr-FR")} – ${endDate.toLocaleDateString("fr-FR")}`
 }
 
 function formatMoney(value: unknown) {

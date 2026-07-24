@@ -23,6 +23,7 @@ export type PlatformMenuCategoryTemplate = {
   description?: string
   imageUrl?: string
   imageMediaId?: string
+  marketplaceCategoryId?: string | null
   order: number
   isActive: boolean
   createdAt?: Timestamp
@@ -36,6 +37,7 @@ export type PlatformMenuProductTemplate = {
   name: string
   description?: string
   categoryTemplateId: string
+  marketplaceCategoryId?: string | null
   imageUrl?: string
   imageMediaId?: string
   basePrice: number
@@ -51,4 +53,3 @@ export type PlatformMenuProductTemplate = {
   createdBy?: string
   updatedBy?: string
 }
-

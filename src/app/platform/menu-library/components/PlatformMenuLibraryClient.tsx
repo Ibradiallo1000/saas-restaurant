@@ -13,11 +13,7 @@ import {
   updateDoc,
 } from "firebase/firestore"
 import {
-  BookOpen,
-  Boxes,
-  ChefHat,
   ImageIcon,
-  Layers3,
   Loader2,
   Pencil,
   Plus,
@@ -39,11 +35,15 @@ import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import type {
+  MarketplaceFoodCategoryDocument,
+} from "@/lib/marketplace-discovery/marketplace-discovery-types"
+import type {
   PlatformMenuCategoryTemplate,
   PlatformMenuPack,
   PlatformMenuProductTemplate,
 } from "@/modules/menu-library/types"
 import { PREPARATION_MODES, type PreparationMode } from "@/utils/preparation-logic"
+import { PlatformMenuLibraryView } from "./PlatformMenuLibraryView"
 
 type WithId<T> = T & { id: string }
 
@@ -61,6 +61,7 @@ type CategoryForm = {
   description: string
   imageUrl: string
   imageMediaId: string
+  marketplaceCategoryId: string
   order: string
   isActive: boolean
   packIds: string[]
@@ -97,6 +98,7 @@ const EMPTY_CATEGORY_FORM: CategoryForm = {
   description: "",
   imageUrl: "",
   imageMediaId: "",
+  marketplaceCategoryId: "",
   order: "0",
   isActive: true,
   packIds: [],
@@ -132,6 +134,7 @@ export default function PlatformMenuLibraryClient() {
   const [editingProductId, setEditingProductId] = React.useState<string | null>(null)
   const [savingSection, setSavingSection] = React.useState<"pack" | "category" | "product" | null>(null)
   const [pendingId, setPendingId] = React.useState<string | null>(null)
+  const [deleteCandidate, setDeleteCandidate] = React.useState<{ collectionName: string; id: string; label: string } | null>(null)
 
   const packsQuery = useMemoFirebase(() => {
     if (!db) return null
@@ -160,6 +163,15 @@ export default function PlatformMenuLibraryClient() {
     )
   }, [db])
 
+  const marketplaceCategoriesQuery = useMemoFirebase(() => {
+    if (!db) return null
+    return query(
+      collection(db, COLLECTION_NAMES.MARKETPLACE_FOOD_CATEGORIES),
+      orderBy("sortOrder", "asc"),
+      limit(100)
+    )
+  }, [db])
+
   const {
     data: packs,
     isLoading: isPacksLoading,
@@ -175,11 +187,15 @@ export default function PlatformMenuLibraryClient() {
     isLoading: isProductsLoading,
     refetch: refetchProducts,
   } = useCollectionOnce<PlatformMenuProductTemplate>(productsQuery)
+  const { data: marketplaceCategories, isLoading: isMarketplaceCategoriesLoading } =
+    useCollectionOnce<MarketplaceFoodCategoryDocument>(marketplaceCategoriesQuery)
 
   const packList = packs ?? []
   const categoryList = categories ?? []
   const productList = products ?? []
-  const isLoading = isPacksLoading || isCategoriesLoading || isProductsLoading
+  const marketplaceCategoryList = marketplaceCategories ?? []
+  const activeMarketplaceCategoryList = marketplaceCategoryList.filter((category) => category.active !== false)
+  const isLoading = isPacksLoading || isCategoriesLoading || isProductsLoading || isMarketplaceCategoriesLoading
 
   const refetchAll = React.useCallback(() => {
     refetchPacks()
@@ -238,6 +254,7 @@ export default function PlatformMenuLibraryClient() {
       description: categoryForm.description.trim(),
       imageUrl: categoryForm.imageUrl.trim(),
       imageMediaId: categoryForm.imageMediaId,
+      marketplaceCategoryId: categoryForm.marketplaceCategoryId || null,
       order: toInt(categoryForm.order),
       isActive: categoryForm.isActive,
       updatedAt: serverTimestamp(),
@@ -339,8 +356,6 @@ export default function PlatformMenuLibraryClient() {
 
   const deleteTemplate = async (collectionName: string, id: string, label: string) => {
     if (!db) return
-    if (!window.confirm(`Supprimer ${label} ?`)) return
-
     setPendingId(id)
     try {
       await deleteDoc(doc(db, collectionName, id))
@@ -351,6 +366,7 @@ export default function PlatformMenuLibraryClient() {
       toast({ title: "Suppression impossible", variant: "destructive" })
     } finally {
       setPendingId(null)
+      setDeleteCandidate(null)
     }
   }
 
@@ -373,6 +389,7 @@ export default function PlatformMenuLibraryClient() {
       description: category.description || "",
       imageUrl: category.imageUrl || "",
       imageMediaId: category.imageMediaId || "",
+      marketplaceCategoryId: category.marketplaceCategoryId || "",
       order: String(category.order ?? 0),
       isActive: category.isActive !== false,
       packIds: Array.isArray(category.packIds) ? category.packIds : [],
@@ -415,28 +432,7 @@ export default function PlatformMenuLibraryClient() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="flex items-center gap-3 text-4xl font-black italic uppercase tracking-tighter text-primary">
-            <BookOpen className="h-9 w-9" />
-            Bibliotheque menus
-          </h1>
-          <p className="font-medium text-muted-foreground">
-            Modeles globaux prepares par le Super Admin. Aucun menu restaurant n'est modifie ici.
-          </p>
-        </div>
-        <Badge variant="outline" className="w-fit rounded-full px-4 py-2 text-xs font-black uppercase">
-          Plateforme uniquement
-        </Badge>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard icon={Boxes} label="Packs modeles" value={packList.length} />
-        <StatCard icon={Layers3} label="Categories modeles" value={categoryList.length} />
-        <StatCard icon={ChefHat} label="Produits modeles" value={productList.length} />
-      </div>
-
+    <PlatformMenuLibraryView packCount={packList.length} categoryCount={categoryList.length} productCount={productList.length} deleteLabel={deleteCandidate?.label} deleting={Boolean(pendingId)} onDeleteOpenChange={(open) => { if (!open && !pendingId) setDeleteCandidate(null) }} onConfirmDelete={() => { if (deleteCandidate) void deleteTemplate(deleteCandidate.collectionName, deleteCandidate.id, deleteCandidate.label) }}>
       <Tabs defaultValue="packs" className="space-y-6">
         <TabsList className="grid h-auto w-full grid-cols-3 rounded-xl bg-secondary/30 p-1">
           <TabsTrigger value="packs" className="rounded-lg font-bold">Packs</TabsTrigger>
@@ -460,9 +456,7 @@ export default function PlatformMenuLibraryClient() {
             isLoading={isLoading}
             pendingId={pendingId}
             onEdit={startEditPack}
-            onDelete={(pack) =>
-              deleteTemplate(COLLECTION_NAMES.PLATFORM_MENU_PACKS, pack.id, pack.name)
-            }
+            onDelete={(pack) => setDeleteCandidate({ collectionName: COLLECTION_NAMES.PLATFORM_MENU_PACKS, id: pack.id, label: pack.name })}
           />
         </TabsContent>
 
@@ -470,6 +464,7 @@ export default function PlatformMenuLibraryClient() {
           <CategoryFormCard
             form={categoryForm}
             packs={packList}
+            marketplaceCategories={activeMarketplaceCategoryList}
             editingId={editingCategoryId}
             isSaving={savingSection === "category"}
             onSubmit={handleSaveCategory}
@@ -479,12 +474,11 @@ export default function PlatformMenuLibraryClient() {
           <CategoryGrid
             categories={categoryList}
             packs={packList}
+            marketplaceCategories={marketplaceCategoryList}
             isLoading={isLoading}
             pendingId={pendingId}
             onEdit={startEditCategory}
-            onDelete={(category) =>
-              deleteTemplate(COLLECTION_NAMES.PLATFORM_MENU_CATEGORIES, category.id, category.name)
-            }
+            onDelete={(category) => setDeleteCandidate({ collectionName: COLLECTION_NAMES.PLATFORM_MENU_CATEGORIES, id: category.id, label: category.name })}
           />
         </TabsContent>
 
@@ -506,14 +500,11 @@ export default function PlatformMenuLibraryClient() {
             isLoading={isLoading}
             pendingId={pendingId}
             onEdit={startEditProduct}
-            onDelete={(product) =>
-              deleteTemplate(COLLECTION_NAMES.PLATFORM_MENU_PRODUCTS, product.id, product.name)
-            }
+            onDelete={(product) => setDeleteCandidate({ collectionName: COLLECTION_NAMES.PLATFORM_MENU_PRODUCTS, id: product.id, label: product.name })}
           />
         </TabsContent>
       </Tabs>
-
-    </div>
+    </PlatformMenuLibraryView>
   )
 }
 
@@ -580,6 +571,7 @@ function PackFormCard({
 function CategoryFormCard({
   form,
   packs,
+  marketplaceCategories,
   editingId,
   isSaving,
   onSubmit,
@@ -588,6 +580,7 @@ function CategoryFormCard({
 }: {
   form: CategoryForm
   packs: WithId<PlatformMenuPack>[]
+  marketplaceCategories: WithId<MarketplaceFoodCategoryDocument>[]
   editingId: string | null
   isSaving: boolean
   onSubmit: (event: React.FormEvent) => void
@@ -619,6 +612,20 @@ function CategoryFormCard({
             checked={form.isActive}
             onCheckedChange={(checked) => onChange({ ...form, isActive: checked })}
           />
+          <Field className="md:col-span-2" label="Catégorie marketplace">
+            <select
+              value={form.marketplaceCategoryId}
+              onChange={(event) => onChange({ ...form, marketplaceCategoryId: event.target.value })}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">Aucun mapping</option>
+              {marketplaceCategories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </Field>
           <div className="md:col-span-6">
             <PackCheckboxes
               packs={packs}
@@ -833,6 +840,7 @@ function PackGrid({
 function CategoryGrid({
   categories,
   packs,
+  marketplaceCategories,
   isLoading,
   pendingId,
   onEdit,
@@ -840,6 +848,7 @@ function CategoryGrid({
 }: {
   categories: WithId<PlatformMenuCategoryTemplate>[]
   packs: WithId<PlatformMenuPack>[]
+  marketplaceCategories: WithId<MarketplaceFoodCategoryDocument>[]
   isLoading: boolean
   pendingId: string | null
   onEdit: (category: WithId<PlatformMenuCategoryTemplate>) => void
@@ -858,7 +867,7 @@ function CategoryGrid({
           imageUrl={category.imageUrl}
           isActive={category.isActive}
           pending={pendingId === category.id}
-          meta={`Ordre ${category.order ?? 0}`}
+          meta={`Ordre ${category.order ?? 0} - ${getMarketplaceCategoryName(marketplaceCategories, category.marketplaceCategoryId)}`}
           badges={getPackNames(packs, category.packIds)}
           onEdit={() => onEdit(category)}
           onDelete={() => onDelete(category)}
@@ -1018,11 +1027,12 @@ function ToggleFormField({
   checked: boolean
   onCheckedChange: (checked: boolean) => void
 }) {
+  const id = React.useId()
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
+      <Label htmlFor={id}>{label}</Label>
       <div className="flex h-10 items-center">
-        <Switch checked={checked} onCheckedChange={onCheckedChange} />
+        <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
       </div>
     </div>
   )
@@ -1037,10 +1047,12 @@ function Field({
   className?: string
   children: React.ReactNode
 }) {
+  const id = React.useId()
+  const control = React.isValidElement(children) ? React.cloneElement(children as React.ReactElement<{ id?: string }>, { id }) : children
   return (
     <div className={cn("space-y-2", className)}>
-      <Label>{label}</Label>
-      {children}
+      <Label htmlFor={id}>{label}</Label>
+      {control}
     </div>
   )
 }
@@ -1067,28 +1079,6 @@ function FormActions({
         </Button>
       ) : null}
     </div>
-  )
-}
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ComponentType<{ className?: string }>
-  label: string
-  value: number
-}) {
-  return (
-    <Card className="border-none shadow-lg">
-      <CardContent className="flex items-center justify-between p-5">
-        <div>
-          <p className="text-xs font-black uppercase text-muted-foreground">{label}</p>
-          <p className="mt-1 text-3xl font-black text-primary">{value}</p>
-        </div>
-        <Icon className="h-8 w-8 text-primary" />
-      </CardContent>
-    </Card>
   )
 }
 
@@ -1145,4 +1135,12 @@ function getCategoryName(
   categoryTemplateId: string
 ) {
   return categories.find((category) => category.id === categoryTemplateId)?.name || "Sans categorie"
+}
+
+function getMarketplaceCategoryName(
+  categories: WithId<MarketplaceFoodCategoryDocument>[],
+  categoryId?: string | null
+) {
+  if (!categoryId) return "Sans mapping marketplace"
+  return categories.find((category) => category.id === categoryId)?.name || "Mapping marketplace inconnu"
 }
