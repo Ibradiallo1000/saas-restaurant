@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 
 import { MediaSelector } from "@/components/platform/MediaSelector"
+import { MarketplaceCategoryIconSelector } from "@/components/marketplace-ui/marketplace-category-icon-selector"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -33,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useAuth, useCollectionOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
+import { getMarketplaceCategoryIcon, normalizeMarketplaceCategoryIconKey, type MarketplaceCategoryIconKey } from "@/lib/marketplace-category-icons"
 import { cn } from "@/lib/utils"
 import type {
   MarketplaceFoodCategoryDocument,
@@ -52,6 +54,7 @@ type PackForm = {
   description: string
   imageUrl: string
   imageMediaId: string
+  iconKey: MarketplaceCategoryIconKey | ""
   isActive: boolean
   tags: string
 }
@@ -61,6 +64,7 @@ type CategoryForm = {
   description: string
   imageUrl: string
   imageMediaId: string
+  iconKey: MarketplaceCategoryIconKey | ""
   marketplaceCategoryId: string
   order: string
   isActive: boolean
@@ -89,6 +93,7 @@ const EMPTY_PACK_FORM: PackForm = {
   description: "",
   imageUrl: "",
   imageMediaId: "",
+  iconKey: "",
   isActive: true,
   tags: "",
 }
@@ -98,6 +103,7 @@ const EMPTY_CATEGORY_FORM: CategoryForm = {
   description: "",
   imageUrl: "",
   imageMediaId: "",
+  iconKey: "",
   marketplaceCategoryId: "",
   order: "0",
   isActive: true,
@@ -213,6 +219,7 @@ export default function PlatformMenuLibraryClient() {
       description: packForm.description.trim(),
       imageUrl: packForm.imageUrl.trim(),
       imageMediaId: packForm.imageMediaId,
+      iconKey: packForm.iconKey || null,
       isActive: packForm.isActive,
       categoryTemplateIds: [],
       productTemplateIds: [],
@@ -254,6 +261,7 @@ export default function PlatformMenuLibraryClient() {
       description: categoryForm.description.trim(),
       imageUrl: categoryForm.imageUrl.trim(),
       imageMediaId: categoryForm.imageMediaId,
+      iconKey: categoryForm.iconKey || null,
       marketplaceCategoryId: categoryForm.marketplaceCategoryId || null,
       order: toInt(categoryForm.order),
       isActive: categoryForm.isActive,
@@ -377,6 +385,7 @@ export default function PlatformMenuLibraryClient() {
       description: pack.description || "",
       imageUrl: pack.imageUrl || "",
       imageMediaId: pack.imageMediaId || "",
+      iconKey: normalizeMarketplaceCategoryIconKey(pack.iconKey) ?? "",
       isActive: pack.isActive !== false,
       tags: (pack.tags || []).join(", "),
     })
@@ -389,6 +398,7 @@ export default function PlatformMenuLibraryClient() {
       description: category.description || "",
       imageUrl: category.imageUrl || "",
       imageMediaId: category.imageMediaId || "",
+      iconKey: normalizeMarketplaceCategoryIconKey(category.iconKey) ?? "",
       marketplaceCategoryId: category.marketplaceCategoryId || "",
       order: String(category.order ?? 0),
       isActive: category.isActive !== false,
@@ -558,6 +568,9 @@ function PackFormCard({
               onSelect={(media) => onChange({ ...form, imageUrl: media?.url || "", imageMediaId: media?.id || "" })}
             />
           </div>
+          <div className="md:col-span-6">
+            <MarketplaceCategoryIconSelector value={form.iconKey} onChange={(iconKey) => onChange({ ...form, iconKey })} />
+          </div>
           <Field className="md:col-span-6" label="Description">
             <Textarea value={form.description} onChange={(event) => onChange({ ...form, description: event.target.value })} />
           </Field>
@@ -626,6 +639,9 @@ function CategoryFormCard({
               ))}
             </select>
           </Field>
+          <div className="md:col-span-6">
+            <MarketplaceCategoryIconSelector value={form.iconKey} onChange={(iconKey) => onChange({ ...form, iconKey })} />
+          </div>
           <div className="md:col-span-6">
             <PackCheckboxes
               packs={packs}
@@ -824,6 +840,8 @@ function PackGrid({
             title={pack.name}
             description={pack.description}
             imageUrl={pack.imageUrl}
+            iconKey={pack.iconKey}
+            showCategoryIcon
             isActive={pack.isActive}
             pending={pendingId === pack.id}
             meta={`${categoryCount} categories - ${productCount} produits`}
@@ -865,6 +883,8 @@ function CategoryGrid({
           title={category.name}
           description={category.description}
           imageUrl={category.imageUrl}
+          iconKey={category.iconKey}
+          showCategoryIcon
           isActive={category.isActive}
           pending={pendingId === category.id}
           meta={`Ordre ${category.order ?? 0} - ${getMarketplaceCategoryName(marketplaceCategories, category.marketplaceCategoryId)}`}
@@ -921,6 +941,8 @@ function TemplateCard({
   title,
   description,
   imageUrl,
+  iconKey,
+  showCategoryIcon = false,
   isActive,
   pending,
   meta,
@@ -931,6 +953,8 @@ function TemplateCard({
   title: string
   description?: string
   imageUrl?: string
+  iconKey?: string | null
+  showCategoryIcon?: boolean
   isActive: boolean
   pending: boolean
   meta: string
@@ -938,6 +962,7 @@ function TemplateCard({
   onEdit: () => void
   onDelete: () => void
 }) {
+  const Icon = getMarketplaceCategoryIcon(iconKey)
   return (
     <Card className="overflow-hidden border-none shadow-xl">
       <div className="aspect-[16/9] bg-secondary/40">
@@ -945,7 +970,7 @@ function TemplateCard({
           <img src={imageUrl} alt={title} className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-            <ImageIcon className="h-10 w-10 opacity-40" />
+            {showCategoryIcon ? <Icon className="h-10 w-10 text-primary opacity-70" /> : <ImageIcon className="h-10 w-10 opacity-40" />}
           </div>
         )}
       </div>

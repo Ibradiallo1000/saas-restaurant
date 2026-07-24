@@ -89,6 +89,7 @@ export interface MenuItem {
 export interface MenuCategory {
   id: string
   name: string
+  iconKey?: string | null
   order?: number
 }
 

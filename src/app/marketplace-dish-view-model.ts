@@ -79,6 +79,7 @@ export function buildMarketplaceDishHomeViewModel(input: {
       id: category.id,
       label: category.name,
       imageUrl: category.imageUrl,
+      iconKey: category.iconKey ?? category.icon,
       active: category.id === selectedCategoryId,
     })),
     selectedCategoryId,

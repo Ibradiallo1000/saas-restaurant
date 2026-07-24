@@ -7,6 +7,7 @@ export type PlatformMenuPack = {
   description?: string
   imageUrl?: string
   imageMediaId?: string
+  iconKey?: string | null
   isActive: boolean
   categoryTemplateIds: string[]
   productTemplateIds: string[]
@@ -23,6 +24,7 @@ export type PlatformMenuCategoryTemplate = {
   description?: string
   imageUrl?: string
   imageMediaId?: string
+  iconKey?: string | null
   marketplaceCategoryId?: string | null
   order: number
   isActive: boolean

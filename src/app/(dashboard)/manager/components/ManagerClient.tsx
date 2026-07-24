@@ -24,6 +24,7 @@ import { Store, Plus, Search, X, MoreVertical, Edit2, Trash2, Power, PowerOff, E
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { MarketplaceCategoryIconSelector } from "@/components/marketplace-ui/marketplace-category-icon-selector"
 import {
   Card,
   CardContent,
@@ -33,6 +34,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { getOptimizedImage } from "@/lib/image"
+import { getMarketplaceCategoryIcon, normalizeMarketplaceCategoryIconKey, type MarketplaceCategoryIconKey } from "@/lib/marketplace-category-icons"
 import { cn } from "@/lib/utils"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import type { MarketplaceFoodCategoryDocument } from "@/lib/marketplace-discovery/marketplace-discovery-types"
@@ -69,6 +71,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -133,6 +136,7 @@ function SortableCategoryItem({ category, isSelected, onSelect, onEdit, disabled
     transition,
     opacity: isDragging ? 0.5 : 1,
   }
+  const Icon = getMarketplaceCategoryIcon(category.iconKey)
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} className="flex items-center gap-1">
@@ -158,7 +162,7 @@ function SortableCategoryItem({ category, isSelected, onSelect, onEdit, disabled
           />
         ) : (
           <span className="mr-2 flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-[10px] font-black text-muted-foreground">
-            IMG
+            <Icon className="h-4 w-4 text-primary" />
           </span>
         )}
         <span className="truncate">{category.name}</span>
@@ -195,6 +199,7 @@ function SortableCategoryCard({ category, productCount, onClick }: any) {
     transition,
     opacity: isDragging ? 0.5 : 1,
   }
+  const Icon = getMarketplaceCategoryIcon(category.iconKey)
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
@@ -213,7 +218,7 @@ function SortableCategoryCard({ category, productCount, onClick }: any) {
               height={200}
             />
           ) : (
-            <Store className="h-10 w-10 text-gray-400" />
+            <Icon className="h-10 w-10 text-primary opacity-70" />
           )}
         </div>
 
@@ -426,6 +431,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     return query(
       collection(db, COLLECTION_NAMES.MARKETPLACE_FOOD_CATEGORIES),
       where("active", "==", true),
+      where("schemaVersion", "==", 1),
       orderBy("sortOrder", "asc"),
       limit(100)
     )
@@ -446,6 +452,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
 
   const [newCategoryName, setNewCategoryName] = React.useState("")
   const [selectedMarketplaceCategoryId, setSelectedMarketplaceCategoryId] = React.useState("")
+  const [selectedCategoryIconKey, setSelectedCategoryIconKey] = React.useState<MarketplaceCategoryIconKey | "">("")
   const [editingCategory, setEditingCategory] = React.useState<any>(null)
   const [selectedCategoryImage, setSelectedCategoryImage] = React.useState<{
     id: string
@@ -694,6 +701,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       name: formatted,
       imageUrl: selectedCategoryImage?.url || null,
       imageId: selectedCategoryImage?.id || null,
+      iconKey: selectedCategoryIconKey || null,
       marketplaceCategoryId: selectedMarketplaceCategoryId || null,
       order: currentMaxOrder + 1,
       updatedAt: serverTimestamp()
@@ -719,6 +727,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     refreshCatalog()
     setNewCategoryName("")
     setSelectedMarketplaceCategoryId("")
+    setSelectedCategoryIconKey("")
     setEditingCategory(null)
     setSelectedCategoryImage(null)
     setIsCategoryOpen(false)
@@ -728,6 +737,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     setEditingCategory(null)
     setNewCategoryName("")
     setSelectedMarketplaceCategoryId("")
+    setSelectedCategoryIconKey("")
     setSelectedCategoryImage(null)
     setIsCategoryOpen(true)
   }
@@ -736,12 +746,21 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     setEditingCategory(category)
     setNewCategoryName(category.name || "")
     setSelectedMarketplaceCategoryId(category.marketplaceCategoryId || "")
+    setSelectedCategoryIconKey(normalizeMarketplaceCategoryIconKey(category.iconKey) ?? "")
     setSelectedCategoryImage(
       category.imageUrl
         ? { id: category.imageId || "", url: category.imageUrl }
         : null
     )
     setIsCategoryOpen(true)
+  }
+
+  const closeCategoryModal = () => {
+    setIsCategoryOpen(false)
+    setEditingCategory(null)
+    setSelectedCategoryImage(null)
+    setSelectedMarketplaceCategoryId("")
+    setSelectedCategoryIconKey("")
   }
 
   // TOGGLE PRODUCT ACTIVE STATUS
@@ -1176,31 +1195,23 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       </div>
 
       {/* MODAL CATEGORY */}
-      {isCategoryOpen && (
-        <div className="fixed inset-0 bg-[color:color-mix(in_srgb,var(--bg-main)_68%,transparent)] flex items-center justify-center z-50">
-          <div className="h-full w-full space-y-4 overflow-y-auto bg-card p-4 shadow-2xl sm:h-auto sm:w-[400px] sm:rounded-2xl sm:p-6">
-            <div className="flex justify-between items-center">
-              <h2 className="font-bold text-lg">
-                {editingCategory ? "Modifier la catégorie" : "Nouvelle catégorie"}
-              </h2>
-              <button
-                onClick={() => {
-                  setIsCategoryOpen(false)
-                  setEditingCategory(null)
-                  setSelectedCategoryImage(null)
-                  setSelectedMarketplaceCategoryId("")
-                }}
-                className="cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+      <Dialog open={isCategoryOpen} onOpenChange={(open) => { if (!open) closeCategoryModal() }}>
+        <DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-xl grid-rows-none flex-col overflow-hidden rounded-2xl p-0">
+          <DialogHeader className="sticky top-0 z-10 border-b bg-card px-4 py-4 pr-12 text-left sm:px-6">
+            <DialogTitle className="text-lg font-bold">
+              {editingCategory ? "Modifier la catégorie" : "Nouvelle catégorie"}
+            </DialogTitle>
+            <DialogDescription>
+              Choisissez une image personnalisée ou une icône de la bibliothèque.
+            </DialogDescription>
+          </DialogHeader>
 
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-6">
             <Input
               placeholder="Nom de la catégorie"
               value={newCategoryName}
               onChange={(e) => setNewCategoryName(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSaveCategory()}
+              onKeyDown={(e) => e.key === "Enter" && handleSaveCategory()}
             />
 
             <div className="space-y-2">
@@ -1223,7 +1234,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
             </div>
 
             <div className="space-y-3 rounded-xl border p-3">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-semibold">Image catégorie</p>
                   <p className="text-xs text-muted-foreground">
@@ -1235,6 +1246,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
                   variant="outline"
                   onClick={() => setIsCategoryImagePickerOpen(true)}
                   disabled={!restaurantId}
+                  className="w-full sm:w-auto"
                 >
                   <ImageIcon className="mr-2 h-4 w-4" />
                   Choisir une image
@@ -1242,17 +1254,17 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
               </div>
 
               {selectedCategoryImage ? (
-                <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 p-2">
+                <div className="flex min-w-0 items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 p-2">
                   <img
                     src={getOptimizedImage(selectedCategoryImage!.url, 120)}
                     alt="Image catégorie"
                     loading="lazy"
                     width={120}
                     height={120}
-                    className="h-16 w-16 rounded-lg object-cover"
+                    className="h-16 w-16 shrink-0 rounded-lg object-cover"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium text-gray-700">
+                    <p className="truncate text-xs font-medium text-foreground">
                       Image sélectionnée
                     </p>
                     <p className="truncate text-[10px] text-muted-foreground">
@@ -1263,6 +1275,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
                     type="button"
                     variant="ghost"
                     size="sm"
+                    className="shrink-0"
                     onClick={() => setSelectedCategoryImage(null)}
                   >
                     Supprimer
@@ -1275,25 +1288,23 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
               )}
             </div>
 
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setIsCategoryOpen(false)
-                  setEditingCategory(null)
-                  setSelectedCategoryImage(null)
-                  setSelectedMarketplaceCategoryId("")
-                }}
-              >
-                Annuler
-              </Button>
-              <Button onClick={handleSaveCategory}>
-                {editingCategory ? "Enregistrer" : "Ajouter"}
-              </Button>
-            </div>
+            <MarketplaceCategoryIconSelector
+              value={selectedCategoryIconKey}
+              onChange={setSelectedCategoryIconKey}
+              description="Utilisée uniquement si aucune image personnalisée n'est sélectionnée."
+            />
           </div>
-        </div>
-      )}
+
+          <DialogFooter className="sticky bottom-0 z-10 gap-2 border-t bg-card px-4 py-3 sm:px-6">
+            <Button variant="ghost" onClick={closeCategoryModal}>
+              Annuler
+            </Button>
+            <Button onClick={handleSaveCategory}>
+              {editingCategory ? "Enregistrer" : "Ajouter"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* MODAL PRODUCT - 🔥 MODIFIED PLACEHOLDER */}
       {isProductOpen && (

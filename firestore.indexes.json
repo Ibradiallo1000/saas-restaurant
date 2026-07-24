@@ -52,6 +52,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "schemaVersion", "order": "ASCENDING" },
         { "fieldPath": "sortOrder", "order": "ASCENDING" },
         { "fieldPath": "__name__", "order": "ASCENDING" }
       ]

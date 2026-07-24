@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useFirestore, useMemoFirebase, useCollectionOnce } from "@/firebase"
 import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
+import { getMarketplaceCategoryIcon } from "@/lib/marketplace-category-icons"
 import type { LinkedOptionGroup } from "@/lib/linked-option-groups"
 import type {
   PlatformMenuCategoryTemplate,
@@ -232,6 +233,7 @@ export default function MenuLibraryImportDialog({
           description: category.description || "",
           imageUrl: category.imageUrl || null,
           imageId: category.imageMediaId || "",
+          iconKey: category.iconKey || null,
           marketplaceCategoryId: category.marketplaceCategoryId || null,
           order: category.order ?? 0,
           isActive: category.isActive !== false,
@@ -397,7 +399,7 @@ export default function MenuLibraryImportDialog({
   )
 }
 
-function SelectableGrid<T extends { id: string; name: string; imageUrl?: string; description?: string }>({
+function SelectableGrid<T extends { id: string; name: string; imageUrl?: string; iconKey?: string | null; description?: string }>({
   items,
   selectedIds,
   onToggle,
@@ -424,6 +426,7 @@ function SelectableGrid<T extends { id: string; name: string; imageUrl?: string;
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => {
         const selected = selectedIds.includes(item.id)
+        const Icon = getMarketplaceCategoryIcon(item.iconKey)
         return (
           <button
             key={item.id}
@@ -438,7 +441,7 @@ function SelectableGrid<T extends { id: string; name: string; imageUrl?: string;
                 <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                  <ChefHat className="h-8 w-8 opacity-40" />
+                  {item.iconKey ? <Icon className="h-8 w-8 text-primary opacity-70" /> : <ChefHat className="h-8 w-8 opacity-40" />}
                 </div>
               )}
             </div>

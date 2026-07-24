@@ -11,7 +11,7 @@ import {
   updateDoc,
   type Timestamp,
 } from "firebase/firestore"
-import { ImageIcon, Loader2, Pencil, Plus, Search, Tags } from "lucide-react"
+import { Loader2, Pencil, Plus, Search, Tags } from "lucide-react"
 
 import { PlatformHeader, PlatformPage } from "@/components/platform-ui"
 import { MediaSelector } from "@/components/platform/MediaSelector"
@@ -24,6 +24,8 @@ import { Switch } from "@/components/ui/switch"
 import { useCollectionOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
+import { MarketplaceCategoryIconSelector } from "@/components/marketplace-ui/marketplace-category-icon-selector"
+import { getMarketplaceCategoryIcon, normalizeMarketplaceCategoryIconKey, type MarketplaceCategoryIconKey } from "@/lib/marketplace-category-icons"
 import { normalizeMarketplaceSearch } from "@/lib/marketplace-discovery/marketplace-discovery-core"
 
 type MarketplaceFoodCategory = {
@@ -32,6 +34,8 @@ type MarketplaceFoodCategory = {
   name: string
   slug: string
   normalizedName: string
+  icon?: string | null
+  iconKey?: string | null
   imageUrl: string | null
   sortOrder: number
   active: boolean
@@ -43,6 +47,7 @@ type MarketplaceFoodCategory = {
 type CategoryForm = {
   name: string
   slug: string
+  iconKey: MarketplaceCategoryIconKey | ""
   imageUrl: string
   sortOrder: string
   active: boolean
@@ -51,6 +56,7 @@ type CategoryForm = {
 const EMPTY_FORM: CategoryForm = {
   name: "",
   slug: "",
+  iconKey: "",
   imageUrl: "",
   sortOrder: "0",
   active: true,
@@ -95,6 +101,8 @@ export default function PlatformMarketplaceCategoriesClient() {
         name: form.name.trim(),
         slug,
         normalizedName: normalizeMarketplaceSearch(form.name),
+        icon: form.iconKey || null,
+        iconKey: form.iconKey || null,
         imageUrl: form.imageUrl.trim() || null,
         sortOrder: toInteger(form.sortOrder),
         active: form.active,
@@ -129,6 +137,7 @@ export default function PlatformMarketplaceCategoriesClient() {
     setForm({
       name: category.name || "",
       slug: category.slug || category.id,
+      iconKey: normalizeMarketplaceCategoryIconKey(category.iconKey ?? category.icon) ?? "",
       imageUrl: category.imageUrl || "",
       sortOrder: String(category.sortOrder ?? 0),
       active: category.active !== false,
@@ -179,6 +188,7 @@ export default function PlatformMarketplaceCategoriesClient() {
               <Field label="Ordre">
                 <Input type="number" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: event.target.value })} />
               </Field>
+              <MarketplaceCategoryIconSelector value={form.iconKey} onChange={(iconKey) => setForm({ ...form, iconKey })} />
               <div className="flex items-center justify-between rounded-xl border p-3">
                 <div>
                   <Label>Active</Label>
@@ -227,7 +237,14 @@ export default function PlatformMarketplaceCategoriesClient() {
                 {filteredCategories.map((category) => (
                   <div key={category.id} className="flex items-center gap-4 rounded-2xl border bg-card p-3 shadow-sm">
                     <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-secondary/40">
-                      {category.imageUrl ? <img src={category.imageUrl} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="size-6 text-muted-foreground" />}
+                      {category.imageUrl ? (
+                        <img src={category.imageUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        React.createElement(getMarketplaceCategoryIcon(category.iconKey ?? category.icon), {
+                          "aria-hidden": true,
+                          className: "size-6 text-primary",
+                        })
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -235,7 +252,10 @@ export default function PlatformMarketplaceCategoriesClient() {
                         <Badge variant={category.active === false ? "outline" : "default"}>{category.active === false ? "Inactive" : "Active"}</Badge>
                       </div>
                       <p className="truncate text-xs text-muted-foreground">{category.slug}</p>
-                      <p className="text-xs text-muted-foreground">Ordre {category.sortOrder ?? 0}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Ordre {category.sortOrder ?? 0}
+                        {category.iconKey || category.icon ? ` - Icône ${category.iconKey ?? category.icon}` : ""}
+                      </p>
                     </div>
                     <div className="flex shrink-0 gap-2">
                       <Button type="button" variant="outline" size="sm" onClick={() => startEdit(category)}>Gérer</Button>

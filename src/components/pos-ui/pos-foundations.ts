@@ -10,7 +10,7 @@ export type PosDensity = "comfortable" | "compact" | "touch"
 export type PosLayoutMode = "stack" | "split" | "adaptive"
 export interface PosActionPresentation { id: string; label: React.ReactNode; disabled?: boolean; loading?: boolean }
 export interface PosCartLinePresentation { id: string; name: React.ReactNode; description?: React.ReactNode; quantity: React.ReactNode; options?: React.ReactNode; unitPrice?: React.ReactNode; lineTotal: React.ReactNode }
-export interface PosCategoryPresentation { id: string; label: string; imageUrl?: string | null; count?: number; disabled?: boolean }
+export interface PosCategoryPresentation { id: string; label: string; imageUrl?: string | null; iconKey?: string | null; count?: number; disabled?: boolean }
 export interface PosMobileProviderPresentation { id: string; label: string; description?: React.ReactNode; logo?: React.ReactNode; disabled?: boolean }
 
 export const POS_VIEWPORT_PROFILES = {
@@ -23,4 +23,3 @@ export const POS_REQUIRED_TEST_WIDTHS = [320, 360, 390, 430, 768, 1024, 1280, 14
 export const POS_TOUCH_TARGETS = { minimum: 44, transactional: 48, primary: 56, input: 48 } as const
 export const POS_MOTION = { selection: 150, cart: 150, quantity: 150, overlay: 250, loading: 200 } as const
 export const POS_FOUNDATION_CLASSES = { focusVisible: "dashboard-focus-visible", tabularNumbers: "dashboard-tabular-nums", reducedMotion: "dashboard-reduced-motion" } as const
-

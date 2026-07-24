@@ -114,6 +114,7 @@ export interface MarketplaceFoodCategoryDocument {
   slug: string
   normalizedName: string
   icon: string | null
+  iconKey?: string | null
   imageUrl: string | null
   sortOrder: number
   active: boolean

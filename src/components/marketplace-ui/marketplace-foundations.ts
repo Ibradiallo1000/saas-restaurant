@@ -49,6 +49,7 @@ export interface MarketplaceCategoryPresentation {
   id: string
   label: string
   icon?: ReactNode
+  iconKey?: string | null
   imageUrl?: string | null
   active?: boolean
   disabled?: boolean

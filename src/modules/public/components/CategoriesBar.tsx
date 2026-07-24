@@ -5,13 +5,14 @@ import { Utensils } from "lucide-react"
 
 import { PublicCategoryCard, SectionHeader } from "@/components/public-ui"
 import { getOptimizedImage } from "@/lib/image"
+import { getMarketplaceCategoryIcon } from "@/lib/marketplace-category-icons"
 
 export default function CategoriesBar({
   categories,
   activeId,
   onSelect,
 }: {
-  categories: { id: string; name: string; imageUrl?: string }[]
+  categories: { id: string; name: string; imageUrl?: string; iconKey?: string | null }[]
   activeId: string
   onSelect: (id: string) => void
 }) {
@@ -65,6 +66,7 @@ export default function CategoriesBar({
         {categories.map((cat) => {
           const isActive = activeId === cat.id
           const image = getOptimizedImage(cat.imageUrl || "", 200)
+          const Icon = getMarketplaceCategoryIcon(cat.iconKey)
 
           return (
             <PublicCategoryCard
@@ -73,6 +75,7 @@ export default function CategoriesBar({
               label={cat.name}
               imageUrl={image || undefined}
               imageAlt={cat.name}
+              fallback={<Icon className="size-5 text-[var(--brand-primary)]" />}
               active={isActive}
               onSelect={() => onSelect(cat.id)}
             />

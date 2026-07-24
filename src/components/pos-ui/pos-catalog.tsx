@@ -1,6 +1,7 @@
 "use client"
 import * as React from "react"
 import { Search, X } from "lucide-react"
+import { getMarketplaceCategoryIcon } from "@/lib/marketplace-category-icons"
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import type { PosCategoryPresentation } from "./pos-foundations"
@@ -14,7 +15,7 @@ export const PosSearchField = React.forwardRef<HTMLInputElement, PosSearchFieldP
 PosSearchField.displayName = "PosSearchField"
 
 export interface PosCategoryRailProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange"> { items: PosCategoryPresentation[]; value?: string | null; onValueChange: (id: string) => void; ariaLabel?: string }
-export const PosCategoryRail = React.forwardRef<HTMLDivElement, PosCategoryRailProps>(({ ariaLabel = "Catégories", className, items, onValueChange, value, ...props }, ref) => <div ref={ref} role="group" aria-label={ariaLabel} className={cn("flex max-w-full gap-2 overflow-x-auto pb-1", className)} {...props}>{items.map((item) => <button key={item.id} type="button" disabled={item.disabled} aria-pressed={value === item.id} onClick={() => onValueChange(item.id)} className={cn("dashboard-focus-visible flex min-h-11 shrink-0 items-center gap-2 rounded-full border px-3 text-sm font-semibold", value === item.id ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-[var(--action-primary-fg)]" : "border-[var(--pos-border)] bg-[var(--pos-panel)]", "disabled:cursor-not-allowed disabled:opacity-50")}>{item.imageUrl ? <img src={item.imageUrl} alt="" className="size-7 rounded-full object-cover"/> : null}<span>{item.label}</span>{typeof item.count === "number" ? <span aria-label={`${item.count} produits`} className="tabular-nums opacity-75">{item.count}</span> : null}</button>)}</div>)
+export const PosCategoryRail = React.forwardRef<HTMLDivElement, PosCategoryRailProps>(({ ariaLabel = "Catégories", className, items, onValueChange, value, ...props }, ref) => <div ref={ref} role="group" aria-label={ariaLabel} className={cn("flex max-w-full gap-2 overflow-x-auto pb-1", className)} {...props}>{items.map((item) => { const Icon = getMarketplaceCategoryIcon(item.iconKey); return <button key={item.id} type="button" disabled={item.disabled} aria-pressed={value === item.id} onClick={() => onValueChange(item.id)} className={cn("dashboard-focus-visible flex min-h-11 shrink-0 items-center gap-2 rounded-full border px-3 text-sm font-semibold", value === item.id ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-[var(--action-primary-fg)]" : "border-[var(--pos-border)] bg-[var(--pos-panel)]", "disabled:cursor-not-allowed disabled:opacity-50")}>{item.imageUrl ? <img src={item.imageUrl} alt="" className="size-7 rounded-full object-cover"/> : item.id !== "__all__" ? <Icon aria-hidden="true" className="size-4" /> : null}<span>{item.label}</span>{typeof item.count === "number" ? <span aria-label={`${item.count} produits`} className="tabular-nums opacity-75">{item.count}</span> : null}</button>})}</div>)
 PosCategoryRail.displayName = "PosCategoryRail"
 
 export interface PosProductGridProps extends React.HTMLAttributes<HTMLDivElement> { layout?: "oneColumn" | "twoColumns" | "adaptive" | "dense" }
