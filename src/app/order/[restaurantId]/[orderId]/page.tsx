@@ -354,6 +354,7 @@ function ClientOrderTrackingContent() {
   const rawOrderType = (safeOrder as any).type || safeOrder.orderType
   const orderType = normalizeOrderType(safeOrder.orderType) as ClientOrderType
   const isDeliveryOrder = orderType === "delivery"
+  const isPickupOrder = orderType === "pickup"
   const isQrTableOrder = orderType === "dine_in" && (safeOrder.source === "qr_table" || safeOrder.source === "qr")
   const step = getClientOrderStep(mainOrder)
   const label = getClientStatusLabel(mainOrder)
@@ -372,6 +373,14 @@ function ClientOrderTrackingContent() {
     tableSession?.status === "closed" ||
     (tableSessionOrders.length > 0 && tableSessionOrders.every((sessionOrder: any) => isPaidPaymentStatus(sessionOrder.paymentStatus))) ||
     isPaidPaymentStatus(safeOrder.paymentStatus)
+  
+  // ✅ CRITICAL: Condition pour l'écran final QR - uniquement pour les commandes sur place
+  // Le paiement confirmé ne marque la fin que pour le parcours QR
+  const shouldShowQrTableFinalScreen =
+    isQrTableOrder &&
+    allServed &&
+    sessionPaymentConfirmed
+
   const effectivePaymentStatus =
     sessionPaymentConfirmed ||
     tableSessionOrders.some((sessionOrder: any) => isPaidPaymentStatus(sessionOrder.paymentStatus))
@@ -401,6 +410,13 @@ function ClientOrderTrackingContent() {
   const continueOrdering = () => {
     router.push(buildContinueOrderingPath(slug, safeOrder))
   }
+
+  // ✅ Condition pour l'avis client hors QR
+  // Pour la livraison et l'emporté, l'avis apparaît uniquement lorsque la commande est terminée ET payée
+  const shouldShowNonQrReview =
+    !isQrTableOrder &&
+    isTrackingComplete &&
+    sessionPaymentConfirmed
 
   const handleCashPaymentSession = async () => {
     if (!safeOrder.tableSessionId) {
@@ -488,9 +504,8 @@ function ClientOrderTrackingContent() {
     }
   }
 
-  // Écran de confirmation de paiement - affiché dès que le paiement est confirmé
-  // C'est le seul endroit où l'avis client apparaît
-  if (sessionPaymentConfirmed) {
+  // ✅ Écran final QR - UNIQUEMENT pour les commandes sur place servies et payées
+  if (shouldShowQrTableFinalScreen) {
     return (
       <PublicTrackingLayout
         restaurant={restaurant}
@@ -499,7 +514,7 @@ function ClientOrderTrackingContent() {
         count={count}
         cartOpen={cartOpen}
         setCartOpen={setCartOpen}
-        onHome={canContinueOrdering ? continueOrdering : goHome}
+        onHome={goHome}
       >
         <div className="mx-auto max-w-[480px] space-y-3">
           <h1 className="text-[22px] font-public-extrabold leading-7 text-[var(--text-primary)] sm:text-[28px] sm:leading-[34px]">
@@ -520,7 +535,8 @@ function ClientOrderTrackingContent() {
     )
   }
 
-  // Affichage du suivi de commande + paiement (sans l'avis client)
+  // ✅ Parcours normal de suivi (sans l'écran final QR)
+  // Cela concerne : livraison, emporté, et sur place avant paiement
   return (
     <PublicTrackingLayout
       restaurant={restaurant}
@@ -561,11 +577,7 @@ function ClientOrderTrackingContent() {
         {shouldShowPostServicePayment ? (
           <PublicStatusCard 
             title="Paiement de la table" 
-            description={
-              sessionPaymentConfirmed
-                ? undefined
-                : ""
-            } 
+            description="Choisissez une méthode lorsque toutes les commandes auront été servies."
             icon={<CreditCard />} 
             variant={sessionPaymentConfirmed ? "success" : tableSession?.paymentRequest?.status === "rejected" ? "danger" : "warning"} 
             emphasis="standard" 
@@ -673,7 +685,14 @@ function ClientOrderTrackingContent() {
           />
         ) : null}
 
-        {/* L'avis client N'EST PAS affiché ici - il est uniquement dans l'écran de confirmation de paiement */}
+        {/* ✅ Avis client hors QR - UNIQUEMENT quand la commande est terminée ET payée */}
+        {shouldShowNonQrReview && restaurantId ? (
+          <RestaurantReviewCard
+            restaurantId={restaurantId}
+            order={mainOrder}
+            reviewToken={reviewToken}
+          />
+        ) : null}
       </div>
     </PublicTrackingLayout>
   )
@@ -848,7 +867,7 @@ function getFinalStatusDescription(orderType: string | null | undefined) {
     return "Merci pour votre commande. Nous espérons vous revoir bientôt."
   }
 
-  return ""
+  return "Votre commande vous a été servie. Bon appétit !"
 }
 
 function toTrackingDate(value: unknown): Date | null {
