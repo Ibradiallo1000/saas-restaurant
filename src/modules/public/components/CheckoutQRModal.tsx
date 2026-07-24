@@ -10,6 +10,7 @@ import { useFirestore } from "@/firebase"
 import { ORDER_OPERATION_STATUS } from "@/lib/order-lifecycle"
 import { recalculateConfiguredUnitPrice } from "@/lib/order-pricing"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
+import { generateReviewAccessToken, rememberOrderReviewAccess, restaurantReviewAccessRef, REVIEW_ACCESS_TOKEN_VERSION } from "@/lib/reputation/review-access-token"
 import {
   type RestaurantTableRecord,
   getOrCreateActiveTableSession,
@@ -171,6 +172,8 @@ export default function CheckoutQRModal({
 
       const orderRef = doc(restaurantOrdersRef(db, restaurantId))
       const tableSessionRef = doc(db, "restaurants", restaurantId, "tableSessions", tableSessionId)
+      const reviewToken = generateReviewAccessToken()
+      const reviewAccessRef = restaurantReviewAccessRef(db, restaurantId, orderRef.id)
 
       await runTransaction(db, async (transaction) => {
         const sessionSnap = await transaction.get(tableSessionRef)
@@ -179,6 +182,14 @@ export default function CheckoutQRModal({
         }
 
         transaction.set(orderRef, order)
+        transaction.set(reviewAccessRef, {
+          restaurantId,
+          orderId: orderRef.id,
+          reviewToken,
+          createdAt: serverTimestamp(),
+          expiresAt: null,
+          version: REVIEW_ACCESS_TOKEN_VERSION,
+        })
         transaction.update(tableSessionRef, {
           totalAmount: increment(recalculatedTotal),
           lastActivityAt: serverTimestamp(),
@@ -189,6 +200,11 @@ export default function CheckoutQRModal({
       onClose()
 
       if (orderRef.id) {
+        rememberOrderReviewAccess({
+          restaurantId,
+          orderId: orderRef.id,
+          reviewToken,
+        })
         rememberTrackedOrder({
           restaurantId,
           orderId: orderRef.id,
@@ -197,7 +213,7 @@ export default function CheckoutQRModal({
       }
 
       router.push(
-        `/order/${restaurantId}/${orderRef.id}?tableSessionId=${tableSessionId}`
+        `/order/${restaurantId}/${orderRef.id}?tableSessionId=${tableSessionId}&access=${encodeURIComponent(reviewToken)}`
       )
     } catch (e) {
       console.error(e)

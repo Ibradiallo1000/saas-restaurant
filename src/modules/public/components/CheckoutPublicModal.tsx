@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { addDoc, doc, getDoc, serverTimestamp } from "firebase/firestore"
+import { doc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import { ArrowRight, Banknote, CheckCircle, ChefHat, ChevronLeft, CreditCard, MapPin, Phone, ShoppingBag, Truck } from "lucide-react"
 
@@ -13,6 +13,7 @@ import { recalculateConfiguredUnitPrice } from "@/lib/order-pricing"
 import { ORDER_PAYMENT_STATUS } from "@/lib/order-lifecycle"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
 import { ORDER_OPERATION_STATUS } from "@/lib/order-lifecycle"
+import { generateReviewAccessToken, rememberOrderReviewAccess, restaurantReviewAccessRef, REVIEW_ACCESS_TOKEN_VERSION } from "@/lib/reputation/review-access-token"
 import { orderHasKitchenItems, resolveProductPreparationMode } from "@/utils/preparation-logic"
 import { buildUssdTelHref } from "@/lib/ussd"
 import {
@@ -337,19 +338,37 @@ export default function CheckoutPublicModal({
         updatedAt: serverTimestamp(),
       }
 
-      const orderRef = await addDoc(restaurantOrdersRef(db, restaurantId), order)
+      const orderRef = doc(restaurantOrdersRef(db, restaurantId))
+      const reviewToken = generateReviewAccessToken()
+      const reviewAccessRef = restaurantReviewAccessRef(db, restaurantId, orderRef.id)
+      const batch = writeBatch(db)
+      batch.set(orderRef, order)
+      batch.set(reviewAccessRef, {
+        restaurantId,
+        orderId: orderRef.id,
+        reviewToken,
+        createdAt: serverTimestamp(),
+        expiresAt: null,
+        version: REVIEW_ACCESS_TOKEN_VERSION,
+      })
+      await batch.commit()
 
       clear()
       onClose()
 
       if (orderRef.id) {
+        rememberOrderReviewAccess({
+          restaurantId,
+          orderId: orderRef.id,
+          reviewToken,
+        })
         rememberTrackedOrder({
           restaurantId,
           orderId: orderRef.id,
         })
       }
 
-      router.push(`/order/${restaurantId}/${orderRef.id}`)
+      router.push(`/order/${restaurantId}/${orderRef.id}?access=${encodeURIComponent(reviewToken)}`)
     } catch (checkoutError) {
       console.error(checkoutError)
       setError(checkoutError instanceof Error ? checkoutError.message : "Erreur lors de la commande")

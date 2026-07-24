@@ -171,6 +171,145 @@ service cloud.firestore {
       return isSuperAdmin() || isRestaurantManager(restaurantId);
     }
 
+    function canReadRestaurantReviewDocs(restaurantId) {
+      return isSuperAdmin() || isRestaurantOwner(restaurantId);
+    }
+
+    function reviewAccessExists(restaurantId, orderId) {
+      return orderId is string
+        && exists(/databases/$(database)/documents/restaurants/$(restaurantId)/reviewAccess/$(orderId));
+    }
+
+    function reviewAccessDoc(restaurantId, orderId) {
+      return get(/databases/$(database)/documents/restaurants/$(restaurantId)/reviewAccess/$(orderId));
+    }
+
+    function isPublicReviewOrderSource(source) {
+      return source is string
+        && source in ["client", "qr", "qr_table", "manual"];
+    }
+
+    function publicReviewOrderExists(restaurantId, orderId) {
+      return exists(/databases/$(database)/documents/restaurants/$(restaurantId)/orders/$(orderId));
+    }
+
+    function publicReviewOrder(restaurantId, orderId) {
+      return get(/databases/$(database)/documents/restaurants/$(restaurantId)/orders/$(orderId));
+    }
+
+    function isFinalReviewOrderStatus(status) {
+      return status is string
+        && status in ["served", "picked_up", "completed", "delivered", "livree", "livré", "recuperee", "récupérée", "terminee", "terminée"];
+    }
+
+    function isBlockedReviewOrderStatus(status) {
+      return status is string
+        && status in ["cancelled", "canceled", "annulee", "annulée", "refused", "rejected", "failed"];
+    }
+
+    function isFailedReviewPaymentStatus(status) {
+      return status is string
+        && status in ["failed", "rejected", "cancelled", "canceled"];
+    }
+
+    function reviewOrderHasFinalTimestamp(order) {
+      return (
+        order.keys().hasAny(["timestamps"])
+        && (
+          (order.timestamps.keys().hasAny(["servedAt"]) && order.timestamps.servedAt is timestamp)
+          || (order.timestamps.keys().hasAny(["pickedUpAt"]) && order.timestamps.pickedUpAt is timestamp)
+          || (order.timestamps.keys().hasAny(["deliveredAt"]) && order.timestamps.deliveredAt is timestamp)
+        )
+      )
+      || (order.keys().hasAny(["servedAt"]) && order.servedAt is timestamp)
+      || (order.keys().hasAny(["pickedUpAt"]) && order.pickedUpAt is timestamp)
+      || (order.keys().hasAny(["deliveredAt"]) && order.deliveredAt is timestamp)
+      || (order.keys().hasAny(["completedAt"]) && order.completedAt is timestamp);
+    }
+
+    function isReviewEligibleOrder(order) {
+      return order.restaurantId == request.resource.data.restaurantId
+        && isPublicReviewOrderSource(order.source)
+        && !isBlockedReviewOrderStatus(order.status)
+        && !isBlockedReviewOrderStatus(order.orderStatus)
+        && !isBlockedReviewOrderStatus(order.kitchenStatus)
+        && !isFailedReviewPaymentStatus(order.paymentStatus)
+        && !isFailedReviewPaymentStatus(order.paymentIntentStatus)
+        && !isFailedReviewPaymentStatus(order.paymentVerificationStatus)
+        && (
+          reviewOrderHasFinalTimestamp(order)
+          || isFinalReviewOrderStatus(order.kitchenStatus)
+          || isFinalReviewOrderStatus(order.orderStatus)
+          || isFinalReviewOrderStatus(order.status)
+          || isFinalReviewOrderStatus(order.deliveryStatus)
+          || isFinalReviewOrderStatus(order.pickupStatus)
+          || isFinalReviewOrderStatus(order.fulfillmentStatus)
+        );
+    }
+
+    function isValidReviewAccessCreate(restaurantId, orderId) {
+      return orderId is string
+        && request.resource.data.keys().hasOnly(["restaurantId", "orderId", "reviewToken", "createdAt", "expiresAt", "version"])
+        && request.resource.data.restaurantId == restaurantId
+        && request.resource.data.orderId == orderId
+        && request.resource.data.reviewToken is string
+        && request.resource.data.reviewToken.size() >= 36
+        && request.resource.data.reviewToken.size() <= 128
+        && request.resource.data.version == 1
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.expiresAt == null
+        && !exists(/databases/$(database)/documents/restaurants/$(restaurantId)/orders/$(orderId))
+        && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/orders/$(orderId)).data.restaurantId == restaurantId
+        && isPublicReviewOrderSource(getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/orders/$(orderId)).data.source);
+    }
+
+    function isValidReviewPayload(restaurantId, reviewId) {
+      return request.resource.data.keys().hasOnly([
+          "restaurantId",
+          "orderId",
+          "orderType",
+          "rating",
+          "wouldRecommend",
+          "comment",
+          "customerDisplayName",
+          "customerId",
+          "customerName",
+          "author",
+          "source",
+          "status",
+          "reviewToken",
+          "orderCompletedAt",
+          "createdAt",
+          "updatedAt"
+        ])
+        && request.resource.data.restaurantId == restaurantId
+        && request.resource.data.orderId == reviewId
+        && request.resource.data.rating in [1, 2, 3, 4, 5]
+        && request.resource.data.wouldRecommend is bool
+        && (request.resource.data.comment == null || (request.resource.data.comment is string && request.resource.data.comment.size() <= 600))
+        && request.resource.data.source in ["order_tracking", "qr_table", "pickup_delivery_link"]
+        && request.resource.data.status == "published"
+        && request.resource.data.reviewToken is string
+        && request.resource.data.reviewToken.size() >= 36
+        && request.resource.data.reviewToken.size() <= 128
+        && request.resource.data.orderCompletedAt is timestamp
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function canCreateRestaurantReview(restaurantId, reviewId) {
+      return !exists(/databases/$(database)/documents/restaurants/$(restaurantId)/reviews/$(reviewId))
+        && isValidReviewPayload(restaurantId, reviewId)
+        && publicReviewOrderExists(restaurantId, reviewId)
+        && publicReviewOrder(restaurantId, reviewId).data.restaurantId == restaurantId
+        && isReviewEligibleOrder(publicReviewOrder(restaurantId, reviewId).data)
+        && reviewAccessExists(restaurantId, reviewId)
+        && reviewAccessDoc(restaurantId, reviewId).data.restaurantId == restaurantId
+        && reviewAccessDoc(restaurantId, reviewId).data.orderId == reviewId
+        && reviewAccessDoc(restaurantId, reviewId).data.reviewToken == request.resource.data.reviewToken
+        && reviewAccessDoc(restaurantId, reviewId).data.version == 1;
+    }
+
     function isPaidStatus(status) {
       return status in ["paye", "paid", "validated", "verified"];
     }
@@ -796,6 +935,23 @@ service cloud.firestore {
       match /customers/{customerId} {
         allow get, list: if canUseRestaurant(restaurantId);
         allow write: if canUseRestaurant(restaurantId);
+      }
+
+      match /reviewAccess/{orderId} {
+        allow create: if isValidReviewAccessCreate(restaurantId, orderId);
+        allow get, list, update, delete: if false;
+      }
+
+      match /reviews/{reviewId} {
+        allow get: if canReadRestaurantReviewDocs(restaurantId);
+        allow list: if canReadRestaurantReviewDocs(restaurantId);
+        allow create: if canCreateRestaurantReview(restaurantId, reviewId);
+        allow update, delete: if false;
+      }
+
+      match /reviewAggregates/{aggregateId} {
+        allow get, list: if canReadRestaurantReviewDocs(restaurantId);
+        allow create, update, delete: if false;
       }
 
       match /cashierSessions/{sessionId} {

@@ -32,11 +32,13 @@ import { buildUssdTelHref } from "@/lib/ussd"
 import { CartProvider, useCart } from "@/modules/public/cart/CartContext"
 import CartDrawer from "@/modules/public/components/CartDrawer"
 import PaymentModal from "@/modules/public/components/PaymentModal"
+import { RestaurantReviewCard } from "@/modules/public/components/RestaurantReviewCard"
 import {
   isCurrentTrackedOrderExpired,
   rememberTrackedOrder,
   TRACKING_RETENTION_HOURS,
 } from "@/modules/public/orderTrackingStorage"
+import { getStoredOrderReviewAccess as getStoredReviewToken, rememberOrderReviewAccess as rememberReviewToken } from "@/lib/reputation/review-access-token"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
 import {
   getAvailablePaymentMethods,
@@ -63,6 +65,9 @@ function ClientOrderTrackingContent() {
   const { toast } = useToast()
   const restaurantId = routeParams.restaurantId as string | undefined
   const orderId = routeParams.orderId as string | undefined
+  const queryReviewToken = searchParams?.get("access")?.trim() || null
+  const storedReviewToken = restaurantId && orderId ? getStoredReviewToken(restaurantId, orderId) : null
+  const reviewToken = queryReviewToken || storedReviewToken
 
   const [order, setOrder] = React.useState<RestaurantOrder | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
@@ -177,6 +182,11 @@ function ClientOrderTrackingContent() {
 
     return () => unsubscribe()
   }, [db, restaurantId, orderId])
+
+  React.useEffect(() => {
+    if (!restaurantId || !orderId || !queryReviewToken) return
+    rememberReviewToken({ restaurantId, orderId, reviewToken: queryReviewToken })
+  }, [orderId, queryReviewToken, restaurantId])
   React.useEffect(() => {
     if (!db || !restaurantId || !order?.id) return
 
@@ -227,7 +237,7 @@ function ClientOrderTrackingContent() {
         if (change.type === "added") {
           triggerOrderFeedback({
             orderId: changedOrder.id,
-            title: "Nouvelle commande ajoutÃƒÂ©e",
+            title: "Nouvelle commande ajoutée",
             description: "Une personne de la table vient de commander.",
           })
           return
@@ -236,7 +246,7 @@ function ClientOrderTrackingContent() {
         if (change.type === "modified") {
           triggerOrderFeedback({
             orderId: changedOrder.id,
-            title: "Commande mise ÃƒÂ  jour",
+            title: "Commande mise à jour",
             description: getClientStatusLabel(changedOrder),
           })
         }
@@ -394,7 +404,7 @@ function ClientOrderTrackingContent() {
 
   const handleCashPaymentSession = async () => {
     if (!safeOrder.tableSessionId) {
-      console.error("NO TABLE SESSION ID â€“ BLOCK PAYMENT")
+      console.error("NO TABLE SESSION ID – BLOCK PAYMENT")
       return
     }
     if (!db || !restaurantId || isCashPaying) return
@@ -416,7 +426,7 @@ function ClientOrderTrackingContent() {
 
   const handleMobilePaymentSession = (method: AvailablePaymentMethod) => {
     if (!safeOrder.tableSessionId) {
-      console.error("NO TABLE SESSION ID â€“ BLOCK PAYMENT")
+      console.error("NO TABLE SESSION ID – BLOCK PAYMENT")
       return
     }
     if (!db || !restaurantId || isMobilePaying) return
@@ -448,7 +458,7 @@ function ClientOrderTrackingContent() {
 
   const handleConfirmMobilePayment = async () => {
     if (!safeOrder.tableSessionId) {
-      console.error("NO TABLE SESSION ID â€“ BLOCK PAYMENT")
+      console.error("NO TABLE SESSION ID – BLOCK PAYMENT")
       return
     }
     if (!db || !restaurantId || isConfirming) return
@@ -478,6 +488,39 @@ function ClientOrderTrackingContent() {
     }
   }
 
+  // Écran de confirmation de paiement - affiché dès que le paiement est confirmé
+  // C'est le seul endroit où l'avis client apparaît
+  if (sessionPaymentConfirmed) {
+    return (
+      <PublicTrackingLayout
+        restaurant={restaurant}
+        restaurantId={restaurantId}
+        tableContext={buildTableContextFromOrder(order)}
+        count={count}
+        cartOpen={cartOpen}
+        setCartOpen={setCartOpen}
+        onHome={canContinueOrdering ? continueOrdering : goHome}
+      >
+        <div className="mx-auto max-w-[480px] space-y-3">
+          <h1 className="text-[22px] font-public-extrabold leading-7 text-[var(--text-primary)] sm:text-[28px] sm:leading-[34px]">
+            Paiement confirmé
+          </h1>
+
+          <PaymentConfirmedSummary amount={sessionTotal} />
+
+          {restaurantId ? (
+            <RestaurantReviewCard
+              restaurantId={restaurantId}
+              order={mainOrder}
+              reviewToken={reviewToken}
+            />
+          ) : null}
+        </div>
+      </PublicTrackingLayout>
+    )
+  }
+
+  // Affichage du suivi de commande + paiement (sans l'avis client)
   return (
     <PublicTrackingLayout
       restaurant={restaurant}
@@ -516,7 +559,18 @@ function ClientOrderTrackingContent() {
         {!isTrackingComplete ? <TrackingInfoCard /> : null}
 
         {shouldShowPostServicePayment ? (
-          <PublicStatusCard title="Paiement de la table" description="Choisissez une méthode lorsque toutes les commandes ont été servies." icon={<CreditCard />} variant={sessionPaymentConfirmed ? "success" : tableSession?.paymentRequest?.status === "rejected" ? "danger" : "warning"} emphasis="standard" badge={sessionPaymentConfirmed ? <PublicBadge label="Confirmé" variant="success" /> : <PublicBadge label="À régler" variant="warning" />}>
+          <PublicStatusCard 
+            title="Paiement de la table" 
+            description={
+              sessionPaymentConfirmed
+                ? undefined
+                : ""
+            } 
+            icon={<CreditCard />} 
+            variant={sessionPaymentConfirmed ? "success" : tableSession?.paymentRequest?.status === "rejected" ? "danger" : "warning"} 
+            emphasis="standard" 
+            badge={sessionPaymentConfirmed ? <PublicBadge label="Confirmé" variant="success" /> : <PublicBadge label="À régler" variant="warning" />}
+          >
             <div className="flex items-center justify-between gap-3 border-b border-[var(--border-public-subtle)] pb-4">
               <span className="text-public-sm font-public-semibold text-[var(--text-secondary)]">Total à payer</span>
               <PublicPrice role="total" value={formatMoney(sessionTotal)} suffix="FCFA" aria-label={`Total à payer ${formatMoney(sessionTotal)} FCFA`} />
@@ -547,27 +601,47 @@ function ClientOrderTrackingContent() {
                  {tableSession?.paymentRequest?.status === "rejected" ? (
                     <PublicSurface role="alert" level="card" border="default" radius="md" padding="compact" className="border-[var(--danger)] text-public-sm font-public-bold text-[var(--danger)]">Paiement refusé, veuillez réessayer.</PublicSurface>
                  ) : null}
-                 <p className="text-public-sm font-public-semibold text-[var(--text-primary)]">Comment souhaitez-vous payer ?</p>
+                 <p className="text-public-sm font-public-semibold text-[var(--text-primary)]">Choisissez votre moyen de paiement</p>
                  
-                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                   <PublicButton variant="primary" size="standard" onClick={handleCashPaymentSession} loading={isCashPaying} loadingLabel="Demande en cours">
-                     <Banknote className="h-5 w-5" />
-                     Espèces
+                 <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
+                   <PublicButton
+                     variant="primary"
+                     size="standard"
+                     onClick={handleCashPaymentSession}
+                     loading={isCashPaying}
+                     loadingLabel="Demande en cours"
+                     className="flex items-center justify-center gap-2 px-3"
+                   >
+                     <Banknote
+                       className="size-5 shrink-0"
+                       aria-hidden="true"
+                     />
+                     <span className="truncate">Espèces</span>
                    </PublicButton>
-                   
-                   {paymentMethods.map(method => (
+
+                   {paymentMethods.map((method) => (
                      <PublicButton
                        key={method.code}
                        variant="outline"
+                       size="standard"
                        onClick={() => handleMobilePaymentSession(method)}
                        disabled={isMobilePaying || paymentMethodsLoading}
+                       className="flex items-center justify-center gap-2 px-3"
                      >
                        {method.logoUrl ? (
-                         <img src={method.logoUrl} alt={method.name} className="h-6 object-contain" />
+                         <img
+                           src={method.logoUrl}
+                           alt=""
+                           aria-hidden="true"
+                           className="h-5 w-auto max-w-8 shrink-0 object-contain"
+                         />
                        ) : (
-                         <CreditCard className="h-5 w-5 text-[var(--brand-primary)]" />
+                         <CreditCard
+                           className="size-5 shrink-0"
+                           aria-hidden="true"
+                         />
                        )}
-                       <span>{method.name}</span>
+                       <span className="truncate">{method.name}</span>
                      </PublicButton>
                    ))}
                  </div>
@@ -599,6 +673,7 @@ function ClientOrderTrackingContent() {
           />
         ) : null}
 
+        {/* L'avis client N'EST PAS affiché ici - il est uniquement dans l'écran de confirmation de paiement */}
       </div>
     </PublicTrackingLayout>
   )
@@ -670,7 +745,7 @@ function getTrackingStatusSummary({
 
   return {
     title: getFinalStatusTitle(orderType, label),
-    description: "Commande finalisée.",
+    description: getFinalStatusDescription(orderType),
     icon: CheckCircle2,
     remainingLabel: "0 min",
     readyAtLabel,
@@ -758,14 +833,22 @@ function getFallbackRemainingMinutes(step: number) {
 function getReadyDescription(orderType: string | null | undefined) {
   return isDeliveryOrderType(orderType)
     ? "Votre commande est prête et sera bientôt prise en charge."
-    : "Votre commande est prête. Vous pouvez la récupérer."
+    : "Votre commande est prête. Vous serez servi dans un instant."
 }
 
 function getFinalStatusTitle(orderType: string | null | undefined, label: string) {
   if (isDeliveryOrderType(orderType)) return "Commande livrée"
-  if (label.toLowerCase().includes("serv")) return "Commande servie"
+  if (label.toLowerCase().includes("serv")) return "Bon appétit !"
   if (label.toLowerCase().includes("récup") || label.toLowerCase().includes("recup")) return "Commande récupérée"
   return "Commande terminée"
+}
+
+function getFinalStatusDescription(orderType: string | null | undefined) {
+  if (isDeliveryOrderType(orderType)) {
+    return "Merci pour votre commande. Nous espérons vous revoir bientôt."
+  }
+
+  return ""
 }
 
 function toTrackingDate(value: unknown): Date | null {
@@ -785,12 +868,41 @@ function formatTrackingTime(date: Date) {
   return date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
 }
 
+function PaymentConfirmedSummary({ amount }: { amount: number }) {
+  return (
+    <PublicStatusCard
+      title="Merci pour votre visite"
+      icon={<CheckCircle2 />}
+      variant="success"
+      emphasis="primary"
+      badge={<PublicBadge label="Confirmé" variant="success" />}
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--border-public-subtle)] pb-4">
+        <span className="text-public-sm font-public-semibold text-[var(--text-secondary)]">
+          Montant payé
+        </span>
+
+        <PublicPrice
+          role="total"
+          value={formatMoney(amount)}
+          suffix="FCFA"
+          aria-label={`Montant payé ${formatMoney(amount)} FCFA`}
+        />
+      </div>
+
+      <p className="mt-2 text-public-xs text-[var(--text-secondary)]">
+        Nous espérons vous revoir bientôt. Vous pouvez maintenant partager votre avis sur votre expérience.
+      </p>
+    </PublicStatusCard>
+  )
+}
+
 function PaymentConfirmedPanel() {
   return (
     <PublicSurface level="card" border="default" radius="lg" padding="standard" className="mt-4 border-[color:color-mix(in_srgb,var(--success)_30%,var(--border-public-subtle))] bg-[color:color-mix(in_srgb,var(--success)_8%,var(--surface-public-card))]">
       <div className="flex items-center gap-2 text-public-sm font-public-bold text-[var(--success)]"><CheckCircle className="size-5" aria-hidden="true" />Paiement confirmé</div>
-      <p className="mt-2 text-public-sm font-public-semibold text-[var(--text-primary)]">Merci pour votre visite. Votre table a été clôturée avec succès.</p>
-      <p className="mt-2 text-public-xs text-[var(--text-secondary)]">Nous espérons vous revoir bientôt. Vous pouvez partager votre avis avec l’équipe du restaurant avant de partir.</p>
+      <p className="mt-2 text-public-sm font-public-semibold text-[var(--text-primary)]">Merci pour votre visite. Votre paiement a bien été enregistré et votre table a été clôturée avec succès.</p>
+      <p className="mt-2 text-public-xs text-[var(--text-secondary)]">Nous espérons vous revoir bientôt. N'hésitez pas à partager votre avis avant de quitter le restaurant.</p>
     </PublicSurface>
   )
 }
@@ -839,7 +951,7 @@ function buildVisibleSessionOrders(orders: any[], localTableUserId: string | nul
   orders.forEach((order) => {
     if (!order?.createdBy || order.createdBy === localTableUserId) return
     if (!guestMap.has(order.createdBy)) {
-      guestMap.set(order.createdBy, `InvitÃƒÂ© ${guestCount}`)
+      guestMap.set(order.createdBy, `Invitée ${guestCount}`)
       guestCount += 1
     }
   })
@@ -851,7 +963,7 @@ function buildVisibleSessionOrders(orders: any[], localTableUserId: string | nul
 
     return {
       ...order,
-      createdByLabel: order?.createdBy ? guestMap.get(order.createdBy) || "InvitÃƒÂ©" : "InvitÃƒÂ©",
+      createdByLabel: order?.createdBy ? guestMap.get(order.createdBy) || "Invitée" : "Invitée",
     }
   })
 }
@@ -999,8 +1111,6 @@ function PublicTrackingLayout({
   )
 }
 
-
-
 function mergeOrdersById(...arrays: any[]) {
   const map = new Map<string, any>()
   for (const item of arrays) {
@@ -1015,4 +1125,3 @@ function mergeOrdersById(...arrays: any[]) {
   }
   return Array.from(map.values())
 }
-

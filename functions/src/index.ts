@@ -12,7 +12,6 @@ import {
   syncMarketplaceRestaurantCategoryOffers,
   syncMarketplaceRestaurantProducts,
 } from "../../src/lib/marketplace-discovery/marketplace-discovery-sync"
-
 initializeApp()
 
 const db = getFirestore()

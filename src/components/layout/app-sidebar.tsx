@@ -19,6 +19,7 @@ import {
   ReceiptText,
   Settings,
   ShieldAlert,
+  Star,
   Store,
   Table2,
   Tags,
@@ -116,6 +117,7 @@ const AppSidebarComponent = () => {
       items.push({ name: "Caisse", href: "/owner/caisse", icon: Wallet })
       items.push({ name: "Dépenses", href: "/owner/depenses", icon: ReceiptText })
       items.push({ name: "Trésorerie", href: "/owner/tresorerie", icon: Banknote })
+      items.push({ name: "Avis", href: "/owner/avis", icon: Star })
       if (isMobile) return [{ label: "Terrain", items }]
       items.push({ name: "Menu", href: "/menu", icon: Store })
       items.push({ name: "Tables", href: "/tables", icon: Table2 })

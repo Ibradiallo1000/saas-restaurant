@@ -12,6 +12,7 @@ export type NavigationItemId =
   | "parametres"
   | "tresorerie"
   | "depenses"
+  | "avis"
   | "menu"
   | "tables"
   | "images"
@@ -32,6 +33,7 @@ export const roleConfig: Record<
       "parametres",
       "tresorerie",
       "depenses",
+      "avis",
       "menu",
       "tables",
       "images",

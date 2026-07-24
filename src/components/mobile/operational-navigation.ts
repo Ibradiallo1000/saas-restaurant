@@ -8,6 +8,7 @@ import {
   Package,
   ReceiptText,
   Settings,
+  Star,
   Table2,
   User,
   Wallet,
@@ -70,6 +71,7 @@ const bottomNavItemMap: Record<NavigationItemId, OperationalNavItem | null> = {
   parametres: null,
   tresorerie: null,
   depenses: null,
+  avis: null,
   menu: null,
   tables: null,
   images: null,
@@ -82,6 +84,7 @@ const drawerItemMap: Record<NavigationItemId, OperationalDrawerItem | null> = {
   parametres: { type: "link", id: "settings", label: "Paramètres", href: "/settings", icon: Settings },
   tresorerie: { type: "link", id: "treasury", label: "Trésorerie", href: "/manager/tresorerie", icon: Banknote },
   depenses: { type: "link", id: "expenses", label: "Dépenses", href: "/manager/depenses", icon: ReceiptText },
+  avis: { type: "link", id: "reviews", label: "Avis", href: "/owner/avis", icon: Star },
   menu: { type: "link", id: "menu", label: "Menu", href: "/menu", icon: MenuSquare },
   tables: { type: "link", id: "tables", label: "Tables", href: "/tables", icon: Table2 },
   images: { type: "link", id: "images", label: "Images", href: "/images", icon: ImageIcon },
@@ -123,7 +126,7 @@ export function getNavigationByRole(role: string | null | undefined): Operationa
 
 function groupDrawerItems(items: OperationalDrawerItem[]): OperationalNavSection[] {
   const accountItems = items.filter((item) => item.type === "profile" || item.id === "settings" || item.type === "logout")
-  const operationItems = items.filter((item) => item.id === "treasury" || item.id === "expenses")
+  const operationItems = items.filter((item) => item.id === "treasury" || item.id === "expenses" || item.id === "reviews")
   const configItems = items.filter((item) => ["menu", "tables", "images", "inventory"].includes(item.id))
 
   return [
