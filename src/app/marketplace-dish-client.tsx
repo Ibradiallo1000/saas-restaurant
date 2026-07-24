@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowRight, ChefHat, LayoutGrid, MapPin, Search, Store, Utensils } from "lucide-react"
+import { ArrowRight, ChefHat, LayoutGrid, MapPin, Moon, Search, Store, Sun, Utensils } from "lucide-react"
 
 import {
   MarketplaceCategoryRail,
@@ -14,7 +14,7 @@ import {
   type MarketplaceCategoryPresentation,
 } from "@/components/marketplace-ui"
 import { PublicPrice } from "@/components/public-ui"
-import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { useTheme } from "@/contexts/theme-context"
 import type { PlatformPublicFooter } from "@/types"
 import type { MarketplaceDishHomeViewModel, MarketplaceRestaurantCardPresentation } from "./marketplace-dish-view-model"
 
@@ -110,7 +110,7 @@ export default function MarketplaceDishClient({ loadError = false, marketplaceHe
             </span>
             <span className="min-w-0 truncate text-[21px] tracking-normal text-[var(--text-primary)]">Oordera</span>
           </Link>
-          <ThemeToggle />
+          <MarketplaceThemeSwitch />
         </MarketplaceContainer>
       </header>
 
@@ -217,6 +217,42 @@ export default function MarketplaceDishClient({ loadError = false, marketplaceHe
 
 function normalizeSearch(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleLowerCase("fr")
+}
+
+function MarketplaceThemeSwitch() {
+  const { theme, setTheme } = useTheme()
+  const isDark = theme === "dark"
+
+  return (
+    <div
+      role="group"
+      aria-label="Sélecteur jour nuit"
+      className="relative grid h-9 w-[74px] grid-cols-2 rounded-full border border-[var(--marketplace-border-subtle)] bg-white/55 p-1 shadow-[var(--shadow-public-xs)] backdrop-blur-md dark:border-white/10 dark:bg-white/10"
+    >
+      <span
+        aria-hidden="true"
+        className={`absolute left-1 top-1 size-7 rounded-full bg-[var(--brand-primary)] shadow-[0_8px_18px_rgb(var(--brand-primary-rgb)/0.28)] transition-transform duration-300 ease-out ${isDark ? "translate-x-[36px]" : "translate-x-0"}`}
+      />
+      <button
+        type="button"
+        aria-label="Activer le mode clair"
+        aria-pressed={!isDark}
+        onClick={() => setTheme("light")}
+        className={`relative z-10 flex size-7 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] ${!isDark ? "text-white" : "text-[var(--text-secondary)] hover:text-[var(--brand-primary)] dark:text-white/62"}`}
+      >
+        <Sun aria-hidden="true" className="size-4" />
+      </button>
+      <button
+        type="button"
+        aria-label="Activer le mode sombre"
+        aria-pressed={isDark}
+        onClick={() => setTheme("dark")}
+        className={`relative z-10 flex size-7 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] ${isDark ? "text-white" : "text-[var(--text-secondary)] hover:text-[var(--brand-primary)] dark:text-white/62"}`}
+      >
+        <Moon aria-hidden="true" className="size-4" />
+      </button>
+    </div>
+  )
 }
 
 function dedupeRestaurants(restaurants: MarketplaceRestaurantCardPresentation[]) {

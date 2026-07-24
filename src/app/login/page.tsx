@@ -85,10 +85,10 @@ export default function LoginPage() {
             <Zap className="h-10 w-10" />
           </div>
           <CardTitle className="text-3xl font-black italic uppercase">
-            Connexion
+            Espace professionnel Oordera
           </CardTitle>
           <CardDescription className="text-white/80">
-            Accès sécurisé
+            Accès réservé aux restaurateurs, managers, employés autorisés et administrateurs de la plateforme.
           </CardDescription>
         </CardHeader>
 
