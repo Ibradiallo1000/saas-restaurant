@@ -90,7 +90,7 @@ export default function DishCard({
       imageUrl={product.imageUrl ? getOptimizedImage(product.imageUrl, 200) : undefined}
       imageAlt={product.name}
       price={priceLabel}
-      actionLabel={added ? "✓ Ajouté" : hasOptions ? "Options" : "Ajouter"}
+      actionLabel={added ? "✓ Ajouté" : hasOptions ? "Choisir" : "Ajouter"}
       actionState={added ? "added" : "default"}
       onOpen={onOpenDetails}
       onAction={handleQuickAdd}

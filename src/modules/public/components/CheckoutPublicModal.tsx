@@ -391,19 +391,42 @@ export default function CheckoutPublicModal({
       description={stepDescription}
       stepLabel={`Étape ${stepNumber}`}
       closeOnOverlayClick={!loading}
-      footer={flow.step !== "cart" ? (
-        <div className="flex gap-3">
-          {canGoBack ? (
-            <PublicButton variant="secondary" size="action" onClick={goBack} aria-label="Revenir à l’étape précédente" className="w-[52px] px-0">
-              <ChevronLeft aria-hidden="true" />
+      footer={
+        flow.step !== "cart" ? (
+          <div className="flex w-full min-w-0 items-center gap-3">
+            {canGoBack ? (
+              <PublicButton
+                variant="secondary"
+                size="action"
+                onClick={goBack}
+                aria-label="Revenir à l'étape précédente"
+                className="w-[52px] shrink-0 px-0"
+              >
+                <ChevronLeft aria-hidden="true" />
+              </PublicButton>
+            ) : null}
+
+            <PublicButton
+              size="action"
+              onClick={isPaymentStep ? submitOrder : goNext}
+              disabled={currentStepBlocked}
+              loading={loading}
+              loadingLabel="Validation en cours"
+              className="min-w-0 flex-1"
+            >
+              {isPaymentStep
+                ? "Valider le paiement"
+                : flow.step === "recap"
+                  ? "Passer au paiement"
+                  : "Suivant"}
+
+              {!isPaymentStep && !loading ? (
+                <ArrowRight aria-hidden="true" />
+              ) : null}
             </PublicButton>
-          ) : null}
-          <PublicButton fullWidth size="action" onClick={isPaymentStep ? submitOrder : goNext} disabled={currentStepBlocked} loading={loading} loadingLabel="Validation en cours">
-            {isPaymentStep ? "Valider le paiement" : flow.step === "recap" ? "Passer au paiement" : "Suivant"}
-            {!isPaymentStep && !loading ? <ArrowRight aria-hidden="true" /> : null}
-          </PublicButton>
-        </div>
-      ) : undefined}
+          </div>
+        ) : undefined
+      }
     >
       <div>
           {flow.step === "cart" ? (
@@ -530,7 +553,6 @@ function DeliveryStep({
     <div className="space-y-4">
       <PublicTextField label="Quartier / adresse" required leftIcon={<MapPin />} value={address} onChange={(event) => onChange({ address: event.target.value })} autoComplete="street-address" placeholder="Indiquez votre adresse de livraison" fieldSize="comfortable" />
       <PublicTextField label="Téléphone" required leftIcon={<Phone />} type="tel" inputMode="numeric" maxLength={11} value={formatPhone(phone)} onChange={(event) => onChange({ phone: cleanPhone(event.target.value) })} autoComplete="tel" placeholder="Votre numéro de téléphone" fieldSize="comfortable" />
-      <PublicTextField label="Deuxième numéro de téléphone" helpText="Facultatif" leftIcon={<Phone />} type="tel" inputMode="numeric" maxLength={11} value={formatPhone(secondaryPhone)} onChange={(event) => onChange({ secondaryPhone: cleanPhone(event.target.value) })} autoComplete="tel" placeholder="Un autre numéro pour vous joindre" fieldSize="comfortable" />
     </div>
   )
 }

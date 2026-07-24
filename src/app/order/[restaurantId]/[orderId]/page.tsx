@@ -910,7 +910,7 @@ function PaymentConfirmedSummary({ amount }: { amount: number }) {
       </div>
 
       <p className="mt-2 text-public-xs text-[var(--text-secondary)]">
-        Nous espérons vous revoir bientôt. Vous pouvez maintenant partager votre avis sur votre expérience.
+        Nous espérons vous revoir bientôt.
       </p>
     </PublicStatusCard>
   )

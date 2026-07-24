@@ -115,7 +115,7 @@ const PublicProductCard = React.forwardRef<HTMLElement, PublicProductCardProps>(
               suffix={priceSuffix}
               unavailableLabel={priceFallback}
               role="card"
-              className="min-w-0 max-w-full text-[var(--text-primary)]"
+              className="min-w-0 max-w-full font-public-bold text-[var(--color-primary)]"
             />
 
             <span className="pointer-events-auto relative z-10" aria-live="polite">
