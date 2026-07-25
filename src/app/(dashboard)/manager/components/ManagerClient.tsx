@@ -84,6 +84,7 @@ import {
 import ImagePickerModal from "@/components/ImagePickerModal"
 import { CatalogProvider, useCatalog } from "@/modules/catalog/CatalogProvider"
 import MenuLibraryImportDialog from "@/modules/menu-library/MenuLibraryImportDialog"
+import { syncDishOffer, syncCategoryOffers, rebuildRestaurantCategoryOffers } from "@/lib/marketplace-discovery/marketplace-discovery-sync-client"
 import { ManagerDashboardView } from "./ManagerDashboardView"
 import { ManagerOrderDetail } from "./ManagerOrderDetail"
 import { ManagerOrdersView } from "./ManagerOrdersView"
@@ -459,6 +460,9 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     url: string
   } | null>(null)
   const [editingProduct, setEditingProduct] = React.useState<any>(null)
+  const [isCategoryApplyConfirmOpen, setIsCategoryApplyConfirmOpen] = React.useState(false)
+  const [pendingCategoryApplyAction, setPendingCategoryApplyAction] = React.useState<"apply" | "keep" | null>(null)
+  const [categoryProductsWithMapping, setCategoryProductsWithMapping] = React.useState<any[]>([])
 
   const [productForm, setProductForm] = React.useState({
     name: "",
@@ -468,6 +472,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     imageUrl: "",
     imageId: "",
     preparationMode: "kitchen" as PreparationMode,
+    marketplaceCategoryId: "",
   })
 
   const [options, setOptions] = React.useState<any[]>([])
@@ -683,8 +688,8 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     })
   )
 
-  // ADD CATEGORY
-  const handleSaveCategory = async () => {
+// ADD CATEGORY
+  const handleSaveCategory = async (applyToProducts?: boolean) => {
     if (!restaurantId) return
     if (!newCategoryName.trim()) return
 
@@ -708,11 +713,54 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     }
 
     if (editingCategory) {
+      // Detect marketplaceCategoryId change and open confirmation if needed
+      const oldMarketplaceCategoryId = editingCategory.marketplaceCategoryId || ""
+      const newMarketplaceCategoryId = selectedMarketplaceCategoryId || ""
+      const marketplaceChanged = oldMarketplaceCategoryId !== newMarketplaceCategoryId
+
+      if (marketplaceChanged && applyToProducts === undefined) {
+        // Find products with their own marketplaceCategoryId in this category
+        const productsWithMapping = (products || []).filter(
+          (p: any) => p.categoryId === editingCategory.id && p.marketplaceCategoryId
+        )
+        if (productsWithMapping.length > 0) {
+          setCategoryProductsWithMapping(productsWithMapping)
+          setIsCategoryApplyConfirmOpen(true)
+          setPendingCategoryApplyAction(null)
+          return // Wait for user choice
+        }
+      }
+
       await updateDoc(
         doc(db, "restaurants", restaurantId, "categories", editingCategory.id),
         payload
       )
-      toast({ title: "Catégorie mise à jour" })
+
+      // If user chose to apply to products, remove their marketplaceCategoryId
+      if (marketplaceChanged && applyToProducts === true) {
+        const productsToUpdate = (products || []).filter(
+          (p: any) => p.categoryId === editingCategory.id && p.marketplaceCategoryId
+        )
+        await Promise.all(
+          productsToUpdate.map((p: any) =>
+            updateDoc(
+              doc(db, "restaurants", restaurantId, "products", p.id),
+              { marketplaceCategoryId: null, updatedAt: serverTimestamp() }
+            )
+          )
+        )
+        toast({
+          title: "Catégorie mise à jour",
+          description: `${productsToUpdate.length} produit(s) réinitialisé(s) au mapping de la catégorie.`
+        })
+      } else if (marketplaceChanged && applyToProducts === false) {
+        toast({
+          title: "Catégorie mise à jour",
+          description: "Les exceptions produit sont conservées."
+        })
+      } else {
+        toast({ title: "Catégorie mise à jour" })
+      }
     } else {
       await addDoc(
         collection(db, "restaurants", restaurantId, "categories"),
@@ -724,12 +772,30 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       toast({ title: "Catégorie ajoutée" })
     }
 
+    // 🔥 MARKETPLACE SYNC — Re-sync product offers for this category then rebuild category offers
+    try {
+      if (db && restaurantId) {
+        const editingCategoryId = editingCategory?.id
+        if (editingCategoryId) {
+          // Re-sync all products in this category
+          await syncCategoryOffers(db, restaurantId, editingCategoryId)
+        }
+        // Rebuild marketplaceRestaurantCategoryOffers
+        await rebuildRestaurantCategoryOffers(db, restaurantId)
+      }
+    } catch (syncError) {
+      console.error("[marketplace-sync] Erreur sync catégorie:", syncError)
+    }
+
     refreshCatalog()
     setNewCategoryName("")
     setSelectedMarketplaceCategoryId("")
     setSelectedCategoryIconKey("")
     setEditingCategory(null)
     setSelectedCategoryImage(null)
+    setCategoryProductsWithMapping([])
+    setIsCategoryApplyConfirmOpen(false)
+    setPendingCategoryApplyAction(null)
     setIsCategoryOpen(false)
   }
 
@@ -853,7 +919,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
 
     const sanitizedLinkedOptionGroups = sanitizeLinkedOptionGroups(linkedOptionGroups)
 
-    const payload = {
+    const payload: Record<string, any> = {
       name: productForm.name.trim(),
       description: productForm.description?.trim() || "",
       categoryId: productForm.categoryId || null,
@@ -866,6 +932,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       linkedOptionGroups: sanitizedLinkedOptionGroups,
       hasComplexConsumption: productHasComplexConsumption,
       preparationMode: productForm.preparationMode,
+      marketplaceCategoryId: productForm.marketplaceCategoryId || null,
       updatedAt: serverTimestamp()
     }
 
@@ -930,10 +997,25 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
         imageUrl: "",
         imageId: "",
         preparationMode: "kitchen",
+        marketplaceCategoryId: "",
       })
       setOptions([])
       setLinkedOptionGroups([])
       setRecipe([])
+
+      // 🔥 MARKETPLACE SYNC — Sync the dish offer and rebuild category offers
+      try {
+        if (db && restaurantId) {
+          // The newly created or updated product's ID
+          const productId = editingProduct?.id
+          if (productId) {
+            await syncDishOffer(db, restaurantId, productId)
+          }
+          await rebuildRestaurantCategoryOffers(db, restaurantId)
+        }
+      } catch (syncError) {
+        console.error("[marketplace-sync] Erreur sync produit:", syncError)
+      }
     } catch (error) {
       console.error("Erreur sauvegarde produit:", error)
       toast({
@@ -970,6 +1052,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       imageUrl: product.imageUrl || "",
       imageId: product.imageId || "",
       preparationMode: product.preparationMode || getDefaultPreparationMode(categoryName),
+      marketplaceCategoryId: product.marketplaceCategoryId || "",
     })
     setOptions(product.options || [])
     setLinkedOptionGroups(sanitizeLinkedOptionGroups(product.linkedOptionGroups))
@@ -989,6 +1072,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       imageUrl: "",
       imageId: "",
       preparationMode: getDefaultPreparationMode(categoryName),
+      marketplaceCategoryId: "",
     })
     setOptions([])
     setLinkedOptionGroups([])
@@ -1299,7 +1383,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
             <Button variant="ghost" onClick={closeCategoryModal}>
               Annuler
             </Button>
-            <Button onClick={handleSaveCategory}>
+            <Button onClick={() => handleSaveCategory()}>
               {editingCategory ? "Enregistrer" : "Ajouter"}
             </Button>
           </DialogFooter>
@@ -1380,6 +1464,26 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
               </select>
               <p className="text-xs text-muted-foreground">
                 Cuisine : envoyé en cuisine. Service direct : servi immédiatement (eau, soda…). Bar : préparé au bar (jus, café…).
+              </p>
+            </div>
+
+            {/* 🔥 PARTIE 3 — Marketplace category override at product level */}
+            <div className="space-y-2 rounded-xl border p-3">
+              <label className="text-sm font-semibold">Catégorie marketplace (exception produit)</label>
+              <select
+                value={productForm.marketplaceCategoryId}
+                onChange={(e) => setProductForm({ ...productForm, marketplaceCategoryId: e.target.value })}
+                className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Héritée de la catégorie</option>
+                {(marketplaceCategories || []).map((cat: any) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Permet de mapper ce produit vers une catégorie marketplace différente de celle de sa catégorie.
               </p>
             </div>
 
@@ -1651,6 +1755,50 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
           }
         />
       )}
+
+      {/* 🔥 PARTIE 2 — Confirmation dialog for marketplace category change on edit category */}
+      <Dialog open={isCategoryApplyConfirmOpen} onOpenChange={(open) => { if (!open) { setIsCategoryApplyConfirmOpen(false); setPendingCategoryApplyAction(null); } }}>
+        <DialogContent className="rounded-2xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">Modification de la catégorie marketplace</DialogTitle>
+            <DialogDescription>
+              {categoryProductsWithMapping.length} produit(s) de cette catégorie ont leur propre mapping marketplace (exception produit).<br /><br />
+              Que veux-tu faire de ces exceptions ?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-32 overflow-y-auto space-y-1 rounded-lg border bg-muted/30 p-2 text-sm">
+            {categoryProductsWithMapping.map((p: any) => (
+              <div key={p.id} className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                <span className="truncate">{p.name}</span>
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter className="gap-2 sm:justify-start">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPendingCategoryApplyAction("keep")
+                setIsCategoryApplyConfirmOpen(false)
+                handleSaveCategory(false)
+              }}
+            >
+              Conserver les exceptions
+            </Button>
+            <Button
+              onClick={() => {
+                setPendingCategoryApplyAction("apply")
+                setIsCategoryApplyConfirmOpen(false)
+                handleSaveCategory(true)
+              }}
+            >
+              Réinitialiser au mapping catégorie
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   )

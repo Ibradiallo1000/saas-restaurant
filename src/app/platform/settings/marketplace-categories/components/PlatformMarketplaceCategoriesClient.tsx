@@ -11,8 +11,18 @@ import {
   updateDoc,
   type Timestamp,
 } from "firebase/firestore"
-import { Loader2, Pencil, Plus, Search, Tags } from "lucide-react"
+import { Loader2, Pencil, Plus, Search, Tags, Trash2 } from "lucide-react"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { PlatformHeader, PlatformPage } from "@/components/platform-ui"
 import { MediaSelector } from "@/components/platform/MediaSelector"
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +37,7 @@ import { COLLECTION_NAMES } from "@/lib/constants"
 import { MarketplaceCategoryIconSelector } from "@/components/marketplace-ui/marketplace-category-icon-selector"
 import { getMarketplaceCategoryIcon, normalizeMarketplaceCategoryIconKey, type MarketplaceCategoryIconKey } from "@/lib/marketplace-category-icons"
 import { normalizeMarketplaceSearch } from "@/lib/marketplace-discovery/marketplace-discovery-core"
+import { MarketplaceCategoryService } from "@/services/marketplace-category.service"
 
 type MarketplaceFoodCategory = {
   id: string
@@ -70,6 +81,9 @@ export default function PlatformMarketplaceCategoriesClient() {
   const [search, setSearch] = React.useState("")
   const [saving, setSaving] = React.useState(false)
   const [pendingId, setPendingId] = React.useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = React.useState<MarketplaceFoodCategory | null>(null)
+  const [deleting, setDeleting] = React.useState(false)
+  const [deleteWarning, setDeleteWarning] = React.useState<string | null>(null)
 
   const categoriesQuery = useMemoFirebase(() => {
     if (!db) return null
@@ -92,6 +106,15 @@ export default function PlatformMarketplaceCategoriesClient() {
     if (!slug) {
       toast({ title: "Slug invalide", variant: "destructive" })
       return
+    }
+
+    // Vérifier l'unicité du slug en création
+    if (!editingId) {
+      const existingSlug = categories.find((cat) => cat.slug === slug)
+      if (existingSlug) {
+        toast({ title: "Ce slug existe déjà", description: "Modifiez le nom ou le slug.", variant: "destructive" })
+        return
+      }
     }
 
     setSaving(true)
@@ -158,6 +181,47 @@ export default function PlatformMarketplaceCategoriesClient() {
       toast({ title: "Changement de statut impossible", variant: "destructive" })
     } finally {
       setPendingId(null)
+    }
+  }
+
+  const confirmDelete = async (category: MarketplaceFoodCategory) => {
+    if (!db) return
+    setDeleteTarget(category)
+    setDeleteWarning(null)
+
+    // Vérifier les références via le service centralisé
+    try {
+      const service = new MarketplaceCategoryService(db)
+      const references = await service.checkReferences(category.id)
+      if (references.hasReferences) {
+        setDeleteWarning(
+          `${references.details.length} référence(s) détectée(s) : ${references.details.slice(0, 3).join(", ")}${references.details.length > 3 ? `... et ${references.details.length - 3} autres` : ""}`
+        )
+      }
+    } catch {
+      // Échec silencieux : on continue sans warning
+    }
+  }
+
+  const executeDelete = async () => {
+    if (!db || !deleteTarget) return
+    setDeleting(true)
+    try {
+      const service = new MarketplaceCategoryService(db)
+      // Proposition : désactiver au lieu de supprimer, pour éviter les orphelins
+      await service.setActive(deleteTarget.id, false)
+      toast({
+        title: "Catégorie désactivée",
+        description: `${deleteTarget.name} a été désactivée. Aucune référence orpheline créée.`,
+      })
+      setDeleteTarget(null)
+      setDeleteWarning(null)
+      refetch()
+    } catch (error) {
+      console.error(error)
+      toast({ title: "Désactivation impossible", variant: "destructive" })
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -233,34 +297,40 @@ export default function PlatformMarketplaceCategoriesClient() {
             ) : filteredCategories.length === 0 ? (
               <div className="rounded-2xl border border-dashed p-12 text-center text-sm text-muted-foreground">Aucune catégorie marketplace.</div>
             ) : (
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-2">
                 {filteredCategories.map((category) => (
-                  <div key={category.id} className="flex items-center gap-4 rounded-2xl border bg-card p-3 shadow-sm">
-                    <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-secondary/40">
-                      {category.imageUrl ? (
-                        <img src={category.imageUrl} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        React.createElement(getMarketplaceCategoryIcon(category.iconKey ?? category.icon), {
-                          "aria-hidden": true,
-                          className: "size-6 text-primary",
-                        })
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate font-bold">{category.name}</p>
-                        <Badge variant={category.active === false ? "outline" : "default"}>{category.active === false ? "Inactive" : "Active"}</Badge>
+                  <div key={category.id} className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm">
+                    <div className="flex items-start gap-4">
+                      <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-secondary/40">
+                        {category.imageUrl ? (
+                          <img src={category.imageUrl} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          React.createElement(getMarketplaceCategoryIcon(category.iconKey ?? category.icon), {
+                            "aria-hidden": true,
+                            className: "size-6 text-primary",
+                          })
+                        )}
                       </div>
-                      <p className="truncate text-xs text-muted-foreground">{category.slug}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Ordre {category.sortOrder ?? 0}
-                        {category.iconKey || category.icon ? ` - Icône ${category.iconKey ?? category.icon}` : ""}
-                      </p>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <p className="break-words font-bold leading-tight [word-break:break-word]">{category.name}</p>
+                          <Badge variant={category.active === false ? "outline" : "default"} className="shrink-0">{category.active === false ? "Inactive" : "Active"}</Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">{category.slug}</p>
+                        <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                          <span>Ordre {category.sortOrder ?? 0}</span>
+                          {(category.iconKey || category.icon) ? <span>Icône {category.iconKey ?? category.icon}</span> : null}
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex shrink-0 gap-2">
+                    <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
                       <Button type="button" variant="outline" size="sm" onClick={() => startEdit(category)}>Gérer</Button>
-                      <Button type="button" variant="ghost" size="sm" disabled={pendingId === category.id} onClick={() => void toggleCategory(category)}>
+                      <Button type="button" variant="outline" size="sm" disabled={pendingId === category.id} onClick={() => void toggleCategory(category)}>
                         {category.active === false ? "Activer" : "Désactiver"}
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" className="ml-auto text-destructive hover:text-destructive" onClick={() => void confirmDelete(category)}>
+                        <Trash2 className="size-4" />
+                        <span className="sr-only">Supprimer</span>
                       </Button>
                     </div>
                   </div>
@@ -270,6 +340,30 @@ export default function PlatformMarketplaceCategoriesClient() {
           </CardContent>
         </Card>
       </div>
+
+<AlertDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeleteWarning(null); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Désactiver la catégorie {deleteTarget?.name}&nbsp;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Les catégories marketplace sont désactivées plutôt que supprimées pour préserver l'intégrité des données.
+              Une catégorie désactivée n'est plus visible publiquement mais ses références (catégories locales, produits, offres) restent intactes.
+              {deleteWarning ? (
+                <span className="mt-2 block rounded-lg border border-amber-500/30 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                  ⚠️ {deleteWarning}
+                </span>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Annuler</AlertDialogCancel>
+            <AlertDialogAction disabled={deleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => void executeDelete()}>
+              {deleting ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Désactiver
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PlatformPage>
   )
 }

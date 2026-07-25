@@ -1449,12 +1449,28 @@ service cloud.firestore {
       allow create, update, delete: if isSuperAdmin();
     }
 
-    // Derived public Marketplace read model. Backend Admin SDK writes bypass rules;
-    // clients can only read explicitly discoverable projections.
+    // Derived public Marketplace read model — client-side sync (Spark-compatible).
+    // Manager/owner writes their own restaurant projections; public reads discoverable offers.
     match /marketplaceDishOffers/{offerId} {
       allow read: if resource.data.discoverable == true
         && resource.data.schemaVersion == 1;
-      allow write: if false;
+
+      allow create: if canManageRestaurantMenu(request.resource.data.restaurantId)
+        && request.resource.data.restaurantId is string
+        && request.resource.data.productId is string
+        && request.resource.data.marketplaceCategoryId is string
+        && request.resource.data.discoverable is bool
+        && request.resource.data.schemaVersion == 1;
+
+      allow update: if canManageRestaurantMenu(resource.data.restaurantId)
+        && request.resource.data.restaurantId == resource.data.restaurantId
+        && request.resource.data.restaurantId is string
+        && request.resource.data.productId is string
+        && request.resource.data.marketplaceCategoryId is string
+        && request.resource.data.discoverable is bool
+        && request.resource.data.schemaVersion == 1;
+
+      allow delete: if canManageRestaurantMenu(resource.data.restaurantId);
     }
 
     match /marketplaceFoodCategories/{categoryId} {
@@ -1469,7 +1485,21 @@ service cloud.firestore {
     match /marketplaceRestaurantCategoryOffers/{offerId} {
       allow read: if resource.data.discoverable == true
         && resource.data.schemaVersion == 1;
-      allow write: if false;
+
+      allow create: if canManageRestaurantMenu(request.resource.data.restaurantId)
+        && request.resource.data.restaurantId is string
+        && request.resource.data.marketplaceCategoryId is string
+        && request.resource.data.discoverable is bool
+        && request.resource.data.schemaVersion == 1;
+
+      allow update: if canManageRestaurantMenu(resource.data.restaurantId)
+        && request.resource.data.restaurantId == resource.data.restaurantId
+        && request.resource.data.restaurantId is string
+        && request.resource.data.marketplaceCategoryId is string
+        && request.resource.data.discoverable is bool
+        && request.resource.data.schemaVersion == 1;
+
+      allow delete: if canManageRestaurantMenu(resource.data.restaurantId);
     }
 
     match /{document=**} {

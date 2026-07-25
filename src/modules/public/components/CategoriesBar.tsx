@@ -60,7 +60,7 @@ export default function CategoriesBar({
 
       <div
         ref={containerRef}
-        className="no-scrollbar flex gap-2 overflow-x-auto overflow-y-hidden px-4 py-1 sm:gap-3 sm:px-6 lg:px-8"
+        className="no-scrollbar flex gap-2 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden px-4 py-1 sm:gap-3 sm:px-6 lg:px-8"
         style={{ WebkitOverflowScrolling: "touch" }}
       >
         {categories.map((cat) => {

@@ -119,6 +119,8 @@ export interface MarketplaceFoodCategoryDocument {
   sortOrder: number
   active: boolean
   aliases: string[]
+  createdAt?: string | null
+  updatedAt?: string | null
 }
 
 export interface MarketplaceRestaurantCategoryOfferDocument {
