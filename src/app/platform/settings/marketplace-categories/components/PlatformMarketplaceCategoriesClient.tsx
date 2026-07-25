@@ -100,7 +100,7 @@ export default function PlatformMarketplaceCategoriesClient() {
 
   const saveCategory = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!db || !form.name.trim()) return
+    if (!db || !form.name.trim() || saving) return
 
     const slug = slugify(form.slug || form.name)
     if (!slug) {
@@ -270,13 +270,13 @@ export default function PlatformMarketplaceCategoriesClient() {
               />
               <div className="flex justify-end gap-2">
                 {editingId ? (
-                  <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setForm(EMPTY_FORM) }}>
+                  <Button type="button" variant="ghost" disabled={saving} onClick={() => { setEditingId(null); setForm(EMPTY_FORM) }}>
                     Annuler
                   </Button>
                 ) : null}
                 <Button type="submit" disabled={saving || !form.name.trim()}>
                   {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                  {editingId ? "Enregistrer" : "Créer"}
+                  {saving ? "Enregistrement…" : editingId ? "Enregistrer" : "Créer"}
                 </Button>
               </div>
             </form>
