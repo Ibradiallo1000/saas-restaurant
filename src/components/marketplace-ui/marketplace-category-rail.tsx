@@ -74,6 +74,29 @@ export const MarketplaceCategoryRail = React.forwardRef<HTMLDivElement, Marketpl
       return Math.round(progress * maxPage)
     }, [scrollState.scrollProgress, categories.length, itemsPerPage])
 
+    // ── Auto-center active category horizontally ──
+    const activeCategoryId = React.useMemo(
+      () => categories.find((c) => c.active)?.id ?? null,
+      [categories]
+    )
+
+    React.useEffect(() => {
+      if (!activeCategoryId) return
+      const container = containerRef.current
+      if (!container) return
+
+      const activeEl = container.querySelector<HTMLElement>(
+        `[data-category-id="${activeCategoryId}"]`
+      )
+      if (!activeEl) return
+
+      activeEl.scrollIntoView({
+        behavior: "smooth",
+        inline: "center",
+        block: "nearest",
+      })
+    }, [activeCategoryId])
+
     const handleMouseDown = React.useCallback((e: React.MouseEvent<HTMLDivElement>) => {
       const container = containerRef.current
       if (!container) return
@@ -194,6 +217,7 @@ export const MarketplaceCategoryRail = React.forwardRef<HTMLDivElement, Marketpl
                 aria-pressed={isActive}
                 disabled={category.disabled}
                 data-category-index={index}
+                data-category-id={category.id}
                 onClick={() => onSelect(category)}
                 className={cn(
                   // ✅ Taille réduite : 5.2rem au lieu de 6rem
