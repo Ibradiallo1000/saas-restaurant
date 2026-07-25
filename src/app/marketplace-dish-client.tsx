@@ -115,21 +115,23 @@ export default function MarketplaceDishClient({ loadError = false, marketplaceHe
       </header>
 
       <MarketplaceContainer as="main" className="space-y-3 pb-[max(var(--space-16),var(--marketplace-safe-bottom))] pt-[calc(var(--marketplace-safe-top)+4rem)] sm:space-y-5">
-        <section className="relative -mx-[var(--marketplace-gutter-x)] h-[210px] overflow-hidden rounded-b-[28px] border-b border-[var(--brand-primary)]/15 bg-[linear-gradient(135deg,rgb(var(--brand-primary-rgb)/0.18),rgb(255_255_255/0.94)_48%,rgb(var(--brand-primary-rgb)/0.12))] shadow-[var(--shadow-public-md)] dark:border-white/10 dark:bg-[linear-gradient(135deg,rgb(15_23_42),rgb(2_6_23)_72%)] sm:mx-0 sm:h-[260px] sm:rounded-b-[32px] lg:h-[300px]">
+        {/* ✅ 1. Bannière réduite : h-[185px] sm:h-[230px] lg:h-[270px] */}
+        <section className="relative -mx-[var(--marketplace-gutter-x)] h-[185px] overflow-hidden rounded-b-[28px] border-b border-[var(--brand-primary)]/15 bg-[linear-gradient(135deg,rgb(var(--brand-primary-rgb)/0.18),rgb(255_255_255/0.94)_48%,rgb(var(--brand-primary-rgb)/0.12))] shadow-[var(--shadow-public-md)] dark:border-white/10 dark:bg-[linear-gradient(135deg,rgb(15_23_42),rgb(2_6_23)_72%)] sm:mx-0 sm:h-[230px] sm:rounded-b-[32px] lg:h-[270px]">
           {marketplaceHeroCoverImageUrl ? (
             <img src={marketplaceHeroCoverImageUrl} alt="" className="absolute inset-0 size-full object-cover object-center" />
           ) : null}
           <div aria-hidden="true" className={`absolute inset-0 ${marketplaceHeroCoverImageUrl ? "bg-[linear-gradient(90deg,rgb(0_0_0/0.54),rgb(0_0_0/0.18)_54%,rgb(0_0_0/0.06)),linear-gradient(180deg,rgb(0_0_0/0.08),rgb(0_0_0/0.34))]" : "bg-[linear-gradient(90deg,rgb(var(--brand-primary-rgb)/0.18),transparent_62%),linear-gradient(180deg,rgb(255_255_255/0.10),rgb(255_255_255/0.38))] dark:bg-[linear-gradient(90deg,rgb(0_0_0/0.30),transparent_62%),linear-gradient(180deg,rgb(255_255_255/0.02),rgb(0_0_0/0.18))]"}`} />
           <div className="relative flex h-full flex-col justify-center gap-4 px-[var(--marketplace-gutter-x)] sm:max-w-[34rem] sm:gap-5 sm:px-7 lg:px-9">
             <h1 className={`max-w-[18rem] text-[24px] font-public-bold leading-[30px] tracking-normal sm:max-w-[28rem] sm:text-[34px] sm:leading-[40px] ${marketplaceHeroCoverImageUrl ? "text-white drop-shadow-[0_2px_14px_rgb(0_0_0/0.45)]" : "text-[var(--text-primary)] dark:text-white"}`}>Qu'avez-vous envie de déguster aujourd'hui ?</h1>
-            <label className="relative block max-w-[14.25rem] sm:max-w-[18.5rem] lg:max-w-[20.5rem]">
+            {/* ✅ 2. Champ de recherche élargi */}
+            <label className="relative block w-full max-w-[18rem] sm:max-w-[22rem] lg:max-w-[24rem]">
               <span className="sr-only">Rechercher un restaurant, un plat ou une cuisine</span>
               <Search aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 z-10 size-5 -translate-y-1/2 text-[var(--brand-primary)] dark:text-white/80" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Rechercher un plat ou une cuisine..."
-                className="h-11 w-full rounded-[var(--radius-public-xl)] border border-white/65 bg-white/72 pl-12 pr-4 text-public-sm font-public-semibold text-[var(--text-primary)] shadow-[var(--shadow-public-md)] outline-none backdrop-blur-md transition-[border-color,box-shadow,background-color] placeholder:text-[var(--text-secondary)]/70 focus:border-white/90 focus:bg-white/86 focus:shadow-[var(--shadow-public-md)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 dark:border-white/14 dark:bg-slate-950/42 dark:text-white dark:placeholder:text-white/48 dark:focus:bg-slate-950/58"
+                className="h-11 w-full rounded-[var(--radius-public-xl)] border border-white/65 bg-white/72 pl-12 pr-4 text-[13px] font-public-semibold text-[var(--text-primary)] shadow-[var(--shadow-public-md)] outline-none backdrop-blur-md transition-[border-color,box-shadow,background-color] placeholder:text-[var(--text-secondary)]/70 focus:border-white/90 focus:bg-white/86 focus:shadow-[var(--shadow-public-md)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 dark:border-white/14 dark:bg-slate-950/42 dark:text-white dark:placeholder:text-white/48 dark:focus:bg-slate-950/58 sm:text-public-sm"
               />
             </label>
           </div>
@@ -151,12 +153,26 @@ export default function MarketplaceDishClient({ loadError = false, marketplaceHe
 
         <section aria-labelledby="marketplace-restaurants" className="w-full min-w-0 max-w-[calc(100vw-(var(--marketplace-gutter-x)*2))] space-y-3 rounded-[24px] border border-[var(--marketplace-border-subtle)] bg-[linear-gradient(180deg,rgb(255_255_255/0.82),rgb(var(--brand-primary-rgb)/0.035))] p-3 shadow-[var(--shadow-public-xs)] dark:bg-[linear-gradient(180deg,rgb(255_255_255/0.045),rgb(255_255_255/0.02))]">
           <div className="space-y-1.5">
-            <h2 id="marketplace-restaurants" className="flex min-w-0 items-center gap-2 break-words text-public-heading-3 font-public-bold">
-                <Store aria-hidden="true" className="size-5 shrink-0 text-[var(--brand-primary)]" />
-                <span className="min-w-0">
-                {normalizedQuery ? "Résultats" : activeCategoryLabel ? `Restaurants · ${activeCategoryLabel}` : "Restaurants"}
+            {/* ✅ 4. Catégorie active en pastille */}
+            <h2
+              id="marketplace-restaurants"
+              className="flex min-w-0 flex-wrap items-center gap-2 break-words text-public-heading-3 font-public-bold"
+            >
+              <Store
+                aria-hidden="true"
+                className="size-5 shrink-0 text-[var(--brand-primary)]"
+              />
+
+              <span className="min-w-0">
+                {normalizedQuery ? "Résultats" : "Restaurants"}
+              </span>
+
+              {!normalizedQuery && activeCategoryLabel ? (
+                <span className="inline-flex shrink-0 items-center rounded-full bg-[var(--brand-primary-soft)] px-2.5 py-1 text-[11px] font-public-extrabold text-[var(--brand-primary)]">
+                  {activeCategoryLabel}
                 </span>
-              </h2>
+              ) : null}
+            </h2>
             <div className="flex items-center justify-between gap-3 text-[11px] font-public-semibold text-[var(--text-muted)] sm:text-xs">
               <span>{totalRestaurants} restaurant{totalRestaurants > 1 ? "s" : ""} trouvé{totalRestaurants > 1 ? "s" : ""}</span>
               {totalRestaurants ? <span>Affichage {pageStart}–{pageEnd}</span> : null}
