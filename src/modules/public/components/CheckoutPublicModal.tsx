@@ -298,7 +298,7 @@ export default function CheckoutPublicModal({
         restaurantId,
         orderType: normalizedOrderType,
         publicOrderType: flow.orderType,
-        source: "manual",
+        source: "client",
         kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
         orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
         sessionId: null,

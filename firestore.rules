@@ -186,7 +186,7 @@ service cloud.firestore {
 
     function isPublicReviewOrderSource(source) {
       return source is string
-        && source in ["client", "qr", "qr_table", "manual"];
+        && source in ["client", "qr", "qr_table"];
     }
 
     function publicReviewOrderExists(restaurantId, orderId) {
@@ -197,9 +197,119 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/restaurants/$(restaurantId)/orders/$(orderId));
     }
 
+    // ─── Helpers sûrs pour champs optionnels ────────────────────────────
+
+    // Retourne true si le champ existe dans le document (get() result).
+    function docHas(data, field) {
+      return data.keys().hasAny([field]);
+    }
+
+    // Vérifie si un champ optionnel est un statut final valide.
+    // Protégé : ne lit le champ que s'il existe.
+    function optionalFinalOrderStatus(order, fieldName) {
+      return docHas(order, fieldName)
+        && order[fieldName] is string
+        && order[fieldName] in [
+          "served", "picked_up", "completed", "delivered",
+          "livree", "livré", "recuperee", "récupérée", "terminee", "terminée",
+          "servie", "payee", "pretes", "servies"
+        ];
+    }
+
+    // Vérifie si un champ optionnel est un statut bloqué (annulation).
+    // Protégé : ne lit le champ que s'il existe.
+    function optionalIsBlockedStatus(order, fieldName) {
+      return docHas(order, fieldName)
+        && order[fieldName] is string
+        && order[fieldName] in [
+          "cancelled", "canceled", "annulee", "annulée",
+          "refused", "rejected", "failed"
+        ];
+    }
+
+    // Vérifie si le statut paymentStatus est un paiement confirmé.
+    // Protégé : retourne false si le champ n'existe pas.
+    function isConfirmedPayment(order) {
+      return docHas(order, "paymentStatus")
+        && order.paymentStatus is string
+        && order.paymentStatus in [
+          "paid", "paye", "validated", "verified"
+        ];
+    }
+
+    // Vérifie si le paiement est en échec.
+    function optionalIsFailedPayment(order, fieldName) {
+      return docHas(order, fieldName)
+        && order[fieldName] is string
+        && order[fieldName] in [
+          "failed", "rejected", "cancelled", "canceled"
+        ];
+    }
+
+    // Timestamp final dans order.timestamps — protégé niveau 2.
+    function hasFinalTimestampInMap(order, mapField, key) {
+      return docHas(order, mapField)
+        && order[mapField] is map
+        && order[mapField].keys().hasAny([key])
+        && order[mapField][key] is timestamp;
+    }
+
+    // Timestamp final legacy (champ racine) — protégé.
+    function hasLegacyFinalTimestamp(order, key) {
+      return docHas(order, key)
+        && order[key] is timestamp;
+    }
+
+    function isReviewEligibleOrder(order) {
+      return order.restaurantId == request.resource.data.restaurantId
+        && isPublicReviewOrderSource(order.source)
+        && !optionalIsBlockedStatus(order, "status")
+        && !optionalIsBlockedStatus(order, "orderStatus")
+        && !optionalIsBlockedStatus(order, "kitchenStatus")
+        && !optionalIsFailedPayment(order, "paymentStatus")
+        && !optionalIsFailedPayment(order, "paymentIntentStatus")
+        && !optionalIsFailedPayment(order, "paymentVerificationStatus")
+        && isConfirmedPayment(order)
+        && isServedByOrderType(order);
+    }
+
+    // Détermine si la commande est terminée selon son orderType.
+    // Chaque parcours a ses propres critères, aucun croisement.
+    function isServedByOrderType(order) {
+      return (!docHas(order, "orderType") || !(order.orderType is string))
+        // Anciennes commandes sans orderType : fallback sur les timestamps canoniques
+        ? reviewOrderHasFinalTimestamp(order)
+        : (order.orderType == "dine_in")
+          ? reviewOrderHasFinalTimestamp(order)
+            || optionalFinalOrderStatus(order, "kitchenStatus")
+            || optionalFinalOrderStatus(order, "orderStatus")
+          : (order.orderType in ["takeaway", "pickup"])
+            ? reviewOrderHasFinalTimestamp(order)
+              || optionalFinalOrderStatus(order, "pickupStatus")
+              || optionalFinalOrderStatus(order, "orderStatus")
+              || optionalFinalOrderStatus(order, "kitchenStatus")
+            : (order.orderType == "delivery")
+              ? reviewOrderHasFinalTimestamp(order)
+                || optionalFinalOrderStatus(order, "deliveryStatus")
+                || optionalFinalOrderStatus(order, "orderStatus")
+              // orderType inconnu : ne pas autoriser
+              : false;
+    }
+
+    function reviewOrderHasFinalTimestamp(order) {
+      return hasFinalTimestampInMap(order, "timestamps", "servedAt")
+        || hasFinalTimestampInMap(order, "timestamps", "pickedUpAt")
+        || hasFinalTimestampInMap(order, "timestamps", "deliveredAt")
+        || hasFinalTimestampInMap(order, "timestamps", "completedAt")
+        || hasLegacyFinalTimestamp(order, "servedAt")
+        || hasLegacyFinalTimestamp(order, "pickedUpAt")
+        || hasLegacyFinalTimestamp(order, "deliveredAt")
+        || hasLegacyFinalTimestamp(order, "completedAt");
+    }
+
     function isFinalReviewOrderStatus(status) {
       return status is string
-        && status in ["served", "picked_up", "completed", "delivered", "livree", "livré", "recuperee", "récupérée", "terminee", "terminée"];
+        && status in ["served", "picked_up", "completed", "delivered", "livree", "livré", "recuperee", "récupérée", "terminee", "terminée", "servie", "payee", "pretes", "servies"];
     }
 
     function isBlockedReviewOrderStatus(status) {
@@ -212,41 +322,6 @@ service cloud.firestore {
         && status in ["failed", "rejected", "cancelled", "canceled"];
     }
 
-    function reviewOrderHasFinalTimestamp(order) {
-      return (
-        order.keys().hasAny(["timestamps"])
-        && (
-          (order.timestamps.keys().hasAny(["servedAt"]) && order.timestamps.servedAt is timestamp)
-          || (order.timestamps.keys().hasAny(["pickedUpAt"]) && order.timestamps.pickedUpAt is timestamp)
-          || (order.timestamps.keys().hasAny(["deliveredAt"]) && order.timestamps.deliveredAt is timestamp)
-        )
-      )
-      || (order.keys().hasAny(["servedAt"]) && order.servedAt is timestamp)
-      || (order.keys().hasAny(["pickedUpAt"]) && order.pickedUpAt is timestamp)
-      || (order.keys().hasAny(["deliveredAt"]) && order.deliveredAt is timestamp)
-      || (order.keys().hasAny(["completedAt"]) && order.completedAt is timestamp);
-    }
-
-    function isReviewEligibleOrder(order) {
-      return order.restaurantId == request.resource.data.restaurantId
-        && isPublicReviewOrderSource(order.source)
-        && !isBlockedReviewOrderStatus(order.status)
-        && !isBlockedReviewOrderStatus(order.orderStatus)
-        && !isBlockedReviewOrderStatus(order.kitchenStatus)
-        && !isFailedReviewPaymentStatus(order.paymentStatus)
-        && !isFailedReviewPaymentStatus(order.paymentIntentStatus)
-        && !isFailedReviewPaymentStatus(order.paymentVerificationStatus)
-        && (
-          reviewOrderHasFinalTimestamp(order)
-          || isFinalReviewOrderStatus(order.kitchenStatus)
-          || isFinalReviewOrderStatus(order.orderStatus)
-          || isFinalReviewOrderStatus(order.status)
-          || isFinalReviewOrderStatus(order.deliveryStatus)
-          || isFinalReviewOrderStatus(order.pickupStatus)
-          || isFinalReviewOrderStatus(order.fulfillmentStatus)
-        );
-    }
-
     function isValidReviewAccessCreate(restaurantId, orderId) {
       return orderId is string
         && request.resource.data.keys().hasOnly(["restaurantId", "orderId", "reviewToken", "createdAt", "expiresAt", "version"])
@@ -256,6 +331,7 @@ service cloud.firestore {
         && request.resource.data.reviewToken.size() >= 36
         && request.resource.data.reviewToken.size() <= 128
         && request.resource.data.version == 1
+        && request.resource.data.createdAt is timestamp
         && request.resource.data.createdAt == request.time
         && request.resource.data.expiresAt == null
         && !exists(/databases/$(database)/documents/restaurants/$(restaurantId)/orders/$(orderId))
@@ -294,7 +370,9 @@ service cloud.firestore {
         && request.resource.data.reviewToken.size() <= 128
         && request.resource.data.orderCompletedAt is timestamp
         && request.resource.data.createdAt is timestamp
-        && request.resource.data.updatedAt is timestamp;
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.updatedAt == request.time;
     }
 
     function canCreateRestaurantReview(restaurantId, reviewId) {
@@ -311,11 +389,11 @@ service cloud.firestore {
     }
 
     function isPaidStatus(status) {
-      return status in ["paye", "paid", "validated", "verified"];
+      return status is string && status in ["paye", "paid", "validated", "verified"];
     }
 
     function isValidOrderStatus(status) {
-      return status in ["pending", "preparing", "ready", "served", "picked_up", "cancelled", "completed"];
+      return status is string && status in ["pending", "preparing", "ready", "served", "picked_up", "cancelled", "completed"];
     }
 
     function hasLegacyOrderStatusFields(data) {
@@ -323,21 +401,25 @@ service cloud.firestore {
     }
 
     function changesLegacyOrderStatusFields() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasAny(["status"]);
+      return request.resource.data.keys().hasAny(["status"])
+        && resource.data.keys().hasAny(["status"])
+        && request.resource.data.diff(resource.data).affectedKeys().hasAny(["status"]);
     }
 
     function hasValidOrderStatusIfPresent() {
       return !request.resource.data.keys().hasAny(["orderStatus"])
-        || isValidOrderStatus(request.resource.data.orderStatus);
+        || (request.resource.data.orderStatus is string && isValidOrderStatus(request.resource.data.orderStatus));
     }
 
     function hasValidKitchenStatusIfPresent() {
       return !request.resource.data.keys().hasAny(["kitchenStatus"])
-        || isValidOrderStatus(request.resource.data.kitchenStatus);
+        || (request.resource.data.kitchenStatus is string && isValidOrderStatus(request.resource.data.kitchenStatus));
     }
 
     function hasCashSessionForVerifiedPayment() {
-      return !isPaidStatus(request.resource.data.paymentStatus)
+      return !request.resource.data.keys().hasAny(["paymentStatus"])
+        || !(request.resource.data.paymentStatus is string)
+        || !isPaidStatus(request.resource.data.paymentStatus)
         || request.resource.data.cashSessionId is string;
     }
 
