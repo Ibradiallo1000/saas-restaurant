@@ -28,8 +28,6 @@ import {
 } from "@/components/public-ui"
 import { productNeedsConfigurator } from "@/lib/linked-option-groups"
 import { buildMarketplaceIntentKey, claimMarketplaceIntent, MARKETPLACE_NAVIGATION_SOURCE, resolveMarketplaceProduct } from "@/lib/marketplace-offer-navigation"
-import { scoreRestaurant, type OorderaRestaurantReputation } from "@/lib/reputation/oordera-score"
-import { RESTAURANT_REVIEWS_COLLECTION, type RestaurantReviewDocument } from "@/lib/reputation/restaurant-review-types"
 import { getLatestTrackedOrder } from "./orderTrackingStorage"
 import { useCart } from "./cart/CartContext"
 import {
@@ -75,6 +73,7 @@ function PublicPageContent({
   const [selectedProduct, setSelectedProduct] = React.useState<any | null>(null)
   const [coverState, setCoverState] = React.useState<"checking" | "visible" | "exiting" | "hidden">("checking")
   const [dishReviewSummaries, setDishReviewSummaries] = React.useState<Record<string, { averageRating: number; reviewCount: number }>>({})
+  const [restaurantReputation, setRestaurantReputation] = React.useState<{ averageRating: number | null; bayesianRating: number | null; reviewCount: number } | null>(null)
   const [hasRetriedRestaurantLookup, setHasRetriedRestaurantLookup] = React.useState(false)
   const categoriesSectionRef = React.useRef<HTMLDivElement>(null)
   const menuStartRef = React.useRef<HTMLDivElement>(null)
@@ -225,29 +224,35 @@ function PublicPageContent({
     error: productsError,
   } = useCollectionOnce(productsQuery, PUBLIC_MENU_CACHE_TTL_MS)
 
-  const restaurantReviewsQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return query(
-      collection(db, "restaurants", restaurantId, RESTAURANT_REVIEWS_COLLECTION),
-      where("status", "==", "published"),
-      limit(300)
-    )
-  }, [db, restaurantId])
+  React.useEffect(() => {
+    if (!restaurantId) {
+      setRestaurantReputation(null)
+      return
+    }
 
-  const { data: restaurantReviews } = useCollectionOnce<RestaurantReviewDocument>(
-    restaurantReviewsQuery,
-    PUBLIC_MENU_CACHE_TTL_MS
-  )
+    const controller = new AbortController()
+    fetch(`/api/public/restaurants/${restaurantId}/restaurant-reputation`, { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : { reputation: null })
+      .then((payload) => {
+        if (!controller.signal.aborted) {
+          const reputation = payload?.reputation
+          setRestaurantReputation(
+            reputation && Number(reputation.reviewCount) > 0
+              ? {
+                  averageRating: typeof reputation.averageRating === "number" ? reputation.averageRating : null,
+                  bayesianRating: typeof reputation.bayesianRating === "number" ? reputation.bayesianRating : null,
+                  reviewCount: Number(reputation.reviewCount),
+                }
+              : null
+          )
+        }
+      })
+      .catch((error) => {
+        if (error?.name !== "AbortError") setRestaurantReputation(null)
+      })
 
-  const restaurantReputation = React.useMemo<OorderaRestaurantReputation | null>(() => {
-    if (!restaurantId || !restaurantReviews) return null
-    const reputation = scoreRestaurant({
-      restaurantId,
-      restaurantReviews,
-      dishReviews: [],
-    })
-    return reputation.reviewCount > 0 ? reputation : null
-  }, [restaurantId, restaurantReviews])
+    return () => controller.abort()
+  }, [restaurantId])
 
   React.useEffect(() => {
     if (!restaurantId) {

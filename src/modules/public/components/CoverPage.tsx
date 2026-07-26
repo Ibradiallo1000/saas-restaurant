@@ -7,11 +7,10 @@ import { useRouter } from "next/navigation"
 import { PublicButton } from "@/components/public-ui"
 import { getOptimizedImage } from "@/lib/image"
 import { getRestaurantOpenStatus } from "@/lib/restaurant-hours"
-import type { OorderaRestaurantReputation } from "@/lib/reputation/oordera-score"
 
 type CoverPageProps = {
   restaurant: any
-  reputation?: OorderaRestaurantReputation | null
+  reputation?: { averageRating: number | null; bayesianRating: number | null; reviewCount: number } | null
   isExiting: boolean
   onEnterMenu: () => void
 }
