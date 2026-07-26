@@ -1,20 +1,22 @@
 "use client"
 
 import * as React from "react"
-import { ArrowRight, UserRound } from "lucide-react"
+import { ArrowRight, Star, UserRound } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 import { PublicButton } from "@/components/public-ui"
 import { getOptimizedImage } from "@/lib/image"
 import { getRestaurantOpenStatus } from "@/lib/restaurant-hours"
+import type { OorderaRestaurantReputation } from "@/lib/reputation/oordera-score"
 
 type CoverPageProps = {
   restaurant: any
+  reputation?: OorderaRestaurantReputation | null
   isExiting: boolean
   onEnterMenu: () => void
 }
 
-export default function CoverPage({ restaurant, isExiting, onEnterMenu }: CoverPageProps) {
+export default function CoverPage({ restaurant, reputation, isExiting, onEnterMenu }: CoverPageProps) {
   const router = useRouter()
   const [imageFailed, setImageFailed] = React.useState(false)
   const [desktopImageFailed, setDesktopImageFailed] = React.useState(false)
@@ -30,6 +32,9 @@ export default function CoverPage({ restaurant, isExiting, onEnterMenu }: CoverP
   const hasDesktopCoverImage = Boolean(desktopCoverImage && !(desktopCoverImage === coverImage && imageFailed))
   const hasLogo = Boolean(logo && !logoFailed)
   const openStatus = React.useMemo(() => getRestaurantOpenStatus({ openingHours: restaurant?.openingHours, timezone: restaurant?.timezone }), [restaurant?.openingHours, restaurant?.timezone])
+  const reputationRating = reputation?.reviewCount
+    ? reputation.bayesianRating ?? reputation.averageRating
+    : null
   const initial = name.charAt(0).toUpperCase()
 
   React.useEffect(() => setImageFailed(false), [coverImage])
@@ -119,6 +124,15 @@ export default function CoverPage({ restaurant, isExiting, onEnterMenu }: CoverP
                 {openStatus.label} · {openStatus.detail}
               </span>
             </div>
+
+            {reputationRating !== null && Number.isFinite(reputationRating) && reputation?.reviewCount ? (
+              <div className="mt-3 inline-flex min-h-8 items-center gap-2 rounded-full border border-white/15 bg-black/20 px-3.5 text-xs font-public-bold text-white/86 shadow-[0_10px_26px_rgba(0,0,0,0.18)] backdrop-blur-md">
+                <Star aria-hidden="true" className="size-3.5 fill-[var(--brand-primary)] text-[var(--brand-primary)]" />
+                <span>{reputationRating.toFixed(1).replace(".", ",")}</span>
+                <span className="text-white/45">•</span>
+                <span>{reputation.reviewCount} avis</span>
+              </div>
+            ) : null}
 
             <div className="mt-7 max-w-sm text-[17px] font-public-semibold leading-6 text-[var(--text-inverse-secondary)] sm:mt-8 sm:text-lg sm:leading-7">
               <p>Qu&apos;avez-vous envie de déguster aujourd&apos;hui ?</p>

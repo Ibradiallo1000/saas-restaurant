@@ -29,6 +29,7 @@ import { DashboardChart, DashboardChartCard } from "@/components/dashboard-ui/da
 import { MetricCard, MetricDelta, MetricGroup } from "@/components/dashboard-ui/dashboard-metrics"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
+import { getOptimizedImage } from "@/lib/image"
 import {
   buildCustomerVoiceAnalytics,
   filterRestaurantComments,
@@ -98,6 +99,15 @@ export default function OwnerReviewsPage() {
   }, [db, restaurantId])
   const { data: dishReviews, isLoading: dishReviewsLoading } = useCollection<DishReviewDocument>(dishReviewsQuery)
 
+  const productsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, "restaurants", restaurantId, "products"),
+      limit(500)
+    )
+  }, [db, restaurantId])
+  const { data: products, isLoading: productsLoading } = useCollection<any>(productsQuery)
+
   const analytics = React.useMemo(() => buildCustomerVoiceAnalytics({
     dishReviews: dishReviews || [],
     period,
@@ -108,12 +118,33 @@ export default function OwnerReviewsPage() {
     () => filterRestaurantComments(analytics.currentRestaurantReviews, commentFilter),
     [analytics.currentRestaurantReviews, commentFilter]
   )
+  const activeDishSummaries = React.useMemo(() => {
+    const productsById = new Map((products || []).map((product: any) => [product.id, product]))
+
+    return analytics.dishSummaries
+      .map((summary) => {
+        const product = productsById.get(summary.productId)
+        if (!product || product.reviewsEnabled !== true) return null
+
+        return {
+          ...summary,
+          productName: product.name || summary.productName,
+          productImageUrl: product.imageUrl ? getOptimizedImage(product.imageUrl, 160) : null,
+        }
+      })
+      .filter((summary): summary is CustomerVoiceDishSummary => Boolean(summary))
+  }, [analytics.dishSummaries, products])
+
   const sortedDishSummaries = React.useMemo(
-    () => sortDishSummaries(analytics.dishSummaries, dishSort),
-    [analytics.dishSummaries, dishSort]
+    () => sortDishSummaries(activeDishSummaries, dishSort),
+    [activeDishSummaries, dishSort]
+  )
+  const activeDishReviewCount = React.useMemo(
+    () => activeDishSummaries.reduce((total, summary) => total + summary.reviewCount, 0),
+    [activeDishSummaries]
   )
 
-  const loading = isLoading || dishReviewsLoading
+  const loading = isLoading || dishReviewsLoading || productsLoading
 
   return (
     <OwnerSectionPage
@@ -153,8 +184,8 @@ export default function OwnerReviewsPage() {
           <MetricCard
             icon={<ChefHat />}
             label="Plats notes"
-            value={analytics.dishSummaries.length}
-            description={`${analytics.currentDishReviews.length} avis plats publies sur la periode.`}
+            value={activeDishSummaries.length}
+            description={`${activeDishReviewCount} avis plats actifs publies sur la periode.`}
           />
         </MetricGroup>
 
@@ -339,6 +370,8 @@ function SignalCard({ signal }: { signal: CustomerVoiceSignal }) {
 }
 
 function ReviewCommentCard({ review }: { review: RestaurantReviewDocument & { id?: string } }) {
+  const orderReference = getReadableReviewOrderReference(review)
+
   return (
     <article className="rounded-2xl border bg-background p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -353,7 +386,9 @@ function ReviewCommentCard({ review }: { review: RestaurantReviewDocument & { id
         ) : null}
       </div>
       <p className="mt-3 line-clamp-4 rounded-xl bg-muted/50 p-3 text-sm leading-6 text-muted-foreground">{review.comment}</p>
-      <p className="mt-3 text-xs font-semibold text-muted-foreground">Commande {review.orderId}</p>
+      {orderReference ? (
+        <p className="mt-3 text-xs font-semibold text-muted-foreground">Commande {orderReference}</p>
+      ) : null}
     </article>
   )
 }
@@ -440,4 +475,36 @@ function formatReviewDate(value: unknown) {
   const date = toReviewDate(value)
   if (!date) return "Date inconnue"
   return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })
+}
+
+function getReadableReviewOrderReference(review: RestaurantReviewDocument & { id?: string }) {
+  const record = review as unknown as Record<string, unknown>
+  const candidates = [
+    record.commercialReference,
+    record.orderReference,
+    record.orderDisplayId,
+    record.displayId,
+    record.orderNumber,
+    record.number,
+  ]
+
+  for (const candidate of candidates) {
+    const value = formatBusinessOrderReference(candidate)
+    if (value) return value
+  }
+
+  return null
+}
+
+function formatBusinessOrderReference(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `CMD-${String(value).padStart(4, "0")}`
+  }
+
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (/^[A-Z]{2,}-?\d+$/i.test(trimmed)) return trimmed.toUpperCase()
+  if (/^\d{1,8}$/.test(trimmed)) return `CMD-${trimmed.padStart(4, "0")}`
+  return null
 }

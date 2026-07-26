@@ -28,6 +28,8 @@ import {
 } from "@/components/public-ui"
 import { productNeedsConfigurator } from "@/lib/linked-option-groups"
 import { buildMarketplaceIntentKey, claimMarketplaceIntent, MARKETPLACE_NAVIGATION_SOURCE, resolveMarketplaceProduct } from "@/lib/marketplace-offer-navigation"
+import { scoreRestaurant, type OorderaRestaurantReputation } from "@/lib/reputation/oordera-score"
+import { RESTAURANT_REVIEWS_COLLECTION, type RestaurantReviewDocument } from "@/lib/reputation/restaurant-review-types"
 import { getLatestTrackedOrder } from "./orderTrackingStorage"
 import { useCart } from "./cart/CartContext"
 import {
@@ -222,6 +224,30 @@ function PublicPageContent({
     isLoading: isProductsLoading,
     error: productsError,
   } = useCollectionOnce(productsQuery, PUBLIC_MENU_CACHE_TTL_MS)
+
+  const restaurantReviewsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, "restaurants", restaurantId, RESTAURANT_REVIEWS_COLLECTION),
+      where("status", "==", "published"),
+      limit(300)
+    )
+  }, [db, restaurantId])
+
+  const { data: restaurantReviews } = useCollectionOnce<RestaurantReviewDocument>(
+    restaurantReviewsQuery,
+    PUBLIC_MENU_CACHE_TTL_MS
+  )
+
+  const restaurantReputation = React.useMemo<OorderaRestaurantReputation | null>(() => {
+    if (!restaurantId || !restaurantReviews) return null
+    const reputation = scoreRestaurant({
+      restaurantId,
+      restaurantReviews,
+      dishReviews: [],
+    })
+    return reputation.reviewCount > 0 ? reputation : null
+  }, [restaurantId, restaurantReviews])
 
   React.useEffect(() => {
     if (!restaurantId) {
@@ -670,6 +696,7 @@ function PublicPageContent({
       {coverIsMounted ? (
         <CoverPage
           restaurant={restaurant}
+          reputation={restaurantReputation}
           isExiting={coverState === "exiting"}
           onEnterMenu={handleEnterMenu}
         />
