@@ -388,6 +388,85 @@ service cloud.firestore {
         && reviewAccessDoc(restaurantId, reviewId).data.version == 1;
     }
 
+    function reviewOrderItem(restaurantId, orderId) {
+      return publicReviewOrder(restaurantId, orderId).data.items[request.resource.data.orderItemIndex];
+    }
+
+    function isValidDishReviewPayload(restaurantId, reviewId) {
+      return request.resource.data.keys().hasOnly([
+          "restaurantId",
+          "orderId",
+          "orderType",
+          "orderItemId",
+          "orderItemIndex",
+          "productId",
+          "productName",
+          "productImageUrl",
+          "quantity",
+          "rating",
+          "comment",
+          "customerDisplayName",
+          "customerId",
+          "customerName",
+          "source",
+          "status",
+          "reviewToken",
+          "orderCompletedAt",
+          "createdAt",
+          "updatedAt"
+        ])
+        && request.resource.data.restaurantId == restaurantId
+        && request.resource.data.orderId is string
+        && request.resource.data.orderId.size() > 0
+        && request.resource.data.orderItemId is string
+        && request.resource.data.orderItemId.size() > 0
+        && reviewId == request.resource.data.orderId + "_" + request.resource.data.orderItemId
+        && request.resource.data.orderItemIndex is int
+        && request.resource.data.orderItemIndex >= 0
+        && request.resource.data.productId is string
+        && request.resource.data.productId.size() > 0
+        && request.resource.data.productName is string
+        && request.resource.data.productName.size() > 0
+        && (request.resource.data.productImageUrl == null || request.resource.data.productImageUrl is string)
+        && request.resource.data.quantity is number
+        && request.resource.data.quantity >= 1
+        && request.resource.data.rating in [1, 2, 3, 4, 5]
+        && (request.resource.data.comment == null || (request.resource.data.comment is string && request.resource.data.comment.size() <= 400))
+        && request.resource.data.source in ["order_tracking", "qr_table", "pickup_delivery_link"]
+        && request.resource.data.status == "published"
+        && request.resource.data.reviewToken is string
+        && request.resource.data.reviewToken.size() >= 36
+        && request.resource.data.reviewToken.size() <= 128
+        && request.resource.data.orderCompletedAt is timestamp
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function dishReviewOrderItemMatches(restaurantId, orderId) {
+      return publicReviewOrder(restaurantId, orderId).data.items is list
+        && request.resource.data.orderItemIndex < publicReviewOrder(restaurantId, orderId).data.items.size()
+        && reviewOrderItem(restaurantId, orderId).id == request.resource.data.orderItemId
+        && reviewOrderItem(restaurantId, orderId).productId == request.resource.data.productId
+        && reviewOrderItem(restaurantId, orderId).name == request.resource.data.productName
+        && reviewOrderItem(restaurantId, orderId).quantity == request.resource.data.quantity
+        && reviewOrderItem(restaurantId, orderId).reviewsEnabled == true;
+    }
+
+    function canCreateDishReview(restaurantId, reviewId) {
+      return !exists(/databases/$(database)/documents/restaurants/$(restaurantId)/dishReviews/$(reviewId))
+        && isValidDishReviewPayload(restaurantId, reviewId)
+        && publicReviewOrderExists(restaurantId, request.resource.data.orderId)
+        && isReviewEligibleOrder(publicReviewOrder(restaurantId, request.resource.data.orderId).data)
+        && reviewAccessExists(restaurantId, request.resource.data.orderId)
+        && reviewAccessDoc(restaurantId, request.resource.data.orderId).data.restaurantId == restaurantId
+        && reviewAccessDoc(restaurantId, request.resource.data.orderId).data.orderId == request.resource.data.orderId
+        && reviewAccessDoc(restaurantId, request.resource.data.orderId).data.reviewToken == request.resource.data.reviewToken
+        && reviewAccessDoc(restaurantId, request.resource.data.orderId).data.version == 1
+        && dishReviewOrderItemMatches(restaurantId, request.resource.data.orderId);
+    }
+
     function isPaidStatus(status) {
       return status is string && status in ["paye", "paid", "validated", "verified"];
     }
@@ -850,14 +929,32 @@ service cloud.firestore {
 
       match /categories/{categoryId} {
         allow get, list: if true;
-        allow write: if canManageRestaurantMenu(restaurantId);
+        allow create: if canManageRestaurantMenu(restaurantId)
+          && request.resource.data.reviewsEnabled is bool;
+        allow update: if canManageRestaurantMenu(restaurantId)
+          && (
+            request.resource.data.reviewsEnabled is bool
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["order", "updatedAt"])
+          );
+        allow delete: if canManageRestaurantMenu(restaurantId);
       }
 
       match /products/{productId} {
         allow get, list: if true;
-        allow write: if canManageRestaurantMenu(restaurantId)
+        allow create: if canManageRestaurantMenu(restaurantId)
+          && request.resource.data.reviewsEnabled is bool
+          && request.resource.data.reviewsPolicy in ["inherit", "enabled", "disabled"]
+          && (!("preparationMode" in request.resource.data)
+              || request.resource.data.preparationMode in ["kitchen", "direct", "bar"]);
+        allow update: if canManageRestaurantMenu(restaurantId)
+          && (
+            (request.resource.data.reviewsEnabled is bool
+              && request.resource.data.reviewsPolicy in ["inherit", "enabled", "disabled"])
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["order", "updatedAt"])
+          )
           && (!("preparationMode" in request.resource.data) 
               || request.resource.data.preparationMode in ["kitchen", "direct", "bar"]);
+        allow delete: if canManageRestaurantMenu(restaurantId);
       }
 
       match /menuItems/{menuItemId} {
@@ -1028,6 +1125,13 @@ service cloud.firestore {
         allow get: if canReadRestaurantReviewDocs(restaurantId);
         allow list: if canReadRestaurantReviewDocs(restaurantId);
         allow create: if canCreateRestaurantReview(restaurantId, reviewId);
+        allow update, delete: if false;
+      }
+
+      match /dishReviews/{dishReviewId} {
+        allow get: if canReadRestaurantReviewDocs(restaurantId);
+        allow list: if canReadRestaurantReviewDocs(restaurantId);
+        allow create: if canCreateDishReview(restaurantId, dishReviewId);
         allow update, delete: if false;
       }
 
@@ -1418,12 +1522,16 @@ service cloud.firestore {
 
     match /platformMenuCategories/{categoryTemplateId} {
       allow get, list: if canReadPlatformMenuLibrary();
-      allow create, update, delete: if isSuperAdmin();
+      allow create, update: if isSuperAdmin()
+        && request.resource.data.reviewsEnabled is bool;
+      allow delete: if isSuperAdmin();
     }
 
     match /platformMenuProducts/{productTemplateId} {
       allow get, list: if canReadPlatformMenuLibrary();
       allow create, update: if isSuperAdmin()
+        && request.resource.data.reviewsEnabled is bool
+        && request.resource.data.reviewsPolicy in ["inherit", "enabled", "disabled"]
         && (!("preparationMode" in request.resource.data)
           || request.resource.data.preparationMode in ["kitchen", "direct", "bar"]);
       allow delete: if isSuperAdmin();

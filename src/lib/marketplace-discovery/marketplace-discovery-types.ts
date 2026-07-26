@@ -38,6 +38,7 @@ export interface MarketplaceCategorySource {
   id: string
   name?: unknown
   marketplaceCategoryId?: unknown
+  reviewsPolicy?: unknown
   sourceTemplateId?: unknown
   templateId?: unknown
   isActive?: unknown
@@ -66,6 +67,7 @@ export interface MarketplaceProductSource {
   available?: unknown
   deletedAt?: unknown
   orderCount?: unknown
+  reviewsEnabled?: unknown
   createdAt?: unknown
   updatedAt?: unknown
 }
@@ -100,6 +102,7 @@ export interface MarketplaceDishOfferDocument {
   restaurantTimezone: string | null
   restaurantActive: boolean
   productActive: boolean
+  reviewsEnabled: boolean
   discoverable: boolean
   orderCount: number | null
   createdAt: string | null

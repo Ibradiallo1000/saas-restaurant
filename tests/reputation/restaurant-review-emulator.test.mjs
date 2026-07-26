@@ -544,6 +544,41 @@ describe("2. Création de review", () => {
     )
   }
 
+  function dishReviewId(orderId, orderItemId) {
+    return `${orderId}_${orderItemId}`
+  }
+
+  async function tryCreateDishReview(db, orderId, orderItemId, overrides = {}) {
+    const reviewData = {
+      restaurantId: RESTAURANT_ID,
+      orderId,
+      orderType: "delivery",
+      orderItemId,
+      orderItemIndex: 0,
+      productId: "product-burger",
+      productName: "Burger Signature",
+      productImageUrl: null,
+      quantity: 1,
+      rating: 5,
+      comment: "Très bon plat.",
+      customerDisplayName: "Client",
+      customerId: "customer-1",
+      customerName: "Client",
+      source: "pickup_delivery_link",
+      status: "published",
+      reviewToken: REVIEW_TOKEN,
+      orderCompletedAt: Timestamp.now(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      ...overrides,
+    }
+
+    return setDoc(
+      doc(db, "restaurants", RESTAURANT_ID, "dishReviews", dishReviewId(orderId, orderItemId)),
+      reviewData
+    )
+  }
+
   describe("A. QR dine_in valide", () => {
     it("source=qr_table, dine_in, servi, payé — autorisé", async () => {
       const orderId = "test-qr-valid-1"
@@ -948,6 +983,218 @@ describe("2. Création de review", () => {
           customerId: null,
         })
       )
+    })
+  })
+
+  describe("N. Avis plats", () => {
+    it("un plat commandé peut être noté", async () => {
+      const orderId = "test-dish-valid"
+      await createOrderAndAccess(
+        {
+          orderId,
+          source: "client",
+          orderType: "delivery",
+          paymentStatus: "paid",
+          timestamps: { deliveredAt: Timestamp.now() },
+          items: [
+            {
+              id: "item-burger",
+              productId: "product-burger",
+              name: "Burger Signature",
+              quantity: 1,
+              reviewsEnabled: true,
+            },
+          ],
+        },
+        { orderId }
+      )
+
+      const db = testEnv.unauthenticatedContext().firestore()
+      await assertSucceeds(tryCreateDishReview(db, orderId, "item-burger"))
+    })
+
+    it("un plat non commandé est refusé", async () => {
+      const orderId = "test-dish-not-ordered"
+      await createOrderAndAccess(
+        {
+          orderId,
+          source: "client",
+          orderType: "delivery",
+          paymentStatus: "paid",
+          timestamps: { deliveredAt: Timestamp.now() },
+          items: [
+            {
+              id: "item-burger",
+              productId: "product-burger",
+              name: "Burger Signature",
+              quantity: 1,
+              reviewsEnabled: true,
+            },
+          ],
+        },
+        { orderId }
+      )
+
+      const db = testEnv.unauthenticatedContext().firestore()
+      await assertFails(
+        tryCreateDishReview(db, orderId, "item-pizza", {
+          orderItemId: "item-pizza",
+          productId: "product-pizza",
+          productName: "Pizza Reine",
+        })
+      )
+    })
+
+    it("un doublon sur le même plat de commande est refusé", async () => {
+      const orderId = "test-dish-duplicate"
+      await createOrderAndAccess(
+        {
+          orderId,
+          source: "client",
+          orderType: "delivery",
+          paymentStatus: "paid",
+          timestamps: { deliveredAt: Timestamp.now() },
+          items: [
+            {
+              id: "item-burger",
+              productId: "product-burger",
+              name: "Burger Signature",
+              quantity: 1,
+              reviewsEnabled: true,
+            },
+          ],
+        },
+        { orderId }
+      )
+
+      const db = testEnv.unauthenticatedContext().firestore()
+      await assertSucceeds(tryCreateDishReview(db, orderId, "item-burger"))
+      await assertFails(tryCreateDishReview(db, orderId, "item-burger"))
+    })
+
+    it("plusieurs plats d'une même commande peuvent être notés", async () => {
+      const orderId = "test-multiple-dishes"
+      await createOrderAndAccess(
+        {
+          orderId,
+          source: "client",
+          orderType: "delivery",
+          paymentStatus: "paid",
+          timestamps: { deliveredAt: Timestamp.now() },
+          items: [
+            {
+              id: "item-burger",
+              productId: "product-burger",
+              name: "Burger Signature",
+              quantity: 1,
+              reviewsEnabled: true,
+            },
+            {
+              id: "item-pizza",
+              productId: "product-pizza",
+              name: "Pizza Reine",
+              quantity: 2,
+              reviewsEnabled: true,
+            },
+          ],
+        },
+        { orderId }
+      )
+
+      const db = testEnv.unauthenticatedContext().firestore()
+      await assertSucceeds(tryCreateDishReview(db, orderId, "item-burger"))
+      await assertSucceeds(
+        tryCreateDishReview(db, orderId, "item-pizza", {
+          orderItemId: "item-pizza",
+          orderItemIndex: 1,
+          productId: "product-pizza",
+          productName: "Pizza Reine",
+          quantity: 2,
+          rating: 4,
+        })
+      )
+    })
+
+    it("le commentaire est facultatif", async () => {
+      const orderId = "test-dish-no-comment"
+      await createOrderAndAccess(
+        {
+          orderId,
+          source: "client",
+          orderType: "delivery",
+          paymentStatus: "paid",
+          timestamps: { deliveredAt: Timestamp.now() },
+          items: [
+            {
+              id: "item-burger",
+              productId: "product-burger",
+              name: "Burger Signature",
+              quantity: 1,
+              reviewsEnabled: true,
+            },
+          ],
+        },
+        { orderId }
+      )
+
+      const db = testEnv.unauthenticatedContext().firestore()
+      await assertSucceeds(
+        tryCreateDishReview(db, orderId, "item-burger", { comment: null })
+      )
+    })
+
+    it("la note est obligatoire", async () => {
+      const orderId = "test-dish-rating-required"
+      await createOrderAndAccess(
+        {
+          orderId,
+          source: "client",
+          orderType: "delivery",
+          paymentStatus: "paid",
+          timestamps: { deliveredAt: Timestamp.now() },
+          items: [
+            {
+              id: "item-burger",
+              productId: "product-burger",
+              name: "Burger Signature",
+              quantity: 1,
+              reviewsEnabled: true,
+            },
+          ],
+        },
+        { orderId }
+      )
+
+      const db = testEnv.unauthenticatedContext().firestore()
+      await assertFails(
+        tryCreateDishReview(db, orderId, "item-burger", { rating: null })
+      )
+    })
+
+    it("un plat commandé mais non autorisé aux avis est refusé", async () => {
+      const orderId = "test-dish-reviews-disabled"
+      await createOrderAndAccess(
+        {
+          orderId,
+          source: "client",
+          orderType: "delivery",
+          paymentStatus: "paid",
+          timestamps: { deliveredAt: Timestamp.now() },
+          items: [
+            {
+              id: "item-burger",
+              productId: "product-burger",
+              name: "Burger Signature",
+              quantity: 1,
+              reviewsEnabled: false,
+            },
+          ],
+        },
+        { orderId }
+      )
+
+      const db = testEnv.unauthenticatedContext().firestore()
+      await assertFails(tryCreateDishReview(db, orderId, "item-burger"))
     })
   })
 })

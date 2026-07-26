@@ -8,10 +8,10 @@ import {
   limit,
   query,
   where,
-  orderBy,
 } from "firebase/firestore";
 import type { MenuItem, MenuCategory } from "@/types/index";
 import { restaurantCategoriesRef, restaurantProductsRef } from "@/lib/restaurant-firestore-paths";
+import { sortMenuCategories } from "@/lib/menu-category-order";
 
 export const fetchMenuItems = async (restaurantId: string) => {
   if (!restaurantId) return [];
@@ -31,11 +31,10 @@ export const fetchCategories = async (restaurantId: string) => {
 
   const q = query(
     restaurantCategoriesRef(db, restaurantId),
-    orderBy("order", "asc"),
     limit(50)
   );
 
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuCategory));
+  return sortMenuCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuCategory)));
 };
 

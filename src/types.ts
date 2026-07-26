@@ -4,6 +4,7 @@ import type {
   OrderItemStatus,
   OrderPaymentLifecycleStatus,
 } from "@/lib/order-lifecycle"
+import type { ProductReviewsPolicy } from "@/lib/product-review-policy"
 import { ORDER_SOURCE, ORDER_STATUS, ORDER_TYPE, POS_SESSION_STATUS, RESTAURANT_ROLES, SUBSCRIPTION_STATUS } from "@/lib/constants"
 
 export type RestaurantStatus = "pending" | "active" | "suspended"
@@ -192,6 +193,8 @@ export interface Product {
   price: number
   imageUrl?: string
   categoryId?: string
+  reviewsPolicy?: ProductReviewsPolicy
+  reviewsEnabled?: boolean
   available?: boolean
 }
 
@@ -205,6 +208,7 @@ export interface OrderItemSnapshot {
   nameSnapshot: string
   priceSnapshot: number
   quantity: number
+  reviewsEnabled?: boolean
   variants?: {
     name: string
     value: string

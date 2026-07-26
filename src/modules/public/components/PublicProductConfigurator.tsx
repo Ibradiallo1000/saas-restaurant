@@ -143,6 +143,7 @@ export default function PublicProductConfigurator({
           selectedOptions: line.selectedOptions,
           imageUrl: line.imageUrl,
           preparationMode: line.preparationMode,
+          reviewsEnabled: line.reviewsEnabled === true,
           bundleId: line.bundleId,
           isBundleMain: line.isBundleMain,
           linkedGroupTitle: line.linkedGroupTitle,
@@ -160,6 +161,7 @@ export default function PublicProductConfigurator({
         imageUrl: product.imageUrl,
         preparationMode: product.preparationMode,
         categoryName: product.categoryName,
+        reviewsEnabled: product.reviewsEnabled === true,
       })
     }
 

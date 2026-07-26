@@ -7,6 +7,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import ImagePickerModal from "@/components/ImagePickerModal"
+import {
+  normalizeProductReviewsPolicy,
+  policyFromLegacyReviewsEnabled,
+  resolveProductReviewsEnabled,
+  type ProductReviewsPolicy,
+} from "@/lib/product-review-policy"
 
 type Props = {
   restaurantId: string
@@ -29,13 +35,26 @@ export default function ProductEditor({
   const [description, setDescription] = React.useState(product?.description || "")
   const [imageUrl, setImageUrl] = React.useState(product?.imageUrl || "")
   const [imageId, setImageId] = React.useState(product?.imageId || "")
+  const [reviewsPolicy, setReviewsPolicy] = React.useState<ProductReviewsPolicy>(
+    product?.reviewsPolicy === "inherit" || product?.reviewsPolicy === "enabled" || product?.reviewsPolicy === "disabled"
+      ? product.reviewsPolicy
+      : policyFromLegacyReviewsEnabled(product?.reviewsEnabled)
+  )
   const [isImagePickerOpen, setIsImagePickerOpen] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
 
   const isEdit = !!product
+  const selectedCategory = React.useMemo(
+    () => categories.find((item) => item.id === categoryId) ?? null,
+    [categories, categoryId]
+  )
+  const resolvedReviewsEnabled = resolveProductReviewsEnabled({
+    categoryReviewsEnabled: selectedCategory?.reviewsEnabled,
+    productReviewsPolicy: reviewsPolicy,
+  })
 
   const handleSave = async () => {
-    if (!name || !price || !categoryId) return
+    if (!name || !price || !categoryId || resolvedReviewsEnabled === null) return
 
     setLoading(true)
 
@@ -50,6 +69,8 @@ export default function ProductEditor({
             description,
             imageUrl,
             imageId,
+            reviewsPolicy: normalizeProductReviewsPolicy(reviewsPolicy),
+            reviewsEnabled: resolvedReviewsEnabled,
             updatedAt: serverTimestamp()
           }
         )
@@ -63,6 +84,8 @@ export default function ProductEditor({
             description,
             imageUrl,
             imageId,
+            reviewsPolicy: normalizeProductReviewsPolicy(reviewsPolicy),
+            reviewsEnabled: resolvedReviewsEnabled,
             isAvailable: true,
             createdAt: serverTimestamp()
           }
@@ -129,6 +152,35 @@ export default function ProductEditor({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+
+          <div className="space-y-2 rounded-xl border p-3">
+            <p className="text-sm font-semibold">Avis clients *</p>
+            <div className="grid gap-2">
+              <Button
+                type="button"
+                variant={reviewsPolicy === "inherit" ? "default" : "outline"}
+                disabled={typeof selectedCategory?.reviewsEnabled !== "boolean"}
+                onClick={() => setReviewsPolicy("inherit")}
+              >
+                Utiliser la catégorie
+              </Button>
+              <Button type="button" variant={reviewsPolicy === "enabled" ? "default" : "outline"} onClick={() => setReviewsPolicy("enabled")}>
+                Toujours autoriser
+              </Button>
+              <Button type="button" variant={reviewsPolicy === "disabled" ? "default" : "outline"} onClick={() => setReviewsPolicy("disabled")}>
+                Toujours désactiver
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {reviewsPolicy === "inherit"
+                ? typeof selectedCategory?.reviewsEnabled === "boolean"
+                  ? `Hérite de « ${selectedCategory.name} » — avis actuellement ${selectedCategory.reviewsEnabled ? "autorisés" : "désactivés"}.`
+                  : "Configurez d’abord les avis de la catégorie."
+                : resolvedReviewsEnabled
+                  ? "Exception : ce produit peut actuellement être noté."
+                  : "Exception : ce produit ne peut actuellement pas être noté."}
+            </p>
+          </div>
 
           <div className="space-y-3 rounded-lg border p-3">
             <div className="flex items-center justify-between gap-3">

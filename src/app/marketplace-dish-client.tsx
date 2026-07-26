@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowRight, ChefHat, LayoutGrid, MapPin, Moon, Search, Store, Sun, Utensils } from "lucide-react"
+import { ArrowRight, ChefHat, LayoutGrid, MapPin, Moon, Search, Star, Store, Sun, ThumbsUp, Utensils } from "lucide-react"
 
 import {
   MarketplaceCategoryRail,
@@ -338,10 +338,34 @@ function MarketplaceRestaurantCard({ restaurant }: { restaurant: MarketplaceRest
             {restaurant.locationLabel ? (
               <p className="flex min-w-0 items-center gap-1 truncate text-[11px] font-public-semibold leading-4 text-[var(--text-muted)]"><MapPin className="size-3 shrink-0" aria-hidden="true" />{restaurant.locationLabel}</p>
             ) : null}
-            <p className={`inline-flex min-h-4 max-w-full items-center gap-1.5 rounded-full px-2 text-[10px] font-public-extrabold ${restaurant.isOpenNow ? "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300" : "bg-slate-500/10 text-slate-600 dark:bg-white/10 dark:text-slate-300"}`}>
-              <span className={`size-1.5 rounded-full ${restaurant.isOpenNow ? "bg-emerald-500" : "bg-slate-400"}`} />
-              <span className="truncate">{restaurant.isOpenNow ? restaurant.statusDetail : restaurant.statusLabel}</span>
-            </p>
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <p className={`inline-flex min-h-4 max-w-full items-center gap-1.5 rounded-full px-2 text-[10px] font-public-extrabold ${restaurant.isOpenNow ? "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300" : "bg-slate-500/10 text-slate-600 dark:bg-white/10 dark:text-slate-300"}`}>
+                <span className={`size-1.5 rounded-full ${restaurant.isOpenNow ? "bg-emerald-500" : "bg-slate-400"}`} />
+                <span className="truncate">{restaurant.isOpenNow ? restaurant.statusDetail : restaurant.statusLabel}</span>
+              </p>
+              {restaurant.reputation?.badgeLabel ? (
+                <p className="inline-flex min-h-4 max-w-full items-center rounded-full bg-[var(--brand-primary-soft)] px-2 text-[10px] font-public-extrabold text-[var(--brand-primary)]">
+                  {restaurant.reputation.badgeLabel}
+                </p>
+              ) : null}
+            </div>
+            {restaurant.reputation ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-public-bold leading-4 text-[var(--text-muted)]">
+                {restaurant.reputation.ratingLabel ? (
+                  <span className="inline-flex items-center gap-1 text-[var(--text-secondary)]">
+                    <Star className="size-3 fill-[var(--brand-primary)] text-[var(--brand-primary)]" aria-hidden="true" />
+                    {restaurant.reputation.ratingLabel}
+                  </span>
+                ) : null}
+                {restaurant.reputation.reviewCountLabel ? <span>{restaurant.reputation.reviewCountLabel}</span> : null}
+                {restaurant.reputation.recommendationLabel ? (
+                  <span className="inline-flex items-center gap-1">
+                    <ThumbsUp className="size-3 text-[var(--brand-primary)]" aria-hidden="true" />
+                    {restaurant.reputation.recommendationLabel}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <div className="mt-auto min-w-0 pr-[94px] pt-1.5">
             <p className="truncate text-[11px] font-public-bold leading-4 text-[var(--text-secondary)]">{restaurant.productCountLabel}</p>

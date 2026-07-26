@@ -19,31 +19,20 @@ export default function CategoriesBar({
   const containerRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
-    const activeEl = containerRef.current?.querySelector(
-      `[data-active="true"]`
-    ) as HTMLElement | null
+    if (!activeId) return
+    const container = containerRef.current
+    if (!container) return
 
-    if (activeEl && containerRef.current) {
-      const container = containerRef.current
-      const isFullyVisible =
-        activeEl.offsetLeft >= container.scrollLeft &&
-        activeEl.offsetLeft + activeEl.offsetWidth <=
-          container.scrollLeft + container.clientWidth
+    const activeEl = container.querySelector<HTMLElement>(
+      `[data-category-id="${activeId}"]`
+    )
+    if (!activeEl) return
 
-      if (isFullyVisible) return
-
-      const offset =
-        activeEl.offsetLeft -
-        container.clientWidth / 2 +
-        activeEl.clientWidth / 2
-
-      container.scrollTo({
-        left: offset,
-        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-          ? "auto"
-          : "smooth",
-      })
-    }
+    activeEl.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      inline: "center",
+      block: "nearest",
+    })
   }, [activeId])
 
   return (
@@ -72,6 +61,7 @@ export default function CategoriesBar({
             <PublicCategoryCard
               key={cat.id}
               data-active={isActive}
+              data-category-id={cat.id}
               label={cat.name}
               imageUrl={image || undefined}
               imageAlt={cat.name}

@@ -84,7 +84,7 @@ const drawerItemMap: Record<NavigationItemId, OperationalDrawerItem | null> = {
   parametres: { type: "link", id: "settings", label: "Paramètres", href: "/settings", icon: Settings },
   tresorerie: { type: "link", id: "treasury", label: "Trésorerie", href: "/manager/tresorerie", icon: Banknote },
   depenses: { type: "link", id: "expenses", label: "Dépenses", href: "/manager/depenses", icon: ReceiptText },
-  avis: { type: "link", id: "reviews", label: "Avis", href: "/owner/avis", icon: Star },
+  avis: { type: "link", id: "reviews", label: "Voix du client", href: "/owner/avis", icon: Star },
   menu: { type: "link", id: "menu", label: "Menu", href: "/menu", icon: MenuSquare },
   tables: { type: "link", id: "tables", label: "Tables", href: "/tables", icon: Table2 },
   images: { type: "link", id: "images", label: "Images", href: "/images", icon: ImageIcon },

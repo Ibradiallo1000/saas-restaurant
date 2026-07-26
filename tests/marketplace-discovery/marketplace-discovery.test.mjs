@@ -55,6 +55,7 @@ test("projette uniquement la liste blanche publique", () => {
   assert.equal(projection.normalizedName, "poulet d ami grille")
   assert.equal(projection.displayPrice, 4500)
   assert.equal(projection.discoverable, true)
+  assert.equal(projection.reviewsEnabled, false)
   assert.equal(projection.restaurantLogoUrl, null)
   assert.equal(projection.schemaVersion, 1)
   assert.equal("costPrice" in projection, false)

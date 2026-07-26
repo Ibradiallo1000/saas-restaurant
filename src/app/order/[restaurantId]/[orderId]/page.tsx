@@ -31,6 +31,7 @@ import { normalizeOrderType } from "@/lib/order-lifecycle"
 import { buildUssdTelHref } from "@/lib/ussd"
 import { CartProvider, useCart } from "@/modules/public/cart/CartContext"
 import CartDrawer from "@/modules/public/components/CartDrawer"
+import { DishReviewsCard } from "@/modules/public/components/DishReviewsCard"
 import PaymentModal from "@/modules/public/components/PaymentModal"
 import { RestaurantReviewCard } from "@/modules/public/components/RestaurantReviewCard"
 import {
@@ -524,11 +525,18 @@ function ClientOrderTrackingContent() {
           <PaymentConfirmedSummary amount={sessionTotal} />
 
           {restaurantId ? (
-            <RestaurantReviewCard
-              restaurantId={restaurantId}
-              order={mainOrder}
-              reviewToken={reviewToken}
-            />
+            <>
+              <RestaurantReviewCard
+                restaurantId={restaurantId}
+                order={mainOrder}
+                reviewToken={reviewToken}
+              />
+              <DishReviewsCard
+                restaurantId={restaurantId}
+                order={mainOrder}
+                reviewToken={reviewToken}
+              />
+            </>
           ) : null}
         </div>
       </PublicTrackingLayout>
@@ -687,11 +695,18 @@ function ClientOrderTrackingContent() {
 
         {/* ✅ Avis client hors QR - UNIQUEMENT quand la commande est terminée ET payée */}
         {shouldShowNonQrReview && restaurantId ? (
-          <RestaurantReviewCard
-            restaurantId={restaurantId}
-            order={mainOrder}
-            reviewToken={reviewToken}
-          />
+          <>
+            <RestaurantReviewCard
+              restaurantId={restaurantId}
+              order={mainOrder}
+              reviewToken={reviewToken}
+            />
+            <DishReviewsCard
+              restaurantId={restaurantId}
+              order={mainOrder}
+              reviewToken={reviewToken}
+            />
+          </>
         ) : null}
       </div>
     </PublicTrackingLayout>

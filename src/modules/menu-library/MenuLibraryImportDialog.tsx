@@ -28,6 +28,10 @@ import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { getMarketplaceCategoryIcon } from "@/lib/marketplace-category-icons"
 import type { LinkedOptionGroup } from "@/lib/linked-option-groups"
+import {
+  policyFromLegacyReviewsEnabled,
+  resolveProductReviewsEnabled,
+} from "@/lib/product-review-policy"
 import type {
   PlatformMenuCategoryTemplate,
   PlatformMenuPack,
@@ -66,6 +70,8 @@ export default function MenuLibraryImportDialog({
   const [selectedPackId, setSelectedPackId] = React.useState("")
   const [selectedCategoryId, setSelectedCategoryId] = React.useState("")
   const [selectedProductIds, setSelectedProductIds] = React.useState<string[]>([])
+  const [legacyImportReviewsEnabled, setLegacyImportReviewsEnabled] = React.useState<boolean | null>(null)
+  const [legacyImportCategoryReviewsEnabled, setLegacyImportCategoryReviewsEnabled] = React.useState<boolean | null>(null)
   const [isImporting, setIsImporting] = React.useState(false)
 
   const packsQuery = useMemoFirebase(() => {
@@ -184,7 +190,16 @@ export default function MenuLibraryImportDialog({
   }, [activeCategories, activeProducts, existingCategories, existingProducts, selection])
 
   const isLoading = packsLoading || categoriesLoading || productsLoading
-  const canImport = preview.categoriesToCreate.length > 0 || preview.productsToCreate.length > 0
+  const hasLegacyProductsWithoutReviewChoice = preview.productsToCreate.some(
+    (product) => typeof product.reviewsEnabled !== "boolean"
+  )
+  const hasLegacyCategoriesWithoutReviewChoice = preview.categoriesToCreate.some(
+    (category) => typeof category.reviewsEnabled !== "boolean"
+  )
+  const canImport =
+    (preview.categoriesToCreate.length > 0 || preview.productsToCreate.length > 0) &&
+    (!hasLegacyCategoriesWithoutReviewChoice || typeof legacyImportCategoryReviewsEnabled === "boolean") &&
+    (!hasLegacyProductsWithoutReviewChoice || typeof legacyImportReviewsEnabled === "boolean" || typeof legacyImportCategoryReviewsEnabled === "boolean")
 
   const handleImport = async () => {
     if (!db || !restaurantId || !canImport) return
@@ -216,10 +231,15 @@ export default function MenuLibraryImportDialog({
       const categoryIdMap = new Map<string, string>()
       const productIdMap = new Map<string, string>()
       const existingCategoryByTemplate = new Map<string, string>()
+      const existingCategoryReviewsByTemplate = new Map<string, boolean | null>()
       const existingProductByTemplate = new Map<string, string>()
 
       freshPreview.categoryDuplicates.forEach((duplicate) => {
         existingCategoryByTemplate.set(duplicate.template.id, duplicate.existing.id)
+        existingCategoryReviewsByTemplate.set(
+          duplicate.template.id,
+          typeof duplicate.existing.reviewsEnabled === "boolean" ? duplicate.existing.reviewsEnabled : null
+        )
       })
       freshPreview.productDuplicates.forEach((duplicate) => {
         existingProductByTemplate.set(duplicate.template.id, duplicate.existing.id)
@@ -228,6 +248,10 @@ export default function MenuLibraryImportDialog({
       freshPreview.categoriesToCreate.forEach((category) => {
         const categoryRef = doc(collection(db, "restaurants", restaurantId, "categories"))
         categoryIdMap.set(category.id, categoryRef.id)
+        const categoryReviewsEnabled =
+          typeof category.reviewsEnabled === "boolean"
+            ? category.reviewsEnabled
+            : legacyImportCategoryReviewsEnabled === true
         batch.set(categoryRef, {
           name: category.name,
           description: category.description || "",
@@ -235,6 +259,7 @@ export default function MenuLibraryImportDialog({
           imageId: category.imageMediaId || "",
           iconKey: category.iconKey || null,
           marketplaceCategoryId: category.marketplaceCategoryId || null,
+          reviewsEnabled: categoryReviewsEnabled,
           order: category.order ?? 0,
           isActive: category.isActive !== false,
           source: "platform_menu_library",
@@ -261,6 +286,33 @@ export default function MenuLibraryImportDialog({
 
         const productRef = productRefs.get(product.id)
         if (!productRef) return
+        const categoryReviewsEnabled =
+          existingCategoryReviewsByTemplate.get(product.categoryTemplateId) ??
+          (typeof categoryTemplate?.reviewsEnabled === "boolean"
+            ? categoryTemplate.reviewsEnabled
+            : legacyImportCategoryReviewsEnabled)
+        const sourcePolicy =
+          product.reviewsPolicy === "inherit" || product.reviewsPolicy === "enabled" || product.reviewsPolicy === "disabled"
+            ? product.reviewsPolicy
+            : typeof product.reviewsEnabled === "boolean"
+              ? policyFromLegacyReviewsEnabled(product.reviewsEnabled)
+              : "inherit"
+        const resolvedImportedReviewsEnabled = resolveProductReviewsEnabled({
+          categoryReviewsEnabled,
+          productReviewsPolicy: sourcePolicy,
+        })
+        const effectiveReviewsEnabled =
+          typeof product.reviewsEnabled === "boolean"
+            ? product.reviewsEnabled
+            : resolvedImportedReviewsEnabled ?? legacyImportReviewsEnabled === true
+        const reviewsPolicy =
+          sourcePolicy === "inherit" || categoryReviewsEnabled === null || categoryReviewsEnabled === undefined
+            ? sourcePolicy
+            : effectiveReviewsEnabled === categoryReviewsEnabled
+              ? "inherit"
+              : effectiveReviewsEnabled
+                ? "enabled"
+                : "disabled"
         batch.set(productRef, {
           name: product.name,
           description: product.description || "",
@@ -271,6 +323,8 @@ export default function MenuLibraryImportDialog({
           basePrice: Math.max(0, Number(product.basePrice || 0)),
           price: Math.max(0, Number(product.basePrice || 0)),
           preparationMode: product.preparationMode || "kitchen",
+          reviewsPolicy,
+          reviewsEnabled: effectiveReviewsEnabled,
           options: Array.isArray(product.options) ? product.options : [],
           recipe: Array.isArray(product.recipe) ? product.recipe : [],
           components: Array.isArray(product.components) ? product.components : [],
@@ -384,6 +438,56 @@ export default function MenuLibraryImportDialog({
         </Tabs>
 
         <ImportPreview preview={preview} />
+
+        {hasLegacyCategoriesWithoutReviewChoice ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <p className="text-sm font-bold">Avis clients des catégories importées</p>
+            <p className="mt-1 text-xs">
+              Certaines catégories modèles anciennes n’ont pas encore de réglage d’avis. Choisis une règle générale à appliquer à ces catégories.
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                variant={legacyImportCategoryReviewsEnabled === true ? "default" : "outline"}
+                onClick={() => setLegacyImportCategoryReviewsEnabled(true)}
+              >
+                Autoriser les avis
+              </Button>
+              <Button
+                type="button"
+                variant={legacyImportCategoryReviewsEnabled === false ? "default" : "outline"}
+                onClick={() => setLegacyImportCategoryReviewsEnabled(false)}
+              >
+                Désactiver les avis
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {hasLegacyProductsWithoutReviewChoice ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <p className="text-sm font-bold">Avis clients des produits importés</p>
+            <p className="mt-1 text-xs">
+              Certains produits modèles anciens n’ont aucune valeur d’avis. Ce choix servira seulement aux produits qui ne peuvent pas hériter d’une catégorie configurée.
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                variant={legacyImportReviewsEnabled === true ? "default" : "outline"}
+                onClick={() => setLegacyImportReviewsEnabled(true)}
+              >
+                Autoriser les avis
+              </Button>
+              <Button
+                type="button"
+                variant={legacyImportReviewsEnabled === false ? "default" : "outline"}
+                onClick={() => setLegacyImportReviewsEnabled(false)}
+              >
+                Désactiver les avis
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
           <Button type="button" variant="ghost" onClick={onClose}>

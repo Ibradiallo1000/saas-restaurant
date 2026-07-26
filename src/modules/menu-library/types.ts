@@ -1,5 +1,6 @@
 import type { Timestamp } from "firebase/firestore"
 import type { LinkedOptionGroup } from "@/lib/linked-option-groups"
+import type { ProductReviewsPolicy } from "@/lib/product-review-policy"
 import type { PreparationMode } from "@/utils/preparation-logic"
 
 export type PlatformMenuPack = {
@@ -26,6 +27,7 @@ export type PlatformMenuCategoryTemplate = {
   imageMediaId?: string
   iconKey?: string | null
   marketplaceCategoryId?: string | null
+  reviewsEnabled?: boolean
   order: number
   isActive: boolean
   createdAt?: Timestamp
@@ -44,6 +46,8 @@ export type PlatformMenuProductTemplate = {
   imageMediaId?: string
   basePrice: number
   preparationMode: PreparationMode
+  reviewsPolicy?: ProductReviewsPolicy
+  reviewsEnabled?: boolean
   options?: unknown[]
   recipe?: unknown[]
   components?: unknown[]

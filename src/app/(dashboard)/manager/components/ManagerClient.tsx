@@ -20,7 +20,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore"
 
-import { Store, Plus, Search, X, MoreVertical, Edit2, Trash2, Power, PowerOff, Eye, ImageIcon, ArrowLeft, ShieldCheck, Banknote, ReceiptText, Wallet, ClipboardList, BookOpen } from "lucide-react"
+import { Store, Plus, Search, X, MoreVertical, Edit2, Trash2, Power, PowerOff, Eye, ImageIcon, ArrowLeft, ShieldCheck, Banknote, ReceiptText, Wallet, ClipboardList, BookOpen, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,7 +34,14 @@ import { useToast } from "@/hooks/use-toast"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { getOptimizedImage } from "@/lib/image"
+import { getCategoryDisplayOrder, sortMenuCategories } from "@/lib/menu-category-order"
 import { getMarketplaceCategoryIcon, normalizeMarketplaceCategoryIconKey, type MarketplaceCategoryIconKey } from "@/lib/marketplace-category-icons"
+import {
+  normalizeProductReviewsPolicy,
+  policyFromLegacyReviewsEnabled,
+  resolveProductReviewsEnabled,
+  type ProductReviewsPolicy,
+} from "@/lib/product-review-policy"
 import { cn } from "@/lib/utils"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import type { MarketplaceFoodCategoryDocument } from "@/lib/marketplace-discovery/marketplace-discovery-types"
@@ -201,6 +208,7 @@ function SortableCategoryCard({ category, productCount, onClick }: any) {
     opacity: isDragging ? 0.5 : 1,
   }
   const Icon = getMarketplaceCategoryIcon(category.iconKey)
+  const reviewStatus = getCategoryReviewStatus(category)
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
@@ -230,6 +238,9 @@ function SortableCategoryCard({ category, productCount, onClick }: any) {
           <p className="text-xs text-gray-500">
             {productCount} produit{productCount !== 1 ? 's' : ''}
           </p>
+          <Badge variant="secondary" className={reviewStatus.className}>
+            {reviewStatus.label}
+          </Badge>
         </CardContent>
       </Card>
     </div>
@@ -260,6 +271,7 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
   const hasOptions = product.options && product.options.length > 0
   const isComplexConsumption = product.hasComplexConsumption === true || hasComplexConsumption(product)
   const isTracked = hasTrackedConsumption(product)
+  const reviewStatus = getProductReviewStatus(product)
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
@@ -367,6 +379,9 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
                 categoryName: category?.name,
               }}
             />
+            <Badge variant="secondary" className={reviewStatus.className}>
+              {reviewStatus.label}
+            </Badge>
           </div>
 
           {(hasOptions || !isInactive) && (
@@ -392,6 +407,33 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
       </Card>
     </div>
   )
+}
+
+function getProductReviewStatus(product: any) {
+  if (product?.reviewsEnabled === true) {
+    return { label: "Avis autorisés", className: "text-[10px] bg-emerald-100 text-emerald-800" }
+  }
+  if (product?.reviewsEnabled === false) {
+    return { label: "Avis désactivés", className: "text-[10px] bg-gray-100 text-gray-700" }
+  }
+  return { label: "Avis à configurer", className: "text-[10px] bg-amber-100 text-amber-800" }
+}
+
+function getCategoryReviewStatus(category: any) {
+  if (category?.reviewsEnabled === true) {
+    return { label: "Avis autorisés", className: "text-[10px] bg-emerald-100 text-emerald-800" }
+  }
+  if (category?.reviewsEnabled === false) {
+    return { label: "Avis désactivés", className: "text-[10px] bg-gray-100 text-gray-700" }
+  }
+  return { label: "Avis à configurer", className: "text-[10px] bg-amber-100 text-amber-800" }
+}
+
+function getProductReviewsPolicy(product: any): ProductReviewsPolicy {
+  if (product?.reviewsPolicy === "inherit" || product?.reviewsPolicy === "enabled" || product?.reviewsPolicy === "disabled") {
+    return product.reviewsPolicy
+  }
+  return policyFromLegacyReviewsEnabled(product?.reviewsEnabled)
 }
 
 // =============================================================================
@@ -445,6 +487,8 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
 
   const [isProductOpen, setIsProductOpen] = React.useState(false)
   const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
+  const [isSavingCategory, setIsSavingCategory] = React.useState(false)
+  const [isSavingProduct, setIsSavingProduct] = React.useState(false)
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false)
   const [isLibraryImportOpen, setIsLibraryImportOpen] = React.useState(false)
   const [isImagePickerOpen, setIsImagePickerOpen] = React.useState(false)
@@ -452,8 +496,10 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   const [previewProduct, setPreviewProduct] = React.useState<any>(null)
 
   const [newCategoryName, setNewCategoryName] = React.useState("")
+  const [categoryDisplayOrder, setCategoryDisplayOrder] = React.useState("")
   const [selectedMarketplaceCategoryId, setSelectedMarketplaceCategoryId] = React.useState("")
   const [selectedCategoryIconKey, setSelectedCategoryIconKey] = React.useState<MarketplaceCategoryIconKey | "">("")
+  const [selectedCategoryReviewsEnabled, setSelectedCategoryReviewsEnabled] = React.useState<boolean | null>(null)
   const [editingCategory, setEditingCategory] = React.useState<any>(null)
   const [selectedCategoryImage, setSelectedCategoryImage] = React.useState<{
     id: string
@@ -461,6 +507,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   } | null>(null)
   const [editingProduct, setEditingProduct] = React.useState<any>(null)
   const [isCategoryApplyConfirmOpen, setIsCategoryApplyConfirmOpen] = React.useState(false)
+  const [categoryApplyConfirmMode, setCategoryApplyConfirmMode] = React.useState<"marketplace" | "reviews" | null>(null)
   const [pendingCategoryApplyAction, setPendingCategoryApplyAction] = React.useState<"apply" | "keep" | null>(null)
   const [categoryProductsWithMapping, setCategoryProductsWithMapping] = React.useState<any[]>([])
 
@@ -473,6 +520,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     imageId: "",
     preparationMode: "kitchen" as PreparationMode,
     marketplaceCategoryId: "",
+    reviewsPolicy: "inherit" as ProductReviewsPolicy,
   })
 
   const [options, setOptions] = React.useState<any[]>([])
@@ -522,6 +570,14 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   // Order states for drag & drop
   const [categoryOrder, setCategoryOrder] = React.useState<string[]>([])
   const [productOrder, setProductOrder] = React.useState<string[]>([])
+
+  const getNextCategoryDisplayOrder = React.useCallback(() => {
+    const maxOrder = categories?.reduce((max: number, category: any) => {
+      return Math.max(max, getCategoryDisplayOrder(category, 0))
+    }, 0) ?? 0
+
+    return Math.max(maxOrder + 1, (categories?.length ?? 0) + 1)
+  }, [categories])
   
   // FILTER
   const filteredProducts = React.useMemo(() => {
@@ -535,14 +591,11 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
 
   // Synchroniser l'ordre des catégories avec Firestore
   React.useEffect(() => {
-    if (categories && categories.length > 0 && categoryOrder.length === 0) {
-      const sorted = [...categories].sort((a: any, b: any) => {
-        if (a.order !== undefined && b.order !== undefined) return a.order - b.order
-        return 0
-      })
+    if (categories && categories.length > 0) {
+      const sorted = sortMenuCategories(categories)
       setCategoryOrder(sorted.map((c: any) => c.id))
     }
-  }, [categories, categoryOrder.length])
+  }, [categories])
 
   // Synchroniser l'ordre des produits
   React.useEffect(() => {
@@ -624,7 +677,8 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     try {
       const updates = newOrder.map((id, index) => {
         const ref = doc(db, "restaurants", restaurantId, "categories", id)
-        return updateDoc(ref, { order: index })
+        const displayOrder = index + 1
+        return updateDoc(ref, { order: displayOrder, displayOrder })
       })
       
       await Promise.all(updates)
@@ -690,17 +744,30 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
 
 // ADD CATEGORY
   const handleSaveCategory = async (applyToProducts?: boolean) => {
+    if (isSavingCategory) return
     if (!restaurantId) return
     if (!newCategoryName.trim()) return
+    const displayOrder = Number(categoryDisplayOrder)
+    if (!Number.isInteger(displayOrder) || displayOrder < 1) {
+      toast({
+        title: "Ordre d'affichage invalide",
+        description: "Saisis une position entière supérieure ou égale à 1.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (typeof selectedCategoryReviewsEnabled !== "boolean") {
+      toast({
+        title: "Avis clients requis",
+        description: "Choisis si les produits de cette catégorie peuvent recevoir des avis.",
+        variant: "destructive",
+      })
+      return
+    }
 
     const formatted =
       newCategoryName.charAt(0).toUpperCase() + newCategoryName.slice(1)
-
-    // Get current max order
-    const currentMaxOrder = categories?.reduce((max: number, cat: any) => {
-      const order = cat.order !== undefined ? cat.order : -1
-      return Math.max(max, order)
-    }, -1) ?? -1
 
     const payload = {
       name: formatted,
@@ -708,16 +775,20 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       imageId: selectedCategoryImage?.id || null,
       iconKey: selectedCategoryIconKey || null,
       marketplaceCategoryId: selectedMarketplaceCategoryId || null,
-      order: currentMaxOrder + 1,
+      reviewsEnabled: selectedCategoryReviewsEnabled,
+      order: displayOrder,
+      displayOrder,
       updatedAt: serverTimestamp()
     }
 
+    const oldMarketplaceCategoryId = editingCategory?.marketplaceCategoryId || ""
+    const newMarketplaceCategoryId = selectedMarketplaceCategoryId || ""
+    const marketplaceChanged = Boolean(editingCategory) && oldMarketplaceCategoryId !== newMarketplaceCategoryId
+    const oldReviewsEnabled = typeof editingCategory?.reviewsEnabled === "boolean" ? editingCategory.reviewsEnabled : null
+    const reviewsChanged = Boolean(editingCategory) && oldReviewsEnabled !== selectedCategoryReviewsEnabled
+
     if (editingCategory) {
       // Detect marketplaceCategoryId change and open confirmation if needed
-      const oldMarketplaceCategoryId = editingCategory.marketplaceCategoryId || ""
-      const newMarketplaceCategoryId = selectedMarketplaceCategoryId || ""
-      const marketplaceChanged = oldMarketplaceCategoryId !== newMarketplaceCategoryId
-
       if (marketplaceChanged && applyToProducts === undefined) {
         // Find products with their own marketplaceCategoryId in this category
         const productsWithMapping = (products || []).filter(
@@ -726,84 +797,136 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
         if (productsWithMapping.length > 0) {
           setCategoryProductsWithMapping(productsWithMapping)
           setIsCategoryApplyConfirmOpen(true)
+          setCategoryApplyConfirmMode("marketplace")
           setPendingCategoryApplyAction(null)
           return // Wait for user choice
         }
       }
 
-      await updateDoc(
-        doc(db, "restaurants", restaurantId, "categories", editingCategory.id),
-        payload
-      )
-
-      // If user chose to apply to products, remove their marketplaceCategoryId
-      if (marketplaceChanged && applyToProducts === true) {
-        const productsToUpdate = (products || []).filter(
-          (p: any) => p.categoryId === editingCategory.id && p.marketplaceCategoryId
+      if (reviewsChanged && applyToProducts === undefined) {
+        const inheritProducts = (products || []).filter(
+          (p: any) => p.categoryId === editingCategory.id && getProductReviewsPolicy(p) === "inherit"
         )
-        await Promise.all(
-          productsToUpdate.map((p: any) =>
-            updateDoc(
-              doc(db, "restaurants", restaurantId, "products", p.id),
-              { marketplaceCategoryId: null, updatedAt: serverTimestamp() }
+        if (inheritProducts.length > 0) {
+          setCategoryProductsWithMapping(inheritProducts)
+          setIsCategoryApplyConfirmOpen(true)
+          setCategoryApplyConfirmMode("reviews")
+          setPendingCategoryApplyAction(null)
+          return
+        }
+      }
+    }
+
+    setIsSavingCategory(true)
+
+    try {
+      if (editingCategory) {
+        await updateDoc(
+          doc(db, "restaurants", restaurantId, "categories", editingCategory.id),
+          payload
+        )
+
+        if (reviewsChanged) {
+          const productsToUpdate = (products || []).filter(
+            (p: any) => p.categoryId === editingCategory.id && getProductReviewsPolicy(p) === "inherit"
+          )
+          await Promise.all(
+            productsToUpdate.map((p: any) =>
+              updateDoc(
+                doc(db, "restaurants", restaurantId, "products", p.id),
+                { reviewsPolicy: "inherit", reviewsEnabled: selectedCategoryReviewsEnabled, updatedAt: serverTimestamp() }
+              )
             )
           )
-        )
-        toast({
-          title: "Catégorie mise à jour",
-          description: `${productsToUpdate.length} produit(s) réinitialisé(s) au mapping de la catégorie.`
-        })
-      } else if (marketplaceChanged && applyToProducts === false) {
-        toast({
-          title: "Catégorie mise à jour",
-          description: "Les exceptions produit sont conservées."
-        })
+          toast({
+            title: "Réglage d'avis appliqué",
+            description: `${productsToUpdate.length} produit(s) en héritage mis à jour. Les exceptions sont conservées.`,
+          })
+        }
+
+        // If user chose to apply to products, remove their marketplaceCategoryId
+        if (marketplaceChanged && applyToProducts === true) {
+          const productsToUpdate = (products || []).filter(
+            (p: any) => p.categoryId === editingCategory.id && p.marketplaceCategoryId
+          )
+          await Promise.all(
+            productsToUpdate.map((p: any) =>
+              updateDoc(
+                doc(db, "restaurants", restaurantId, "products", p.id),
+                { marketplaceCategoryId: null, updatedAt: serverTimestamp() }
+              )
+            )
+          )
+          toast({
+            title: "Catégorie mise à jour",
+            description: `${productsToUpdate.length} produit(s) réinitialisé(s) au mapping de la catégorie.`
+          })
+        } else if (marketplaceChanged && applyToProducts === false) {
+          toast({
+            title: "Catégorie mise à jour",
+            description: "Les exceptions produit sont conservées."
+          })
+        } else {
+          toast({ title: "Catégorie mise à jour" })
+        }
       } else {
-        toast({ title: "Catégorie mise à jour" })
+        await addDoc(
+          collection(db, "restaurants", restaurantId, "categories"),
+          {
+            ...payload,
+            createdAt: serverTimestamp()
+          }
+        )
+        toast({ title: "Catégorie ajoutée" })
       }
-    } else {
-      await addDoc(
-        collection(db, "restaurants", restaurantId, "categories"),
-        {
-          ...payload,
-          createdAt: serverTimestamp()
-        }
-      )
-      toast({ title: "Catégorie ajoutée" })
-    }
 
-    // 🔥 MARKETPLACE SYNC — Re-sync product offers for this category then rebuild category offers
-    try {
-      if (db && restaurantId) {
-        const editingCategoryId = editingCategory?.id
-        if (editingCategoryId) {
-          // Re-sync all products in this category
-          await syncCategoryOffers(db, restaurantId, editingCategoryId)
+      // 🔥 MARKETPLACE SYNC — Re-sync product offers for this category then rebuild category offers
+      try {
+        if (db && restaurantId) {
+          const editingCategoryId = editingCategory?.id
+          if (editingCategoryId) {
+            // Re-sync all products in this category
+            await syncCategoryOffers(db, restaurantId, editingCategoryId)
+          }
+          // Rebuild marketplaceRestaurantCategoryOffers
+          await rebuildRestaurantCategoryOffers(db, restaurantId)
         }
-        // Rebuild marketplaceRestaurantCategoryOffers
-        await rebuildRestaurantCategoryOffers(db, restaurantId)
+      } catch (syncError) {
+        console.error("[marketplace-sync] Erreur sync catégorie:", syncError)
       }
-    } catch (syncError) {
-      console.error("[marketplace-sync] Erreur sync catégorie:", syncError)
-    }
 
-    refreshCatalog()
-    setNewCategoryName("")
-    setSelectedMarketplaceCategoryId("")
-    setSelectedCategoryIconKey("")
-    setEditingCategory(null)
-    setSelectedCategoryImage(null)
-    setCategoryProductsWithMapping([])
-    setIsCategoryApplyConfirmOpen(false)
-    setPendingCategoryApplyAction(null)
-    setIsCategoryOpen(false)
+      refreshCatalog()
+      setNewCategoryName("")
+      setCategoryDisplayOrder("")
+      setSelectedMarketplaceCategoryId("")
+      setSelectedCategoryIconKey("")
+      setSelectedCategoryReviewsEnabled(null)
+      setEditingCategory(null)
+      setSelectedCategoryImage(null)
+      setCategoryProductsWithMapping([])
+      setIsCategoryApplyConfirmOpen(false)
+      setCategoryApplyConfirmMode(null)
+      setPendingCategoryApplyAction(null)
+      setIsCategoryOpen(false)
+    } catch (error) {
+      console.error("Erreur sauvegarde catégorie:", error)
+      toast({
+        title: "Erreur lors de la sauvegarde",
+        description: error instanceof Error ? error.message : "La catégorie n'a pas été sauvegardée.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSavingCategory(false)
+    }
   }
 
   const openCreateCategoryModal = () => {
     setEditingCategory(null)
     setNewCategoryName("")
+    setCategoryDisplayOrder(String(getNextCategoryDisplayOrder()))
     setSelectedMarketplaceCategoryId("")
     setSelectedCategoryIconKey("")
+    setSelectedCategoryReviewsEnabled(null)
     setSelectedCategoryImage(null)
     setIsCategoryOpen(true)
   }
@@ -811,8 +934,10 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   const openEditCategoryModal = (category: any) => {
     setEditingCategory(category)
     setNewCategoryName(category.name || "")
+    setCategoryDisplayOrder(String(Math.max(1, Math.round(getCategoryDisplayOrder(category, 1)))))
     setSelectedMarketplaceCategoryId(category.marketplaceCategoryId || "")
     setSelectedCategoryIconKey(normalizeMarketplaceCategoryIconKey(category.iconKey) ?? "")
+    setSelectedCategoryReviewsEnabled(typeof category.reviewsEnabled === "boolean" ? category.reviewsEnabled : null)
     setSelectedCategoryImage(
       category.imageUrl
         ? { id: category.imageId || "", url: category.imageUrl }
@@ -822,16 +947,28 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   }
 
   const closeCategoryModal = () => {
+    if (isSavingCategory) return
     setIsCategoryOpen(false)
     setEditingCategory(null)
+    setCategoryDisplayOrder("")
     setSelectedCategoryImage(null)
     setSelectedMarketplaceCategoryId("")
     setSelectedCategoryIconKey("")
+    setSelectedCategoryReviewsEnabled(null)
   }
 
   // TOGGLE PRODUCT ACTIVE STATUS
   const handleToggleProduct = async (product: any) => {
     if (!restaurantId) return
+    if (typeof product.reviewsEnabled !== "boolean") {
+      toast({
+        title: "Avis clients à configurer",
+        description: "Choisis si ce produit peut recevoir des avis avant de modifier sa disponibilité.",
+        variant: "destructive",
+      })
+      openEditModal(product)
+      return
+    }
 
     try {
       const productRef = doc(db, "restaurants", restaurantId, "products", product.id)
@@ -855,6 +992,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
 
   // 🔥 CREATE OR UPDATE PRODUCT (WITH NEW VALIDATION)
   const handleSaveProduct = async () => {
+    if (isSavingProduct) return
     if (!restaurantId) return
 
     if (!productForm.name || productForm.name.trim() === "") {
@@ -875,6 +1013,24 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
         title: "Prix requis", 
         description: "Ajoute un prix de base ou des options avec prix",
         variant: "destructive" 
+      })
+      return
+    }
+
+    const productReviewsPolicy = normalizeProductReviewsPolicy(productForm.reviewsPolicy)
+    const selectedFormCategory = categories?.find((category: any) => category.id === productForm.categoryId)
+    const resolvedReviewsEnabled = resolveProductReviewsEnabled({
+      categoryReviewsEnabled: selectedFormCategory?.reviewsEnabled,
+      productReviewsPolicy,
+    })
+
+    if (resolvedReviewsEnabled === null) {
+      toast({
+        title: "Avis clients non résolus",
+        description: productReviewsPolicy === "inherit"
+          ? "Choisis une catégorie configurée ou définis une exception produit."
+          : "Choisis explicitement le comportement des avis pour ce produit.",
+        variant: "destructive",
       })
       return
     }
@@ -933,8 +1089,12 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       hasComplexConsumption: productHasComplexConsumption,
       preparationMode: productForm.preparationMode,
       marketplaceCategoryId: productForm.marketplaceCategoryId || null,
+      reviewsPolicy: productReviewsPolicy,
+      reviewsEnabled: resolvedReviewsEnabled,
       updatedAt: serverTimestamp()
     }
+
+    setIsSavingProduct(true)
 
     try {
       if (editingProduct) {
@@ -998,6 +1158,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
         imageId: "",
         preparationMode: "kitchen",
         marketplaceCategoryId: "",
+        reviewsPolicy: "inherit",
       })
       setOptions([])
       setLinkedOptionGroups([])
@@ -1023,6 +1184,8 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
         description: error instanceof Error ? error.message : "Le produit n'a pas été sauvegardé.",
         variant: "destructive",
       })
+    } finally {
+      setIsSavingProduct(false)
     }
   }
 
@@ -1053,6 +1216,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       imageId: product.imageId || "",
       preparationMode: product.preparationMode || getDefaultPreparationMode(categoryName),
       marketplaceCategoryId: product.marketplaceCategoryId || "",
+      reviewsPolicy: getProductReviewsPolicy(product),
     })
     setOptions(product.options || [])
     setLinkedOptionGroups(sanitizeLinkedOptionGroups(product.linkedOptionGroups))
@@ -1073,6 +1237,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       imageId: "",
       preparationMode: getDefaultPreparationMode(categoryName),
       marketplaceCategoryId: "",
+      reviewsPolicy: "inherit",
     })
     setOptions([])
     setLinkedOptionGroups([])
@@ -1085,6 +1250,16 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     setPreviewProduct(product)
     setIsPreviewOpen(true)
   }
+
+  const productFormCategory = React.useMemo(
+    () => categories?.find((category: any) => category.id === productForm.categoryId) ?? null,
+    [categories, productForm.categoryId]
+  )
+  const productFormReviewsPolicy = normalizeProductReviewsPolicy(productForm.reviewsPolicy)
+  const productFormReviewsEnabled = resolveProductReviewsEnabled({
+    categoryReviewsEnabled: productFormCategory?.reviewsEnabled,
+    productReviewsPolicy: productFormReviewsPolicy,
+  })
 
   return (
     <div className="flex gap-6 pb-20 animate-in fade-in duration-500">
@@ -1295,8 +1470,28 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
               placeholder="Nom de la catégorie"
               value={newCategoryName}
               onChange={(e) => setNewCategoryName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSaveCategory()}
+              onKeyDown={(e) => e.key === "Enter" && !isSavingCategory && handleSaveCategory()}
             />
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold" htmlFor="category-display-order">
+                Ordre d'affichage
+              </label>
+              <Input
+                id="category-display-order"
+                type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
+                placeholder="Ex. 1"
+                value={categoryDisplayOrder}
+                onChange={(event) => setCategoryDisplayOrder(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && !isSavingCategory && handleSaveCategory()}
+              />
+              <p className="text-xs text-muted-foreground">
+                La catégorie avec la position la plus basse apparaît en premier dans le menu public.
+              </p>
+            </div>
 
             <div className="space-y-2">
               <label className="text-sm font-semibold">Catégorie marketplace</label>
@@ -1315,6 +1510,44 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
               <p className="text-xs text-muted-foreground">
                 Sans mapping, les produits restent visibles dans ce menu mais sont exclus de la découverte marketplace.
               </p>
+            </div>
+
+            <div className="space-y-3 rounded-xl border p-3">
+              <div>
+                <p className="text-sm font-semibold">Avis clients *</p>
+                <p className="text-xs text-muted-foreground">
+                  Ce réglage s’applique à tous les produits qui héritent de cette catégorie. Les exceptions définies individuellement sur certains produits restent inchangées.
+                </p>
+              </div>
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategoryReviewsEnabled(true)}
+                  className={cn(
+                    "rounded-xl border p-3 text-left text-sm transition",
+                    selectedCategoryReviewsEnabled === true
+                      ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                      : "border-border bg-background text-foreground hover:bg-muted/50"
+                  )}
+                >
+                  <span className="font-semibold">Autoriser les avis pour les produits de cette catégorie</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategoryReviewsEnabled(false)}
+                  className={cn(
+                    "rounded-xl border p-3 text-left text-sm transition",
+                    selectedCategoryReviewsEnabled === false
+                      ? "border-gray-500 bg-gray-100 text-gray-800"
+                      : "border-border bg-background text-foreground hover:bg-muted/50"
+                  )}
+                >
+                  <span className="font-semibold">Désactiver les avis pour les produits de cette catégorie</span>
+                </button>
+              </div>
+              {selectedCategoryReviewsEnabled === null ? (
+                <p className="text-xs font-medium text-amber-700">Choix obligatoire avant enregistrement.</p>
+              ) : null}
             </div>
 
             <div className="space-y-3 rounded-xl border p-3">
@@ -1380,11 +1613,16 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
           </div>
 
           <DialogFooter className="sticky bottom-0 z-10 gap-2 border-t bg-card px-4 py-3 sm:px-6">
-            <Button variant="ghost" onClick={closeCategoryModal}>
+            <Button variant="ghost" onClick={closeCategoryModal} disabled={isSavingCategory}>
               Annuler
             </Button>
-            <Button onClick={() => handleSaveCategory()}>
-              {editingCategory ? "Enregistrer" : "Ajouter"}
+            <Button onClick={() => handleSaveCategory()} disabled={isSavingCategory}>
+              {isSavingCategory ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Enregistrement...
+                </>
+              ) : editingCategory ? "Enregistrer" : "Ajouter"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1398,7 +1636,11 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
               <h2 className="font-bold text-xl">
                 {editingProduct ? "✏️ Modifier le produit" : "➕ Nouveau produit"}
               </h2>
-              <button onClick={() => setIsProductOpen(false)} className="cursor-pointer">
+              <button
+                onClick={() => { if (!isSavingProduct) setIsProductOpen(false) }}
+                disabled={isSavingProduct}
+                className="cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -1485,6 +1727,68 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
               <p className="text-xs text-muted-foreground">
                 Permet de mapper ce produit vers une catégorie marketplace différente de celle de sa catégorie.
               </p>
+            </div>
+
+            <div className="space-y-3 rounded-xl border p-3">
+              <div>
+                <p className="text-sm font-semibold">Avis clients *</p>
+                <p className="text-xs text-muted-foreground">
+                  Choisissez si ce produit hérite de sa catégorie ou possède une exception.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  type="button"
+                  disabled={typeof productFormCategory?.reviewsEnabled !== "boolean"}
+                  onClick={() => setProductForm({ ...productForm, reviewsPolicy: "inherit" })}
+                  className={cn(
+                    "rounded-xl border p-3 text-left text-sm transition disabled:cursor-not-allowed disabled:opacity-50",
+                    productFormReviewsPolicy === "inherit"
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border bg-background text-foreground hover:bg-muted/50"
+                  )}
+                >
+                  <span className="font-semibold">Utiliser le réglage de la catégorie</span>
+                  <span className="mt-1 block text-xs opacity-80">
+                    {typeof productFormCategory?.reviewsEnabled === "boolean"
+                      ? `Hérite de « ${productFormCategory.name} » — avis actuellement ${productFormCategory.reviewsEnabled ? "autorisés" : "désactivés"}.`
+                      : "Configurez d’abord les avis de la catégorie."}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProductForm({ ...productForm, reviewsPolicy: "enabled" })}
+                  className={cn(
+                    "rounded-xl border p-3 text-left text-sm transition",
+                    productFormReviewsPolicy === "enabled"
+                      ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                      : "border-border bg-background text-foreground hover:bg-muted/50"
+                  )}
+                >
+                  <span className="font-semibold">Toujours autoriser les avis pour ce produit</span>
+                  <span className="mt-1 block text-xs opacity-80">Exception : le plat peut être noté même si la catégorie est désactivée.</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProductForm({ ...productForm, reviewsPolicy: "disabled" })}
+                  className={cn(
+                    "rounded-xl border p-3 text-left text-sm transition",
+                    productFormReviewsPolicy === "disabled"
+                      ? "border-gray-500 bg-gray-100 text-gray-800"
+                      : "border-border bg-background text-foreground hover:bg-muted/50"
+                  )}
+                >
+                  <span className="font-semibold">Toujours désactiver les avis pour ce produit</span>
+                  <span className="mt-1 block text-xs opacity-80">Exception : le plat reste commandable sans avis public.</span>
+                </button>
+              </div>
+              {productFormReviewsEnabled === null ? (
+                <p className="text-xs font-medium text-amber-700">Valeur effective non résolue : configurez la catégorie ou choisissez une exception.</p>
+              ) : (
+                <p className={cn("text-xs font-semibold", productFormReviewsEnabled ? "text-emerald-700" : "text-gray-600")}>
+                  {productFormReviewsEnabled ? "Ce produit peut actuellement être noté." : "Ce produit ne peut actuellement pas être noté."}
+                </p>
+              )}
             </div>
 
             <div className="space-y-3 rounded-lg border p-3">
@@ -1600,12 +1904,17 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
             />
 
             <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button variant="ghost" onClick={() => setIsProductOpen(false)}>
+              <Button variant="ghost" onClick={() => setIsProductOpen(false)} disabled={isSavingProduct}>
                 Annuler
               </Button>
 
-              <Button onClick={handleSaveProduct}>
-                {editingProduct ? "Mettre à jour" : "Créer le produit"}
+              <Button onClick={handleSaveProduct} disabled={isSavingProduct}>
+                {isSavingProduct ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enregistrement...
+                  </>
+                ) : editingProduct ? "Mettre à jour" : "Créer le produit"}
               </Button>
             </div>
           </div>
@@ -1757,14 +2066,22 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       )}
 
       {/* 🔥 PARTIE 2 — Confirmation dialog for marketplace category change on edit category */}
-      <Dialog open={isCategoryApplyConfirmOpen} onOpenChange={(open) => { if (!open) { setIsCategoryApplyConfirmOpen(false); setPendingCategoryApplyAction(null); } }}>
+      <Dialog open={isCategoryApplyConfirmOpen} onOpenChange={(open) => { if (!open) { setIsCategoryApplyConfirmOpen(false); setCategoryApplyConfirmMode(null); setPendingCategoryApplyAction(null); } }}>
         <DialogContent className="rounded-2xl sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold">Modification de la catégorie marketplace</DialogTitle>
-            <DialogDescription>
-              {categoryProductsWithMapping.length} produit(s) de cette catégorie ont leur propre mapping marketplace (exception produit).<br /><br />
-              Que veux-tu faire de ces exceptions ?
-            </DialogDescription>
+            <DialogTitle className="text-lg font-bold">
+              {categoryApplyConfirmMode === "reviews" ? "Modification des avis de la catégorie" : "Modification de la catégorie marketplace"}
+            </DialogTitle>
+            {categoryApplyConfirmMode === "reviews" ? (
+              <DialogDescription>
+                Cette modification s’appliquera à {categoryProductsWithMapping.length} produit(s) utilisant le réglage de la catégorie. Les exceptions individuelles seront conservées.
+              </DialogDescription>
+            ) : (
+              <DialogDescription>
+                {categoryProductsWithMapping.length} produit(s) de cette catégorie ont leur propre mapping marketplace (exception produit).<br /><br />
+                Que veux-tu faire de ces exceptions ?
+              </DialogDescription>
+            )}
           </DialogHeader>
 
           <div className="max-h-32 overflow-y-auto space-y-1 rounded-lg border bg-muted/30 p-2 text-sm">
@@ -1780,21 +2097,29 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
             <Button
               variant="outline"
               onClick={() => {
+                if (categoryApplyConfirmMode === "reviews") {
+                  setIsCategoryApplyConfirmOpen(false)
+                  setCategoryApplyConfirmMode(null)
+                  setPendingCategoryApplyAction(null)
+                  return
+                }
                 setPendingCategoryApplyAction("keep")
                 setIsCategoryApplyConfirmOpen(false)
+                setCategoryApplyConfirmMode(null)
                 handleSaveCategory(false)
               }}
             >
-              Conserver les exceptions
+              {categoryApplyConfirmMode === "reviews" ? "Annuler" : "Conserver les exceptions"}
             </Button>
             <Button
               onClick={() => {
                 setPendingCategoryApplyAction("apply")
                 setIsCategoryApplyConfirmOpen(false)
+                setCategoryApplyConfirmMode(null)
                 handleSaveCategory(true)
               }}
             >
-              Réinitialiser au mapping catégorie
+              {categoryApplyConfirmMode === "reviews" ? "Appliquer à la catégorie" : "Réinitialiser au mapping catégorie"}
             </Button>
           </DialogFooter>
         </DialogContent>

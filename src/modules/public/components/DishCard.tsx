@@ -11,10 +11,12 @@ export default function DishCard({
   product,
   onOpenDetails,
   onAddedToCart,
+  ratingSummary,
 }: {
   product: any
   onOpenDetails: () => void
   onAddedToCart?: () => void
+  ratingSummary?: { averageRating: number; reviewCount: number } | null
 }) {
   const { addItem } = useCart()
   const [added, setAdded] = React.useState(false)
@@ -51,6 +53,10 @@ export default function DishCard({
         ? `Dès ${price.toLocaleString()} FCFA`
         : `${price.toLocaleString()} FCFA`
       : "Prix sur demande"
+  const publicRatingSummary = React.useMemo(() => {
+    if (product.reviewsEnabled !== true || !ratingSummary || ratingSummary.reviewCount <= 0) return null
+    return ratingSummary
+  }, [product.reviewsEnabled, ratingSummary])
 
   const handleQuickAdd = () => {
     if (hasOptions) {
@@ -68,6 +74,7 @@ export default function DishCard({
       imageUrl: product.imageUrl,
       preparationMode: product.preparationMode,
       categoryName: product.categoryName,
+      reviewsEnabled: product.reviewsEnabled === true,
     })
 
     navigator.vibrate?.(10)
@@ -90,6 +97,7 @@ export default function DishCard({
       imageUrl={product.imageUrl ? getOptimizedImage(product.imageUrl, 200) : undefined}
       imageAlt={product.name}
       price={priceLabel}
+      ratingSummary={publicRatingSummary}
       actionLabel={added ? "✓ Ajouté" : hasOptions ? "Choisir" : "Ajouter"}
       actionState={added ? "added" : "default"}
       onOpen={onOpenDetails}

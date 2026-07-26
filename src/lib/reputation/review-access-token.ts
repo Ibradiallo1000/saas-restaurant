@@ -55,10 +55,49 @@ export function hasLocalOrderReviewSubmission(restaurantId: string, orderId: str
   )
 }
 
+export function rememberDishReviewSubmission(input: {
+  restaurantId: string
+  orderId: string
+  orderItemId: string
+  rating: number
+  comment: string | null
+}) {
+  if (typeof window === "undefined" || !input.restaurantId || !input.orderId || !input.orderItemId) return
+  const serialized = JSON.stringify({
+    rating: input.rating,
+    comment: input.comment || null,
+  })
+  window.localStorage?.setItem(dishReviewSubmittedKey(input.restaurantId, input.orderId, input.orderItemId), serialized)
+  window.sessionStorage?.setItem(dishReviewSubmittedKey(input.restaurantId, input.orderId, input.orderItemId), serialized)
+}
+
+export function getLocalDishReviewSubmission(restaurantId: string, orderId: string, orderItemId: string): { rating: number; comment: string | null } | null {
+  if (typeof window === "undefined" || !restaurantId || !orderId || !orderItemId) return null
+  const raw =
+    window.sessionStorage?.getItem(dishReviewSubmittedKey(restaurantId, orderId, orderItemId)) ||
+    window.localStorage?.getItem(dishReviewSubmittedKey(restaurantId, orderId, orderItemId))
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    const rating = Number(parsed?.rating)
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return null
+    return {
+      rating,
+      comment: typeof parsed?.comment === "string" && parsed.comment.trim() ? parsed.comment.trim() : null,
+    }
+  } catch {
+    return null
+  }
+}
+
 function orderReviewAccessKey(restaurantId: string, orderId: string) {
   return `oordera:order-access:${restaurantId}:${orderId}`
 }
 
 function orderReviewSubmittedKey(restaurantId: string, orderId: string) {
   return `oordera:order-review-submitted:${restaurantId}:${orderId}`
+}
+
+function dishReviewSubmittedKey(restaurantId: string, orderId: string, orderItemId: string) {
+  return `oordera:dish-review-submitted:${restaurantId}:${orderId}:${orderItemId}`
 }

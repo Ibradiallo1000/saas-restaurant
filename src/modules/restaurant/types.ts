@@ -1,6 +1,7 @@
 import type { Timestamp } from "firebase/firestore"
 import type { OrderStatus as CanonicalOrderStatus } from "@/lib/order-status"
 import type { PaymentMethod, PaymentStatus } from "@/lib/order-payment"
+import type { ProductReviewsPolicy } from "@/lib/product-review-policy"
 import type {
   KitchenLifecycleStatus,
   OrderOperationStatus,
@@ -16,6 +17,8 @@ export type Product = {
   imageUrl?: string
   categoryId: string
   marketplaceCategoryId?: string | null
+  reviewsPolicy?: ProductReviewsPolicy
+  reviewsEnabled?: boolean
   isActive: boolean
   preparationMode?: "kitchen" | "direct" | "bar"
 }
@@ -24,6 +27,8 @@ export type Category = {
   id: string
   name: string
   marketplaceCategoryId?: string | null
+  reviewsEnabled?: boolean
+  displayOrder?: number
   order?: number
   isActive?: boolean
 }
@@ -45,6 +50,7 @@ export type OrderItem = {
   total: number
   selectedOptions?: SelectedCartOption[]
   preparationMode?: "kitchen" | "direct" | "bar"
+  reviewsEnabled?: boolean
 }
 
 export type RestaurantOrder = {
@@ -121,6 +127,7 @@ export type CartItem = {
   imageUrl?: string
   preparationMode?: "kitchen" | "direct" | "bar"
   categoryName?: string
+  reviewsEnabled?: boolean
   bundleId?: string
   isBundleMain?: boolean
   linkedGroupTitle?: string

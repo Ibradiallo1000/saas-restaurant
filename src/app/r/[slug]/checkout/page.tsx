@@ -92,6 +92,7 @@ function CheckoutPage() {
             quantity: i.quantity,
             total: i.price * i.quantity,
             preparationMode: (i as any).preparationMode || resolveProductPreparationMode(product, categoryName),
+            reviewsEnabled: product.reviewsEnabled === true,
           };
         })
       );
@@ -140,6 +141,7 @@ function CheckoutPage() {
           quantity: item.quantity,
           subtotal: item.total,
           preparationMode: item.preparationMode,
+          reviewsEnabled: item.reviewsEnabled === true,
           createdAt: serverTimestamp()
         });
       }

@@ -2,6 +2,9 @@ import type { Metadata } from "next"
 
 import { adminDb } from "@/lib/firebase-admin"
 import { MarketplaceDishRepository } from "@/lib/marketplace-discovery"
+import { DISH_REVIEWS_COLLECTION, type DishReviewDocument } from "@/lib/reputation/dish-review-types"
+import { buildOorderaReputationModel } from "@/lib/reputation/oordera-score"
+import { RESTAURANT_REVIEWS_COLLECTION, type RestaurantReviewDocument } from "@/lib/reputation/restaurant-review-types"
 import MarketplaceClient, { type PublicRestaurantSummary } from "./marketplace-client"
 import MarketplaceDishClient from "./marketplace-dish-client"
 import { buildMarketplaceDishHomeViewModel } from "./marketplace-dish-view-model"
@@ -50,6 +53,10 @@ async function renderDishMarketplace(params: Record<string, string | string[] | 
     result.categoryId,
     result.status === "fulfilled" ? result.value.offers : [],
   ]))
+  const reputationModel = await loadMarketplaceReputationModel(
+    restaurantCategoryOffersByCategory,
+    dishOffersResult.status === "fulfilled" ? dishOffersResult.value : []
+  )
   const nextCursorByCategory = Object.fromEntries(categoryOfferResults.map((result) => [
     result.categoryId,
     result.status === "fulfilled" ? result.value.nextCursor : null,
@@ -68,6 +75,7 @@ async function renderDishMarketplace(params: Record<string, string | string[] | 
         categories,
         selectedCategoryId,
         nextCursorByCategory,
+        reputationModel,
       })}
     />
   )
@@ -135,6 +143,50 @@ function normalizePublicFooter(value: unknown): PlatformPublicFooter {
       terms: firstString(footer.legalLinks?.terms) || "/terms",
       legalNotice: firstString(footer.legalLinks?.legalNotice) || "/legal",
     },
+  }
+}
+
+async function loadMarketplaceReputationModel(
+  offersByCategory: Record<string, Array<{ restaurantId: string }>>,
+  dishOffers: Array<{ restaurantId: string; productId: string; reviewsEnabled?: boolean }>
+) {
+  const restaurantIds = Array.from(new Set(Object.values(offersByCategory).flat().map((offer) => offer.restaurantId).filter(Boolean))).slice(0, 120)
+  if (restaurantIds.length === 0) return buildOorderaReputationModel({ restaurantReviews: [], dishReviews: [] })
+
+  try {
+    const reviewSnapshots = await Promise.all(restaurantIds.map(async (restaurantId) => {
+      const [restaurantReviewsSnapshot, dishReviewsSnapshot] = await Promise.all([
+        adminDb.collection("restaurants").doc(restaurantId).collection(RESTAURANT_REVIEWS_COLLECTION)
+          .orderBy("createdAt", "desc")
+          .limit(80)
+          .get(),
+        adminDb.collection("restaurants").doc(restaurantId).collection(DISH_REVIEWS_COLLECTION)
+          .orderBy("createdAt", "desc")
+          .limit(160)
+          .get(),
+      ])
+      return {
+        restaurantReviews: restaurantReviewsSnapshot.docs
+          .map((document) => ({ id: document.id, ...(document.data() as RestaurantReviewDocument) }))
+          .filter((review) => review.status === "published"),
+        dishReviews: dishReviewsSnapshot.docs
+          .map((document) => ({ id: document.id, ...(document.data() as DishReviewDocument) }))
+          .filter((review) => review.status === "published"),
+      }
+    }))
+
+    return buildOorderaReputationModel({
+      restaurantReviews: reviewSnapshots.flatMap((snapshot) => snapshot.restaurantReviews),
+      dishReviews: reviewSnapshots.flatMap((snapshot) => snapshot.dishReviews),
+      reviewableProducts: Object.fromEntries(
+        dishOffers
+          .filter((offer) => offer.reviewsEnabled === true)
+          .map((offer) => [`${offer.restaurantId}__${offer.productId}`, true])
+      ),
+    })
+  } catch (error) {
+    console.error("MARKETPLACE REPUTATION ERROR", normalizeError(error))
+    return buildOorderaReputationModel({ restaurantReviews: [], dishReviews: [] })
   }
 }
 

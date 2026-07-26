@@ -114,6 +114,7 @@ function CheckoutPage() {
             selections: item.selections || {},
             total,
             preparationMode: (item as any).preparationMode || resolveProductPreparationMode(product, categoryName),
+            reviewsEnabled: product.reviewsEnabled === true,
           }
         })
       )

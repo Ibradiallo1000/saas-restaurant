@@ -16,7 +16,7 @@ export const MARKETPLACE_DISCOVERY_PUBLIC_FIELDS = [
   "hasConfigurator", "restaurantName", "restaurantLogoUrl", "restaurantLocation",
   "restaurantCityName", "restaurantCommuneName", "restaurantDistrictName",
   "restaurantServices", "restaurantCuisineTypes", "restaurantOpeningHours", "restaurantTimezone",
-  "restaurantActive", "productActive",
+  "restaurantActive", "productActive", "reviewsEnabled",
   "discoverable", "orderCount", "createdAt", "sourceUpdatedAt", "projectedAt", "quality",
 ] as const
 
@@ -173,6 +173,7 @@ export function projectMarketplaceDishOffer(input: {
     restaurantTimezone: projectTimezone(restaurant.timezone),
     restaurantActive: publishability.restaurantPublishable,
     productActive: publishability.productPublishable,
+    reviewsEnabled: product.reviewsEnabled === true,
     discoverable: publishability.discoverable,
     orderCount: nonNegativeNumber(product.orderCount),
     createdAt: timestampString(product.createdAt),

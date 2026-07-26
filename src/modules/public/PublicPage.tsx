@@ -8,6 +8,7 @@ import { ChefHat, ClipboardList, Coffee, Search, ShoppingBag, Utensils } from "l
 import { useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { getOptimizedImage } from "@/lib/image"
+import { sortMenuCategories } from "@/lib/menu-category-order"
 import CartDrawer from "./components/CartDrawer"
 import CategoriesBar from "./components/CategoriesBar"
 import CoverPage from "./components/CoverPage"
@@ -71,6 +72,7 @@ function PublicPageContent({
   const [activeCategoryId, setActiveCategoryId] = React.useState<string>("")
   const [selectedProduct, setSelectedProduct] = React.useState<any | null>(null)
   const [coverState, setCoverState] = React.useState<"checking" | "visible" | "exiting" | "hidden">("checking")
+  const [dishReviewSummaries, setDishReviewSummaries] = React.useState<Record<string, { averageRating: number; reviewCount: number }>>({})
   const [hasRetriedRestaurantLookup, setHasRetriedRestaurantLookup] = React.useState(false)
   const categoriesSectionRef = React.useRef<HTMLDivElement>(null)
   const menuStartRef = React.useRef<HTMLDivElement>(null)
@@ -221,6 +223,27 @@ function PublicPageContent({
     error: productsError,
   } = useCollectionOnce(productsQuery, PUBLIC_MENU_CACHE_TTL_MS)
 
+  React.useEffect(() => {
+    if (!restaurantId) {
+      setDishReviewSummaries({})
+      return
+    }
+
+    const controller = new AbortController()
+    fetch(`/api/public/restaurants/${restaurantId}/dish-review-summaries`, { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : { summaries: {} })
+      .then((payload) => {
+        if (!controller.signal.aborted) {
+          setDishReviewSummaries(payload?.summaries && typeof payload.summaries === "object" ? payload.summaries : {})
+        }
+      })
+      .catch((error) => {
+        if (error?.name !== "AbortError") setDishReviewSummaries({})
+      })
+
+    return () => controller.abort()
+  }, [restaurantId])
+
   const marketplaceIntentActive = navigationSource === MARKETPLACE_NAVIGATION_SOURCE && Boolean(marketplaceProductId)
   const marketplaceCategoryIntentActive = navigationSource === MARKETPLACE_NAVIGATION_SOURCE && Boolean(marketplaceCategoryId)
   const listedMarketplaceProduct = React.useMemo(
@@ -263,12 +286,12 @@ function PublicPageContent({
       categoriesData === null)
 
   const optimizedCategories = React.useMemo(() => {
-    return (categoriesData || [])
+    return sortMenuCategories((categoriesData || [])
       .filter((category: any) => category.isActive !== false)
       .map((category: any) => ({
         ...category,
         imageUrl: getOptimizedImage(category.imageUrl || "", 300),
-      }))
+      })))
   }, [categoriesData])
 
   const resolvedMarketplaceProduct = React.useMemo(() => {
@@ -404,10 +427,9 @@ function PublicPageContent({
     openCart()
   }
 
-  const handleCategorySelect = (categoryId: string) => {
+  const handleCategorySelect = React.useCallback((categoryId: string) => {
     setActiveCategoryId(categoryId)
-    window.scrollTo({ top: 0, behavior: "smooth" })
-  }
+  }, [])
 
   const handleOpenProduct = (product: any) => {
     productTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -581,6 +603,7 @@ function PublicPageContent({
             isLoading={isMenuLoading}
             hasError={Boolean(productsError || categoriesError)}
             productsByCategory={productsByCategory}
+            dishReviewSummaries={dishReviewSummaries}
             tableError={tableSessionError}
             activeCategoryId={activeCategoryId}
             categoriesSectionRef={categoriesSectionRef}
@@ -726,6 +749,7 @@ function MainContent({
   isLoading,
   hasError,
   productsByCategory,
+  dishReviewSummaries,
   tableError,
   activeCategoryId,
   categoriesSectionRef,
@@ -736,19 +760,12 @@ function MainContent({
   onClearSearch,
   searchInputRef,
 }: any) {
-
   // AUTO-SÉLECTION DE LA PREMIÈRE CATÉGORIE
   React.useEffect(() => {
     if (!activeCategoryId && categories.length > 0) {
       onCategorySelect(categories[0].id)
     }
   }, [categories, activeCategoryId, onCategorySelect])
-
-  // FILTRE : UNE SEULE CATÉGORIE À LA FOIS
-  const filteredCategories = React.useMemo(() => {
-    if (!activeCategoryId) return []
-    return categories.filter((c: any) => c.id === activeCategoryId)
-  }, [categories, activeCategoryId])
 
   if (hasError) {
     return (
@@ -789,7 +806,7 @@ function MainContent({
     )
   }
 
-  const currentCategory = filteredCategories[0]
+  const currentCategory = categories.find((category: any) => category.id === activeCategoryId) ?? null
   const currentProducts = currentCategory ? productsByCategory[currentCategory.id] || [] : []
   const hasSearchQuery = Boolean(searchQuery.trim())
   const hasNoSearchResults = hasSearchQuery && (!currentCategory || currentProducts.length === 0)
@@ -797,6 +814,10 @@ function MainContent({
   const clearEmptySearch = () => {
     onClearSearch()
     searchInputRef.current?.focus({ preventScroll: true })
+  }
+
+  const handleCategorySelect = (categoryId: string) => {
+    onCategorySelect(categoryId)
   }
 
   return (
@@ -809,7 +830,7 @@ function MainContent({
         <CategoriesBar
           categories={categories}
           activeId={activeCategoryId}
-          onSelect={onCategorySelect}
+          onSelect={handleCategorySelect}
         />
       </div>
 
@@ -831,7 +852,7 @@ function MainContent({
             icon={<Utensils />}
           />
         </div>
-      ) : currentCategory && (
+      ) : currentCategory ? (
         <div className="mb-4 px-4 sm:px-6 lg:px-8">
           <div className="mb-2">
             <SectionHeader
@@ -848,6 +869,7 @@ function MainContent({
               <DishCard
                 key={product.id}
                 product={product}
+                ratingSummary={product.reviewsEnabled === true ? dishReviewSummaries[product.id] : null}
                 onOpenDetails={() => onOpenProduct(product)}
                 onAddedToCart={onAddedToCart}
               />
@@ -861,6 +883,14 @@ function MainContent({
               icon={<ChefHat />}
             />
           )}
+        </div>
+      ) : (
+        <div className="px-4 pb-4 sm:px-6 lg:px-8">
+          <PublicEmptyState
+            title="Aucun produit disponible"
+            description="Le menu ne contient aucun produit disponible pour le moment."
+            icon={<ChefHat />}
+          />
         </div>
       )}
     </div>

@@ -9,6 +9,7 @@ import type {
   OrderOperationStatus,
   OrderPaymentLifecycleStatus,
 } from "@/lib/order-lifecycle"
+import type { ProductReviewsPolicy } from "@/lib/product-review-policy"
 
 export type OrderStatus =
   | "nouvelle"
@@ -26,6 +27,7 @@ export interface OrderItem {
 
   price: number // prix unitaire
   quantity: number
+  reviewsEnabled?: boolean
 
   // 🔥 IMPORTANT pour options (taille, suppléments)
   selections?: Record<string, number[]>
@@ -73,6 +75,8 @@ export interface MenuItem {
   price: number
   imageUrl?: string
   categoryId?: string
+  reviewsPolicy?: ProductReviewsPolicy
+  reviewsEnabled?: boolean
   available?: boolean
 
   // 🔥 ajout logique options
@@ -90,6 +94,8 @@ export interface MenuCategory {
   id: string
   name: string
   iconKey?: string | null
+  reviewsEnabled?: boolean
+  displayOrder?: number
   order?: number
 }
 

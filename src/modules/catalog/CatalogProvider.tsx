@@ -5,6 +5,7 @@ import { collection, getDocs, limit, query, where } from "firebase/firestore"
 
 import { useFirestore } from "@/firebase"
 import { COLLECTION_NAMES } from "@/lib/constants"
+import { sortMenuCategories } from "@/lib/menu-category-order"
 
 type CatalogCacheEntry = {
   products: any[]
@@ -102,12 +103,12 @@ export function CatalogProvider({
           id: document.id,
           ...document.data(),
         })),
-        categories: categoriesSnapshot.docs
+        categories: sortMenuCategories(categoriesSnapshot.docs
           .map((document) => ({
             id: document.id,
             ...document.data(),
           }))
-          .filter((category: any) => category.isActive !== false),
+          .filter((category: any) => category.isActive !== false)),
       }
 
       catalogCache[safeCacheKey] = nextCatalog

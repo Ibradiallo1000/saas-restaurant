@@ -35,6 +35,12 @@ import { useAuth, useCollectionOnce, useFirestore, useMemoFirebase } from "@/fir
 import { useToast } from "@/hooks/use-toast"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { getMarketplaceCategoryIcon, normalizeMarketplaceCategoryIconKey, type MarketplaceCategoryIconKey } from "@/lib/marketplace-category-icons"
+import {
+  normalizeProductReviewsPolicy,
+  policyFromLegacyReviewsEnabled,
+  resolveProductReviewsEnabled,
+  type ProductReviewsPolicy,
+} from "@/lib/product-review-policy"
 import { cn } from "@/lib/utils"
 import type {
   MarketplaceFoodCategoryDocument,
@@ -66,6 +72,7 @@ type CategoryForm = {
   imageMediaId: string
   iconKey: MarketplaceCategoryIconKey | ""
   marketplaceCategoryId: string
+  reviewsEnabled: boolean | null
   order: string
   isActive: boolean
   packIds: string[]
@@ -79,6 +86,7 @@ type ProductForm = {
   categoryTemplateId: string
   basePrice: string
   preparationMode: PreparationMode
+  reviewsPolicy: ProductReviewsPolicy
   order: string
   isActive: boolean
   packIds: string[]
@@ -105,6 +113,7 @@ const EMPTY_CATEGORY_FORM: CategoryForm = {
   imageMediaId: "",
   iconKey: "",
   marketplaceCategoryId: "",
+  reviewsEnabled: null,
   order: "0",
   isActive: true,
   packIds: [],
@@ -118,6 +127,7 @@ const EMPTY_PRODUCT_FORM: ProductForm = {
   categoryTemplateId: "",
   basePrice: "0",
   preparationMode: "kitchen",
+  reviewsPolicy: "inherit",
   order: "0",
   isActive: true,
   packIds: [],
@@ -253,6 +263,14 @@ export default function PlatformMenuLibraryClient() {
   const handleSaveCategory = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!db || !categoryForm.name.trim()) return
+    if (typeof categoryForm.reviewsEnabled !== "boolean") {
+      toast({
+        title: "Avis clients requis",
+        description: "Choisis le réglage d'avis de cette catégorie modèle.",
+        variant: "destructive",
+      })
+      return
+    }
 
     setSavingSection("category")
     const payload = {
@@ -263,6 +281,7 @@ export default function PlatformMenuLibraryClient() {
       imageMediaId: categoryForm.imageMediaId,
       iconKey: categoryForm.iconKey || null,
       marketplaceCategoryId: categoryForm.marketplaceCategoryId || null,
+      reviewsEnabled: categoryForm.reviewsEnabled,
       order: toInt(categoryForm.order),
       isActive: categoryForm.isActive,
       updatedAt: serverTimestamp(),
@@ -297,6 +316,20 @@ export default function PlatformMenuLibraryClient() {
   const handleSaveProduct = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!db || !productForm.name.trim() || !productForm.categoryTemplateId) return
+    const productReviewsPolicy = normalizeProductReviewsPolicy(productForm.reviewsPolicy)
+    const selectedCategory = categoryList.find((category) => category.id === productForm.categoryTemplateId)
+    const resolvedReviewsEnabled = resolveProductReviewsEnabled({
+      categoryReviewsEnabled: selectedCategory?.reviewsEnabled,
+      productReviewsPolicy,
+    })
+    if (resolvedReviewsEnabled === null) {
+      toast({
+        title: "Avis clients non résolus",
+        description: "Choisis une catégorie modèle configurée ou une exception produit.",
+        variant: "destructive",
+      })
+      return
+    }
 
     let parsedOptions: unknown[] = []
     let parsedRecipe: unknown[] = []
@@ -327,6 +360,8 @@ export default function PlatformMenuLibraryClient() {
       imageMediaId: productForm.imageMediaId,
       basePrice: Math.max(0, toInt(productForm.basePrice)),
       preparationMode: productForm.preparationMode,
+      reviewsPolicy: productReviewsPolicy,
+      reviewsEnabled: resolvedReviewsEnabled,
       options: parsedOptions,
       recipe: parsedRecipe,
       components: parsedComponents,
@@ -400,6 +435,7 @@ export default function PlatformMenuLibraryClient() {
       imageMediaId: category.imageMediaId || "",
       iconKey: normalizeMarketplaceCategoryIconKey(category.iconKey) ?? "",
       marketplaceCategoryId: category.marketplaceCategoryId || "",
+      reviewsEnabled: typeof category.reviewsEnabled === "boolean" ? category.reviewsEnabled : null,
       order: String(category.order ?? 0),
       isActive: category.isActive !== false,
       packIds: Array.isArray(category.packIds) ? category.packIds : [],
@@ -416,6 +452,10 @@ export default function PlatformMenuLibraryClient() {
       categoryTemplateId: product.categoryTemplateId || "",
       basePrice: String(product.basePrice ?? 0),
       preparationMode: product.preparationMode || "kitchen",
+      reviewsPolicy:
+        product.reviewsPolicy === "inherit" || product.reviewsPolicy === "enabled" || product.reviewsPolicy === "disabled"
+          ? product.reviewsPolicy
+          : policyFromLegacyReviewsEnabled(product.reviewsEnabled),
       order: String(product.order ?? 0),
       isActive: product.isActive !== false,
       packIds: Array.isArray(product.packIds) ? product.packIds : [],
@@ -639,6 +679,37 @@ function CategoryFormCard({
               ))}
             </select>
           </Field>
+          <Field className="md:col-span-6" label="Avis clients">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => onChange({ ...form, reviewsEnabled: true })}
+                className={cn(
+                  "rounded-xl border p-3 text-left text-sm transition",
+                  form.reviewsEnabled === true
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                    : "border-border bg-background text-foreground hover:bg-muted/50"
+                )}
+              >
+                <span className="font-semibold">Autoriser les avis pour les produits de cette catégorie</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange({ ...form, reviewsEnabled: false })}
+                className={cn(
+                  "rounded-xl border p-3 text-left text-sm transition",
+                  form.reviewsEnabled === false
+                    ? "border-gray-500 bg-gray-100 text-gray-800"
+                    : "border-border bg-background text-foreground hover:bg-muted/50"
+                )}
+              >
+                <span className="font-semibold">Désactiver les avis pour les produits de cette catégorie</span>
+              </button>
+            </div>
+            {form.reviewsEnabled === null ? (
+              <p className="mt-2 text-xs font-medium text-amber-700">Choix obligatoire avant enregistrement.</p>
+            ) : null}
+          </Field>
           <div className="md:col-span-6">
             <MarketplaceCategoryIconSelector value={form.iconKey} onChange={(iconKey) => onChange({ ...form, iconKey })} />
           </div>
@@ -688,6 +759,13 @@ function ProductFormCard({
   onChange: (form: ProductForm) => void
   onReset: () => void
 }) {
+  const selectedCategory = categories.find((category) => category.id === form.categoryTemplateId) ?? null
+  const reviewsPolicy = normalizeProductReviewsPolicy(form.reviewsPolicy)
+  const reviewsEnabled = resolveProductReviewsEnabled({
+    categoryReviewsEnabled: selectedCategory?.reviewsEnabled,
+    productReviewsPolicy: reviewsPolicy,
+  })
+
   return (
     <Card className="border-none shadow-2xl">
       <CardHeader>
@@ -750,6 +828,59 @@ function ProductFormCard({
             checked={form.isActive}
             onCheckedChange={(checked) => onChange({ ...form, isActive: checked })}
           />
+          <Field className="md:col-span-6" label="Avis clients">
+            <div className="grid gap-2">
+              <button
+                type="button"
+                disabled={typeof selectedCategory?.reviewsEnabled !== "boolean"}
+                onClick={() => onChange({ ...form, reviewsPolicy: "inherit" })}
+                className={cn(
+                  "rounded-xl border p-3 text-left text-sm transition disabled:cursor-not-allowed disabled:opacity-50",
+                  reviewsPolicy === "inherit"
+                    ? "border-primary bg-primary/5 text-primary"
+                    : "border-border bg-background text-foreground hover:bg-muted/50"
+                )}
+              >
+                <span className="font-semibold">Utiliser le réglage de la catégorie modèle</span>
+                <span className="mt-1 block text-xs opacity-80">
+                  {typeof selectedCategory?.reviewsEnabled === "boolean"
+                    ? `Hérite de « ${selectedCategory.name} » — avis actuellement ${selectedCategory.reviewsEnabled ? "autorisés" : "désactivés"}.`
+                    : "Configurez d’abord les avis de la catégorie modèle."}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange({ ...form, reviewsPolicy: "enabled" })}
+                className={cn(
+                  "rounded-xl border p-3 text-left text-sm transition",
+                  reviewsPolicy === "enabled"
+                    ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                    : "border-border bg-background text-foreground hover:bg-muted/50"
+                )}
+              >
+                <span className="font-semibold">Toujours autoriser les avis pour ce produit</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange({ ...form, reviewsPolicy: "disabled" })}
+                className={cn(
+                  "rounded-xl border p-3 text-left text-sm transition",
+                  reviewsPolicy === "disabled"
+                    ? "border-gray-500 bg-gray-100 text-gray-800"
+                    : "border-border bg-background text-foreground hover:bg-muted/50"
+                )}
+              >
+                <span className="font-semibold">Toujours désactiver les avis pour ce produit</span>
+              </button>
+            </div>
+            <p className={cn("mt-2 text-xs font-semibold", reviewsEnabled ? "text-emerald-700" : reviewsEnabled === false ? "text-gray-600" : "text-amber-700")}>
+              {reviewsEnabled === null
+                ? "Valeur effective non résolue."
+                : reviewsEnabled
+                  ? "Ce produit modèle peut actuellement être noté."
+                  : "Ce produit modèle ne peut actuellement pas être noté."}
+            </p>
+          </Field>
           <div className="md:col-span-6">
             <PackCheckboxes
               packs={packs}

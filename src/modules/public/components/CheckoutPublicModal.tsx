@@ -263,7 +263,9 @@ export default function CheckoutPublicModal({
             quantity: item.quantity,
             total: unitPrice * item.quantity,
             selectedOptions: item.selectedOptions ?? [],
+            imageUrl: item.imageUrl || null,
             preparationMode: item.preparationMode || resolveProductPreparationMode(product, categoryName),
+            reviewsEnabled: product.reviewsEnabled === true,
           }
         })
       )

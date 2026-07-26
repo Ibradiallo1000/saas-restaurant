@@ -10,6 +10,10 @@ import {
   resolveRestaurantReviewCustomer,
   resolveRestaurantReviewSource,
 } from "../../src/lib/reputation/restaurant-review-core.ts"
+import {
+  getReviewableOrderItems,
+  normalizeDishReviewInput,
+} from "../../src/lib/reputation/dish-review-core.ts"
 
 const finishedOrder = {
   id: "order-1",
@@ -90,4 +94,90 @@ test("récupère le timestamp de fin canonique ou legacy", () => {
   assert.equal(getRestaurantOrderCompletedAt(pickedUp), pickedUp.timestamps.pickedUpAt)
   const legacy = { kitchenStatus: "completed", completedAt: new Date("2026-07-24T14:00:00.000Z") }
   assert.equal(getRestaurantOrderCompletedAt(legacy), legacy.completedAt)
+})
+
+test("normalise les avis plats et extrait uniquement les plats commandés", () => {
+  const order = {
+    items: [
+      {
+        id: "line-1",
+        productId: "product-1",
+        name: "  Burger Signature ",
+        imageUrl: "https://example.com/burger.jpg",
+        quantity: 2,
+        reviewsEnabled: true,
+      },
+      {
+        id: "line-disabled",
+        productId: "product-disabled",
+        name: "Plat non notable",
+        quantity: 1,
+        reviewsEnabled: false,
+      },
+      {
+        id: "line-legacy",
+        productId: "product-legacy",
+        name: "Plat legacy",
+        quantity: 1,
+      },
+      {
+        id: "line-invalid",
+        name: "Sans produit",
+        quantity: 1,
+        reviewsEnabled: true,
+      },
+    ],
+  }
+
+  assert.deepEqual(getReviewableOrderItems(order), [
+    {
+      orderItemId: "line-1",
+      orderItemIndex: 0,
+      productId: "product-1",
+      productName: "Burger Signature",
+      productImageUrl: "https://example.com/burger.jpg",
+      quantity: 2,
+      reviewsEnabled: true,
+    },
+  ])
+
+  assert.deepEqual(normalizeDishReviewInput({
+    restaurantId: " restaurant-1 ",
+    orderId: " order-1 ",
+    orderItemId: " line-1 ",
+    orderItemIndex: 0,
+    productId: " product-1 ",
+    productName: " Burger Signature ",
+    productImageUrl: "",
+    quantity: 2,
+    rating: 5,
+    reviewToken: "00000000-0000-4000-8000-000000000000",
+    comment: "  Très bon.  ",
+  }), {
+    restaurantId: "restaurant-1",
+    orderId: "order-1",
+    orderItemId: "line-1",
+    orderItemIndex: 0,
+    productId: "product-1",
+    productName: "Burger Signature",
+    productImageUrl: null,
+    quantity: 2,
+    rating: 5,
+    reviewToken: "00000000-0000-4000-8000-000000000000",
+    comment: "Très bon.",
+  })
+})
+
+test("refuse un avis plat sans note valide", () => {
+  assert.throws(() => normalizeDishReviewInput({
+    restaurantId: "r",
+    orderId: "o",
+    orderItemId: "i",
+    orderItemIndex: 0,
+    productId: "p",
+    productName: "Plat",
+    quantity: 1,
+    rating: 0,
+    reviewToken: "00000000-0000-4000-8000-000000000000",
+  }), /between 1 and 5/)
 })

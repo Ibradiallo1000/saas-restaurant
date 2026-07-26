@@ -31,6 +31,7 @@ export type ResolvedLinkedProduct = {
   imageUrl?: string
   categoryId?: string
   preparationMode?: PreparationMode
+  reviewsEnabled?: boolean
   isActive?: boolean
 }
 
@@ -42,6 +43,7 @@ export type BundleCartLine = {
   quantity: number
   imageUrl?: string
   preparationMode?: PreparationMode
+  reviewsEnabled?: boolean
   selectedOptions?: SelectedCartOption[]
   bundleId: string
   isBundleMain: boolean
@@ -228,6 +230,7 @@ export function buildBundleCartLines({
       quantity: 1,
       imageUrl: mainProduct.imageUrl,
       preparationMode: mainProduct.preparationMode,
+      reviewsEnabled: mainProduct.reviewsEnabled === true,
       selectedOptions,
       bundleId,
       isBundleMain: true,
@@ -253,6 +256,7 @@ export function buildBundleCartLines({
       imageUrl: linkedProduct.imageUrl,
       categoryId: linkedProduct.categoryId,
       preparationMode: linkedProduct.preparationMode,
+      reviewsEnabled: linkedProduct.reviewsEnabled === true,
     }
 
     lines.push({
@@ -263,6 +267,7 @@ export function buildBundleCartLines({
       quantity: 1,
       imageUrl: resolvedProduct.imageUrl,
       preparationMode: resolvedProduct.preparationMode,
+      reviewsEnabled: resolvedProduct.reviewsEnabled === true,
       bundleId,
       isBundleMain: false,
       linkedGroupTitle: selection.groupTitle,

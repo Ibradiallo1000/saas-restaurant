@@ -108,7 +108,9 @@ export default function CheckoutQRModal({
             quantity: item.quantity,
             total: unitPrice * item.quantity,
             selectedOptions: item.selectedOptions ?? [],
+            imageUrl: item.imageUrl || null,
             preparationMode,
+            reviewsEnabled: product.reviewsEnabled === true,
           }
         })
       )

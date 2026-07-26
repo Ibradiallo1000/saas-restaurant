@@ -1,6 +1,7 @@
 import type { MarketplaceCategoryPresentation, MarketplaceQualityState } from "@/components/marketplace-ui"
 import type { MarketplaceDishOfferDocument, MarketplaceFoodCategoryDocument, MarketplaceRestaurantCategoryOfferDocument } from "@/lib/marketplace-discovery"
 import { buildMarketplaceOfferHref } from "@/lib/marketplace-offer-navigation"
+import { rankRestaurants, type OorderaReputationModel, type OorderaRestaurantReputation } from "@/lib/reputation/oordera-score"
 import { getRestaurantOpenStatus } from "@/lib/restaurant-hours"
 
 export interface MarketplaceRestaurantCardPresentation {
@@ -19,6 +20,7 @@ export interface MarketplaceRestaurantCardPresentation {
   isOpenNow: boolean
   statusLabel: string
   statusDetail: string
+  reputation: MarketplaceRestaurantReputationPresentation | null
 }
 
 export interface MarketplaceSearchDishPresentation {
@@ -43,6 +45,14 @@ export interface MarketplaceDishHomeViewModel {
   quality: MarketplaceQualityState
 }
 
+export interface MarketplaceRestaurantReputationPresentation {
+  score: number
+  ratingLabel: string | null
+  reviewCountLabel: string | null
+  recommendationLabel: string | null
+  badgeLabel: string | null
+}
+
 export function buildMarketplaceDishHomeViewModel(input: {
   restaurantCategoryOffers?: Array<MarketplaceRestaurantCategoryOfferDocument & { id: string }>
   restaurantCategoryOffersByCategory?: Record<string, Array<MarketplaceRestaurantCategoryOfferDocument & { id: string }>>
@@ -51,12 +61,19 @@ export function buildMarketplaceDishHomeViewModel(input: {
   selectedCategoryId?: string | null
   nextCursor?: string | null
   nextCursorByCategory?: Record<string, string | null>
+  reputationModel?: OorderaReputationModel
 }): MarketplaceDishHomeViewModel {
   const selectedCategoryId = input.selectedCategoryId ?? input.categories[0]?.id ?? null
   const selectedCategory = input.categories.find((category) => category.id === selectedCategoryId) ?? null
   const offersByCategory = input.restaurantCategoryOffersByCategory ?? (selectedCategoryId ? { [selectedCategoryId]: input.restaurantCategoryOffers ?? [] } : {})
   const restaurantsByCategory = Object.fromEntries(
-    Object.entries(offersByCategory).map(([categoryId, offers]) => [categoryId, sortRestaurantsForMarketplace(offers.map(toRestaurantPresentation))])
+    Object.entries(offersByCategory).map(([categoryId, offers]) => [
+      categoryId,
+      sortRestaurantsForMarketplace(
+        offers.map((offer) => toRestaurantPresentation(offer, input.reputationModel?.restaurants[offer.restaurantId] ?? null)),
+        input.reputationModel
+      ),
+    ])
   )
   const restaurants = selectedCategoryId ? restaurantsByCategory[selectedCategoryId] ?? [] : []
   const allRestaurants = Object.values(restaurantsByCategory).flat()
@@ -90,7 +107,10 @@ export function buildMarketplaceDishHomeViewModel(input: {
   }
 }
 
-function toRestaurantPresentation(offer: MarketplaceRestaurantCategoryOfferDocument & { id: string }): MarketplaceRestaurantCardPresentation {
+function toRestaurantPresentation(
+  offer: MarketplaceRestaurantCategoryOfferDocument & { id: string },
+  reputation: OorderaRestaurantReputation | null
+): MarketplaceRestaurantCardPresentation {
   return {
     id: offer.id,
     restaurantId: offer.restaurantId,
@@ -104,6 +124,7 @@ function toRestaurantPresentation(offer: MarketplaceRestaurantCategoryOfferDocum
     locationLabel: [offer.cityName, offer.districtName].filter(Boolean).join(" · ") || offer.cityName || offer.districtName || null,
     productCountLabel: `${offer.productCount} produit${offer.productCount > 1 ? "s" : ""}`,
     minimumPriceLabel: formatMinimumPrice(offer.minimumPrice),
+    reputation: toReputationPresentation(reputation),
     ...toOpenStatusPresentation(offer),
   }
 }
@@ -125,6 +146,19 @@ function toOpenStatusPresentation(offer: MarketplaceRestaurantCategoryOfferDocum
   }
 }
 
-function sortRestaurantsForMarketplace(restaurants: MarketplaceRestaurantCardPresentation[]) {
-  return [...restaurants].sort((a, b) => Number(b.isOpenNow) - Number(a.isOpenNow) || a.name.localeCompare(b.name, "fr"))
+function toReputationPresentation(reputation: OorderaRestaurantReputation | null): MarketplaceRestaurantReputationPresentation | null {
+  if (!reputation || reputation.reviewCount === 0) return null
+  return {
+    score: reputation.score,
+    ratingLabel: reputation.bayesianRating === null ? null : reputation.bayesianRating.toFixed(1),
+    reviewCountLabel: `${reputation.reviewCount} avis`,
+    recommendationLabel: reputation.recommendationRate === null || reputation.recommendationTotal < 3
+      ? null
+      : `${Math.round(reputation.recommendationRate * 100)}% recommandent`,
+    badgeLabel: reputation.badges[0]?.label ?? null,
+  }
+}
+
+function sortRestaurantsForMarketplace(restaurants: MarketplaceRestaurantCardPresentation[], reputationModel?: OorderaReputationModel) {
+  return rankRestaurants(restaurants, reputationModel?.restaurants ?? {})
 }

@@ -18,6 +18,7 @@ type AddCartItemInput = {
   imageUrl?: string
   preparationMode?: CartItem["preparationMode"]
   categoryName?: string
+  reviewsEnabled?: boolean
   bundleId?: string
   isBundleMain?: boolean
   linkedGroupTitle?: string
@@ -167,6 +168,7 @@ function normalizeInputItem(input: AddCartItemInput): CartItem | null {
     imageUrl: input.imageUrl,
     preparationMode: input.preparationMode,
     categoryName: input.categoryName,
+    reviewsEnabled: typeof input.reviewsEnabled === "boolean" ? input.reviewsEnabled : undefined,
     bundleId: input.bundleId,
     isBundleMain: input.isBundleMain,
     linkedGroupTitle: input.linkedGroupTitle,

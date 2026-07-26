@@ -23,6 +23,30 @@ test("les agrégats d'avis ne sont pas modifiables par le client", () => {
   assert.match(rules, /allow create, update, delete: if false/)
 })
 
+test("les avis plats sont créés uniquement si l'article existe dans la commande", () => {
+  assert.match(rules, /match \/dishReviews\/\{dishReviewId\}/)
+  assert.match(rules, /allow create: if canCreateDishReview\(restaurantId, dishReviewId\)/)
+  assert.match(rules, /function dishReviewOrderItemMatches\(/)
+  assert.match(rules, /reviewOrderItem\(restaurantId, orderId\)\.id == request\.resource\.data\.orderItemId/)
+  assert.match(rules, /reviewOrderItem\(restaurantId, orderId\)\.productId == request\.resource\.data\.productId/)
+  assert.match(rules, /reviewOrderItem\(restaurantId, orderId\)\.reviewsEnabled == true/)
+  assert.match(rules, /reviewId == request\.resource\.data\.orderId \+ "_" \+ request\.resource\.data\.orderItemId/)
+  assert.match(rules, /allow update, delete: if false/)
+})
+
+test("les produits restaurant et modèles exigent une configuration d'avis explicite", () => {
+  assert.match(rules, /match \/products\/\{productId\}/)
+  assert.match(rules, /request\.resource\.data\.reviewsEnabled is bool/)
+  assert.match(rules, /request\.resource\.data\.reviewsPolicy in \["inherit", "enabled", "disabled"\]/)
+  assert.match(rules, /match \/platformMenuProducts\/\{productTemplateId\}/)
+})
+
+test("les catégories restaurant et modèles exigent une règle d'avis explicite", () => {
+  assert.match(rules, /match \/categories\/\{categoryId\}/)
+  assert.match(rules, /match \/platformMenuCategories\/\{categoryTemplateId\}/)
+  assert.match(rules, /request\.resource\.data\.reviewsEnabled is bool/)
+})
+
 // ─── Nouveaux helpers ────────────────────────────────────────────────
 
 test("docHas protège les lectures de champs optionnels", () => {

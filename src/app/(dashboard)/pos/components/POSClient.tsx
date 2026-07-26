@@ -912,6 +912,7 @@ function POSPageContent() {
           quantity: item.quantity,
           selectedOptions: item.selectedOptions ?? [],
           preparationMode: resolveProductPreparationMode(product, categoryName),
+          reviewsEnabled: product.reviewsEnabled === true,
         }
       })
 
