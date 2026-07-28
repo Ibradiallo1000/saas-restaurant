@@ -18,6 +18,7 @@ import {
   MetricGroup,
 } from "@/components/dashboard-ui"
 import { Button } from "@/components/ui/button"
+import { ManagerPeriodFilter } from "@/components/layout/manager-period-filter"
 
 export type ManagerDashboardOrderCounts = {
   pending: number
@@ -96,7 +97,16 @@ export function ManagerDashboardView({
         title="Tableau de bord"
         subtitle="Surveillez les opérations et traitez les interventions prioritaires du restaurant."
         meta={<>Période sélectionnée : <span className="font-semibold text-[var(--dashboard-subtitle)]">{periodLabel}</span> · Les indicateurs « Maintenant » et « Aujourd’hui » gardent leur propre temporalité.</>}
-        actions={hasCommandIntervention ? <Button asChild className="min-h-10"><Link href="/manager/commandes">Ouvrir les commandes</Link></Button> : undefined}
+        actions={
+          <>
+            <ManagerPeriodFilter />
+            {hasCommandIntervention ? (
+              <Button asChild className="min-h-10">
+                <Link href="/manager/commandes">Ouvrir les commandes</Link>
+              </Button>
+            ) : null}
+          </>
+        }
       />
 
       {ordersError ? (
@@ -162,17 +172,17 @@ function ManagerCashWidget({ activeCashSession, financialSummary, pendingCashVal
 
 function ManagerInventoryWidget({ summary }: { summary: ManagerDashboardInventorySummary }) {
   const hasInventorySignal = summary.outOfStockCount > 0 || summary.lowStockCount > 0
-  return <DashboardSection title="Stock" description="Résumé actionnable ; le détail reste dans l’inventaire."><DashboardWidget><DashboardWidgetHeader title={hasInventorySignal ? "Stock à surveiller" : "Stock sans alerte prioritaire"} description={hasInventorySignal ? "Des produits nécessitent une vérification." : "Aucune rupture ou alerte de stock faible n’est détectée."} action={<Button asChild size="sm" variant="outline"><Link href="/manager/inventory">Voir l’inventaire</Link></Button>} /><div className="grid gap-4 p-4 sm:grid-cols-3"><DashboardStat label="Ruptures" value={summary.outOfStockCount} tone={summary.outOfStockCount > 0 ? "negative" : "positive"} /><DashboardStat label="Stock faible" value={summary.lowStockCount} tone={summary.lowStockCount > 0 ? "warning" : "positive"} /><DashboardStat label="Valeur estimée" value={`${summary.stockValue.toLocaleString("fr-FR")} FCFA`} /></div>{!hasInventorySignal && summary.stockValue === 0 ? <div className="px-4 pb-4"><DashboardEmptyState className="min-h-28" title="Aucune valeur de stock disponible" description="La valeur apparaîtra lorsque les stocks et coûts seront renseignés." /></div> : null}</DashboardWidget></DashboardSection>
+  return <DashboardSection title="Stock" description="Résumé actionnable ; le détail reste dans le module Stock."><DashboardWidget><DashboardWidgetHeader title={hasInventorySignal ? "Stock à surveiller" : "Stock sans alerte prioritaire"} description={hasInventorySignal ? "Des articles nécessitent une vérification." : "Aucune rupture ou alerte de stock faible n’est détectée."} action={<Button asChild size="sm" variant="outline"><Link href="/manager/stock">Voir le stock</Link></Button>} /><div className="grid gap-4 p-4 sm:grid-cols-3"><DashboardStat label="Ruptures" value={summary.outOfStockCount} tone={summary.outOfStockCount > 0 ? "negative" : "positive"} /><DashboardStat label="Stock faible" value={summary.lowStockCount} tone={summary.lowStockCount > 0 ? "warning" : "positive"} /><DashboardStat label="Valeur estimée" value={`${summary.stockValue.toLocaleString("fr-FR")} FCFA`} /></div>{!hasInventorySignal && summary.stockValue === 0 ? <div className="px-4 pb-4"><DashboardEmptyState className="min-h-28" title="Aucune valeur de stock disponible" description="La valeur apparaîtra après les premiers approvisionnements." /></div> : null}</DashboardWidget></DashboardSection>
 }
 
 function buildManagerInterventions({ financialSummary, inventorySummary, orderCounts, pendingCashValidationCount, pendingSessionRequestCount }: { financialSummary: ManagerDashboardFinancialSummary; inventorySummary: ManagerDashboardInventorySummary; orderCounts: ManagerDashboardOrderCounts; pendingCashValidationCount: number; pendingSessionRequestCount: number }): Intervention[] {
   const items: Intervention[] = []
   if (orderCounts.late > 0) items.push({ id: "late-orders", title: "Commandes en retard", description: `${orderCounts.late} commande(s) nécessitent une intervention.`, href: "/manager/commandes?status=late", tone: "negative" })
   if (orderCounts.cash_due > 0) items.push({ id: "cash-due", title: "Encaissements en attente", description: `${orderCounts.cash_due} commande(s) servies restent à encaisser.`, href: "/manager/caisse?filter=payments", tone: "warning" })
-  if (inventorySummary.outOfStockCount > 0) items.push({ id: "out-of-stock", title: "Ruptures de stock", description: `${inventorySummary.outOfStockCount} produit(s) sont signalés en rupture.`, href: "/manager/inventory", tone: "negative" })
+  if (inventorySummary.outOfStockCount > 0) items.push({ id: "out-of-stock", title: "Ruptures de stock", description: `${inventorySummary.outOfStockCount} article(s) sont signalés en rupture.`, href: "/manager/stock", tone: "negative" })
   if (pendingCashValidationCount > 0) items.push({ id: "cash-validation", title: "Caisses à valider", description: `${pendingCashValidationCount} validation(s) de caisse sont en attente.`, href: "/manager/caisse", tone: "warning" })
   if (pendingSessionRequestCount > 0) items.push({ id: "session-requests", title: "Demandes d’ouverture de caisse", description: `${pendingSessionRequestCount} demande(s) sont en attente.`, href: "/manager/caisse", tone: "warning" })
   if (financialSummary.hasAbnormalNegativeBalance) items.push({ id: "cash-anomaly", title: "Anomalie de caisse", description: financialSummary.anomalies[0]?.label || "Le solde de caisse doit être vérifié.", href: "/manager/caisse", tone: "negative" })
-  if (inventorySummary.lowStockCount > 0 && inventorySummary.outOfStockCount === 0) items.push({ id: "low-stock", title: "Stock faible", description: `${inventorySummary.lowStockCount} produit(s) sont à surveiller.`, href: "/manager/inventory", tone: "warning" })
+  if (inventorySummary.lowStockCount > 0 && inventorySummary.outOfStockCount === 0) items.push({ id: "low-stock", title: "Stock faible", description: `${inventorySummary.lowStockCount} article(s) sont à surveiller.`, href: "/manager/stock", tone: "warning" })
   return items
 }

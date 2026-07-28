@@ -2,21 +2,19 @@
 
 import * as React from "react"
 import { Banknote, ReceiptText, Wallet } from "lucide-react"
-import { DataQualityBadge, FreshnessIndicator, ReportMetricCard, ReportsEmptyState, ReportsErrorState, ReportsEstimatedState, ReportsHeader, ReportsPage, ReportsPaymentSummary, ReportsPeriodFilter, ReportsSummary, ReportsTable, ReportsTableToolbar, type ReportsCustomRange } from "@/components/reports-ui"
-import type { TimeFilterType } from "@/contexts/time-filter-context"
+import { DataQualityBadge, FreshnessIndicator, ReportMetricCard, ReportsEmptyState, ReportsErrorState, ReportsEstimatedState, ReportsHeader, ReportsPage, ReportsPaymentSummary, ReportsSummary, ReportsTable, ReportsTableToolbar } from "@/components/reports-ui"
+import { ManagerPeriodFilter } from "@/components/layout/manager-period-filter"
 import { MANAGER_MOVEMENT_COLUMNS, type ManagerReportsViewModel } from "./manager-reports-view-model"
 
-const PERIODS = [{ id: "today", label: "Aujourd’hui" }, { id: "week", label: "Semaine" }, { id: "month", label: "Mois" }, { id: "custom", label: "Personnalisé" }]
 interface Props {
-  model: ManagerReportsViewModel; errors?: string[]; period: TimeFilterType; customRange: ReportsCustomRange; onPeriodChange: (value: TimeFilterType) => void; onCustomRangeChange: (range: ReportsCustomRange) => void
+  model: ManagerReportsViewModel; errors?: string[]
   directionFilter: string; accountFilter: string; sourceFilter: string; accountOptions: Array<{ id: string; label: string }>; sourceOptions: Array<{ id: string; label: string }>
   onDirectionFilterChange: (value: string) => void; onAccountFilterChange: (value: string) => void; onSourceFilterChange: (value: string) => void
 }
-export function ManagerReportsView({ accountFilter, accountOptions, customRange, directionFilter, errors = [], model, onAccountFilterChange, onCustomRangeChange, onDirectionFilterChange, onPeriodChange, onSourceFilterChange, period, sourceFilter, sourceOptions }: Props) {
+export function ManagerReportsView({ accountFilter, accountOptions, directionFilter, errors = [], model, onAccountFilterChange, onDirectionFilterChange, onSourceFilterChange, sourceFilter, sourceOptions }: Props) {
   const estimated = model.balanceQuality === "estimated" || model.movementQuality === "estimated"
   const movementsUnavailable = errors.includes("mouvements")
-  return <ReportsPage className="pb-20 md:pb-6"><ReportsHeader title="Rapports financiers" subtitle="Suivez les soldes, entrées, dépenses et mouvements disponibles pour l’exploitation." meta={<>Période active : <strong>{model.periodLabel}</strong> · Certains soldes restent globaux lorsque le fallback historique est utilisé.</>} context={<><DataQualityBadge quality={errors.length ? "unavailable" : estimated ? "estimated" : "complete"} /><FreshnessIndicator freshness={errors.length ? "unknown" : "live"} label={errors.length ? "Fraîcheur partiellement indisponible" : undefined} /></>} />
-    <ReportsPeriodFilter options={PERIODS} value={period} onValueChange={(value) => onPeriodChange(value as TimeFilterType)} customRange={customRange} onCustomRangeChange={onCustomRangeChange} />
+  return <ReportsPage className="pb-20 md:pb-6"><ReportsHeader title="Rapports financiers" subtitle="Suivez les soldes, entrées, dépenses et mouvements disponibles pour l’exploitation." meta={<>Période active : <strong>{model.periodLabel}</strong> · Certains soldes restent globaux lorsque le fallback historique est utilisé.</>} context={<><DataQualityBadge quality={errors.length ? "unavailable" : estimated ? "estimated" : "complete"} /><FreshnessIndicator freshness={errors.length ? "unknown" : "live"} label={errors.length ? "Fraîcheur partiellement indisponible" : undefined} /></>} actions={<ManagerPeriodFilter />} />
     {errors.length ? <ReportsErrorState title="Certaines données Manager sont indisponibles" description={`Domaines concernés : ${errors.join(", ")}. Les données restantes demeurent visibles.`} /> : null}
     {estimated ? <ReportsEstimatedState title="Source historique utilisée" description="La vue conserve ses fallbacks existants lorsque les comptes ou mouvements ne portent pas une valeur exploitable. Aucune source n’a été fusionnée." /> : null}
     <section aria-labelledby="manager-report-kpis" className="space-y-3"><h2 id="manager-report-kpis" className="text-[length:var(--text-dashboard-section-title)] font-semibold">Indicateurs opérationnels</h2><ReportsSummary className="xl:grid-cols-3"><ReportMetricCard label="Solde total" value={model.balance.replace(" FCFA", "")} unit="FCFA" description="Comptes courants ou fallback financier historique." icon={<Wallet />} quality={model.balanceQuality} freshness="live" /><ReportMetricCard label="Entrées totales" value={movementsUnavailable ? "—" : model.deposits.replace(" FCFA", "")} unit={movementsUnavailable ? undefined : "FCFA"} description={model.periodLabel} icon={<ReceiptText />} quality={movementsUnavailable ? "unavailable" : model.movementQuality} freshness="live" /><ReportMetricCard label="Dépenses totales" value={movementsUnavailable ? "—" : model.expenses.replace(" FCFA", "")} unit={movementsUnavailable ? undefined : "FCFA"} description={model.periodLabel} icon={<Banknote />} quality={movementsUnavailable ? "unavailable" : model.movementQuality} freshness="live" /></ReportsSummary></section>

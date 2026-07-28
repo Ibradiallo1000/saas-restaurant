@@ -2,6 +2,10 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "commonjs",
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["./../src/*"]
+    },
     "rootDir": "..",
     "outDir": "lib",
     "strict": true,

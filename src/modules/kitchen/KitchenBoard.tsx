@@ -10,8 +10,7 @@ import {
   Clock3,
   CookingPot,
   LogOut,
-  Maximize2,
-  Minimize2,
+  RefreshCw,
   Utensils,
   type LucideIcon,
 } from "lucide-react"
@@ -20,10 +19,13 @@ import {
   KitchenBoard as KitchenBoardLayout,
   KitchenColumn,
   KitchenEmptyState,
-  KitchenHeader,
-  KitchenLoadSummary,
   KitchenPage,
 } from "@/components/kitchen-ui"
+import {
+  OperationalMetricStrip,
+  OperationalStationIdentity,
+} from "@/components/operational-ui"
+import { PosHeader } from "@/components/pos-ui"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
@@ -42,6 +44,7 @@ import { getOrderDisplayId } from "@/lib/order-display-id"
 import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
 import { KitchenOrderCard } from "@/modules/kitchen/KitchenOrderCard"
 import { isKitchenPaymentDelayed } from "@/modules/kitchen/kitchen-view-model"
+import { markOrderItemAsServedAndDeductStock } from "@/modules/stock/automatic-simple/infrastructure/mark-order-item-served"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
 import { playNewOrderNotificationSound } from "@/services/notification-sound.service"
 import { isKitchenItem, orderHasKitchenItems } from "@/utils/preparation-logic"
@@ -112,19 +115,9 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     () => new Set()
   )
   const [nowMs, setNowMs] = React.useState(() => Date.now())
-  const [isFullScreen, setIsFullScreen] = React.useState(false)
-  const pageRef = React.useRef<HTMLElement>(null)
-
   React.useEffect(() => {
     const interval = window.setInterval(() => setNowMs(Date.now()), 30_000)
     return () => window.clearInterval(interval)
-  }, [])
-
-  React.useEffect(() => {
-    const handleFullScreenChange = () => setIsFullScreen(document.fullscreenElement === pageRef.current)
-    document.addEventListener("fullscreenchange", handleFullScreenChange)
-    handleFullScreenChange()
-    return () => document.removeEventListener("fullscreenchange", handleFullScreenChange)
   }, [])
 
   React.useEffect(() => {
@@ -135,23 +128,6 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     await signOut(auth)
     router.push("/login")
   }, [auth, router])
-
-  const handleFullScreen = React.useCallback(async () => {
-    try {
-      if (document.fullscreenElement === pageRef.current) {
-        await document.exitFullscreen()
-        return
-      }
-      await pageRef.current?.requestFullscreen()
-    } catch (error) {
-      console.error(error)
-      toast({
-        title: "Plein écran indisponible",
-        description: "Le navigateur n’a pas autorisé le passage en plein écran.",
-        variant: "destructive",
-      })
-    }
-  }, [toast])
 
   const kitchenOrders = React.useMemo(() => {
     debugKitchenBoardStage("received orders from OrdersProvider", orders)
@@ -289,7 +265,7 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
   }, [kitchenOrders, toast])
 
   const updateStatus = React.useCallback(async (orderId: string, newOrderStatus: OrderOperationStatus) => {
-    if (!db) return
+    if (!db || !user) return
     const order = ordersRef.current.find((currentOrder) => currentOrder.id === orderId)
     if (!order) return
 
@@ -316,6 +292,37 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     const orderRef = doc(restaurantOrdersRef(db, restaurantId), orderId)
     const historyStatus = toKitchenServedEventStatus(newOrderStatus)
     const timestampField = getKitchenTimestampField(newOrderStatus)
+    if (nextItemStatus === "served") {
+      const warnings: string[] = []
+      for (const [index, item] of (order.items || []).entries()) {
+        if (!isKitchenItem(item)) continue
+        const currentItemStatus = normalizeOrderItemStatus(
+          (item as any).status
+            ?? order.kitchenStatus
+            ?? (order as any).status
+            ?? (order as any).orderStatus
+        )
+        if (currentItemStatus !== itemStatusFromOperationStatus(currentStatus)) continue
+        const result = await markOrderItemAsServedAndDeductStock({
+          db,
+          restaurantId,
+          orderId,
+          orderItemId: String(
+            (item as any).id
+              ?? (item as any).orderItemId
+              ?? `${(item as any).productId ?? "item"}-${index}`
+          ),
+          actorId: user.uid,
+        })
+        if (result.warning) warnings.push(result.warning)
+      }
+      if (warnings.length > 0) {
+        toast({
+          title: "Commande servie avec avertissement stock",
+          description: Array.from(new Set(warnings)).join(" "),
+        })
+      }
+    }
     await updateDoc(orderRef, {
       kitchenStatus: newOrderStatus,
       ...(timestampField ? { [`timestamps.${timestampField}`]: serverTimestamp() } : {}),
@@ -324,10 +331,10 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
         at: new Date(),
         source: "kitchen",
       }),
-      items: nextItems,
+      ...(nextItemStatus === "served" ? {} : { items: nextItems }),
       updatedAt: serverTimestamp(),
     })
-  }, [db, restaurantId])
+  }, [db, restaurantId, toast, user])
 
   const delayedCount = React.useMemo(
     () => kitchenOrders.filter((order) => isKitchenPaymentDelayed(order, nowMs)).length,
@@ -336,42 +343,53 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
   const loadMetrics = React.useMemo(() => [
     { id: "pending", label: "Nouvelles", value: groupedOrders.pending.length },
     { id: "preparing", label: "Préparation", value: groupedOrders.preparing.length },
-    { id: "ready", label: "Prêtes", value: groupedOrders.ready.length, tone: "ready" as const },
-    { id: "overdue", label: "Retard", value: delayedCount, tone: delayedCount ? "overdue" as const : "normal" as const },
+    { id: "ready", label: "Prêtes", value: groupedOrders.ready.length, tone: "positive" as const },
+    { id: "overdue", label: "Retard", value: delayedCount, tone: delayedCount ? "critical" as const : "normal" as const },
     { id: "total", label: "Visibles", value: kitchenOrders.length },
   ], [delayedCount, groupedOrders, kitchenOrders.length])
 
   return (
     <KitchenPage
-      ref={pageRef}
-      fullScreen={isFullScreen}
       header={
-        <KitchenHeader
-          title={<span className="inline-flex items-center gap-2"><ChefHat aria-hidden="true" className="size-6" />Cuisine</span>}
-          description={restaurant?.name || "Restaurant"}
-          load={<KitchenLoadSummary items={loadMetrics} />}
+        <PosHeader
+          title={
+            <OperationalStationIdentity
+              fallbackIcon={ChefHat}
+              restaurantLogoUrl={restaurant?.logoUrl}
+              restaurantName={restaurant?.name}
+              subtitle="Cuisine"
+            />
+          }
+          sessionStatus="active"
+          sessionLabel="Cuisine active"
           actions={
             <>
-              <span className="hidden text-sm font-semibold text-[var(--dashboard-subtitle)] sm:inline">{user?.displayName || user?.email?.split("@")[0] || "Cuisine"}</span>
+              <span className="hidden text-sm font-semibold text-[var(--dashboard-subtitle)] sm:inline">
+                {user?.displayName || user?.email?.split("@")[0] || "Cuisine01"}
+              </span>
               <ThemeToggle />
-              <button type="button" onClick={handleLogout} className="dashboard-focus-visible inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-dashboard-button)] border border-[var(--kitchen-border)] px-3 text-sm font-semibold hover:bg-[var(--kitchen-card-muted)]">
+              <button
+                type="button"
+                onClick={() => router.refresh()}
+                aria-label="Actualiser la Cuisine"
+                title="Actualiser"
+                className="dashboard-focus-visible inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--radius-dashboard-button)] border border-[var(--pos-divider)] hover:bg-[var(--pos-muted)]"
+              >
+                <RefreshCw aria-hidden="true" className="size-4" />
+              </button>
+              <button type="button" onClick={handleLogout} className="dashboard-focus-visible inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-dashboard-button)] border border-[var(--pos-divider)] px-3 text-sm font-semibold hover:bg-[var(--pos-muted)]">
                 <LogOut aria-hidden="true" className="size-4" />
                 <span className="hidden sm:inline">Déconnexion</span>
                 <span className="sr-only sm:hidden">Se déconnecter</span>
               </button>
             </>
           }
-          fullScreenAction={
-            <button type="button" onClick={handleFullScreen} aria-pressed={isFullScreen} className="dashboard-focus-visible inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-dashboard-button)] border border-[var(--kitchen-border)] px-3 text-sm font-semibold hover:bg-[var(--kitchen-card-muted)]">
-              {isFullScreen ? <Minimize2 aria-hidden="true" className="size-4" /> : <Maximize2 aria-hidden="true" className="size-4" />}
-              <span className="hidden sm:inline">{isFullScreen ? "Quitter le plein écran" : "Plein écran"}</span>
-              <span className="sr-only sm:hidden">{isFullScreen ? "Quitter le plein écran" : "Passer en plein écran"}</span>
-            </button>
-          }
         />
       }
     >
-      <KitchenBoardLayout layout="adaptive" className="h-full overflow-y-auto md:auto-rows-[minmax(24rem,1fr)] xl:grid-cols-4 xl:auto-rows-fr xl:overflow-hidden">
+      <div className="flex h-full min-h-0 flex-col gap-[var(--pos-layout-gap)]">
+        <OperationalMetricStrip items={loadMetrics} label="Indicateurs de production Cuisine" />
+        <KitchenBoardLayout layout="adaptive" className="min-h-0 flex-1 overflow-y-auto md:auto-rows-[minmax(24rem,1fr)] xl:grid-cols-4 xl:auto-rows-fr xl:overflow-hidden">
         {KITCHEN_COLUMNS.map((column) => {
           const columnOrders = groupedOrders[column.status]
           const Icon = column.icon
@@ -392,7 +410,8 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
             </KitchenColumn>
           )
         })}
-      </KitchenBoardLayout>
+        </KitchenBoardLayout>
+      </div>
     </KitchenPage>
   )
 }

@@ -91,8 +91,6 @@ type ProductForm = {
   isActive: boolean
   packIds: string[]
   optionsJson: string
-  recipeJson: string
-  componentsJson: string
   linkedOptionGroupsJson: string
 }
 
@@ -132,8 +130,6 @@ const EMPTY_PRODUCT_FORM: ProductForm = {
   isActive: true,
   packIds: [],
   optionsJson: "[]",
-  recipeJson: "[]",
-  componentsJson: "[]",
   linkedOptionGroupsJson: "[]",
 }
 
@@ -332,14 +328,10 @@ export default function PlatformMenuLibraryClient() {
     }
 
     let parsedOptions: unknown[] = []
-    let parsedRecipe: unknown[] = []
-    let parsedComponents: unknown[] = []
     let parsedLinkedOptionGroups: unknown[] = []
 
     try {
-      parsedOptions = parseJsonArray(productForm.optionsJson, "Options")
-      parsedRecipe = parseJsonArray(productForm.recipeJson, "Recette")
-      parsedComponents = parseJsonArray(productForm.componentsJson, "Composants")
+      parsedOptions = sanitizeCommercialOptions(parseJsonArray(productForm.optionsJson, "Options"))
       parsedLinkedOptionGroups = parseJsonArray(productForm.linkedOptionGroupsJson, "Options liees")
     } catch (error) {
       toast({
@@ -363,8 +355,8 @@ export default function PlatformMenuLibraryClient() {
       reviewsPolicy: productReviewsPolicy,
       reviewsEnabled: resolvedReviewsEnabled,
       options: parsedOptions,
-      recipe: parsedRecipe,
-      components: parsedComponents,
+      recipe: [],
+      components: [],
       linkedOptionGroups: parsedLinkedOptionGroups,
       isActive: productForm.isActive,
       order: toInt(productForm.order),
@@ -459,9 +451,7 @@ export default function PlatformMenuLibraryClient() {
       order: String(product.order ?? 0),
       isActive: product.isActive !== false,
       packIds: Array.isArray(product.packIds) ? product.packIds : [],
-      optionsJson: formatJsonArray(product.options),
-      recipeJson: formatJsonArray(product.recipe),
-      componentsJson: formatJsonArray(product.components),
+      optionsJson: formatJsonArray(sanitizeCommercialOptions(product.options)),
       linkedOptionGroupsJson: formatJsonArray(product.linkedOptionGroups),
     })
   }
@@ -918,8 +908,6 @@ function AdvancedJsonFields({
 }) {
   const fields: Array<{ key: keyof ProductForm; label: string }> = [
     { key: "optionsJson", label: "Options JSON" },
-    { key: "recipeJson", label: "Recette JSON" },
-    { key: "componentsJson", label: "Composants JSON" },
     { key: "linkedOptionGroupsJson", label: "Options liees JSON" },
   ]
 
@@ -937,6 +925,21 @@ function AdvancedJsonFields({
       ))}
     </div>
   )
+}
+
+function sanitizeCommercialOptions(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value.map((option: any) => ({
+    name: String(option?.name || ""),
+    required: option?.required === true,
+    multiple: option?.multiple === true,
+    choices: Array.isArray(option?.choices)
+      ? option.choices.map((choice: any) => ({
+          name: String(choice?.name || ""),
+          price: Math.max(0, Number(choice?.price || 0)),
+        }))
+      : [],
+  }))
 }
 
 function PackGrid({

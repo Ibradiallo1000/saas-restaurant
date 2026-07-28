@@ -37,13 +37,12 @@ export interface KitchenColumnProps extends Omit<React.HTMLAttributes<HTMLElemen
 
 export const KitchenColumn = React.forwardRef<HTMLElement, KitchenColumnProps>(({ children, className, count, description, emptyState, headingAs: Heading = "h2", id, loading, title, variant = "neutral", ...props }, ref) => {
   const headingId = `${id}-title`
-  return <section ref={ref} aria-labelledby={headingId} className={cn("flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[var(--radius-kitchen-column)] border bg-[var(--kitchen-column)]", columnVariantClasses[variant], className)} {...props}>
-    <header className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-[var(--kitchen-divider)] bg-[var(--kitchen-column)] p-[var(--kitchen-column-padding)]">
-      <div className="min-w-0"><Heading id={headingId} className="break-words text-[length:var(--text-kitchen-column-title)] font-bold leading-[var(--leading-kitchen-column-title)]">{title}</Heading>{description ? <p className="mt-1 break-words text-xs leading-4 text-[var(--dashboard-muted)]">{description}</p> : null}</div>
-      <span aria-label={`${String(count)} commandes`} className="inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full bg-[var(--kitchen-card-emphasis)] px-2 text-[length:var(--text-kitchen-column-count)] font-black leading-[var(--leading-kitchen-column-count)] tabular-nums">{count}</span>
+  return <section ref={ref} aria-labelledby={headingId} className={cn("flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[var(--radius-dashboard-card)] border bg-[var(--order-surface)] shadow-[var(--shadow-dashboard-surface)]", columnVariantClasses[variant], className)} {...props}>
+    <header className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-[var(--order-divider)] bg-[var(--order-surface)] p-[var(--kitchen-column-padding)]">
+      <div className="min-w-0"><Heading id={headingId} className="break-words text-base font-bold leading-5 text-[var(--dashboard-title)]">{title}</Heading>{description ? <p className="mt-1 break-words text-xs leading-4 text-[var(--dashboard-muted)]">{description}</p> : null}</div>
+      <span aria-label={`${String(count)} commandes`} className="inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full bg-[var(--order-surface-muted)] px-2 text-sm font-black leading-5 tabular-nums">{count}</span>
     </header>
     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-[var(--kitchen-column-padding)]">{loading ?? (React.Children.count(children) ? <div className="grid min-w-0 gap-[var(--kitchen-card-gap)]">{children}</div> : emptyState)}</div>
   </section>
 })
 KitchenColumn.displayName = "KitchenColumn"
-

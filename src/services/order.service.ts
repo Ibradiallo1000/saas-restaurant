@@ -12,14 +12,10 @@ import {
   collection, 
   arrayUnion,
   serverTimestamp, 
+  setDoc,
   updateDoc,
-  getDocs,
   getDoc,
   runTransaction,
-  writeBatch,
-  query,
-  where,
-  limit
 } from 'firebase/firestore';
 import { COLLECTION_NAMES, PAYMENT_STATUS } from '@/lib/constants';
 import {
@@ -33,7 +29,6 @@ import type { SelectedCartOption } from '@/modules/restaurant/types';
 import type { PreparationMode } from '@/utils/preparation-logic';
 import { orderHasKitchenItems } from '@/utils/preparation-logic';
 import { LoyaltyService } from './loyalty.service';
-import { InventoryService } from './inventory.service';
 
 export interface OrderItemInput {
   id?: string;
@@ -88,20 +83,26 @@ export class OrderService {
     const normalizedOrderType =
       input.orderType === 'takeaway' ? 'pickup' : input.orderType || (input.type === 'table' ? 'dine_in' : input.type);
 
-    const mappedItems = input.items.map((item) => ({
-      id: (item as any).id || `${item.productId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      productId: item.productId,
-      name: item.nameSnapshot,
-      status: (item as any).status || "pending",
-      createdAt: (item as any).createdAt || new Date(),
-      unitPrice: item.priceSnapshot,
-      quantity: item.quantity,
-      total: item.priceSnapshot * item.quantity,
-      selectedOptions: item.selectedOptions || [],
-      variant: (item as any).variant || null,
-      addons: (item as any).addons || [],
-      preparationMode: item.preparationMode || null,
-    }));
+    const mappedItems = input.items.map((item, index) => {
+      const orderItemId =
+        item.id ||
+        `${item.productId}-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`;
+      return {
+        id: orderItemId,
+        orderItemId,
+        productId: item.productId,
+        name: item.nameSnapshot,
+        status: item.status || "pending",
+        createdAt: item.createdAt || new Date(),
+        unitPrice: item.priceSnapshot,
+        quantity: item.quantity,
+        total: item.priceSnapshot * item.quantity,
+        selectedOptions: item.selectedOptions || [],
+        variant: (item as any).variant || null,
+        addons: (item as any).addons || [],
+        preparationMode: item.preparationMode || null,
+      };
+    });
 
     const requiresKitchen = orderHasKitchenItems(
       mappedItems.map((item) => ({ preparationMode: item.preparationMode ?? undefined }))
@@ -142,11 +143,11 @@ export class OrderService {
       roomId: input.roomId || null,
       customerName: input.customerName || 'Client Anonyme',
       customerPhone: input.customerPhone || null,
-      kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
-      orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
+      kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.READY,
+      orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.READY,
       statusHistory: [
         {
-          status: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
+          status: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.READY,
           at: new Date(),
           source: "order",
         },
@@ -181,24 +182,23 @@ export class OrderService {
     );
 
     // Enregistrement des articles de la commande (Snapshot des prix pour l'historique)
-    for (const item of input.items) {
+    for (const item of mappedItems) {
+      const orderItemId = item.orderItemId;
       const itemData = {
         ...item,
-        id: (item as any).id || `${item.productId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        status: (item as any).status || "pending",
-        createdAt: (item as any).createdAt || serverTimestamp(),
+        id: orderItemId,
+        orderItemId,
+        restaurantId: input.restaurantId,
+        nameSnapshot: item.name,
+        priceSnapshot: item.unitPrice,
+        status: item.status || "pending",
+        servedQuantity: 0,
+        createdAt: item.createdAt || serverTimestamp(),
         orderId: orderRef.id,
-        subtotal: item.priceSnapshot * item.quantity,
+        subtotal: item.unitPrice * item.quantity,
       };
-      await addDoc(
-        collection(
-          this.db,
-          COLLECTION_NAMES.RESTAURANTS,
-          input.restaurantId,
-          COLLECTION_NAMES.ORDERS,
-          orderRef.id,
-          COLLECTION_NAMES.ORDER_ITEMS
-        ),
+      await setDoc(
+        doc(orderRef, COLLECTION_NAMES.ORDER_ITEMS, orderItemId),
         itemData
       );
     }
@@ -238,14 +238,9 @@ export class OrderService {
       updatedAt: serverTimestamp(),
     });
 
-    if (normalizedStatus === 'preparing' && !orderData?.inventoryProcessed) {
-      try {
-        const order = { id: orderSnap.id, ...orderData } as any;
-        await new InventoryService(this.db).handleOrderSentToKitchen(order);
-      } catch (e) {
-        console.error('[inventory] failed to process order on preparing', e);
-      }
-    }
+    // Stock V2 ne consomme jamais une recette au passage en préparation.
+    // Les articles contrôlés sont comptés physiquement et les articles
+    // automatiques sont traités une seule fois après confirmation du paiement.
   }
 
   /**
@@ -295,32 +290,14 @@ export class OrderService {
     });
 
     // Effets secondaires après transaction réussie
-    const itemsSnapshot = await getDocs(
-      collection(
-        this.db,
-        COLLECTION_NAMES.RESTAURANTS,
-        restaurantId,
-        COLLECTION_NAMES.ORDERS,
-        orderId,
-        COLLECTION_NAMES.ORDER_ITEMS
-      )
-    );
     const orderSnap = await getDoc(orderRef);
     const orderData = orderSnap.data();
 
     if (!orderData) return;
 
-    // Mise à jour automatique de l'inventaire
-    await this.decrementStockForOrderItems(
-      restaurantId,
-      itemsSnapshot.docs.map((itemDoc) => {
-        const item = itemDoc.data();
-        return {
-          productId: item.productId as string,
-          quantity: Number(item.quantity || 0),
-        };
-      })
-    );
+    // La déduction physique est désormais portée exclusivement par Stock V2,
+    // via le déclencheur serveur de paiement confirmé. Cette méthode ne met
+    // plus à jour l’ancienne autorité `inventory.quantity`.
 
     // Enregistrement de la visite pour le programme de fidélité
     if (orderData.customerPhone) {
@@ -347,58 +324,4 @@ export class OrderService {
     await addDoc(collection(this.db, COLLECTION_NAMES.REVIEWS), reviewData);
   }
 
-  private async decrementStockForOrderItems(
-    restaurantId: string,
-    items: Array<{ productId: string; quantity: number }>
-  ) {
-    const quantityByProductId = items.reduce((acc, item) => {
-      if (!item.productId || item.quantity <= 0) return acc;
-      acc.set(item.productId, (acc.get(item.productId) || 0) + item.quantity);
-      return acc;
-    }, new Map<string, number>());
-
-    if (quantityByProductId.size === 0) return;
-
-    const inventoryRef = collection(
-      this.db,
-      COLLECTION_NAMES.RESTAURANTS,
-      restaurantId,
-      COLLECTION_NAMES.INVENTORY
-    );
-
-    const inventorySnapshots = await Promise.all(
-      Array.from(quantityByProductId.keys()).map(async (productId) => ({
-        productId,
-        snapshot: await getDocs(
-          query(
-            inventoryRef,
-            where('linkedProductIds', 'array-contains', productId),
-            limit(20)
-          )
-        ),
-      }))
-    );
-
-    const batch = writeBatch(this.db);
-    let writes = 0;
-
-    for (const { productId, snapshot } of inventorySnapshots) {
-      const soldQuantity = quantityByProductId.get(productId) || 0;
-
-      for (const inventoryDoc of snapshot.docs) {
-        const currentData = inventoryDoc.data();
-        const currentQuantity = Number(currentData.quantity || 0);
-
-        batch.update(inventoryDoc.ref, {
-          quantity: Math.max(0, currentQuantity - soldQuantity),
-          updatedAt: serverTimestamp(),
-        });
-        writes += 1;
-      }
-    }
-
-    if (writes > 0) {
-      await batch.commit();
-    }
-  }
 }

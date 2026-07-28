@@ -49,6 +49,7 @@ import { isConfirmedFinancePayment } from "@/lib/finance/financial-summary"
 import { getOrderStatus } from "@/lib/order-lifecycle"
 import { cn } from "@/lib/utils"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
+import { useInventoryReferential } from "@/modules/stock/shared/use-inventory-referential"
 
 import type { Order } from "@/types/index"
 
@@ -62,10 +63,12 @@ type DateRange = {
 type OwnerInventoryItem = {
   id: string
   name?: string
-  stockEstimated?: number
-  avgDailyConsumption?: number
-  costPerUnit?: number
-  lastManualStock?: number
+  quantity?: number
+  referenceCost?: number
+  lowStockThreshold?: number
+  outOfStockThreshold?: number
+  trackingMode?: "CONTROLLED" | "AUTOMATIC_SIMPLE" | "NONE"
+  status?: "active" | "archived"
 }
 
 type OwnerInventoryAlert = {
@@ -79,6 +82,10 @@ type OwnerInventoryAlert = {
 
 type OwnerInventoryLog = {
   id: string
+  articleId?: string
+  type?: string
+  variation?: number
+  occurredAt?: string
   itemMargins?: Array<{
     productId?: string
     productName?: string
@@ -143,29 +150,28 @@ function OwnerPageContent() {
   const { data: periodOrders, isLoading: isLoadingOrders } = useCollection<Order>(ordersQuery)
   const orders = React.useMemo(() => (periodOrders || []) as Order[], [periodOrders])
   const inventoryHref = React.useMemo(
-    () => getHrefWithCurrentQuery("/manager/inventory", searchParams),
+    () => getHrefWithCurrentQuery("/owner/stock", searchParams),
     [searchParams]
   )
 
-  const inventoryAlertsQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryAlerts")
-  }, [db, restaurantId])
-  const inventoryItemsQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryItems")
-  }, [db, restaurantId])
-  const inventoryLogsQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return query(
-      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryLogs"),
-      where("createdAt", ">=", queryRange.startDate),
-      where("createdAt", "<=", queryRange.endDate)
-    )
-  }, [db, restaurantId, queryRange.endDate, queryRange.startDate])
-  const { data: inventoryAlerts } = useCollection<OwnerInventoryAlert>(inventoryAlertsQuery)
-  const { data: inventoryItems } = useCollection<OwnerInventoryItem>(inventoryItemsQuery)
-  const { data: inventoryLogs } = useCollection<OwnerInventoryLog>(inventoryLogsQuery)
+  const {
+    articles: stockItems,
+    balances: stockBalances,
+    costs: stockCosts,
+    operations: inventoryLogs,
+  } = useInventoryReferential(restaurantId, {
+    includeCosts: true,
+    includeOperations: true,
+  })
+  const inventoryItems = React.useMemo(() => {
+    const quantities = new Map((stockBalances || []).map((item) => [item.articleId || item.id, Number(item.quantity || 0)]))
+    const costs = new Map((stockCosts || []).map((item) => [item.articleId || item.id, Number(item.referenceCost || 0)]))
+    return (stockItems || []).map((item) => ({
+      ...item,
+      quantity: quantities.get(item.id) || 0,
+      referenceCost: costs.get(item.id) || 0,
+    })) as OwnerInventoryItem[]
+  }, [stockBalances, stockCosts, stockItems])
 
   const period = React.useMemo(
     () => buildPeriodContext(filter),
@@ -179,12 +185,12 @@ function OwnerPageContent() {
         payments,
         cashMovements,
         cashSessions,
-        inventoryAlerts: inventoryAlerts || [],
+        inventoryAlerts: [],
         inventoryItems: inventoryItems || [],
         inventoryLogs: inventoryLogs || [],
         period,
       }),
-    [cashMovements, cashSessions, inventoryAlerts, inventoryItems, inventoryLogs, orders, payments, period]
+    [cashMovements, cashSessions, inventoryItems, inventoryLogs, orders, payments, period]
   )
 
   const isLiveLoading = isLoadingOrders || isLoadingSessions
@@ -507,16 +513,15 @@ function buildOwnerInventoryOverview(
   }
 
   const stockValue = items.reduce((total, item) => {
-    const stock = Math.max(0, Number(item.stockEstimated || 0))
-    const cost = Math.max(0, Number(item.costPerUnit || 0))
+    const stock = Math.max(0, Number(item.quantity || 0))
+    const cost = Math.max(0, Number(item.referenceCost || 0))
     return total + stock * cost
   }, 0)
 
-  const estimatedLosses = items.reduce((total, item) => {
-    const expected = Number(item.stockEstimated || 0)
-    const real = Number(item.lastManualStock ?? expected)
-    const cost = Math.max(0, Number(item.costPerUnit || 0))
-    return total + Math.max(0, expected - real) * cost
+  const costByArticle = new Map(items.map((item) => [item.id, Math.max(0, Number(item.referenceCost || 0))]))
+  const estimatedLosses = relevantLogs.reduce((total, operation) => {
+    if (operation.type !== "PERTE") return total
+    return total + Math.abs(Number(operation.variation || 0)) * (costByArticle.get(String(operation.articleId)) || 0)
   }, 0)
 
   const criticalItemIds = new Set<string>()
@@ -526,9 +531,9 @@ function buildOwnerInventoryOverview(
     }
   }
   for (const item of items) {
-    const avgDailyConsumption = Number(item.avgDailyConsumption || 0)
-    const stockEstimated = Number(item.stockEstimated || 0)
-    if (avgDailyConsumption > 0 && stockEstimated >= 0 && stockEstimated / avgDailyConsumption < 2) {
+    if (item.status !== "active" || item.trackingMode === "NONE") continue
+    const quantity = Number(item.quantity || 0)
+    if (quantity <= Number(item.lowStockThreshold || 0)) {
       criticalItemIds.add(item.id)
     }
   }
@@ -847,6 +852,9 @@ function enumerateDays(range: DateRange) {
 }
 
 function isInventoryLogInRange(log: OwnerInventoryLog, range: DateRange) {
+  if (log.occurredAt) {
+    return isDateInRange(toDate(log.occurredAt), range)
+  }
   if (log.createdDate) {
     const date = parseInputDate(log.createdDate)
     return isDateInRange(date, range)

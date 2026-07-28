@@ -11,13 +11,16 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  deleteField,
   getDoc,
+  getDocs,
   limit,
   orderBy,
   query,
   Timestamp,
   where,
   serverTimestamp,
+  writeBatch,
 } from "firebase/firestore"
 
 import { Store, Plus, Search, X, MoreVertical, Edit2, Trash2, Power, PowerOff, Eye, ImageIcon, ArrowLeft, ShieldCheck, Banknote, ReceiptText, Wallet, ClipboardList, BookOpen, Loader2 } from "lucide-react"
@@ -33,6 +36,7 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
+import { PageHeader } from "@/design-system/components"
 import { getOptimizedImage } from "@/lib/image"
 import { getCategoryDisplayOrder, sortMenuCategories } from "@/lib/menu-category-order"
 import { getMarketplaceCategoryIcon, normalizeMarketplaceCategoryIconKey, type MarketplaceCategoryIconKey } from "@/lib/marketplace-category-icons"
@@ -48,13 +52,6 @@ import type { MarketplaceFoodCategoryDocument } from "@/lib/marketplace-discover
 import { getOrderDisplayId } from "@/lib/order-display-id"
 import { normalizePaymentMethod, normalizePaymentStatus } from "@/lib/order-payment"
 import { getFinancialSummary, getSupportedBusinessTimeZone } from "@/lib/finance/financial-summary"
-import {
-  assertValidComponentMultiplier,
-  buildComponentsFromLegacy,
-  computeEstimatedCost,
-  hasComplexConsumption,
-  hasTrackedConsumption,
-} from "@/lib/product-components"
 import {
   ORDER_OPERATION_STATUS,
   getOrderStatus,
@@ -95,6 +92,11 @@ import { syncDishOffer, syncCategoryOffers, rebuildRestaurantCategoryOffers } fr
 import { ManagerDashboardView } from "./ManagerDashboardView"
 import { ManagerOrderDetail } from "./ManagerOrderDetail"
 import { ManagerOrdersView } from "./ManagerOrdersView"
+import { useInventoryReferential } from "@/modules/stock/shared/use-inventory-referential"
+import {
+  stockTrackingModeLabel,
+  stockUnitLabel,
+} from "@/modules/stock/shared/inventory-referential"
 import {
   createManagerOrderDetailViewModel,
   type ManagerOrderDetailViewModel,
@@ -269,8 +271,7 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
   const displayImage = product.imageUrl || category?.imageUrl
   const isInactive = product.isActive === false
   const hasOptions = product.options && product.options.length > 0
-  const isComplexConsumption = product.hasComplexConsumption === true || hasComplexConsumption(product)
-  const isTracked = hasTrackedConsumption(product)
+  const isTracked = Boolean(product.stockArticleId)
   const reviewStatus = getProductReviewStatus(product)
 
   return (
@@ -360,16 +361,15 @@ function SortableProductCard({ product, category, onPreview, onEdit, onToggle, o
           </div>
 
           <div className="flex gap-1 flex-wrap">
-            {isComplexConsumption ? (
-              <Badge variant="secondary" className="text-[10px] bg-amber-100 text-amber-700">
-                🔥 Consommation variable
-              </Badge>
-            ) : null}
             {!isTracked ? (
               <Badge variant="secondary" className="text-[10px] bg-yellow-100 text-yellow-800">
-                ⚠️ Recette non configurée
+                Stock non suivi
               </Badge>
-            ) : null}
+            ) : (
+              <Badge variant="secondary" className="text-[10px] bg-emerald-100 text-emerald-800">
+                Article lié
+              </Badge>
+            )}
             <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-700">
               {category?.name || "Sans catégorie"}
             </Badge>
@@ -463,12 +463,23 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   const db = useFirestore()
   const { restaurantId } = useRestaurant()
   const { products, categories, isLoadingVisible, refreshCatalog } = useCatalog()
+  const { user } = useTenant()
   const { toast } = useToast()
-  const inventoryItemsQuery = useMemoFirebase(() => {
+  const {
+    activeArticles: stockArticles,
+  } = useInventoryReferential(restaurantId)
+  const automaticAssociationsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
-    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryItems")
+    return collection(
+      db,
+      COLLECTION_NAMES.RESTAURANTS,
+      restaurantId,
+      "stockAutomaticAssociationsV2"
+    )
   }, [db, restaurantId])
-  const { data: inventoryItems } = useCollection<any>(inventoryItemsQuery)
+  const { data: automaticAssociations } = useCollection<any>(
+    automaticAssociationsQuery
+  )
   const marketplaceCategoriesQuery = useMemoFirebase(() => {
     if (!db) return null
     return query(
@@ -521,27 +532,12 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     preparationMode: "kitchen" as PreparationMode,
     marketplaceCategoryId: "",
     reviewsPolicy: "inherit" as ProductReviewsPolicy,
+    stockArticleId: "",
+    quantityPerSale: "1",
   })
 
   const [options, setOptions] = React.useState<any[]>([])
   const [linkedOptionGroups, setLinkedOptionGroups] = React.useState<LinkedOptionGroup[]>([])
-  const [recipe, setRecipe] = React.useState<any[]>([])
-  const draftProductForConsumption = React.useMemo(() => {
-    const components = buildComponentsFromLegacy({ recipe, options })
-    return { recipe, options, components }
-  }, [recipe, options])
-  const draftEstimatedCost = React.useMemo(
-    () => computeEstimatedCost(draftProductForConsumption, inventoryItems || []),
-    [draftProductForConsumption, inventoryItems]
-  )
-  const draftHasComplexConsumption = React.useMemo(
-    () => hasComplexConsumption(draftProductForConsumption),
-    [draftProductForConsumption]
-  )
-  const draftHasTrackedConsumption = React.useMemo(
-    () => hasTrackedConsumption(draftProductForConsumption),
-    [draftProductForConsumption]
-  )
 
   const validateLinkedOptionGroupDrafts = React.useCallback((groups: LinkedOptionGroup[]) => {
     for (const [index, group] of groups.entries()) {
@@ -644,14 +640,9 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
             if (isNaN(price)) price = 0
             price = Math.round(price)
 
-            const recipe = sanitizeRecipe(choice.recipe)
-            const multiplier = assertValidComponentMultiplier(choice.multiplier ?? 1)
-
             return {
               name: choice.name.trim(),
               price,
-              multiplier,
-              recipe,
             }
           })
           .filter((choice: any) => choice !== null)
@@ -1038,22 +1029,33 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     // Si basePrice est valide, on l'arrondit, sinon 0
     const sanitizedBasePrice = !isNaN(basePrice) && basePrice > 0 ? Math.round(basePrice) : 0
     let sanitizedOptions: any[] = []
-    let sanitizedRecipe: any[] = []
-    let sanitizedComponents: any[] = []
-    let productHasComplexConsumption = false
+    const selectedStockArticle = stockArticles.find(
+      (article) => article.id === productForm.stockArticleId
+    )
+    const automaticQuantity = Number(productForm.quantityPerSale)
+
+    if (productForm.stockArticleId && !selectedStockArticle) {
+      toast({
+        title: "Article d’inventaire invalide",
+        description: "Sélectionnez un article actif du restaurant.",
+        variant: "destructive",
+      })
+      return
+    }
+    if (
+      selectedStockArticle?.trackingMode === "AUTOMATIC_SIMPLE" &&
+      (!Number.isFinite(automaticQuantity) || automaticQuantity <= 0)
+    ) {
+      toast({
+        title: "Quantité retirée invalide",
+        description: "La quantité retirée à chaque vente doit être positive.",
+        variant: "destructive",
+      })
+      return
+    }
 
     try {
       sanitizedOptions = sanitizeOptions(options)
-      sanitizedRecipe = sanitizeRecipe(recipe)
-      sanitizedComponents = buildComponentsFromLegacy({
-        recipe: sanitizedRecipe,
-        options: sanitizedOptions,
-      })
-      productHasComplexConsumption = hasComplexConsumption({
-        recipe: sanitizedRecipe,
-        options: sanitizedOptions,
-        components: sanitizedComponents,
-      })
     } catch (error: any) {
       toast({
         title: "Configuration produit invalide",
@@ -1083,10 +1085,10 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       imageId: productForm.imageId || "",
       basePrice: sanitizedBasePrice,
       options: sanitizedOptions,
-      recipe: sanitizedRecipe,
-      components: sanitizedComponents,
+      recipe: [],
+      components: [],
       linkedOptionGroups: sanitizedLinkedOptionGroups,
-      hasComplexConsumption: productHasComplexConsumption,
+      hasComplexConsumption: false,
       preparationMode: productForm.preparationMode,
       marketplaceCategoryId: productForm.marketplaceCategoryId || null,
       reviewsPolicy: productReviewsPolicy,
@@ -1097,35 +1099,47 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     setIsSavingProduct(true)
 
     try {
+      if (!user) {
+        throw new Error("Utilisateur introuvable.")
+      }
+      const productRef = editingProduct
+        ? doc(db, "restaurants", restaurantId, "products", editingProduct.id)
+        : doc(collection(db, "restaurants", restaurantId, "products"))
+      const productId = productRef.id
+      const persistedAssociationSnapshot = editingProduct
+        ? await getDocs(query(
+            collection(db, "restaurants", restaurantId, "stockAutomaticAssociationsV2"),
+            where("productId", "==", productId)
+          ))
+        : null
+      const persistedAssociations: any[] = persistedAssociationSnapshot?.docs.map((snapshot) => ({
+        id: snapshot.id,
+        ...snapshot.data(),
+      })) ?? []
+      const batch = writeBatch(db)
+      const productStockFields = selectedStockArticle
+        ? {
+            stockArticleId: selectedStockArticle.id,
+            ...(selectedStockArticle.trackingMode === "AUTOMATIC_SIMPLE"
+              ? { quantityPerSale: automaticQuantity }
+              : editingProduct
+                ? { quantityPerSale: deleteField() }
+                : {}),
+          }
+        : editingProduct
+          ? {
+              stockArticleId: deleteField(),
+              quantityPerSale: deleteField(),
+            }
+          : {}
+      const productPayload = {
+        ...payload,
+        ...productStockFields,
+        ...(editingProduct ? { stockMode: deleteField() } : {}),
+      }
+
       if (editingProduct) {
-        const productRef = doc(
-          db,
-          "restaurants",
-          restaurantId,
-          "products",
-          editingProduct.id
-        )
-        await updateDoc(productRef, payload)
-        const updatedProductSnapshot = await getDoc(productRef)
-        if (!updatedProductSnapshot.exists()) {
-          throw new Error("Vérification Firestore impossible: le produit mis à jour est introuvable.")
-        }
-        const updatedLinkedOptionGroups = sanitizeLinkedOptionGroups(
-          updatedProductSnapshot.data()?.linkedOptionGroups
-        )
-        if (
-          sanitizedLinkedOptionGroups.length > 0 &&
-          JSON.stringify(updatedLinkedOptionGroups) !== JSON.stringify(sanitizedLinkedOptionGroups)
-        ) {
-          throw new Error("Vérification Firestore impossible: les options liées n'ont pas été relues après sauvegarde.")
-        }
-        refreshCatalog()
-        toast({
-          title: "Produit mis à jour",
-          description: sanitizedLinkedOptionGroups.length
-            ? "Options liées sauvegardées."
-            : "Produit sauvegardé sans options liées.",
-        })
+        batch.update(productRef, productPayload)
       } else {
         // Get current max order for this category
         const productsInCategory = products?.filter((p: any) => p.categoryId === productForm.categoryId) ?? []
@@ -1134,18 +1148,74 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
           return Math.max(max, order)
         }, -1)
 
-        await addDoc(
-          collection(db, "restaurants", restaurantId, "products"),
+        batch.set(productRef, {
+          ...productPayload,
+          createdAt: serverTimestamp(),
+          isActive: true,
+          order: currentMaxOrder + 1,
+        })
+      }
+
+      const existingProductAssociations = persistedAssociations.filter(
+        (association) =>
+          association.productId === productId &&
+          association.status === "active"
+      )
+      const targetAssociationId =
+        selectedStockArticle?.trackingMode === "AUTOMATIC_SIMPLE"
+          ? `${encodeURIComponent(productId)}--${encodeURIComponent(selectedStockArticle.id)}`
+          : null
+
+      for (const association of existingProductAssociations) {
+        if (association.id === targetAssociationId) continue
+        batch.update(
+          doc(
+            db,
+            "restaurants",
+            restaurantId,
+            "stockAutomaticAssociationsV2",
+            association.id
+          ),
           {
-            ...payload,
-            createdAt: serverTimestamp(),
-            isActive: true,
-            order: currentMaxOrder + 1
+            status: "inactive",
+            updatedAt: new Date().toISOString(),
+            updatedBy: user.uid,
           }
         )
-        refreshCatalog()
-        toast({ title: "Produit ajouté" })
       }
+
+      if (selectedStockArticle?.trackingMode === "AUTOMATIC_SIMPLE") {
+        const existingAssociation = persistedAssociations.find(
+          (association) => association.id === targetAssociationId
+        )
+        const now = new Date().toISOString()
+        batch.set(
+          doc(
+            db,
+            "restaurants",
+            restaurantId,
+            "stockAutomaticAssociationsV2",
+            targetAssociationId!
+          ),
+          {
+            restaurantId,
+            productId,
+            articleId: selectedStockArticle.id,
+            quantity: automaticQuantity,
+            unit: selectedStockArticle.baseUnit,
+            status: "active",
+            updatedAt: now,
+            updatedBy: user.uid,
+            ...(existingAssociation
+              ? {}
+              : { createdAt: now, createdBy: user.uid }),
+          },
+          { merge: Boolean(existingAssociation) }
+        )
+      }
+      await batch.commit()
+      refreshCatalog()
+      toast({ title: editingProduct ? "Produit mis à jour" : "Produit ajouté" })
 
       setEditingProduct(null)
       setIsProductOpen(false)
@@ -1159,10 +1229,11 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
         preparationMode: "kitchen",
         marketplaceCategoryId: "",
         reviewsPolicy: "inherit",
+        stockArticleId: "",
+        quantityPerSale: "1",
       })
       setOptions([])
       setLinkedOptionGroups([])
-      setRecipe([])
 
       // 🔥 MARKETPLACE SYNC — Sync the dish offer and rebuild category offers
       try {
@@ -1206,6 +1277,10 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   // OPEN EDIT MODAL
   const openEditModal = (product: any) => {
     const categoryName = categories?.find((c: any) => c.id === product.categoryId)?.name || ""
+    const activeAssociation = (automaticAssociations || []).find(
+      (association) =>
+        association.productId === product.id && association.status === "active"
+    )
     setEditingProduct(product)
     setProductForm({
       name: product.name,
@@ -1217,10 +1292,13 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       preparationMode: product.preparationMode || getDefaultPreparationMode(categoryName),
       marketplaceCategoryId: product.marketplaceCategoryId || "",
       reviewsPolicy: getProductReviewsPolicy(product),
+      stockArticleId: product.stockArticleId || activeAssociation?.articleId || "",
+      quantityPerSale: String(
+        product.quantityPerSale ?? activeAssociation?.quantity ?? 1
+      ),
     })
     setOptions(product.options || [])
     setLinkedOptionGroups(sanitizeLinkedOptionGroups(product.linkedOptionGroups))
-    setRecipe(normalizeRecipe(product.recipe))
     setIsProductOpen(true)
   }
 
@@ -1238,10 +1316,11 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       preparationMode: getDefaultPreparationMode(categoryName),
       marketplaceCategoryId: "",
       reviewsPolicy: "inherit",
+      stockArticleId: "",
+      quantityPerSale: "1",
     })
     setOptions([])
     setLinkedOptionGroups([])
-    setRecipe([])
     setIsProductOpen(true)
   }
 
@@ -1317,25 +1396,32 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       {/* MAIN */}
       <div className="flex-1 space-y-6">
 
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            {viewMode === "products" && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setViewMode("categories")}
-                className="h-10 w-10 rounded-xl"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            )}
-            <h1 className="text-4xl font-black italic text-primary uppercase tracking-tighter flex items-center gap-3">
-              <Store className="h-10 w-10" /> 
-              {viewMode === "categories" ? "Catégories" : selectedCategory ? categories?.find((c: any) => c.id === selectedCategory)?.name : "Tous les produits"}
-            </h1>
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row">
+        <PageHeader
+          icon={Store}
+          title={
+            viewMode === "categories"
+              ? "Menu"
+              : selectedCategory
+                ? categories?.find((c: any) => c.id === selectedCategory)?.name ??
+                  "Produits"
+                : "Tous les produits"
+          }
+          subtitle={
+            viewMode === "categories"
+              ? "Gérez votre carte, ses catégories et ses produits."
+              : "Gérez les produits de la catégorie sélectionnée."
+          }
+          action={
+            <>
+              {viewMode === "products" ? (
+                <Button
+                  variant="outline"
+                  onClick={() => setViewMode("categories")}
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Retour aux catégories
+                </Button>
+              ) : null}
             <Button
               onClick={() => setIsLibraryImportOpen(true)}
               variant="outline"
@@ -1348,8 +1434,9 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
               <Plus className="mr-2 h-4 w-4" />
               Ajouter produit
             </Button>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {viewMode === "products" && (
           <div className="relative">
@@ -1855,37 +1942,99 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
               }
             />
 
-            <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">
-                  💰 Coût estimé : {Math.round(draftEstimatedCost)} FCFA
-                </Badge>
-                {draftHasComplexConsumption ? (
-                  <Badge variant="secondary" className="bg-amber-100 text-amber-700">
-                    🔥 Consommation variable
-                  </Badge>
-                ) : null}
-                {!draftHasTrackedConsumption ? (
-                  <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
-                    ⚠️ Recette non configurée
-                  </Badge>
-                ) : null}
+            <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+              <div>
+                <h3 className="font-bold">Gestion du stock</h3>
+                <p className="text-xs text-muted-foreground">
+                  Le mode de suivi est défini uniquement depuis Inventaire.
+                </p>
               </div>
-              {!draftHasTrackedConsumption ? (
-                <p className="text-xs font-medium text-yellow-800">Inventaire non suivi pour ce produit.</p>
-              ) : null}
+              <label className="space-y-2 text-sm font-medium">
+                <span>Article d’inventaire</span>
+                <select
+                  className="h-11 w-full rounded-md border bg-background px-3"
+                  value={productForm.stockArticleId}
+                  onChange={(event) =>
+                    setProductForm({
+                      ...productForm,
+                      stockArticleId: event.target.value,
+                      quantityPerSale: productForm.quantityPerSale || "1",
+                    })
+                  }
+                >
+                  <option value="">Aucun article lié</option>
+                  {stockArticles.map((article) => (
+                    <option key={article.id} value={article.id}>
+                      {article.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {!productForm.stockArticleId ? (
+                <p className="text-sm text-muted-foreground">
+                  Produit non suivi en stock.
+                </p>
+              ) : (() => {
+                const article = stockArticles.find(
+                  (item) => item.id === productForm.stockArticleId
+                )
+                if (!article) {
+                  return <p className="text-sm text-destructive">Article indisponible.</p>
+                }
+                if (article.trackingMode === "AUTOMATIC_SIMPLE") {
+                  return (
+                    <div className="space-y-3">
+                      <div className="rounded-md border bg-background p-3 text-sm">
+                        <p><strong>Mode :</strong> Déduction automatique</p>
+                        <p className="text-xs text-muted-foreground">Défini dans Inventaire</p>
+                      </div>
+                      <label className="space-y-2 text-sm font-medium">
+                        <span>Quantité retirée pour une vente</span>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min="0.0001"
+                            step="0.1"
+                            required
+                            value={productForm.quantityPerSale}
+                            onChange={(event) =>
+                              setProductForm({
+                                ...productForm,
+                                quantityPerSale: event.target.value,
+                              })
+                            }
+                          />
+                          <span className="min-w-20 text-sm text-muted-foreground">
+                            {stockUnitLabel(article.baseUnit, Number(productForm.quantityPerSale))}
+                          </span>
+                        </div>
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        À chaque unité servie de ce produit, cette quantité sera retirée du stock.
+                      </p>
+                      <p className="text-xs font-medium">
+                        1 {productForm.name.trim() || "produit"} servi retire{" "}
+                        {Number.isFinite(Number(productForm.quantityPerSale)) && Number(productForm.quantityPerSale) > 0
+                          ? Number(productForm.quantityPerSale)
+                          : "—"}{" "}
+                        {stockUnitLabel(article.baseUnit, Number(productForm.quantityPerSale))} du stock {article.name}.
+                      </p>
+                    </div>
+                  )
+                }
+                return (
+                  <div className="rounded-md border bg-background p-3 text-sm">
+                    <p><strong>Mode :</strong> {stockTrackingModeLabel(article.trackingMode)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Le stock est vérifié depuis Inventaire.
+                    </p>
+                  </div>
+                )
+              })()}
             </div>
 
             <div className="border-t pt-4">
-              <RecipeEditor
-                recipe={recipe}
-                setRecipe={setRecipe}
-                inventoryItems={inventoryItems || []}
-              />
-            </div>
-
-            <div className="border-t pt-4">
-              <OptionEditor options={options} setOptions={setOptions} inventoryItems={inventoryItems || []} />
+              <OptionEditor options={options} setOptions={setOptions} />
             </div>
 
             <LinkedOptionsEditor
@@ -2168,19 +2317,11 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
     return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_MOVEMENTS)
   }, [db, restaurantId])
   const { data: cashMovements } = useCollection<any>(cashMovementsQuery)
-  const inventoryItemsQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryItems")
-  }, [db, restaurantId])
-  const { data: dashboardInventoryItems } = useCollection<any>(inventoryItemsQuery)
-  const inventoryAlertsQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return query(
-      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryAlerts"),
-      where("resolved", "==", false)
-    )
-  }, [db, restaurantId])
-  const { data: dashboardInventoryAlerts } = useCollection<any>(inventoryAlertsQuery)
+  const {
+    articles: dashboardStockArticles,
+    balances: dashboardStockBalances,
+    costs: dashboardStockCosts,
+  } = useInventoryReferential(restaurantId, { includeCosts: true })
 
   React.useEffect(() => {
     if (ordersError) {
@@ -2201,8 +2342,12 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
   const pendingSessionRequests = cashSessionRequests
   const activeOperationalCount = orderCounts.pending + orderCounts.preparing + orderCounts.ready
   const inventorySummary = React.useMemo(
-    () => getDashboardInventorySummary(dashboardInventoryItems || [], dashboardInventoryAlerts || []),
-    [dashboardInventoryAlerts, dashboardInventoryItems]
+    () => getDashboardInventorySummary(
+      dashboardStockArticles || [],
+      dashboardStockBalances || [],
+      dashboardStockCosts || []
+    ),
+    [dashboardStockArticles, dashboardStockBalances, dashboardStockCosts]
   )
   const financialSummary = React.useMemo(
     () =>
@@ -2248,27 +2393,29 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
   />
 }
 
-function getDashboardInventorySummary(items: any[], alerts: any[]) {
-  const outOfStockAlertIds = new Set(
-    alerts
-      .filter((alert) => alert.type === "out_of_stock" || alert.type === "rupture")
-      .map((alert) => alert.itemId)
-      .filter(Boolean)
+function getDashboardInventorySummary(items: any[], balances: any[], costs: any[]) {
+  const quantityByArticle = new Map(
+    balances.map((balance) => [String(balance.articleId || balance.id), Number(balance.quantity || 0)])
   )
-  const lowStockAlertIds = new Set(
-    alerts
-      .filter((alert) => alert.type === "low_stock")
-      .map((alert) => alert.itemId)
-      .filter(Boolean)
+  const costByArticle = new Map(
+    costs.map((cost) => [String(cost.articleId || cost.id), Number(cost.referenceCost || 0)])
   )
-  const outOfStockCount = items.filter((item) => Number(item.stockEstimated || 0) <= 0 || outOfStockAlertIds.has(item.id)).length
-  const lowStockCount = items.filter((item) => {
-    const stock = Number(item.stockEstimated || 0)
-    const threshold = Number(item.minThreshold || 0)
-    return stock > 0 && ((threshold > 0 && stock <= threshold) || lowStockAlertIds.has(item.id))
+  const active = items.filter((item) => item.status === "active" && item.trackingMode !== "NONE")
+  const outOfStockCount = active.filter((item) => {
+    const stock = quantityByArticle.get(String(item.id)) ?? 0
+    return stock <= Number(item.outOfStockThreshold || 0)
   }).length
-  const stockValue = items.reduce((sum, item) => {
-    return sum + Math.max(0, Number(item.stockEstimated || 0)) * Math.max(0, Number(item.costPerUnit || 0))
+  const lowStockCount = active.filter((item) => {
+    const stock = quantityByArticle.get(String(item.id)) ?? 0
+    const outThreshold = Number(item.outOfStockThreshold || 0)
+    const lowThreshold = Number(item.lowStockThreshold || 0)
+    return stock > outThreshold && lowThreshold > 0 && stock <= lowThreshold
+  }).length
+  const stockValue = active.reduce((sum, item) => {
+    const articleId = String(item.id)
+    return sum
+      + Math.max(0, quantityByArticle.get(articleId) ?? 0)
+      * Math.max(0, costByArticle.get(articleId) ?? 0)
   }, 0)
 
   return {
@@ -2395,112 +2542,6 @@ function ManagerMetric({
 
 function SectionTitle({ title }: { title: string }) {
   return <h2 className="text-sm font-black uppercase tracking-tight md:text-lg">{title}</h2>
-}
-
-function RecipeEditor({
-  recipe,
-  setRecipe,
-  inventoryItems,
-}: {
-  recipe: any[]
-  setRecipe: (recipe: any[]) => void
-  inventoryItems: any[]
-}) {
-  const addIngredient = () => {
-    if (recipe.length >= 5) return
-    const firstAvailable = inventoryItems.find((item) => !recipe.some((line) => line.inventoryItemId === item.id))
-    setRecipe([
-      ...recipe,
-      {
-        inventoryItemId: firstAvailable?.id || "",
-        quantity: 1,
-      },
-    ])
-  }
-
-  const updateIngredient = (index: number, field: "inventoryItemId" | "quantity", value: string | number) => {
-    const nextRecipe = [...recipe]
-    nextRecipe[index] = {
-      ...nextRecipe[index],
-      [field]: field === "quantity" ? Number(value) : value,
-    }
-    setRecipe(nextRecipe)
-  }
-
-  const removeIngredient = (index: number) => {
-    setRecipe(recipe.filter((_, currentIndex) => currentIndex !== index))
-  }
-
-  const estimatedCost = recipe.reduce((total, line) => {
-    const item = inventoryItems.find((entry) => entry.id === line.inventoryItemId)
-    return total + Number(line.quantity || 0) * Number(item?.costPerUnit || 0)
-  }, 0)
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-black">🍳 Recette</h3>
-          <p className="text-xs text-muted-foreground">
-            Ingrédients déduits automatiquement après vente.
-          </p>
-        </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={addIngredient}
-          disabled={recipe.length >= 5 || inventoryItems.length === 0}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Ajouter ingrédient
-        </Button>
-      </div>
-
-      {recipe.length === 0 ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-700">
-          ⚠ aucune recette → inventaire non suivi
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {recipe.map((line, index) => (
-            <div key={`${line.inventoryItemId || "new"}-${index}`} className="grid gap-2 rounded-lg border bg-background p-2 sm:grid-cols-[1fr_120px_40px]">
-              <select
-                className="h-10 rounded-md border bg-background px-3 text-sm"
-                value={line.inventoryItemId || ""}
-                onChange={(event) => updateIngredient(index, "inventoryItemId", event.target.value)}
-              >
-                <option value="">Choisir ingrédient</option>
-                {inventoryItems.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {getInventoryItemName(item)}
-                  </option>
-                ))}
-              </select>
-              <Input
-                type="number"
-                min={0}
-                step="0.05"
-                value={line.quantity ?? ""}
-                onChange={(event) => updateIngredient(index, "quantity", event.target.value)}
-                placeholder="Qté"
-              />
-              <Button type="button" variant="ghost" size="icon" onClick={() => removeIngredient(index)}>
-                <Trash2 className="h-4 w-4 text-red-600" />
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {recipe.length > 0 ? (
-        <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2 text-xs">
-          <span className="font-bold text-muted-foreground">Coût estimé produit</span>
-          <span className="font-black">{Math.round(estimatedCost).toLocaleString()} FCFA</span>
-        </div>
-      ) : null}
-    </div>
-  )
 }
 
 function AlertRow({
@@ -3112,28 +3153,6 @@ function formatManagerStatus(status: string) {
   if (status === ORDER_OPERATION_STATUS.SERVED) return "Servi"
   if (status === ORDER_OPERATION_STATUS.COMPLETED) return "Termine"
   return status
-}
-
-function normalizeRecipe(value: unknown) {
-  if (!Array.isArray(value)) return []
-  return value
-    .map((line: any) => ({
-      inventoryItemId: String(line.inventoryItemId || line.itemId || line.ingredientId || ""),
-      quantity: Number(line.quantity || line.qty || 0),
-    }))
-    .filter((line) => line.inventoryItemId && Number.isFinite(line.quantity) && line.quantity > 0)
-    .slice(0, 5)
-}
-
-function sanitizeRecipe(value: unknown) {
-  return normalizeRecipe(value).map((line) => ({
-    inventoryItemId: line.inventoryItemId,
-    quantity: Number(line.quantity),
-  }))
-}
-
-function getInventoryItemName(item: any) {
-  return typeof item?.name === "string" && item.name.trim() ? item.name.trim() : "Ingrédient sans nom"
 }
 
 function getAveragePrepTime(orders: any[]) {

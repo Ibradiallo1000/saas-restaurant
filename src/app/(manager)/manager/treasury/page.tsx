@@ -22,7 +22,7 @@ type MovementDirectionFilter = "all" | "in" | "out" | "transfer"
 export default function ManagerTreasuryPage() {
   const db = useFirestore()
   const { restaurantId } = useRestaurant()
-  const { dateRange, filter, setDateRange, setType, type } = useTimeFilter()
+  const { filter, type } = useTimeFilter()
   const range = React.useMemo(() => getDateRange(filter), [filter])
   const [directionFilter, setDirectionFilter] = React.useState<MovementDirectionFilter>("all")
   const [accountFilter, setAccountFilter] = React.useState("all")
@@ -116,7 +116,7 @@ export default function ManagerTreasuryPage() {
     return <ReportsLoadingState label="Chargement des rapports financiers Manager" />
   }
 
-  return <ManagerReportsView model={viewModel} errors={[accountsError && "comptes", movementsError && "mouvements", sessionsError && "sessions", paymentsError && "paiements"].filter(Boolean) as string[]} period={type} customRange={dateRange} onPeriodChange={setType} onCustomRangeChange={setDateRange} directionFilter={directionFilter} accountFilter={accountFilter} sourceFilter={sourceFilter} accountOptions={safeAccounts.map((account) => ({ id: account.id, label: account.name }))} sourceOptions={sourceOptions.map((source) => ({ id: source, label: formatSource(source) }))} onDirectionFilterChange={(value) => setDirectionFilter(value as MovementDirectionFilter)} onAccountFilterChange={setAccountFilter} onSourceFilterChange={setSourceFilter} />
+  return <ManagerReportsView model={viewModel} errors={[accountsError && "comptes", movementsError && "mouvements", sessionsError && "sessions", paymentsError && "paiements"].filter(Boolean) as string[]} directionFilter={directionFilter} accountFilter={accountFilter} sourceFilter={sourceFilter} accountOptions={safeAccounts.map((account) => ({ id: account.id, label: account.name }))} sourceOptions={sourceOptions.map((source) => ({ id: source, label: formatSource(source) }))} onDirectionFilterChange={(value) => setDirectionFilter(value as MovementDirectionFilter)} onAccountFilterChange={setAccountFilter} onSourceFilterChange={setSourceFilter} />
 }
 
 function normalizeAccounts(accounts: TreasuryAccount[], fallbackTotals: Record<string, number> = {}) {

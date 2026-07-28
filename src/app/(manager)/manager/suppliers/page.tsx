@@ -5,6 +5,7 @@ import { collection } from "firebase/firestore"
 import { HandCoins, Plus, UserRound } from "lucide-react"
 
 import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
+import { PageHeader } from "@/design-system/components"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -14,12 +15,16 @@ import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { SupplyExpenseService } from "@/services/supply-expense.service"
+import { getTreasuryAccountLabel, type TreasuryAccount } from "@/services/treasury.service"
+import { useInventoryReferential } from "@/modules/stock/shared/use-inventory-referential"
+import type { InventoryArticleV2 } from "@/modules/stock/shared/inventory-referential"
 
 type Supplier = {
   id: string
   name: string
   phone?: string | null
   balance?: number
+  articleIds?: string[]
 }
 
 export default function ManagerSuppliersPage() {
@@ -30,13 +35,27 @@ export default function ManagerSuppliersPage() {
   const [phone, setPhone] = React.useState("")
   const [payingSupplierId, setPayingSupplierId] = React.useState<string | null>(null)
   const [paymentAmount, setPaymentAmount] = React.useState("")
+  const [paymentAccountId, setPaymentAccountId] = React.useState("cash")
   const [saving, setSaving] = React.useState(false)
+  const [newArticleIds, setNewArticleIds] = React.useState<string[]>([])
+  const [editingArticlesId, setEditingArticlesId] = React.useState<string | null>(null)
+  const [editingArticleIds, setEditingArticleIds] = React.useState<string[]>([])
 
   const suppliersQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
     return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.SUPPLIERS)
   }, [db, restaurantId])
   const { data: suppliers, isLoading } = useCollection<Supplier>(suppliersQuery)
+  const {
+    activeArticles,
+    isLoading: articlesLoading,
+  } = useInventoryReferential(restaurantId)
+  const treasuryAccountsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TREASURY_ACCOUNTS)
+  }, [db, restaurantId])
+  const { data: treasuryAccounts, isLoading: treasuryLoading } = useCollection<TreasuryAccount>(treasuryAccountsQuery)
+  const activeTreasuryAccounts = (treasuryAccounts || []).filter((account) => account.active !== false)
   const service = React.useMemo(() => (db ? new SupplyExpenseService(db) : null), [db])
   const rows = React.useMemo(
     () => [...(suppliers || [])].sort((a, b) => Number(b.balance || 0) - Number(a.balance || 0)),
@@ -51,10 +70,12 @@ export default function ManagerSuppliersPage() {
       await service.createSupplier(restaurantId, {
         name,
         phone,
+        articleIds: newArticleIds,
         createdBy: user.uid,
       })
       setName("")
       setPhone("")
+      setNewArticleIds([])
     } finally {
       setSaving(false)
     }
@@ -69,6 +90,7 @@ export default function ManagerSuppliersPage() {
       await service.paySupplier(restaurantId, {
         supplierId: supplier.id,
         amount,
+        paymentAccountId,
         createdBy: user.uid,
       })
       setPayingSupplierId(null)
@@ -78,25 +100,34 @@ export default function ManagerSuppliersPage() {
     }
   }
 
-  if (!restaurantId || isLoading) return <AdminRouteSkeleton />
+  const saveSupplierArticles = async (supplier: Supplier) => {
+    if (!service || !restaurantId || !user || saving) return
+    setSaving(true)
+    try {
+      await service.updateSupplierArticles(restaurantId, {
+        supplierId: supplier.id,
+        articleIds: editingArticleIds,
+        updatedBy: user.uid,
+      })
+      setEditingArticlesId(null)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!restaurantId || isLoading || articlesLoading || treasuryLoading) return <AdminRouteSkeleton />
 
   return (
     <main className="space-y-5 pb-24 md:pb-6">
-      <section className="rounded-2xl border bg-card p-4 shadow-sm">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-black uppercase tracking-tight text-primary md:text-3xl">
-              Fournisseurs
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Dettes fournisseurs et paiements séparés des approvisionnements.
-            </p>
-          </div>
+      <PageHeader
+        title="Fournisseurs"
+        subtitle="Dettes fournisseurs et paiements séparés des approvisionnements."
+        action={
           <div className="rounded-full border bg-background px-3 py-1 text-xs font-black uppercase text-muted-foreground">
             Dette totale: {formatMoney(totalDebt)} FCFA
           </div>
-        </div>
-      </section>
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -117,6 +148,14 @@ export default function ManagerSuppliersPage() {
           <Button className="h-11" disabled={saving || !name.trim()} onClick={createSupplier}>
             Créer
           </Button>
+          <div className="md:col-span-3">
+            <Label>Articles fournis (optionnel)</Label>
+            <ArticleCheckboxes
+              articles={activeArticles}
+              value={newArticleIds}
+              onChange={setNewArticleIds}
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -144,8 +183,40 @@ export default function ManagerSuppliersPage() {
                 </div>
               </div>
 
+              <div className="mt-4 rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-black uppercase text-muted-foreground">Articles fournis</p>
+                    <p className="text-sm">
+                      {(supplier.articleIds || []).length
+                        ? activeArticles.filter((article) => supplier.articleIds?.includes(article.id)).map((article) => article.name).join(", ")
+                        : "Aucune association"}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setEditingArticlesId(supplier.id)
+                      setEditingArticleIds(supplier.articleIds || [])
+                    }}
+                  >
+                    Modifier
+                  </Button>
+                </div>
+                {editingArticlesId === supplier.id ? (
+                  <div className="mt-3 space-y-3">
+                    <ArticleCheckboxes articles={activeArticles} value={editingArticleIds} onChange={setEditingArticleIds} />
+                    <div className="flex gap-2">
+                      <Button size="sm" disabled={saving} onClick={() => void saveSupplierArticles(supplier)}>Enregistrer</Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditingArticlesId(null)}>Annuler</Button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
               {isPaying ? (
-                <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+                <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_1fr_auto_auto]">
                   <Input
                     type="number"
                     min={0}
@@ -154,6 +225,17 @@ export default function ManagerSuppliersPage() {
                     onChange={(event) => setPaymentAmount(event.target.value)}
                     placeholder="Montant payé"
                   />
+                  <select
+                    className="h-10 rounded-md border bg-background px-3 text-sm"
+                    value={paymentAccountId}
+                    onChange={(event) => setPaymentAccountId(event.target.value)}
+                  >
+                    {activeTreasuryAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name || getTreasuryAccountLabel(account.id)} · {formatMoney(account.balance)} FCFA
+                      </option>
+                    ))}
+                  </select>
                   <Button disabled={saving || Number(paymentAmount || 0) <= 0} onClick={() => paySupplier(supplier)}>
                     Valider
                   </Button>
@@ -180,6 +262,36 @@ export default function ManagerSuppliersPage() {
         })}
       </section>
     </main>
+  )
+}
+
+function ArticleCheckboxes({
+  articles,
+  value,
+  onChange,
+}: {
+  articles: InventoryArticleV2[]
+  value: string[]
+  onChange: (value: string[]) => void
+}) {
+  if (articles.length === 0) {
+    return <p className="mt-2 text-sm text-muted-foreground">Créez d’abord un article d’inventaire.</p>
+  }
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {articles.map((article) => (
+        <Label key={article.id} className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2">
+          <input
+            type="checkbox"
+            checked={value.includes(article.id)}
+            onChange={(event) =>
+              onChange(event.target.checked ? [...value, article.id] : value.filter((id) => id !== article.id))
+            }
+          />
+          {article.name}
+        </Label>
+      ))}
+    </div>
   )
 }
 

@@ -5,6 +5,8 @@ import { collection, query, where } from "firebase/firestore"
 import { Banknote, Plus, ReceiptText, Trash2 } from "lucide-react"
 
 import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
+import { ManagerPeriodFilter } from "@/components/layout/manager-period-filter"
+import { PageHeader } from "@/design-system/components"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -23,24 +25,24 @@ import {
   SupplyExpenseService,
 } from "@/services/supply-expense.service"
 import { TreasuryService, getTreasuryAccountLabel, type TreasuryAccount } from "@/services/treasury.service"
+import {
+  prioritizeSupplierArticles,
+  stockTrackingModeLabel,
+  stockUnitLabel,
+  type InventoryArticleV2,
+} from "@/modules/stock/shared/inventory-referential"
+import { useInventoryReferential } from "@/modules/stock/shared/use-inventory-referential"
 
 type Supplier = {
   id: string
   name: string
   phone?: string | null
   balance?: number
-}
-
-type InventoryItem = {
-  id: string
-  name: string
-  stockEstimated?: number
-  costPerUnit?: number
-  unit?: string
+  articleIds?: string[]
 }
 
 type SupplyLine = {
-  inventoryItemId: string
+  articleId: string
   quantity: string
   unitCost: string
 }
@@ -58,16 +60,16 @@ export default function ManagerExpensesPage() {
   const { filter } = useTimeFilter()
   const range = React.useMemo(() => getDateRange(filter), [filter])
   const [type, setType] = React.useState<ExpenseType>("other")
-  const [paymentStatus, setPaymentStatus] = React.useState<ExpensePaymentStatus>("paid")
+  const [paymentStatus, setPaymentStatus] = React.useState<ExpensePaymentStatus | "">("")
   const [amount, setAmount] = React.useState("")
   const [paidAmount, setPaidAmount] = React.useState("")
-  const [paymentAccountId, setPaymentAccountId] = React.useState("cash")
+  const [paymentAccountId, setPaymentAccountId] = React.useState("")
   const [supplierId, setSupplierId] = React.useState("")
   const [newSupplierName, setNewSupplierName] = React.useState("")
   const [newSupplierPhone, setNewSupplierPhone] = React.useState("")
   const [note, setNote] = React.useState("")
   const [lines, setLines] = React.useState<SupplyLine[]>([
-    { inventoryItemId: "", quantity: "", unitCost: "" },
+    { articleId: "", quantity: "", unitCost: "" },
   ])
   const [saving, setSaving] = React.useState(false)
   const [feedback, setFeedback] = React.useState("")
@@ -79,11 +81,12 @@ export default function ManagerExpensesPage() {
   }, [db, restaurantId])
   const { data: suppliers, isLoading: suppliersLoading } = useCollection<Supplier>(suppliersQuery)
 
-  const inventoryQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId) return null
-    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryItems")
-  }, [db, restaurantId])
-  const { data: inventoryItems, isLoading: inventoryLoading } = useCollection<InventoryItem>(inventoryQuery)
+  const {
+    supplyArticles: safeInventoryItems,
+    balanceByArticle,
+    isLoading: inventoryLoading,
+    error: inventoryError,
+  } = useInventoryReferential(restaurantId)
 
   const expensesQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
@@ -104,7 +107,6 @@ export default function ManagerExpensesPage() {
   const service = React.useMemo(() => (db ? new SupplyExpenseService(db) : null), [db])
   const treasuryService = React.useMemo(() => (db ? new TreasuryService(db) : null), [db])
   const safeSuppliers = suppliers || []
-  const safeInventoryItems = inventoryItems || []
   const safeTreasuryAccounts = React.useMemo(
     () => (treasuryAccounts || []).filter((account) => account.active !== false),
     [treasuryAccounts]
@@ -132,13 +134,15 @@ export default function ManagerExpensesPage() {
   }, [ensureTreasuryAccounts, restaurantId, safeTreasuryAccounts.length, treasuryService, treasurySetupStatus])
 
   React.useEffect(() => {
-    if (paymentStatus === "unpaid") return
-    if (safeTreasuryAccounts.length === 0) {
+    if (!paymentStatus || paymentStatus === "unpaid") {
       setPaymentAccountId("")
       return
     }
-    if (!safeTreasuryAccounts.some((account) => account.id === paymentAccountId)) {
-      setPaymentAccountId(safeTreasuryAccounts[0]?.id || "")
+    if (
+      paymentAccountId &&
+      !safeTreasuryAccounts.some((account) => account.id === paymentAccountId)
+    ) {
+      setPaymentAccountId("")
     }
   }, [paymentAccountId, paymentStatus, safeTreasuryAccounts])
 
@@ -156,14 +160,26 @@ export default function ManagerExpensesPage() {
     : paymentStatus === "unpaid"
       ? 0
       : Math.round(Number(paidAmount || 0))
-  const requiresSupplier = type === "supply" || paymentStatus !== "paid"
+  const requiresPaymentSource =
+    paymentStatus === "paid" || paymentStatus === "partial"
+  const partialAmountIsValid =
+    paymentStatus !== "partial" ||
+    (effectivePaidAmount > 0 && effectivePaidAmount < effectiveAmount)
   const selectedSupplier = safeSuppliers.find((supplier) => supplier.id === supplierId)
+  const suggestedInventoryItems = React.useMemo(() => {
+    return prioritizeSupplierArticles(
+      safeInventoryItems,
+      selectedSupplier?.articleIds || []
+    )
+  }, [safeInventoryItems, selectedSupplier])
   const canSubmit =
     Boolean(service && restaurantId && user) &&
     effectiveAmount > 0 &&
+    Boolean(paymentStatus) &&
+    partialAmountIsValid &&
     effectivePaidAmount <= effectiveAmount &&
-    (effectivePaidAmount <= 0 || (safeTreasuryAccounts.length > 0 && Boolean(paymentAccountId))) &&
-    (!requiresSupplier || Boolean(supplierId)) &&
+    (!requiresPaymentSource ||
+      (safeTreasuryAccounts.length > 0 && Boolean(paymentAccountId))) &&
     (type !== "supply" || getValidSupplyLines(lines, safeInventoryItems).length > 0)
 
   const addSupplier = async () => {
@@ -187,7 +203,15 @@ export default function ManagerExpensesPage() {
   }
 
   const submitExpense = async () => {
-    if (!service || !restaurantId || !user || !canSubmit || saving) return
+    if (
+      !service ||
+      !restaurantId ||
+      !user ||
+      !paymentStatus ||
+      !canSubmit ||
+      saving
+    )
+      return
     setSaving(true)
     try {
       await service.createExpense(restaurantId, {
@@ -206,9 +230,9 @@ export default function ManagerExpensesPage() {
       setAmount("")
       setPaidAmount("")
       setNote("")
-      setLines([{ inventoryItemId: "", quantity: "", unitCost: "" }])
-      setPaymentStatus("paid")
-      setPaymentAccountId("cash")
+      setLines([{ articleId: "", quantity: "", unitCost: "" }])
+      setPaymentStatus("")
+      setPaymentAccountId("")
       setFeedback("Dépense enregistrée")
       window.setTimeout(() => setFeedback(""), 2500)
     } finally {
@@ -220,21 +244,18 @@ export default function ManagerExpensesPage() {
 
   return (
     <main className="space-y-5 pb-24 md:pb-6">
-      <section className="rounded-2xl border bg-card p-4 shadow-sm">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-black uppercase tracking-tight text-primary md:text-3xl">
-              Dépenses
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Point d'entrée unique pour dépenses, approvisionnements et dettes fournisseurs.
-            </p>
-          </div>
-          <div className="rounded-full border bg-background px-3 py-1 text-xs font-black uppercase text-muted-foreground">
-            {safeExpenses.length} opération(s)
-          </div>
-        </div>
-      </section>
+      <PageHeader
+        title="Dépenses"
+        subtitle="Point d'entrée unique pour dépenses, approvisionnements et dettes fournisseurs."
+        action={
+          <>
+            <ManagerPeriodFilter />
+            <div className="rounded-full border bg-background px-3 py-1 text-xs font-black uppercase text-muted-foreground">
+              {safeExpenses.length} opération(s)
+            </div>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -275,29 +296,54 @@ export default function ManagerExpensesPage() {
 
               <div className="space-y-3">
                 {lines.map((line, index) => (
-                  <div key={index} className="grid gap-2 rounded-lg border bg-card p-3 md:grid-cols-[1fr_130px_150px_44px] md:items-end">
+                  <div key={index} className="grid gap-3 rounded-lg border bg-card p-3 md:grid-cols-[minmax(220px,1fr)_110px_140px_140px_44px] md:items-end">
                     <div className="space-y-2">
-                      <Label>Produit</Label>
+                      <Label>Article</Label>
                       <select
-                        value={line.inventoryItemId}
-                        onChange={(event) => updateLine(index, { inventoryItemId: event.target.value })}
+                        value={line.articleId}
+                        onChange={(event) => updateLine(index, { articleId: event.target.value })}
                         className="h-11 w-full rounded-md border bg-background px-3 text-sm"
                       >
                         <option value="">Choisir</option>
-                        {safeInventoryItems.map((item) => (
+                        {suggestedInventoryItems.map((item) => (
                           <option key={item.id} value={item.id}>
-                            {item.name}
+                            {item.name} · {stockTrackingModeLabel(item.trackingMode)} · {formatStockOption(item, balanceByArticle)}
                           </option>
                         ))}
                       </select>
+                      {inventoryError ? (
+                        <p role="alert" className="text-xs text-destructive">
+                          Chargement des articles impossible. Vérifiez vos droits sur ce restaurant.
+                        </p>
+                      ) : null}
+                      {!inventoryError && safeInventoryItems.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Aucun article actif et suivi n’a encore été créé.
+                        </p>
+                      ) : null}
+                      {selectedSupplier?.articleIds?.length ? (
+                        <p className="text-xs text-muted-foreground">Articles fournis par {selectedSupplier.name}</p>
+                      ) : null}
                     </div>
                     <div className="space-y-2">
                       <Label>Quantité</Label>
                       <Input type="number" min={0} step="any" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.target.value })} />
                     </div>
                     <div className="space-y-2">
-                      <Label>Coût unitaire</Label>
+                      <Label>Prix unitaire</Label>
                       <Input type="number" min={0} step="any" value={line.unitCost} onChange={(event) => updateLine(index, { unitCost: event.target.value })} />
+                    </div>
+                    <div className="rounded-lg border bg-muted/30 px-3 py-2">
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        Total
+                      </p>
+                      <p className="mt-1 font-black">
+                        {formatMoney(
+                          Number(line.quantity || 0) *
+                            Number(line.unitCost || 0)
+                        )}{" "}
+                        FCFA
+                      </p>
                     </div>
                     <Button type="button" variant="outline" size="icon" disabled={lines.length === 1} onClick={() => removeLine(index)}>
                       <Trash2 className="h-4 w-4" />
@@ -310,7 +356,7 @@ export default function ManagerExpensesPage() {
                 type="button"
                 variant="outline"
                 disabled={lines.length >= 10}
-                onClick={() => setLines((current) => [...current, { inventoryItemId: "", quantity: "", unitCost: "" }])}
+                onClick={() => setLines((current) => [...current, { articleId: "", quantity: "", unitCost: "" }])}
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Ajouter une ligne
@@ -331,7 +377,7 @@ export default function ManagerExpensesPage() {
 
           <section className="grid gap-4 rounded-xl border bg-background p-4 lg:grid-cols-[1fr_1fr]">
             <div className="space-y-3">
-              <Label>Paiement</Label>
+              <Label>Mode de paiement</Label>
               <RadioGroup value={paymentStatus} onValueChange={(value) => setPaymentStatus(value as ExpensePaymentStatus)} className="grid gap-2 sm:grid-cols-3">
                 <PaymentOption value="paid" label="Payé" />
                 <PaymentOption value="partial" label="Partiel" />
@@ -346,11 +392,11 @@ export default function ManagerExpensesPage() {
               <p className="text-sm font-bold text-muted-foreground">
                 Trésorerie impactée maintenant : {formatMoney(effectivePaidAmount)} FCFA
               </p>
-              {paymentStatus !== "unpaid" && safeTreasuryAccounts.length === 0 ? (
+              {requiresPaymentSource && safeTreasuryAccounts.length === 0 ? (
                 <div className="rounded-lg border border-[var(--brand-primary)]/30 bg-[var(--brand-primary-soft)] p-3 text-[var(--brand-primary)]">
                   <p className="text-sm font-black">Configuration trésorerie requise</p>
                   <p className="mt-1 text-sm font-semibold">
-                    Avant d'enregistrer une dépense payée, il faut créer les comptes qui représentent l'argent du restaurant : Cash physique et Mobile Money.
+                    Avant d'enregistrer une dépense payée, il faut créer les comptes qui représentent l'argent du restaurant : Espèces et Mobile Money.
                   </p>
                   <Button
                     type="button"
@@ -368,34 +414,33 @@ export default function ManagerExpensesPage() {
                   ) : null}
                 </div>
               ) : null}
-              {paymentStatus !== "unpaid" && safeTreasuryAccounts.length > 0 ? (
+              {requiresPaymentSource && safeTreasuryAccounts.length > 0 ? (
                 <div className="space-y-2">
                   <Label>Source de paiement</Label>
-                  <select
+                  <RadioGroup
                     value={paymentAccountId}
-                    onChange={(event) => setPaymentAccountId(event.target.value)}
-                    disabled={safeTreasuryAccounts.length === 0}
-                    className="h-11 w-full rounded-md border bg-background px-3 text-sm font-bold"
+                    onValueChange={setPaymentAccountId}
+                    className="grid gap-2 sm:grid-cols-2"
                   >
-                    {safeTreasuryAccounts.length === 0 ? (
-                      <option value="">Aucun compte disponible</option>
-                    ) : (
-                      safeTreasuryAccounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name || getTreasuryAccountLabel(account.id)} - {formatMoney(account.balance)} FCFA
-                        </option>
-                      ))
-                    )}
-                  </select>
+                    {safeTreasuryAccounts.map((account) => (
+                      <Label
+                        key={account.id}
+                        className="flex min-h-12 cursor-pointer items-center gap-2 rounded-lg border bg-card px-3 font-black"
+                      >
+                        <RadioGroupItem value={account.id} />
+                        {displayTreasuryAccountLabel(account)}
+                      </Label>
+                    ))}
+                  </RadioGroup>
                 </div>
               ) : null}
-              {paymentStatus !== "unpaid" && safeTreasuryAccounts.length > 0 ? (
+              {requiresPaymentSource && safeTreasuryAccounts.length > 0 ? (
                 <div className="rounded-lg border bg-card p-3">
                   <p className="text-xs font-black uppercase text-muted-foreground">Argent disponible</p>
                   <div className="mt-2 grid gap-2">
                     {safeTreasuryAccounts.map((account) => (
                       <div key={account.id} className="flex items-center justify-between gap-3 text-sm">
-                        <span className="font-bold">{account.name || getTreasuryAccountLabel(account.id)}</span>
+                        <span className="font-bold">{displayTreasuryAccountLabel(account)}</span>
                         <span className="font-black">{formatMoney(account.balance)} FCFA</span>
                       </div>
                     ))}
@@ -405,13 +450,27 @@ export default function ManagerExpensesPage() {
             </div>
 
             <div className="space-y-3">
-              <Label>Fournisseur {requiresSupplier ? "(obligatoire)" : "(optionnel)"}</Label>
+              <Label>Fournisseur</Label>
               <select
                 value={supplierId}
-                onChange={(event) => setSupplierId(event.target.value)}
+                onChange={(event) => {
+                  const nextSupplierId = event.target.value
+                  const linkedIds =
+                    safeSuppliers.find((supplier) => supplier.id === nextSupplierId)?.articleIds || []
+                  setSupplierId(nextSupplierId)
+                  if (linkedIds.length > 0) {
+                    setLines((current) =>
+                      current.map((line) =>
+                        !line.articleId || linkedIds.includes(line.articleId)
+                          ? line
+                          : { ...line, articleId: "" }
+                      )
+                    )
+                  }
+                }}
                 className="h-11 w-full rounded-md border bg-background px-3 text-sm"
               >
-                <option value="">Aucun fournisseur</option>
+                <option value="">Aucun fournisseur (achat au marché)</option>
                 {safeSuppliers.map((supplier) => (
                   <option key={supplier.id} value={supplier.id}>
                     {supplier.name} · dette {formatMoney(supplier.balance || 0)} FCFA
@@ -430,7 +489,12 @@ export default function ManagerExpensesPage() {
 
           <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-black">Total : {formatMoney(effectiveAmount)} FCFA</p>
+              <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">
+                Total
+              </p>
+              <p className="text-2xl font-black text-primary">
+                {formatMoney(effectiveAmount)} FCFA
+              </p>
               <p className="text-sm text-muted-foreground">Dette créée : {formatMoney(Math.max(0, effectiveAmount - effectivePaidAmount))} FCFA</p>
               {feedback ? <p className="mt-1 text-sm font-black text-emerald-700">{feedback}</p> : null}
             </div>
@@ -465,7 +529,7 @@ export default function ManagerExpensesPage() {
                 ) : null}
                 {expense.paymentAccountName || expense.paymentAccountId ? (
                   <p className="mt-2 text-sm font-bold">
-                    Source : {expense.paymentAccountName || getTreasuryAccountLabel(expense.paymentAccountId)}
+                    Source : {displayTreasuryAccountName(expense.paymentAccountName, expense.paymentAccountId)}
                   </p>
                 ) : null}
                 {expense.note ? <p className="mt-2 rounded-lg bg-muted p-2 text-sm">{expense.note}</p> : null}
@@ -487,22 +551,33 @@ function PaymentOption({ value, label }: { value: ExpensePaymentStatus; label: s
   )
 }
 
-function getValidSupplyLines(lines: SupplyLine[], inventoryItems: InventoryItem[]) {
+function getValidSupplyLines(lines: SupplyLine[], inventoryItems: InventoryArticleV2[]) {
   return lines
     .map((line) => {
-      const item = inventoryItems.find((entry) => entry.id === line.inventoryItemId)
+      const item = inventoryItems.find((entry) => entry.id === line.articleId)
       return {
-        inventoryItemId: line.inventoryItemId,
-        inventoryItemName: item?.name || null,
+        articleId: line.articleId,
+        articleName: item?.name || null,
         quantity: Number(line.quantity || 0),
         unitCost: Number(line.unitCost || 0),
       }
     })
-    .filter((line) => line.inventoryItemId && Number.isFinite(line.quantity) && line.quantity > 0 && Number.isFinite(line.unitCost) && line.unitCost >= 0)
+    .filter((line) => line.articleId && Number.isFinite(line.quantity) && line.quantity > 0 && Number.isFinite(line.unitCost) && line.unitCost >= 0)
 }
 
 function getTimeMs(value: any) {
   return value?.toDate?.()?.getTime?.() || 0
+}
+
+function formatStockOption(
+  article: InventoryArticleV2,
+  balanceByArticle: ReadonlyMap<string, number>
+) {
+  const quantity = balanceByArticle.get(article.id)
+  const stock = quantity === undefined
+    ? "stock non initialisé"
+    : `${quantity.toLocaleString("fr-FR")} ${stockUnitLabel(article.baseUnit, quantity)}`
+  return stock
 }
 
 function formatMoney(value: unknown) {
@@ -521,4 +596,21 @@ function formatPaymentStatus(status: string) {
   if (status === "paid") return "payé"
   if (status === "partial") return "partiel"
   return "non payé"
+}
+
+function displayTreasuryAccountLabel(account: TreasuryAccount) {
+  return displayTreasuryAccountName(account.name, account.id)
+}
+
+function displayTreasuryAccountName(
+  accountName?: string | null,
+  accountId?: string | null
+) {
+  if (
+    accountId === "cash" ||
+    accountName?.trim().toLocaleLowerCase("fr") === "cash physique"
+  ) {
+    return "Espèces"
+  }
+  return accountName || getTreasuryAccountLabel(accountId || "")
 }

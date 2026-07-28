@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
+import { PageHeader } from "@/design-system/components"
 import { useCollection, useFirestore, useMemoFirebase, useUser } from "@/firebase"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { createRestaurant } from "@/services/onboarding-api.service"
@@ -111,10 +112,10 @@ export function AdminRequestsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Demandes</h1>
-        <p className="text-sm text-muted-foreground">Demandes en attente de validation.</p>
-      </div>
+      <PageHeader
+        title="Demandes"
+        subtitle="Demandes en attente de validation."
+      />
 
       <Card>
         <CardHeader>

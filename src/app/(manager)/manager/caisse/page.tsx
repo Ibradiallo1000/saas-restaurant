@@ -10,6 +10,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
+import { DashboardHeader } from "@/components/dashboard-ui"
+import { ManagerPeriodFilter } from "@/components/layout/manager-period-filter"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
@@ -427,6 +429,12 @@ export default function ManagerCaissePage() {
 
   return (
     <main className="space-y-4 pb-20 lg:pb-6">
+      <DashboardHeader
+        title="Caisse"
+        subtitle="Suivez les encaissements, les sessions et les validations sur la période sélectionnée."
+        actions={<ManagerPeriodFilter />}
+      />
+
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard icon={Wallet} label="Total caisse actuelle" value={activeCashSummary.balance} />
         <KpiCard icon={ReceiptText} label="Total entrées" value={activeCashSummary.entries} />

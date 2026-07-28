@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
+import { PageHeader } from "@/design-system/components"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { useUserClaims } from "@/hooks/use-user-claims"
 import {
@@ -104,13 +105,10 @@ export function AdminSubscriptionsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Abonnements</h1>
-          <p className="text-sm text-muted-foreground">
-            Gestion manuelle des plans, périodes, tolérances et suspensions.
-          </p>
-        </div>
+      <PageHeader
+        title="Abonnements"
+        subtitle="Gestion manuelle des plans, périodes, tolérances et suspensions."
+        action={
         <Select value={filter} onValueChange={(value) => setFilter(value as FilterValue)}>
           <SelectTrigger className="w-full sm:w-52">
             <SelectValue />
@@ -134,7 +132,8 @@ export function AdminSubscriptionsPage() {
             </SelectItem>
           </SelectContent>
         </Select>
-      </div>
+        }
+      />
 
       <Card>
         <CardHeader>

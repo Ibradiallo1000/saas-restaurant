@@ -15,6 +15,7 @@ import {
 
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { PosHeader as PosHeaderPrimitive } from "@/components/pos-ui"
+import { OperationalStationIdentity } from "@/components/operational-ui"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,43 +63,14 @@ export default function POSHeader({
 }: POSHeaderProps) {
   const sessionStatus = isCashSessionOpen ? "active" as const : "closed" as const
 
-  // Identité du restaurant (gauche)
-  const renderIdentity = (mobile = false) => (
-    <span className={cn("flex min-w-0 items-center", mobile ? "gap-2" : "gap-2.5")}>
-      {restaurantLogoUrl ? (
-        <img
-          src={restaurantLogoUrl}
-          alt={restaurantName || "Restaurant"}
-          className={cn(
-            "shrink-0 object-cover ring-1 ring-border",
-            mobile ? "size-9 rounded-xl min-[360px]:size-10" : "size-9 rounded-2xl"
-          )}
-        />
-      ) : (
-        <span
-          className={cn(
-            "flex shrink-0 items-center justify-center bg-[var(--brand-primary)] text-white shadow-sm",
-            mobile ? "size-9 rounded-xl min-[360px]:size-10" : "size-9 rounded-2xl"
-          )}
-        >
-          <CircleDollarSign className="h-5 w-5" />
-        </span>
-      )}
-
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-black leading-tight">
-          {restaurantName || "Restaurant"}
-        </span>
-        <span
-          className={cn(
-            "text-[10px] font-black uppercase tracking-wide text-muted-foreground",
-            mobile ? "hidden min-[390px]:block" : "block"
-          )}
-        >
-          Point de vente
-        </span>
-      </span>
-    </span>
+  const renderIdentity = (compact = false) => (
+    <OperationalStationIdentity
+      compact={compact}
+      fallbackIcon={CircleDollarSign}
+      restaurantLogoUrl={restaurantLogoUrl}
+      restaurantName={restaurantName}
+      subtitle="Point de vente"
+    />
   )
 
   // Onglets Caisse / Commandes

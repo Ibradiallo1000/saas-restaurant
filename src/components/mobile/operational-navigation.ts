@@ -88,7 +88,13 @@ const drawerItemMap: Record<NavigationItemId, OperationalDrawerItem | null> = {
   menu: { type: "link", id: "menu", label: "Menu", href: "/menu", icon: MenuSquare },
   tables: { type: "link", id: "tables", label: "Tables", href: "/tables", icon: Table2 },
   images: { type: "link", id: "images", label: "Images", href: "/images", icon: ImageIcon },
-  inventaire: { type: "link", id: "inventory", label: "Inventaire", href: "/manager/inventory", icon: Package },
+  inventaire: {
+    type: "link",
+    id: "inventory",
+    label: "Inventaire",
+    href: "/manager/inventory",
+    icon: Package,
+  },
   deconnexion: { type: "logout", id: "logout", label: "Deconnexion", icon: LogOut },
   analytics: null,
   commandes: null,
@@ -114,6 +120,9 @@ export function getNavigationByRole(role: string | null | undefined): Operationa
         if (item.id === "menu") return { ...item, href: "/manager/menu" }
         if (item.id === "tables") return { ...item, href: "/manager/tables" }
         if (item.id === "images") return { ...item, href: "/manager/images" }
+      }
+      if (item.type === "link" && isOwner && item.id === "inventory") {
+        return { ...item, href: "/owner/stock", label: "Stock" }
       }
       return item
     })

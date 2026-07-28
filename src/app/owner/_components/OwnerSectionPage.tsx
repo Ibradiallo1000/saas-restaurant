@@ -7,6 +7,7 @@ import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { OwnerTimeFilterBar } from "@/app/owner/_components/OwnerTimeFilterBar"
 import { useTimeFilter } from "@/contexts/time-filter-context"
+import { PageHeader } from "@/design-system/components"
 
 export function OwnerSectionPage({
   title,
@@ -26,12 +27,10 @@ export function OwnerSectionPage({
 
   return (
     <main className="space-y-4 pb-20">
-      <header className="rounded-2xl border bg-card p-4 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h1 className="text-2xl font-black tracking-tight">{title}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-          </div>
+      <PageHeader
+        title={title}
+        subtitle={description}
+        action={
           <Button
             type="button"
             variant="outline"
@@ -39,8 +38,8 @@ export function OwnerSectionPage({
           >
             Retour analytics
           </Button>
-        </div>
-      </header>
+        }
+      />
 
       <OwnerTimeFilterBar />
 

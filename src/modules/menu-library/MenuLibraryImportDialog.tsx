@@ -325,9 +325,10 @@ export default function MenuLibraryImportDialog({
           preparationMode: product.preparationMode || "kitchen",
           reviewsPolicy,
           reviewsEnabled: effectiveReviewsEnabled,
-          options: Array.isArray(product.options) ? product.options : [],
-          recipe: Array.isArray(product.recipe) ? product.recipe : [],
-          components: Array.isArray(product.components) ? product.components : [],
+          options: sanitizeImportedCommercialOptions(product.options),
+          recipe: [],
+          components: [],
+          hasComplexConsumption: false,
           linkedOptionGroups: remapLinkedOptionGroups(
             product.linkedOptionGroups,
             categoryIdMap,
@@ -501,6 +502,21 @@ export default function MenuLibraryImportDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+function sanitizeImportedCommercialOptions(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value.map((option: any) => ({
+    name: String(option?.name || ""),
+    required: option?.required === true,
+    multiple: option?.multiple === true,
+    choices: Array.isArray(option?.choices)
+      ? option.choices.map((choice: any) => ({
+          name: String(choice?.name || ""),
+          price: Math.max(0, Number(choice?.price || 0)),
+        }))
+      : [],
+  }))
 }
 
 function SelectableGrid<T extends { id: string; name: string; imageUrl?: string; iconKey?: string | null; description?: string }>({

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { addDoc, collection, doc, getDocs, limit, query, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore"
+import { addDoc, arrayUnion, collection, doc, getDocs, limit, query, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore"
 import { signOut } from "firebase/auth"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useCollection, useFirestore, useMemoFirebase, useAuth } from "@/firebase"
@@ -78,6 +78,8 @@ import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { CatalogProvider, useCatalog } from "@/modules/catalog/CatalogProvider"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
+import { markOrderItemAsServedAndDeductStock } from "@/modules/stock/automatic-simple/infrastructure/mark-order-item-served"
+import { usePosStockAvailability } from "@/modules/stock/use-pos-stock-availability"
 import type { SelectedCartOption } from "@/modules/restaurant/types"
 import {
   buildBundleCartLines,
@@ -189,6 +191,10 @@ function POSPageContent() {
   const safeCashSessions = React.useMemo(() => Array.isArray(cashSessions) ? cashSessions : [], [cashSessions])
   const safeTableSessions = React.useMemo(() => Array.isArray(tableSessions) ? tableSessions : [], [tableSessions])
   const safeTables = React.useMemo(() => Array.isArray(liveTables) ? liveTables : [], [liveTables])
+  const { availabilityByProduct: stockByProduct } = usePosStockAvailability(
+    restaurantId,
+    safeProducts
+  )
   
   const [cart, setCart] = React.useState<any[]>([])
   const [selectedCategoryId, setSelectedCategoryId] = React.useState<string | null>(null)
@@ -525,6 +531,14 @@ function POSPageContent() {
 
   const addToCart = React.useCallback((product: any) => {
     if (!product?.id) return
+    if ((stockByProduct.get(product.id)?.quantity ?? 1) <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Rupture de stock",
+        description: `${product.name || "Ce produit"} ne peut pas être ajouté.`,
+      })
+      return
+    }
 
     setCart((current) => {
       const existing = current.find(item => item.id === product.id)
@@ -548,7 +562,7 @@ function POSPageContent() {
     if (!turboMode) {
       toast({ title: "Ajouté", description: product.name, duration: 500 })
     }
-  }, [safeCategories, toast, turboMode])
+  }, [safeCategories, stockByProduct, toast, turboMode])
 
   const removeFromCart = (productId: string) => {
     setCart((current) => {
@@ -974,8 +988,8 @@ function POSPageContent() {
         totalAmount: total,
         paymentMethod: method === "mobile" ? selectedMobileConfig?.code : "cash",
         paymentStatus: ORDER_PAYMENT_STATUS.PAID,
-        kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
-        orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
+        kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.READY,
+        orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.READY,
         createdAt: new Date(),
       }
 
@@ -995,6 +1009,20 @@ function POSPageContent() {
           staffName: staffSnapshot.staffName,
         },
         printedClient: true,
+      })
+      console.info("[DIRECT][PAYMENT_CONFIRMED]", {
+        restaurantId,
+        orderId,
+        requiresKitchen,
+        directItems: recalculatedItems
+          .filter((item) => item.preparationMode === "direct")
+          .map((item) => ({
+            orderItemId: item.id,
+            productId: item.productId,
+            quantity: item.quantity,
+            status: item.status,
+          })),
+        stockEngineCalled: false,
       })
 
       await updateActiveCashSessionTotals(method, total)
@@ -1308,6 +1336,21 @@ function POSPageContent() {
       toast({
         title: isMobilePayment ? "Paiement mobile verifie" : "Paiement cash encaisse",
       })
+      console.info("[DIRECT][PAYMENT_CONFIRMED]", {
+        restaurantId,
+        orderId: order.id,
+        requiresKitchen: orderHasKitchenItems(order.items ?? []),
+        directItems: (order.items ?? [])
+          .filter((item: any) => item.preparationMode === "direct")
+          .map((item: any) => ({
+            orderItemId: item.id ?? item.orderItemId,
+            productId: item.productId,
+            quantity: item.quantity,
+            status: item.status,
+            servedQuantity: item.servedQuantity,
+          })),
+        stockEngineCalled: false,
+      })
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -1434,12 +1477,117 @@ function POSPageContent() {
 
     setProcessing(true)
     try {
+      console.info("[DIRECT][ORDER_COMPLETED]", {
+        restaurantId,
+        orderId: order.id,
+        directItems: (order.items ?? [])
+          .filter((item: any) => item.preparationMode === "direct")
+          .map((item: any) => ({
+            orderItemId: item.id ?? item.orderItemId,
+            productId: item.productId,
+            status: item.status,
+            servedQuantity: item.servedQuantity,
+          })),
+        stockEngineCalled: false,
+      })
       await updateDoc(doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS, order.id), {
         sessionActive: false,
         completedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
       toast({ title: "Commande terminee" })
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  const markOrderItemServed = async (order: any, orderItemId: string) => {
+    if (!db || !restaurantId || !user || processing) return
+    const selectedItem = (order.items ?? []).find(
+      (item: any, index: number) =>
+        String(item.id ?? item.orderItemId ?? `${item.productId ?? "item"}-${index}`) === orderItemId
+    )
+    if (!selectedItem || isServedOrderItem(selectedItem)) return
+    console.info("[DIRECT][SERVICE_ACTION]", {
+      orderId: order.id,
+      orderItemId,
+      productId: selectedItem?.productId,
+      preparationMode: selectedItem?.preparationMode,
+      quantity: selectedItem?.quantity,
+      currentServedQuantity: selectedItem?.servedQuantity ?? 0,
+    })
+    setProcessing(true)
+    try {
+      console.info("[DIRECT][STOCK_CALL]", {
+        restaurantId,
+        orderId: order.id,
+        orderItemId,
+        requestedServedQuantity: selectedItem?.quantity,
+      })
+      const result = await markOrderItemAsServedAndDeductStock({
+        db,
+        restaurantId,
+        orderId: order.id,
+        orderItemId,
+        actorId: user.uid,
+        servedQuantity: Number(selectedItem.quantity ?? 0),
+      })
+      console.info("[DIRECT][STOCK_SUCCESS]", {
+        operationId: result.operationId,
+        previousQuantity: result.previousQuantity,
+        deductedQuantity: result.deductedQuantity,
+        newQuantity: result.newQuantity,
+      })
+      const nextItems = (order.items ?? []).map((item: any, index: number) => {
+        const currentItemId = String(
+          item.id ?? item.orderItemId ?? `${item.productId ?? "item"}-${index}`
+        )
+        return currentItemId === orderItemId
+          ? {
+              ...item,
+              status: "served",
+              servedQuantity: Number(item.quantity ?? 0),
+            }
+          : item
+      })
+      if (nextItems.length > 0 && nextItems.every(isServedOrderItem)) {
+        await updateDoc(
+          doc(
+            db,
+            COLLECTION_NAMES.RESTAURANTS,
+            restaurantId,
+            COLLECTION_NAMES.ORDERS,
+            order.id
+          ),
+          {
+            kitchenStatus: ORDER_OPERATION_STATUS.SERVED,
+            orderStatus: ORDER_OPERATION_STATUS.SERVED,
+            "timestamps.servedAt": serverTimestamp(),
+            statusHistory: arrayUnion({
+              status: ORDER_OPERATION_STATUS.SERVED,
+              at: new Date(),
+              source: "pos-direct-service",
+            }),
+            updatedAt: serverTimestamp(),
+          }
+        )
+      }
+      toast({
+        title: "Produit marqué comme servi",
+        ...(result.warning ? { description: result.warning } : {}),
+      })
+    } catch (error: any) {
+      console.error("[DIRECT][STOCK_ERROR]", {
+        code: error?.code,
+        message: error?.message,
+        path: error?.path,
+        operation: error?.operation,
+      })
+      toast({
+        variant: "destructive",
+        title: "Service impossible",
+        description: error?.message || "La ligne n’a pas pu être marquée comme servie.",
+      })
     } finally {
       setProcessing(false)
     }
@@ -1612,6 +1760,7 @@ function POSPageContent() {
                 loading={isLoadingVisible}
                 formatPrice={formatDisplayPrice}
                 onProductClick={openProductSelector}
+                stockByProduct={stockByProduct}
               />
             </div>
 
@@ -2234,6 +2383,9 @@ function POSPageContent() {
       onComplete={() => {
         if (selectedOrderDetail) markOrderCompleted(selectedOrderDetail)
       }}
+      onServeItem={(orderItemId) => {
+        if (selectedOrderDetail) markOrderItemServed(selectedOrderDetail, orderItemId)
+      }}
     />
 
     <PosSessionClosingDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} title="Clôture de caisse" description="Vérifiez le résumé système, saisissez les montants comptés, puis confirmez la fermeture." summary={<div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><CloseAmount label="Espèces attendues" value={closeSessionDiff.systemCash}/><CloseAmount label="Mobile Money" value={closeSessionDiff.systemMobile}/><CloseAmount label="Total session" value={closeSessionDiff.systemTotal} strong/></div>} expectedCash={<div><Label htmlFor="declared-cash">Espèces comptées</Label><Input autoFocus id="declared-cash" inputMode="numeric" type="number" min={0} value={declaredCashInput} onChange={(event) => setDeclaredCashInput(event.target.value)} className="mt-1 min-h-12 text-right text-xl font-bold tabular-nums" aria-invalid={closeSessionDiff.cash !== 0}/></div>} declaredCash={<div><Label htmlFor="declared-mobile">Mobile Money compté</Label><Input id="declared-mobile" inputMode="numeric" type="number" min={0} value={declaredMobileInput} onChange={(event) => setDeclaredMobileInput(event.target.value)} className="mt-1 min-h-12 text-right text-xl font-bold tabular-nums" aria-invalid={closeSessionDiff.mobile !== 0}/></div>} variance={<div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><VarianceCard label="Écart espèces" expected={closeSessionDiff.systemCash} received={declaredCashAmount} variance={closeSessionDiff.cash}/><VarianceCard label="Écart Mobile Money" expected={closeSessionDiff.systemMobile} received={declaredMobileAmount} variance={closeSessionDiff.mobile}/><VarianceCard label="Écart total" expected={closeSessionDiff.systemTotal} received={closeSessionDiff.declaredTotal} variance={closeSessionDiff.total}/></div>} footer={<><Button variant="outline" className="min-h-12" disabled={processing} onClick={() => setCloseDialogOpen(false)}>Annuler</Button><Button className="min-h-12" disabled={processing} onClick={closeMyCashSession}>{processing ? <Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none"/> : null}Confirmer clôture</Button></>} />
@@ -2427,6 +2579,7 @@ function CashierOrderDetailDialog({
   onClose,
   onPrint,
   onValidatePayment,
+  onServeItem,
 }: {
   order: any | null
   paymentSession: any | null
@@ -2438,6 +2591,7 @@ function CashierOrderDetailDialog({
   onPrint: () => void
   onValidatePayment: () => void
   onComplete: () => void
+  onServeItem: (orderItemId: string) => void
 }) {
   if (!order) return null
 
@@ -2539,6 +2693,8 @@ function CashierOrderDetailDialog({
                     const lineTotal = getCashierOrderItemLineTotal(item)
                     const options = getCashierOrderItemOptions(item)
 
+                    const orderItemId = String(item.id ?? item.orderItemId ?? `${item.productId ?? "item"}-${items.indexOf(item)}`)
+                    const served = isServedOrderItem(item)
                     return (
                       <div key={item.id || `${item.productId}-${index}`} className="rounded-lg border bg-card p-3">
                         <div className="grid grid-cols-[auto_1fr_auto] gap-3">
@@ -2569,6 +2725,18 @@ function CashierOrderDetailDialog({
                             </p>
                           </div>
                         </div>
+                        {group.mode !== "kitchen" ? (
+                          <div className="mt-3 flex justify-end border-t pt-3">
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={processing || served}
+                              onClick={() => onServeItem(orderItemId)}
+                            >
+                              {served ? "Servi" : "Marquer comme servi"}
+                            </Button>
+                          </div>
+                        ) : null}
                       </div>
                     )
                   })}
@@ -2629,6 +2797,15 @@ function getPreparationModeLabel(mode: "kitchen" | "direct" | "bar") {
   if (mode === "direct") return "Service direct"
   if (mode === "bar") return "Bar / Comptoir"
   return "Cuisine"
+}
+
+function isServedOrderItem(item: any) {
+  const quantity = Math.max(0, Number(item?.quantity ?? 0))
+  const servedQuantity = Number(item?.servedQuantity)
+  if (Number.isFinite(servedQuantity) && servedQuantity >= quantity && quantity > 0) return true
+  return ["served", "picked_up", "completed", "delivered", "servie", "servies"].includes(
+    String(item?.status ?? item?.itemStatus ?? "").toLowerCase()
+  )
 }
 
 function getCashierOrderItemUnitPrice(item: any) {

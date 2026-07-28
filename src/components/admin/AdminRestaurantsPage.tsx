@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
+import { PageHeader } from "@/design-system/components"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import type { Restaurant } from "@/types"
@@ -64,13 +65,11 @@ export function AdminRestaurantsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Restaurants</h1>
-          <p className="text-sm text-muted-foreground">Liste et statut des restaurants.</p>
-        </div>
-        <CreateRestaurantModal />
-      </div>
+      <PageHeader
+        title="Restaurants"
+        subtitle="Liste et statut des restaurants."
+        action={<CreateRestaurantModal />}
+      />
 
       <Card>
         <CardHeader>

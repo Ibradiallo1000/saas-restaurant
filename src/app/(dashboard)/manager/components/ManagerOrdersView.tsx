@@ -15,6 +15,7 @@ import {
   OrderSummaryMetrics,
 } from "@/components/orders-ui"
 import { DashboardHeader, DashboardPage, DashboardSection } from "@/components/dashboard-ui"
+import { ManagerPeriodFilter } from "@/components/layout/manager-period-filter"
 import type { ManagerOrderCounts, ManagerOrderListItem, ManagerOrderTab } from "./manager-orders-view-model"
 import { MANAGER_ORDER_TAB_LABELS } from "./manager-orders-view-model"
 
@@ -41,7 +42,7 @@ export function ManagerOrdersView({ activeTab, counts, error, hasMore, isLoading
   ]
 
   return <DashboardPage className="pb-20 md:pb-6">
-    <DashboardHeader title="Commandes" subtitle="Supervisez les commandes nécessitant une action et les commandes terminées sur la période sélectionnée." meta={<span className="inline-flex min-h-10 items-center gap-2 rounded-[var(--radius-dashboard-button)] border border-[var(--dashboard-border)] px-3"><span className="size-2 rounded-full bg-[var(--data-positive)]" aria-hidden="true" />En direct</span>} />
+    <DashboardHeader title="Commandes" subtitle="Supervisez les commandes nécessitant une action et les commandes terminées sur la période sélectionnée." meta={<span className="inline-flex min-h-10 items-center gap-2 rounded-[var(--radius-dashboard-button)] border border-[var(--dashboard-border)] px-3"><span className="size-2 rounded-full bg-[var(--data-positive)]" aria-hidden="true" />En direct</span>} actions={<ManagerPeriodFilter />} />
 
     <DashboardSection title="Résumé opérationnel" description="État actuel de la production et des retards.">
       <OrderSummaryMetrics items={metrics} />

@@ -13,6 +13,7 @@ import { COLLECTION_NAMES, SUBSCRIPTION_PLAN, SUBSCRIPTION_STATUS } from "@/lib/
 import type { Restaurant, RestaurantRequest, Subscription } from "@/types"
 import { CreateRestaurantModal } from "@/components/admin/CreateRestaurantModal"
 import { getPlanPrice } from "@/services/subscription.service"
+import { PageHeader } from "@/design-system/components"
 
 export function AdminDashboardPage() {
   const db = useFirestore()
@@ -68,13 +69,11 @@ export function AdminDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Super Admin</h1>
-          <p className="text-sm text-muted-foreground">Provisioning, demandes et restaurants.</p>
-        </div>
-        <CreateRestaurantModal />
-      </div>
+      <PageHeader
+        title="Super Admin"
+        subtitle="Provisioning, demandes et restaurants."
+        action={<CreateRestaurantModal />}
+      />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard

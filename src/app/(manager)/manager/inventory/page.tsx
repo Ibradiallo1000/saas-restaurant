@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { collection, query, where } from "firebase/firestore"
 import { AlertTriangle, Info, Package, Plus, RefreshCw } from "lucide-react"
 
@@ -24,6 +25,14 @@ import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
 import { getDateRange, useTimeFilter } from "@/contexts/time-filter-context"
 import { cn } from "@/lib/utils"
 import { InventoryService, type InventoryUnit } from "@/services/inventory.service"
+import {
+  getArticleFeatureFlagConfiguration,
+  isArticleReferentialEnabled,
+} from "@/modules/stock/articles/feature-flag"
+import {
+  getControlledStockFeatureConfiguration,
+  isControlledStockEnabled,
+} from "@/modules/stock/controlled-stock/feature-flag"
 
 type InventoryItem = {
   id: string
@@ -59,7 +68,7 @@ type InventoryAlert = {
   resolved?: boolean
 }
 
-type InventoryAction = "add" | "adjust" | "cost" | "verify" | "mode"
+type InventoryAction = "add" | "adjust" | "cost" | "threshold" | "verify" | "mode"
 
 const UNIT_OPTIONS: InventoryUnit[] = ["pièce", "kg", "litre"]
 
@@ -100,13 +109,24 @@ function getFreshnessBadge(item: InventoryItem) {
 }
 
 export default function ManagerInventoryPage() {
+  const router = useRouter()
   const db = useFirestore()
   const { role } = useTenant()
   const { restaurantId, loading } = useRestaurant()
+  const useStockV2 = restaurantId
+    ? isArticleReferentialEnabled(
+        restaurantId,
+        getArticleFeatureFlagConfiguration()
+      ) &&
+      isControlledStockEnabled(
+        restaurantId,
+        getControlledStockFeatureConfiguration()
+      )
+    : false
   const { filter } = useTimeFilter()
   const range = React.useMemo(() => getDateRange(filter), [filter])
   const canWrite = role === ROLES.MANAGER
-  const canRead = canWrite || role === ROLES.OWNER
+  const canRead = !useStockV2 && (canWrite || role === ROLES.OWNER)
   const [seedLoading, setSeedLoading] = React.useState(false)
   const [createLoading, setCreateLoading] = React.useState(false)
   const [newName, setNewName] = React.useState("")
@@ -118,6 +138,10 @@ export default function ManagerInventoryPage() {
   const [focusedItemId, setFocusedItemId] = React.useState<string | null>(null)
   const [showAllItems, setShowAllItems] = React.useState(false)
   const [focusMode, setFocusMode] = React.useState(false)
+
+  React.useEffect(() => {
+    if (useStockV2) router.replace("/manager/stock")
+  }, [router, useStockV2])
 
   const itemsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId || !canRead) return null
@@ -248,12 +272,12 @@ export default function ManagerInventoryPage() {
     if (target) focusInventoryItem(target.id)
   }
 
-  if (loading || isLoading) return <AdminRouteSkeleton />
+  if (useStockV2 || loading || isLoading) return <AdminRouteSkeleton />
 
   if (!restaurantId || !canRead) {
     return (
       <main className="rounded-xl border bg-card p-6">
-        <h1 className="text-xl font-black">Inventaire indisponible</h1>
+        <h2 className="text-xl font-black">Inventaire indisponible</h2>
         <p className="mt-2 text-sm text-muted-foreground">Restaurant introuvable ou rôle non autorisé.</p>
       </main>
     )
@@ -402,7 +426,10 @@ export default function ManagerInventoryPage() {
                   restaurantId={restaurantId}
                   canWrite={canWrite}
                   service={service}
-                  focused={focusedItemId === item.id}
+                  expanded={focusedItemId === item.id}
+                  onExpandedChange={(expanded) =>
+                    setFocusedItemId(expanded ? item.id : null)
+                  }
                 />
               ))}
             </div>
@@ -554,27 +581,23 @@ function InventoryRow({
   restaurantId,
   canWrite,
   service,
-  focused,
+  expanded,
+  onExpandedChange,
 }: {
   item: InventoryItem
   restaurantId: string
   canWrite: boolean
   service: InventoryService | null
-  focused: boolean
+  expanded: boolean
+  onExpandedChange: (expanded: boolean) => void
 }) {
   const [addValue, setAddValue] = React.useState("")
   const [adjustValue, setAdjustValue] = React.useState("")
-  const [thresholdValue, setThresholdValue] = React.useState("")
   const [action, setAction] = React.useState<InventoryAction | null>(null)
   const [actionValue, setActionValue] = React.useState("")
   const [feedback, setFeedback] = React.useState("")
   const [loading, setLoading] = React.useState<InventoryAction | "quick" | null>(null)
-  const [expanded, setExpanded] = React.useState(focused)
   const [quickStock, setQuickStock] = React.useState("")
-
-  React.useEffect(() => {
-    if (focused) setExpanded(true)
-  }, [focused])
 
   const handleQuickVerifyBlur = async () => {
     if (!quickStock) return
@@ -632,20 +655,6 @@ function InventoryRow({
     }
   }
 
-  const updateThreshold = async () => {
-    if (!service || !canWrite || loading) return
-    const value = Number(thresholdValue || 0)
-    if (!Number.isFinite(value) || value < 0) return
-    setLoading("cost")
-    try {
-      await service.updateInventoryMinThreshold(restaurantId, item.id, value)
-      setThresholdValue("")
-      showFeedback("Seuil mis à jour")
-    } finally {
-      setLoading(null)
-    }
-  }
-
   const openAction = (nextAction: InventoryAction) => {
     setAction(nextAction)
     setActionValue(
@@ -653,6 +662,8 @@ function InventoryRow({
         ? String(Number(item.stockEstimated || 0))
         : nextAction === "cost"
           ? String(Number(item.costPerUnit || 0))
+          : nextAction === "threshold"
+            ? String(Number(item.minThreshold || 0))
           : nextAction === "mode"
             ? (item.trackingMode || "auto")
             : ""
@@ -690,6 +701,9 @@ function InventoryRow({
         } else if (action === "cost") {
           await service.updateInventoryCost(restaurantId, item.id, value)
           showFeedback("Coût mis à jour")
+        } else if (action === "threshold") {
+          await service.updateInventoryMinThreshold(restaurantId, item.id, value)
+          showFeedback("Seuil minimum mis à jour")
         }
       }
       setAction(null)
@@ -699,20 +713,28 @@ function InventoryRow({
     }
   }
 
-  const toggleExpand = () => setExpanded(!expanded)
+  const toggleExpand = () => onExpandedChange(!expanded)
   const alert = getInventoryAlert(item)
   const freshness = getFreshnessStatus(item)
   const freshnessBadge = getFreshnessBadge(item)
 
   return (
     <>
-      <div id={`inventory-item-${item.id}`} className="group flex flex-col transition-colors hover:bg-muted/50">
+      <div
+        id={`inventory-item-${item.id}`}
+        className={cn(
+          "group flex flex-col transition-colors",
+          expanded
+            ? "bg-primary/[0.06] shadow-[inset_3px_0_0_hsl(var(--primary))] ring-1 ring-inset ring-primary/20"
+            : "hover:bg-muted/50"
+        )}
+      >
         {/* Condensed Row (Header) */}
         <div 
           onClick={toggleExpand}
           className={cn(
             "flex cursor-pointer flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between",
-            focused && "bg-primary/5",
+            expanded && "bg-primary/[0.04]",
             alert.level === "critical" && "bg-red-50/30",
             alert.level === "warning" && "bg-amber-50/30",
             freshness === "never" && "bg-red-50/70 dark:bg-red-950/20",
@@ -788,7 +810,7 @@ function InventoryRow({
 
         {/* Expanded Details */}
         {expanded && (
-          <div className="border-t bg-muted/20 p-4">
+          <div className="border-t border-primary/20 bg-primary/[0.035] p-4">
             {feedback ? <p className="mb-4 text-sm font-black text-emerald-700">{feedback}</p> : null}
             
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -808,7 +830,7 @@ function InventoryRow({
             </div>
 
             {canWrite && (
-              <div className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                 <Button variant="outline" className="w-full justify-start" onClick={() => openAction("add")}>
                   + Ajouter au stock
                 </Button>
@@ -820,6 +842,9 @@ function InventoryRow({
                 </Button>
                 <Button variant="outline" className="w-full justify-start" onClick={() => openAction("cost")}>
                   $ Modifier coût
+                </Button>
+                <Button variant="outline" className="w-full justify-start" onClick={() => openAction("threshold")}>
+                  ⚠ Modifier seuil
                 </Button>
                 <Button variant="outline" className="w-full justify-start" onClick={() => openAction("mode")}>
                   ⚙️ Changer mode
@@ -951,6 +976,16 @@ function getInventoryActionCopy(action: InventoryAction | null) {
       label: "Coût par unité",
       placeholder: "Ex: 2500",
       submit: "Valider le coût",
+    }
+  }
+
+  if (action === "threshold") {
+    return {
+      title: "Modifier le seuil minimum",
+      description: "Une alerte apparaît lorsque le stock atteint cette quantité.",
+      label: "Seuil minimum",
+      placeholder: "Ex: 5",
+      submit: "Enregistrer le seuil",
     }
   }
 

@@ -30,6 +30,7 @@ import { useFirestore } from "@/firebase"
 import { useToast } from "@/hooks/use-toast"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
+import { PageHeader } from "@/design-system/components"
 import {
   closeActiveTableSession,
   createRestaurantTablesBatch,
@@ -180,21 +181,17 @@ export default function DashboardTablesPage() {
 
   return (
     <main className="space-y-6 pb-20">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="flex items-center gap-3 text-3xl font-black uppercase text-primary">
-            <Table2 className="h-8 w-8" />
-            Tables & QR
-          </h1>
-          <p className="text-sm font-medium text-muted-foreground">
-            Generez les tables par zone, imprimez les QR et suivez l'etat en temps reel.
-          </p>
-        </div>
-        <Button onClick={() => document.getElementById("add-tables")?.scrollIntoView({ behavior: "smooth" })}>
-          <Plus className="h-4 w-4" />
-          Ajouter des tables
-        </Button>
-      </div>
+      <PageHeader
+        icon={Table2}
+        title="Tables & QR"
+        subtitle="Generez les tables par zone, imprimez les QR et suivez l'etat en temps reel."
+        action={
+          <Button onClick={() => document.getElementById("add-tables")?.scrollIntoView({ behavior: "smooth" })}>
+            <Plus className="h-4 w-4" />
+            Ajouter des tables
+          </Button>
+        }
+      />
 
       <AddTablesCard
         id="add-tables"

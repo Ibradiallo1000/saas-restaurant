@@ -13,8 +13,8 @@ export function GlobalTimeFilterBar({ compact = false }: { compact?: boolean }) 
   ]
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-2", !compact && "rounded-2xl border bg-card p-3 shadow-sm")}>
-      <div className="flex rounded-xl border bg-background p-1">
+    <div className={cn("flex w-max min-w-full items-center gap-2 sm:min-w-0", !compact && "rounded-2xl border bg-card p-3 shadow-sm")}>
+      <div className="flex shrink-0 rounded-xl border bg-background p-1">
         {options.map((option) => (
           <button
             key={option.value}
@@ -48,4 +48,3 @@ export function GlobalTimeFilterBar({ compact = false }: { compact?: boolean }) 
     </div>
   )
 }
-

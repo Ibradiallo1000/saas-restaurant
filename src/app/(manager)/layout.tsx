@@ -11,7 +11,6 @@ import {
   ImageIcon,
   LayoutDashboard,
   LogOut,
-  Menu,
   MenuSquare,
   Clock,
   Package,
@@ -39,7 +38,6 @@ import { RestaurantProvider, useRestaurant } from "@/design-system/context/Resta
 import { TenantProvider, useTenant } from "@/design-system/context/TenantProvider"
 import { RestaurantThemeProvider } from "@/design-system/theme/RestaurantThemeProvider"
 import { TimeFilterProvider } from "@/contexts/time-filter-context"
-import { GlobalTimeFilterBar } from "@/components/time-filter/GlobalTimeFilterBar"
 import { getOptimizedImage } from "@/lib/image"
 import { canAccessManager, getRoleHomePath, isRouteAllowedForRole } from "@/lib/guards"
 import { ROLES } from "@/lib/constants"
@@ -113,7 +111,6 @@ function ManagerLayoutContent({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen bg-background">
         <OperationalMobileHeader />
         <main className="flex flex-col gap-4 px-3 pb-[calc(80px+env(safe-area-inset-bottom))] pt-[calc(56px+env(safe-area-inset-top)+8px)]">
-          <GlobalTimeFilterBar />
           {children}
         </main>
         <OperationalBottomNav />
@@ -125,9 +122,7 @@ function ManagerLayoutContent({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen bg-background">
       <ManagerSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <ManagerHeader />
-        <main className="flex-1 overflow-y-auto px-6 py-4">
-          <GlobalTimeFilterBar />
+        <main className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
           {children}
         </main>
       </div>
@@ -235,33 +230,42 @@ function ManagerSidebar() {
         })}
       </nav>
 
-      <div className="space-y-3 border-t p-3">
+      <div className="border-t p-3">
         <div className={cn("rounded-lg border bg-background p-3", collapsed && "p-2")}>
           <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
               <User className="h-4 w-4" />
             </div>
             {!collapsed ? (
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-black">{user?.displayName || user?.email?.split("@")[0] || "Utilisateur"}</p>
                 <p className="text-[10px] font-bold uppercase text-muted-foreground">{role}</p>
               </div>
             ) : null}
+            {!collapsed ? (
+              <button
+                type="button"
+                onClick={handleLogout}
+                title="Déconnexion"
+                aria-label="Déconnexion"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <LogOut className="h-5 w-5" />
+              </button>
+            ) : null}
           </div>
+          {collapsed ? (
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Déconnexion"
+              aria-label="Déconnexion"
+              className="mt-2 flex h-9 w-full items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+          ) : null}
         </div>
-
-        <button
-          type="button"
-          onClick={handleLogout}
-          title="Deconnexion"
-          className={cn(
-            "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-bold text-muted-foreground hover:bg-muted hover:text-foreground",
-            collapsed && "justify-center px-0"
-          )}
-        >
-          <LogOut className="h-5 w-5" />
-          {!collapsed ? <span>Deconnexion</span> : null}
-        </button>
       </div>
     </aside>
   )
@@ -357,57 +361,30 @@ function ManagerMobileDrawer({
           })}
         </nav>
 
-        <div className="space-y-3 border-t p-3">
-          <div className="flex items-center justify-between rounded-lg border bg-background p-3">
-            <div className="min-w-0">
+        <div className="border-t p-3">
+          <div className="flex items-center gap-3 rounded-lg border bg-background p-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted">
+              <User className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-black">
                 {user?.displayName || user?.email?.split("@")[0] || "Utilisateur"}
               </p>
               <p className="text-[10px] font-bold uppercase text-muted-foreground">{role}</p>
             </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Déconnexion"
+              aria-label="Déconnexion"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border text-sm font-black text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <LogOut className="h-5 w-5" />
-            Déconnexion
-          </button>
         </div>
       </SheetContent>
     </Sheet>
-  )
-}
-
-function ManagerHeader({ onOpenMobileMenu }: { onOpenMobileMenu?: () => void }) {
-  const pathname = usePathname() ?? ""
-  const { user, role } = useTenant()
-  const pageTitle = React.useMemo(() => {
-    const item = MANAGER_NAV.find((navItem) => isActivePath(pathname, navItem.href))
-    return item?.label || "Manager"
-  }, [pathname])
-
-  return (
-    <header className="flex min-h-16 items-center justify-between gap-4 border-b bg-background px-4 md:px-6">
-      <div className="flex min-w-0 items-center gap-3">
-        <button
-          type="button"
-          onClick={onOpenMobileMenu}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border text-foreground md:hidden"
-          aria-label="Ouvrir le menu manager"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-black uppercase tracking-tight">{pageTitle}</h1>
-        </div>
-      </div>
-      <div className="hidden text-right md:block">
-        <p className="text-sm font-black">{user?.displayName || user?.email?.split("@")[0] || "Utilisateur"}</p>
-        <p className="text-xs font-bold uppercase text-muted-foreground">{role}</p>
-      </div>
-    </header>
   )
 }
 
@@ -421,7 +398,17 @@ function useManagerPendingCashOpeningCount() {
 }
 
 function isActivePath(pathname: string, href: string) {
+  if (href === "/manager/inventory" && isInventoryPath(pathname)) return true
   return pathname === href || pathname.startsWith(`${href}/`)
+}
+
+function isInventoryPath(pathname: string) {
+  return (
+    pathname === "/manager/inventory" ||
+    pathname.startsWith("/manager/inventory/") ||
+    pathname === "/manager/stock" ||
+    pathname.startsWith("/manager/stock/")
+  )
 }
 
 function getManagerTargetHref(href: string, searchParams: URLSearchParams | null) {

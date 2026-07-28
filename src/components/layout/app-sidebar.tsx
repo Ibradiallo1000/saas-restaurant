@@ -16,6 +16,7 @@ import {
   ListOrdered,
   LogOut,
   Monitor,
+  PackageSearch,
   ReceiptText,
   Settings,
   ShieldAlert,
@@ -116,6 +117,7 @@ const AppSidebarComponent = () => {
       items.push({ name: "Commandes", href: "/owner/commandes", icon: ListOrdered })
       items.push({ name: "Caisse", href: "/owner/caisse", icon: Wallet })
       items.push({ name: "Dépenses", href: "/owner/depenses", icon: ReceiptText })
+      items.push({ name: "Stock", href: "/owner/stock", icon: PackageSearch })
       items.push({ name: "Trésorerie", href: "/owner/tresorerie", icon: Banknote })
       items.push({ name: "Voix du client", href: "/owner/avis", icon: Star })
       if (isMobile) return [{ label: "Terrain", items }]

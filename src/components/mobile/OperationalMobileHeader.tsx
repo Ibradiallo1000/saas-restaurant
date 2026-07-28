@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { signOut } from "firebase/auth"
 import { Bell, LogOut, Menu, Settings, User } from "lucide-react"
 
@@ -26,10 +26,16 @@ import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveD
 export default function OperationalMobileHeader() {
   const auth = useAuth()
   const router = useRouter()
+  const pathname = usePathname() ?? ""
   const { restaurant } = useRestaurant()
   const { user, role } = useTenant()
   const { cashSessionRequests, pendingCashValidationCount, unpaidServedCount, activeOrders } = useRestaurantLiveData()
   const restaurantName = restaurant?.name?.trim() || "Restaurant"
+  const isInventory =
+    pathname === "/manager/inventory" ||
+    pathname.startsWith("/manager/inventory/") ||
+    pathname === "/manager/stock" ||
+    pathname.startsWith("/manager/stock/")
   const userLabel = user?.displayName || user?.email?.split("@")[0] || "Utilisateur"
   const lateOrdersCount = React.useMemo(
     () => (activeOrders || []).filter((order: any) => isLateKitchenOrder(order)).length,
@@ -109,7 +115,9 @@ export default function OperationalMobileHeader() {
             className="h-7 w-7 shrink-0 rounded-md object-cover"
           />
         ) : null}
-        <span className="truncate text-sm font-black uppercase tracking-tight">{restaurantName}</span>
+        <span className="truncate text-sm font-black uppercase tracking-tight">
+          {isInventory ? "Inventaire" : restaurantName}
+        </span>
       </div>
 
       <div className="flex shrink-0 items-center gap-1">

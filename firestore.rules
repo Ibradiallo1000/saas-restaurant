@@ -82,6 +82,19 @@ service cloud.firestore {
       return isSuperAdmin() || isRestaurantOwner(restaurantId) || isRestaurantManager(restaurantId) || canManageRestaurantMenu(restaurantId);
     }
 
+    function canReadStockArticleReferential(restaurantId) {
+      return canReadRestaurantInventoryItems(restaurantId)
+        || (
+          userExists()
+          && userDoc().data.restaurantId == restaurantId
+          && userDoc().data.role == "kitchen"
+        )
+        || (
+          isRestaurantStaff(restaurantId)
+          && get(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid)).data.role == "kitchen"
+        );
+    }
+
     function canWriteRestaurantInventoryItems(restaurantId) {
       return isSuperAdmin()
         || (
@@ -167,8 +180,156 @@ service cloud.firestore {
       return isSuperAdmin() || isRestaurantOwner(restaurantId) || isRestaurantManager(restaurantId);
     }
 
+    function hasStockServiceRole(restaurantId) {
+      return isSuperAdmin()
+        || (
+          userExists()
+          && userDoc().data.restaurantId == restaurantId
+          && userDoc().data.role in ["owner", "manager", "cashier", "kitchen", "server"]
+        )
+        || (
+          isRestaurantStaff(restaurantId)
+          && get(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid)).data.active != false
+          && get(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid)).data.role in ["owner", "manager", "cashier", "kitchen", "server"]
+        )
+        || isRestaurantOwnerEmail(restaurantId);
+    }
+
+    function isAutomaticServingBalanceUpdate(restaurantId) {
+      let operation = getAfter(
+        /databases/$(database)/documents/restaurants/$(restaurantId)/stockOperationsV2/$(request.resource.data.lastOperationId)
+      );
+      return hasStockServiceRole(restaurantId)
+        && request.resource.data.restaurantId == restaurantId
+        && request.resource.data.restaurantId == resource.data.restaurantId
+        && request.resource.data.articleId == resource.data.articleId
+        && request.resource.data.quantity is number
+        && request.resource.data.quantity >= 0
+        && request.resource.data.quantity < resource.data.quantity
+        && request.resource.data.unit == resource.data.unit
+        && request.resource.data.version == resource.data.version + 1
+        && request.resource.data.lastOperationId is string
+        && operation.data.type == "AUTOMATIC_DEDUCTION"
+        && operation.data.restaurantId == restaurantId
+        && operation.data.articleId == resource.data.articleId
+        && operation.data.quantityBefore == resource.data.quantity
+        && operation.data.quantityAfter == request.resource.data.quantity
+        && operation.data.variation == request.resource.data.quantity - resource.data.quantity
+        && operation.data.createdBy == request.auth.uid;
+    }
+
+    function isLinkedStockBalanceUpdate(restaurantId) {
+      let operation = getAfter(
+        /databases/$(database)/documents/restaurants/$(restaurantId)/stockOperationsV2/$(request.resource.data.lastOperationId)
+      );
+      return canReadRestaurantBusinessDocs(restaurantId)
+        && request.resource.data.restaurantId == restaurantId
+        && request.resource.data.restaurantId == resource.data.restaurantId
+        && request.resource.data.articleId == resource.data.articleId
+        && request.resource.data.quantity is number
+        && request.resource.data.quantity >= 0
+        && request.resource.data.unit == resource.data.unit
+        && request.resource.data.version == resource.data.version + 1
+        && request.resource.data.lastOperationId is string
+        && operation.data.restaurantId == restaurantId
+        && operation.data.articleId == resource.data.articleId
+        && operation.data.quantityBefore == resource.data.quantity
+        && operation.data.quantityAfter == request.resource.data.quantity
+        && operation.data.variation == request.resource.data.quantity - resource.data.quantity
+        && operation.data.createdBy == request.auth.uid;
+    }
+
+    function isAutomaticServingOperationCreate(restaurantId) {
+      let progress = getAfter(
+        /databases/$(database)/documents/restaurants/$(restaurantId)/stockServingProgressV2/$(request.resource.data.orderId + "--" + request.resource.data.orderItemId + "--" + request.resource.data.articleId)
+      );
+      let orderItem = getAfter(
+        /databases/$(database)/documents/restaurants/$(restaurantId)/orders/$(request.resource.data.orderId)/orderItems/$(request.resource.data.orderItemId)
+      );
+      let association = get(
+        /databases/$(database)/documents/restaurants/$(restaurantId)/stockAutomaticAssociationsV2/$(request.resource.data.associationId)
+      );
+      let article = get(
+        /databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.articleId)
+      );
+      return hasStockServiceRole(restaurantId)
+        && request.resource.data.restaurantId == restaurantId
+        && request.resource.data.type == "AUTOMATIC_DEDUCTION"
+        && request.resource.data.orderId is string
+        && request.resource.data.orderItemId is string
+        && request.resource.data.productId is string
+        && request.resource.data.articleId is string
+        && request.resource.data.associationId is string
+        && request.resource.data.quantityBefore is number
+        && request.resource.data.quantityAfter is number
+        && request.resource.data.variation < 0
+        && request.resource.data.quantityAfter
+          == request.resource.data.quantityBefore + request.resource.data.variation
+        && request.resource.data.servedQuantityBefore is number
+        && request.resource.data.servedQuantityAfter is number
+        && request.resource.data.servedQuantityAfter > request.resource.data.servedQuantityBefore
+        && request.resource.data.quantityPerSale is number
+        && request.resource.data.quantityPerSale > 0
+        && -request.resource.data.variation
+          == (request.resource.data.servedQuantityAfter - request.resource.data.servedQuantityBefore)
+            * request.resource.data.quantityPerSale
+        && request.resource.data.createdBy == request.auth.uid
+        && association.data.restaurantId == restaurantId
+        && association.data.productId == request.resource.data.productId
+        && association.data.articleId == request.resource.data.articleId
+        && association.data.quantity == request.resource.data.quantityPerSale
+        && association.data.status == "active"
+        && article.data.status == "active"
+        && article.data.trackingMode == "AUTOMATIC_SIMPLE"
+        && orderItem.data.productId == request.resource.data.productId
+        && orderItem.data.servedQuantity == request.resource.data.servedQuantityAfter
+        && orderItem.data.servedQuantity <= orderItem.data.quantity
+        && progress.data.lastOperationId == request.resource.data.idempotencyKey
+            && progress.data.servedQuantity == request.resource.data.servedQuantityAfter;
+    }
+
+    function isServedOrderItemUpdate(restaurantId, orderId, orderItemId) {
+      return hasStockServiceRole(restaurantId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "servedQuantity",
+          "servedAt",
+          "servedBy"
+        ])
+        && request.resource.data.productId == resource.data.productId
+        && request.resource.data.quantity == resource.data.quantity
+        && request.resource.data.servedQuantity is number
+        && request.resource.data.servedQuantity >= (
+          resource.data.servedQuantity is number ? resource.data.servedQuantity : 0
+        )
+        && request.resource.data.servedQuantity <= resource.data.quantity
+        && request.resource.data.servedBy == request.auth.uid
+        && (
+          request.resource.data.servedQuantity < resource.data.quantity
+          || request.resource.data.status == "served"
+        );
+    }
+
     function canWriteRestaurantBusinessDocs(restaurantId) {
       return isSuperAdmin() || isRestaurantManager(restaurantId);
+    }
+
+    function canWriteRestaurantExpenseDocs(restaurantId) {
+      return isSuperAdmin()
+        || (
+          isSignedIn()
+          && (
+            (
+              userExists()
+              && userDoc().data.restaurantId == restaurantId
+              && userDoc().data.role == "manager"
+            )
+            || (
+              isRestaurantStaff(restaurantId)
+              && get(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid)).data.role == "manager"
+            )
+          )
+        );
     }
 
     function canReadRestaurantReviewDocs(restaurantId) {
@@ -944,6 +1105,18 @@ service cloud.firestore {
         allow create: if canManageRestaurantMenu(restaurantId)
           && request.resource.data.reviewsEnabled is bool
           && request.resource.data.reviewsPolicy in ["inherit", "enabled", "disabled"]
+          && (!("stockArticleId" in request.resource.data)
+              || (
+                request.resource.data.stockArticleId is string
+                && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.stockArticleId)).data.status == "active"
+              ))
+          && (!("quantityPerSale" in request.resource.data)
+              || (
+                request.resource.data.quantityPerSale is number
+                && request.resource.data.quantityPerSale > 0
+                && request.resource.data.stockArticleId is string
+                && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.stockArticleId)).data.trackingMode == "AUTOMATIC_SIMPLE"
+              ))
           && (!("preparationMode" in request.resource.data)
               || request.resource.data.preparationMode in ["kitchen", "direct", "bar"]);
         allow update: if canManageRestaurantMenu(restaurantId)
@@ -952,6 +1125,18 @@ service cloud.firestore {
               && request.resource.data.reviewsPolicy in ["inherit", "enabled", "disabled"])
             || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["order", "updatedAt"])
           )
+          && (!("stockArticleId" in request.resource.data)
+              || (
+                request.resource.data.stockArticleId is string
+                && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.stockArticleId)).data.status == "active"
+              ))
+          && (!("quantityPerSale" in request.resource.data)
+              || (
+                request.resource.data.quantityPerSale is number
+                && request.resource.data.quantityPerSale > 0
+                && request.resource.data.stockArticleId is string
+                && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.stockArticleId)).data.trackingMode == "AUTOMATIC_SIMPLE"
+              ))
           && (!("preparationMode" in request.resource.data) 
               || request.resource.data.preparationMode in ["kitchen", "direct", "bar"]);
         allow delete: if canManageRestaurantMenu(restaurantId);
@@ -967,6 +1152,302 @@ service cloud.firestore {
       match /inventory/{inventoryId} {
         allow get, list: if canUseRestaurant(restaurantId);
         allow write: if canUseRestaurant(restaurantId);
+      }
+
+      match /stockItemsV2/{articleId} {
+        allow get, list: if canReadStockArticleReferential(restaurantId)
+          || hasStockServiceRole(restaurantId);
+        allow create: if canReadRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.keys().hasOnly([
+            "restaurantId",
+            "name",
+            "description",
+            "categoryId",
+            "baseUnit",
+            "packagings",
+            "lowStockThreshold",
+            "outOfStockThreshold",
+            "trackingMode",
+            "status",
+            "createdAt",
+            "updatedAt",
+            "createdBy",
+            "updatedBy",
+            "migration"
+          ])
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && (request.resource.data.categoryId == null
+            || request.resource.data.categoryId is string)
+          && request.resource.data.baseUnit in ["unit", "kg", "g", "l", "ml"]
+          && request.resource.data.packagings is list
+          && request.resource.data.lowStockThreshold is number
+          && request.resource.data.lowStockThreshold >= 0
+          && request.resource.data.outOfStockThreshold is number
+          && request.resource.data.outOfStockThreshold >= 0
+          && request.resource.data.outOfStockThreshold <= request.resource.data.lowStockThreshold
+          && request.resource.data.trackingMode in [
+            "CONTROLLED",
+            "AUTOMATIC_SIMPLE",
+            "NONE"
+          ]
+          && request.resource.data.status == "active"
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.updatedBy == request.auth.uid
+          && existsAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/stockBalancesV2/$(articleId))
+          && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/stockBalancesV2/$(articleId)).data.restaurantId == restaurantId
+          && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/stockBalancesV2/$(articleId)).data.articleId == articleId
+          && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/stockBalancesV2/$(articleId)).data.quantity == 0
+          && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/stockBalancesV2/$(articleId)).data.unit == request.resource.data.baseUnit
+          && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/stockBalancesV2/$(articleId)).data.version == 1;
+        allow update: if canReadRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.keys().hasOnly([
+            "restaurantId",
+            "name",
+            "description",
+            "categoryId",
+            "baseUnit",
+            "packagings",
+            "lowStockThreshold",
+            "outOfStockThreshold",
+            "trackingMode",
+            "status",
+            "createdAt",
+            "updatedAt",
+            "createdBy",
+            "updatedBy",
+            "migration"
+          ])
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.restaurantId == resource.data.restaurantId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && (request.resource.data.categoryId == null
+            || request.resource.data.categoryId is string)
+          && request.resource.data.baseUnit in ["unit", "kg", "g", "l", "ml"]
+          && request.resource.data.packagings is list
+          && request.resource.data.lowStockThreshold is number
+          && request.resource.data.lowStockThreshold >= 0
+          && request.resource.data.outOfStockThreshold is number
+          && request.resource.data.outOfStockThreshold >= 0
+          && request.resource.data.outOfStockThreshold <= request.resource.data.lowStockThreshold
+          && request.resource.data.trackingMode in [
+            "CONTROLLED",
+            "AUTOMATIC_SIMPLE",
+            "NONE"
+          ]
+          && request.resource.data.status in ["active", "archived"]
+          && request.resource.data.updatedBy == request.auth.uid;
+        allow delete: if false;
+      }
+
+      match /stockItemCostsV2/{articleId} {
+        allow get, list: if canReadRestaurantBusinessDocs(restaurantId);
+        allow create, update: if canReadRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.keys().hasOnly([
+            "restaurantId",
+            "articleId",
+            "referenceCost",
+            "updatedAt",
+            "updatedBy"
+          ])
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.articleId == articleId
+          && request.resource.data.referenceCost is number
+          && request.resource.data.referenceCost >= 0
+          && request.resource.data.updatedBy == request.auth.uid;
+        allow delete: if canReadRestaurantBusinessDocs(restaurantId);
+      }
+
+      match /stockItemCategoriesV2/{categoryId} {
+        allow get, list: if canReadStockArticleReferential(restaurantId);
+        allow create: if canReadRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.keys().hasOnly([
+            "restaurantId",
+            "name",
+            "description",
+            "sortOrder",
+            "status",
+            "createdAt",
+            "updatedAt",
+            "createdBy",
+            "updatedBy"
+          ])
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.sortOrder is number
+          && request.resource.data.sortOrder >= 0
+          && request.resource.data.status == "active"
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.updatedBy == request.auth.uid;
+        allow update: if canReadRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.restaurantId == resource.data.restaurantId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.sortOrder is number
+          && request.resource.data.sortOrder >= 0
+          && request.resource.data.status in ["active", "archived"]
+          && request.resource.data.updatedBy == request.auth.uid;
+        allow delete: if false;
+      }
+
+      match /stockBalancesV2/{articleId} {
+        allow get, list: if canReadStockArticleReferential(restaurantId)
+          || hasStockServiceRole(restaurantId);
+        allow create: if canReadRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.articleId == articleId
+          && request.resource.data.quantity is number
+          && request.resource.data.quantity >= 0
+          && request.resource.data.unit in ["unit", "kg", "g", "l", "ml"]
+          && request.resource.data.version == 1
+          && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(articleId)).data.status == "active"
+          && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(articleId)).data.trackingMode in ["CONTROLLED", "AUTOMATIC_SIMPLE"];
+        allow update: if isLinkedStockBalanceUpdate(restaurantId)
+          || isAutomaticServingBalanceUpdate(restaurantId);
+        allow delete: if false;
+      }
+
+      match /stockOperationsV2/{operationId} {
+        allow get, list: if canReadStockArticleReferential(restaurantId);
+        allow create: if (
+          canReadRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.type != "AUTOMATIC_DEDUCTION"
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.articleId is string
+          && request.resource.data.type in [
+            "APPROVISIONNEMENT",
+            "CONTROLE_PHYSIQUE",
+            "PERTE",
+            "CORRECTION_POSITIVE",
+            "CORRECTION_NEGATIVE",
+            "AUTOMATIC_DEDUCTION",
+            "AUTOMATIC_COMPENSATION"
+          ]
+          && request.resource.data.quantityBefore is number
+          && request.resource.data.quantityAfter is number
+          && request.resource.data.quantityAfter >= 0
+          && request.resource.data.variation is number
+          && request.resource.data.quantityAfter
+            == request.resource.data.quantityBefore + request.resource.data.variation
+          && request.resource.data.unit in ["unit", "kg", "g", "l", "ml"]
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.idempotencyKey is string
+          && request.resource.data.idempotencyKey.size() > 0
+          && (
+            request.resource.data.type != "CONTROLE_PHYSIQUE"
+            || get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.articleId)).data.trackingMode == "CONTROLLED"
+          )
+          && (
+            !(request.resource.data.type in [
+              "AUTOMATIC_DEDUCTION",
+              "AUTOMATIC_COMPENSATION"
+            ])
+            || (
+              request.resource.data.productId is string
+              && request.resource.data.businessReference is string
+              && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.articleId)).data.trackingMode == "AUTOMATIC_SIMPLE"
+            )
+          )
+          && (
+            request.resource.data.type != "AUTOMATIC_COMPENSATION"
+            || request.resource.data.originalOperationId is string
+          ))
+          || isAutomaticServingOperationCreate(restaurantId);
+        allow update, delete: if false;
+      }
+
+      match /stockIdempotencyV2/{idempotencyKey} {
+        allow get: if canReadRestaurantBusinessDocs(restaurantId)
+          || hasStockServiceRole(restaurantId);
+        allow list: if false;
+        allow create: if (canReadRestaurantBusinessDocs(restaurantId)
+          || hasStockServiceRole(restaurantId))
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.operationId is string
+          && request.resource.data.fingerprint is string
+          && request.resource.data.createdBy == request.auth.uid
+          && existsAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/stockOperationsV2/$(request.resource.data.operationId));
+        allow update, delete: if false;
+      }
+
+      match /stockServingProgressV2/{progressId} {
+        allow get: if hasStockServiceRole(restaurantId);
+        allow list: if false;
+        allow create, update: if hasStockServiceRole(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.orderId is string
+          && request.resource.data.orderItemId is string
+          && request.resource.data.productId is string
+          && request.resource.data.articleId is string
+          && request.resource.data.associationId is string
+          && request.resource.data.servedQuantity is number
+          && request.resource.data.servedQuantity > 0
+          && request.resource.data.lastOperationId is string
+          && request.resource.data.updatedBy == request.auth.uid
+          && (
+            !exists(/databases/$(database)/documents/restaurants/$(restaurantId)/stockServingProgressV2/$(progressId))
+            || request.resource.data.servedQuantity >= resource.data.servedQuantity
+          )
+          && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/orders/$(request.resource.data.orderId)/orderItems/$(request.resource.data.orderItemId)).data.servedQuantity
+            == request.resource.data.servedQuantity;
+        allow delete: if false;
+      }
+
+      match /stockOperationCostsV2/{operationId} {
+        allow get, list: if canReadRestaurantBusinessDocs(restaurantId);
+        allow create: if canReadRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.operationId == operationId
+          && request.resource.data.totalCost is number
+          && request.resource.data.totalCost >= 0
+          && request.resource.data.unitCost is number
+          && request.resource.data.unitCost >= 0
+          && request.resource.data.updatedBy == request.auth.uid;
+        allow update, delete: if false;
+      }
+
+      match /stockAutomaticAssociationsV2/{associationId} {
+        allow get, list: if canReadRestaurantBusinessDocs(restaurantId)
+          || hasStockServiceRole(restaurantId);
+        allow create: if canReadRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.restaurantId == restaurantId
+          && request.resource.data.productId is string
+          && request.resource.data.articleId is string
+          && request.resource.data.quantity is number
+          && request.resource.data.quantity > 0
+          && request.resource.data.unit in ["unit", "kg", "g", "l", "ml"]
+          && request.resource.data.status == "active"
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.updatedBy == request.auth.uid
+          && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.articleId)).data.restaurantId == restaurantId
+          && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.articleId)).data.status == "active"
+          && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.articleId)).data.trackingMode == "AUTOMATIC_SIMPLE"
+          && existsAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/products/$(request.resource.data.productId));
+        allow update: if canReadRestaurantBusinessDocs(restaurantId)
+          && request.resource.data.restaurantId == resource.data.restaurantId
+          && request.resource.data.productId == resource.data.productId
+          && request.resource.data.articleId == resource.data.articleId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.quantity is number
+          && request.resource.data.quantity > 0
+          && request.resource.data.status in ["active", "inactive"]
+          && request.resource.data.updatedBy == request.auth.uid
+          && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.articleId)).data.trackingMode == "AUTOMATIC_SIMPLE";
+        allow delete: if false;
+      }
+
+      match /stockAutomaticAnomaliesV2/{anomalyId} {
+        allow get, list: if canReadRestaurantBusinessDocs(restaurantId);
+        allow create, update, delete: if false;
       }
 
       match /inventoryItems/{itemId} {
@@ -1036,13 +1517,13 @@ service cloud.firestore {
 
       match /suppliers/{supplierId} {
         allow get, list: if canReadRestaurantBusinessDocs(restaurantId);
-        allow create: if canWriteRestaurantBusinessDocs(restaurantId)
+        allow create: if canWriteRestaurantExpenseDocs(restaurantId)
           && request.resource.data.name is string
           && request.resource.data.balance is number
           && request.resource.data.balance >= 0
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.createdAt is timestamp;
-        allow update: if canWriteRestaurantBusinessDocs(restaurantId)
+        allow update: if canWriteRestaurantExpenseDocs(restaurantId)
           && request.resource.data.name is string
           && request.resource.data.balance is number
           && request.resource.data.balance >= 0;
@@ -1051,7 +1532,7 @@ service cloud.firestore {
 
       match /expenses/{expenseId} {
         allow get, list: if canReadRestaurantBusinessDocs(restaurantId);
-        allow create: if canWriteRestaurantBusinessDocs(restaurantId)
+        allow create: if canWriteRestaurantExpenseDocs(restaurantId)
           && request.resource.data.restaurantId == restaurantId
           && request.resource.data.type in ["supply", "salary", "other"]
           && request.resource.data.paymentStatus in ["paid", "partial", "unpaid"]
@@ -1063,14 +1544,13 @@ service cloud.firestore {
           && request.resource.data.validated == false
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.createdAt is timestamp;
-        allow update: if isRestaurantOwner(restaurantId)
-          && request.resource.data.validated is bool;
+        allow update: if false;
         allow delete: if false;
       }
 
       match /expenseLogs/{expenseId} {
         allow get, list: if canReadRestaurantBusinessDocs(restaurantId);
-        allow create: if canWriteRestaurantBusinessDocs(restaurantId)
+        allow create: if canWriteRestaurantExpenseDocs(restaurantId)
           && request.resource.data.expenseId == expenseId
           && request.resource.data.createdAt is timestamp;
         allow update, delete: if false;
@@ -1078,7 +1558,7 @@ service cloud.firestore {
 
       match /supplierPayments/{paymentId} {
         allow get, list: if canReadRestaurantBusinessDocs(restaurantId);
-        allow create: if canWriteRestaurantBusinessDocs(restaurantId)
+        allow create: if canWriteRestaurantExpenseDocs(restaurantId)
           && request.resource.data.restaurantId == restaurantId
           && request.resource.data.supplierId is string
           && request.resource.data.amount is number
@@ -1222,7 +1702,7 @@ service cloud.firestore {
           && request.resource.data.type in ["deposit", "expense", "transfer"]
           && request.resource.data.amount is number
           && request.resource.data.amount > 0
-          && request.resource.data.source in ["session", "manual", "expense", "payment", "transfer"]
+          && request.resource.data.source in ["session", "manual", "expense", "payment", "supplier_payment", "transfer"]
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.createdAt is timestamp
           && (
@@ -1404,7 +1884,17 @@ service cloud.firestore {
 
         match /orderItems/{itemId} {
           allow get, list: if canUseRestaurant(restaurantId);
-          allow create, update: if canUseRestaurant(restaurantId);
+          allow create: if canUseRestaurant(restaurantId);
+          allow update: if isServedOrderItemUpdate(restaurantId, orderId, itemId)
+            || (
+              canUseRestaurant(restaurantId)
+              && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                "status",
+                "servedQuantity",
+                "servedAt",
+                "servedBy"
+              ])
+            );
           allow delete: if isSuperAdmin();
         }
       }

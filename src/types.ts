@@ -196,6 +196,8 @@ export interface Product {
   reviewsPolicy?: ProductReviewsPolicy
   reviewsEnabled?: boolean
   available?: boolean
+  stockArticleId?: string
+  quantityPerSale?: number
 }
 
 export interface OrderItemSnapshot {

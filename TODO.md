@@ -1,44 +1,45 @@
-# Marketplace Sync — Client Side Implementation — ✅ COMPLETE
-# Firestore Rules — Marketplace Projection Write Access — ✅ COMPLETE
+# Mission BLACKBOX — Audit Inventory Instrumentation
 
-## Files Created
-1. [x] `src/lib/marketplace-discovery/marketplace-discovery-sync-client.ts` — Client-side sync service (Firebase client SDK)
+## ✅ ÉTAPE 1 — Instrumentation terminée
 
-## Files Modified
-2. [x] `src/app/(dashboard)/manager/components/ManagerClient.tsx` — Call sync after save
-3. [x] `firestore.rules` — Add create/update/delete rules for `marketplaceDishOffers` and `marketplaceRestaurantCategoryOffers`
-4. [x] `tests/marketplace-discovery/firestore-rules.test.mjs` — Update assertions for new write rules
+### Fichiers modifiés (instrumentation temporaire ajoutée)
 
-## Firestore Rules Changes
-- `marketplaceDishOffers`:
-  - `allow read: if resource.data.discoverable == true && schemaVersion == 1` (unchanged)
-  - `allow create: if canManageRestaurantMenu(request.resource.data.restaurantId)` + field validation (restaurantId, productId, marketplaceCategoryId, discoverable, schemaVersion)
-  - `allow update: if canManageRestaurantMenu(resource.data.restaurantId)` + restaurantId immutability + field validation
-  - `allow delete: if canManageRestaurantMenu(resource.data.restaurantId)`
-- `marketplaceRestaurantCategoryOffers`:
-  - `allow read: if resource.data.discoverable == true && schemaVersion == 1` (unchanged)
-  - `allow create: if canManageRestaurantMenu(request.resource.data.restaurantId)` + field validation (restaurantId, marketplaceCategoryId, discoverable, schemaVersion)
-  - `allow update: if canManageRestaurantMenu(resource.data.restaurantId)` + restaurantId immutability + field validation
-  - `allow delete: if canManageRestaurantMenu(resource.data.restaurantId)`
-- `marketplaceFoodCategories` — unchanged (super-admin only)
-- Catch-all `{document=**}` — unchanged (deny all)
+| Fichier | Tag de log | Objectif |
+|---------|-----------|----------|
+| `src/modules/stock/shared/use-inventory-referential.ts` | `[InventoryAudit]` | Tracer les documents Coca Cola bruts depuis Firestore |
+| `src/modules/stock/shared/inventory-referential.ts` | `[InventoryAudit]` | Normalisation, filtres actif/mode pour Coca Cola |
+| `src/app/(dashboard)/manager/components/ManagerClient.tsx` | `[ProductInventoryAudit]` | Parcours Produit > Gestion du stock > Déduction automatique |
+| `src/services/supply-expense.service.ts` | `[SupplyAudit]` | Parcours Manager > Dépenses > Nouvelle dépense > Approvisionnement |
 
-## Steps
-- [x] Audit complete: `marketplace-discovery-sync.ts` uses `firebase-admin` → incompatible with Spark
-- [x] Create `marketplace-discovery-sync-client.ts` with:
-  - `syncDishOffer(db, restaurantId, productId)` — project and write to `marketplaceDishOffers`
-  - `syncCategoryOffers(db, restaurantId, categoryId)` — re-sync all products in a category
-  - `rebuildRestaurantCategoryOffers(db, restaurantId)` — rebuild `marketplaceRestaurantCategoryOffers`
-  - Reuse `projectMarketplaceDishOffer` and `projectMarketplaceRestaurantCategoryOffer` from core
-- [x] In `ManagerClient.tsx`:
-  - After `handleSaveProduct` → call `syncDishOffer()` then `rebuildRestaurantCategoryOffers()`
-  - After `handleSaveCategory` → call `syncCategoryOffers()` then `rebuildRestaurantCategoryOffers()`
-- [x] After `handleToggleProduct` → also calls marketplace sync
-- [x] **Firestore Rules**: Replace `allow write: if false` with manager-restricted create/update/delete
-  - update validates required fields + restaurantId immutability
-  - delete restricted to manager of the restaurant
-- [x] Update tests in `tests/marketplace-discovery/firestore-rules.test.mjs`
-- [x] Run `npx mocha tests/marketplace-discovery/firestore-rules.test.mjs` — **11/11 passing**
-- [x] Run `npx tsc --noEmit` — no errors
-- [x] Verify no POS/marketplace files were touched
+## 🎯 Trois parcours tracés
+
+### 1. Inventaire (visible)
+- **Hook**: `useInventoryReferential(restaurantId)`
+- **Collection**: `restaurants/{restaurantId}/stockItemsV2`
+- **Instrumentation**: `[InventoryAudit]` — normalisation, filtre actif, filtre mode
+
+### 2. Produit > Déduction automatique (INVISIBLE)
+- **Composant**: `ManagerClient.tsx` > produit modal > section "Gestion du stock"
+- **Hook**: `useInventoryReferential(restaurantId)` via `inventoryRef`
+- **Données filtrées**: `eligibleAutomaticArticles` = `automaticInventoryArticles(articles)`
+- **Instrumentation**: `[ProductInventoryAudit]` — affiche restaurantId, feature flags, counts, chaque document avec son exclusionReason
+
+### 3. Approvisionnement (INVISIBLE)
+- **Service**: `SupplyExpenseService.createExpense()`
+- **Collection**: `restaurants/{restaurantId}/stockItemsV2`
+- **Instrumentation**: `[SupplyAudit]` — affiche restaurantId, items, feature flags
+
+## 🔍 Comment exécuter l'audit
+
+1. **Lancer l'application**: `npm run dev`
+2. **Ouvrir la console navigateur** (F12 > Console)
+3. **Parcourir les trois écrans**:
+   - Aller dans **Manager > Inventaire** → check `[InventoryAudit]` logs
+   - Aller dans **Manager > Menu > Modifier un produit > Gestion du stock** → check `[ProductInventoryAudit]` logs
+   - Aller dans **Manager > Dépenses > Nouvelle dépense > Approvisionnement** → check `[SupplyAudit]` logs
+4. **Rechercher** `COCA COLA` dans les logs pour voir les raisons d'exclusion
+
+## 📋 Rapport attendu
+
+Après reproduction, répondre aux 12 questions de l'Étape 9.
 

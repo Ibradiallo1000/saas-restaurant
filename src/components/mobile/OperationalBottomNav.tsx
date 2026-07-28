@@ -170,5 +170,11 @@ function renderDrawerItem(
 }
 
 function isActivePath(pathname: string, href: string) {
+  if (
+    href === "/manager/inventory" &&
+    (pathname === "/manager/stock" || pathname.startsWith("/manager/stock/"))
+  ) {
+    return true
+  }
   return pathname === href || pathname.startsWith(`${href}/`)
 }

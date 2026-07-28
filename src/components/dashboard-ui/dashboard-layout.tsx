@@ -1,5 +1,6 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { PageHeader } from "@/design-system/components"
 
 type ElementTag = "div" | "main" | "section" | "header" | "aside" | "nav"
 
@@ -34,16 +35,18 @@ export interface DashboardHeaderProps extends Omit<React.HTMLAttributes<HTMLElem
 }
 
 export const DashboardHeader = React.forwardRef<HTMLElement, DashboardHeaderProps>(
-  ({ actions, className, eyebrow, headingAs: Heading = "h1", meta, subtitle, title, ...props }, ref) => (
-    <header ref={ref} className={cn("flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between", className)} {...props}>
-      <div className="min-w-0">
-        {eyebrow ? <div className="mb-1 text-[length:var(--text-dashboard-label)] font-bold uppercase leading-[var(--leading-dashboard-label)] tracking-wide text-[var(--dashboard-label)]">{eyebrow}</div> : null}
-        <Heading className="text-[length:var(--text-dashboard-page-title)] font-bold leading-[var(--leading-dashboard-page-title)] tracking-tight text-[var(--dashboard-title)]">{title}</Heading>
-        {subtitle ? <p className="mt-1 max-w-3xl text-[length:var(--text-dashboard-description)] leading-[var(--leading-dashboard-description)] text-[var(--dashboard-subtitle)]">{subtitle}</p> : null}
-        {meta ? <div className="mt-2 text-[length:var(--text-dashboard-caption)] leading-[var(--leading-dashboard-caption)] text-[var(--dashboard-muted)]">{meta}</div> : null}
-      </div>
-      {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
-    </header>
+  ({ actions, className, eyebrow, headingAs = "h1", meta, subtitle, title, ...props }, ref) => (
+    <PageHeader
+      ref={ref}
+      className={className}
+      title={title}
+      subtitle={subtitle}
+      eyebrow={eyebrow}
+      meta={meta}
+      action={actions}
+      headingAs={headingAs}
+      {...props}
+    />
   )
 )
 DashboardHeader.displayName = "DashboardHeader"
