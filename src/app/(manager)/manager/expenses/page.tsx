@@ -3,6 +3,7 @@
 import * as React from "react"
 import { collection, query, where } from "firebase/firestore"
 import { Banknote, Plus, ReceiptText, Trash2 } from "lucide-react"
+import { useSearchParams } from "next/navigation"
 
 import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
 import { ManagerPeriodFilter } from "@/components/layout/manager-period-filter"
@@ -54,12 +55,20 @@ const EXPENSE_TYPES: Array<{ value: ExpenseType; label: string }> = [
 ]
 
 export default function ManagerExpensesPage() {
+  const searchParams = useSearchParams()
+  const isSupplyRequest = searchParams?.get("type") === "supply"
+  const requestedSupplyArticleId =
+    isSupplyRequest
+      ? searchParams?.get("articleId")?.trim() || ""
+      : ""
   const db = useFirestore()
   const { restaurantId } = useRestaurant()
   const { user } = useTenant()
   const { filter } = useTimeFilter()
   const range = React.useMemo(() => getDateRange(filter), [filter])
-  const [type, setType] = React.useState<ExpenseType>("other")
+  const [type, setType] = React.useState<ExpenseType>(
+    isSupplyRequest ? "supply" : "other"
+  )
   const [paymentStatus, setPaymentStatus] = React.useState<ExpensePaymentStatus | "">("")
   const [amount, setAmount] = React.useState("")
   const [paidAmount, setPaidAmount] = React.useState("")
@@ -69,7 +78,7 @@ export default function ManagerExpensesPage() {
   const [newSupplierPhone, setNewSupplierPhone] = React.useState("")
   const [note, setNote] = React.useState("")
   const [lines, setLines] = React.useState<SupplyLine[]>([
-    { articleId: "", quantity: "", unitCost: "" },
+    { articleId: requestedSupplyArticleId, quantity: "", unitCost: "" },
   ])
   const [saving, setSaving] = React.useState(false)
   const [feedback, setFeedback] = React.useState("")

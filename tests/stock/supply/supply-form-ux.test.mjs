@@ -8,6 +8,14 @@ const expenses = fs.readFileSync(
   path.join(root, "src/app/(manager)/manager/expenses/page.tsx"),
   "utf8"
 )
+const inventoryCards = fs.readFileSync(
+  path.join(root, "src/modules/stock/articles/ui/ArticleReferentialScreen.tsx"),
+  "utf8"
+)
+const stockDetail = fs.readFileSync(
+  path.join(root, "src/modules/stock/controlled-stock/ui/ControlledStockScreen.tsx"),
+  "utf8"
+)
 
 test("l'approvisionnement utilise les libellés simplifiés", () => {
   assert.match(expenses, /<Label>Article<\/Label>/)
@@ -49,4 +57,21 @@ test("le récapitulatif conserve le calcul quantité multipliée par prix", () =
   )
   assert.match(expenses, /formatMoney\(effectiveAmount\)/)
   assert.match(expenses, /disabled=\{!canSubmit \|\| saving\}/)
+})
+
+test("Approvisionner ouvre le formulaire canonique avec l'article présélectionné", () => {
+  assert.match(
+    inventoryCards,
+    /\/manager\/expenses\?type=supply&articleId=\$\{encodeURIComponent\(String\(article\.id\)\)\}/
+  )
+  assert.match(
+    stockDetail,
+    /\/manager\/expenses\?type=supply&articleId=\$\{encodeURIComponent\(id\)\}/
+  )
+  assert.match(expenses, /useSearchParams/)
+  assert.match(expenses, /searchParams\?\.get\("type"\) === "supply"/)
+  assert.match(
+    expenses,
+    /\{ articleId: requestedSupplyArticleId, quantity: "", unitCost: "" \}/
+  )
 })

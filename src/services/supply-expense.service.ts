@@ -273,6 +273,7 @@ export class SupplyExpenseService {
           quantity: newStock,
           unit: snapshot.article.baseUnit,
           version: oldVersion + 1,
+          lastOperationId: operationRef.id,
           lastOperationAt: occurredAt,
           lastControlAt: snapshot.balance?.lastControlAt || null,
           lastSupplyAt: occurredAt,

@@ -641,7 +641,7 @@ function ArticleList(props: SharedProps) {
                   article.trackingMode === "AUTOMATIC_SIMPLE" ? (
                     <Button asChild size="sm">
                       <Link
-                        href={`/manager/stock/${article.id}/supply`}
+                        href={`/manager/expenses?type=supply&articleId=${encodeURIComponent(String(article.id))}`}
                         aria-label={`Approvisionner ${article.name}`}
                       >
                         <PackagePlus className="mr-2 h-4 w-4" />

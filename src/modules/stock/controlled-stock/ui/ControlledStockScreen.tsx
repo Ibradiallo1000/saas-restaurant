@@ -179,7 +179,7 @@ function ArticlePage({ article, balance, operations }: { article: StockArticle; 
       </div>
       <div className="flex flex-wrap gap-2">
       <Button asChild variant="outline"><Link href={`/manager/stock/articles/${id}`}>Modifier l’article et ses seuils</Link></Button>
-      <Button asChild><Link href={`/manager/stock/${id}/supply`}>Approvisionner</Link></Button>
+      <Button asChild><Link href={`/manager/expenses?type=supply&articleId=${encodeURIComponent(id)}`}>Approvisionner</Link></Button>
       <Button asChild variant="outline"><Link href={`/manager/stock/${id}/control`}>Contrôler</Link></Button>
       <Button asChild variant="outline"><Link href={`/manager/stock/${id}/loss`}>Déclarer une perte</Link></Button>
       <Button asChild variant="outline"><Link href={`/manager/stock/${id}/correction`}>Corriger</Link></Button>
