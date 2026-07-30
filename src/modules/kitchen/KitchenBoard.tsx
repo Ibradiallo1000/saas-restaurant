@@ -1,11 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { arrayUnion, doc, serverTimestamp, updateDoc } from "firebase/firestore"
 import { signOut } from "firebase/auth"
 import { useRouter } from "next/navigation"
 import {
-  CheckCircle2,
   ChefHat,
   Clock3,
   CookingPot,
@@ -29,7 +27,7 @@ import { PosHeader } from "@/components/pos-ui"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
-import { useAuth, useFirestore } from "@/firebase"
+import { useAuth } from "@/firebase"
 import { useToast } from "@/hooks/use-toast"
 import {
   ORDER_OPERATION_STATUS,
@@ -38,13 +36,13 @@ import {
   normalizeOrderItemStatus,
   normalizeOrderType,
   orderStatusFromKitchenStatus,
-  toKitchenServedEventStatus,
 } from "@/lib/order-lifecycle"
 import { getOrderDisplayId } from "@/lib/order-display-id"
-import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
 import { KitchenOrderCard } from "@/modules/kitchen/KitchenOrderCard"
-import { isKitchenPaymentDelayed } from "@/modules/kitchen/kitchen-view-model"
-import { markOrderItemAsServedAndDeductStock } from "@/modules/stock/automatic-simple/infrastructure/mark-order-item-served"
+import {
+  executeKitchenItemsTransition,
+  isCanonicalKitchenBoardOrder,
+} from "@/modules/kitchen/canonical-read"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
 import { playNewOrderNotificationSound } from "@/services/notification-sound.service"
 import { isKitchenItem, orderHasKitchenItems } from "@/utils/preparation-logic"
@@ -58,9 +56,6 @@ type KitchenColumnStatus =
   | typeof ORDER_OPERATION_STATUS.PENDING
   | typeof ORDER_OPERATION_STATUS.IN_PREPARATION
   | typeof ORDER_OPERATION_STATUS.READY
-  | typeof ORDER_OPERATION_STATUS.SERVED
-
-const KITCHEN_JOURNAL_MARKER = "__kitchenServedToday"
 const DEBUG_PICKED_UP_ORDER_ID = "MEy8U4UOHDUoJz5UVZq7"
 
 const KITCHEN_COLUMNS: Array<{
@@ -87,26 +82,15 @@ const KITCHEN_COLUMNS: Array<{
     icon: Utensils,
     emptyDescription: "Les commandes prêtes à servir apparaîtront ici.",
   },
-  {
-    status: ORDER_OPERATION_STATUS.SERVED,
-    title: "Servies",
-    icon: CheckCircle2,
-    emptyDescription: "Les commandes servies resteront visibles ici.",
-  },
 ]
 
 export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
-  const db = useFirestore()
   const auth = useAuth()
   const router = useRouter()
   const { restaurant } = useRestaurant()
   const { user } = useTenant()
   const { toast } = useToast()
-  const previousSnapshotRef = React.useRef<Map<string, string | null | undefined>>(
-    new Map()
-  )
   const previousItemCountsRef = React.useRef<Map<string, number>>(new Map())
-  const kitchenAlertedOrderIdsRef = React.useRef<Set<string>>(new Set())
   const ordersRef = React.useRef(orders)
   const seenOrderIdsRef = React.useRef<Set<string>>(new Set())
   const entrySoundOrderIdsRef = React.useRef<Set<string>>(new Set())
@@ -135,13 +119,7 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     return orders
       .filter((order) => orderHasKitchenItems(order.items || []))
       .filter(shouldShowInTodayKitchen)
-      .sort((a, b) => {
-        const priorityDiff = getKitchenQueuePriority(a) - getKitchenQueuePriority(b)
-
-        if (priorityDiff !== 0) return priorityDiff
-
-        return getCreatedAtMs(a) - getCreatedAtMs(b)
-      })
+      .sort((a, b) => getCreatedAtMs(a) - getCreatedAtMs(b))
   }, [orders])
 
   const groupedOrders = React.useMemo(() => {
@@ -149,17 +127,10 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
         pending: [],
         preparing: [],
         ready: [],
-        served: [],
       }
 
     kitchenOrders.forEach((order) => {
       if (!order.kitchenStatus) console.warn("Missing kitchenStatus", order.id)
-      if (isKitchenServedTodayOrder(order)) {
-        debugKitchenBoardColumn(order, ORDER_OPERATION_STATUS.SERVED, "journal marker")
-        groups.served.push(order)
-        return
-      }
-
       const kitchenStatus = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
 
       if (
@@ -176,7 +147,6 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
       ...groups.pending,
       ...groups.preparing,
       ...groups.ready,
-      ...groups.served,
     ])
 
     return groups
@@ -233,120 +203,70 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
   React.useEffect(() => {
     if (!kitchenOrders.length) return
 
-    const previous = previousSnapshotRef.current
     const previousItemCounts = previousItemCountsRef.current
 
     kitchenOrders.forEach((order) => {
-      const currentPaymentStatus = getOrderPaymentStatus(order)
-      const previousPaymentStatus = previous.get(order.id)
-      
       const currentItemsCount = order.items?.length || 0
       const previousItemsCount = previousItemCounts.get(order.id)
-      
-      const shouldAlertKitchen =
-        previous.has(order.id) &&
-        normalizeOrderType(getKitchenOrderTypeValue(order)) !== "dine_in" &&
-        previousPaymentStatus !== "verified" &&
-        currentPaymentStatus === "verified" &&
-        !kitchenAlertedOrderIdsRef.current.has(order.id)
-
-      if (shouldAlertKitchen) {
-        kitchenAlertedOrderIdsRef.current.add(order.id)
-        triggerKitchenAlert(order, toast)
-      }
 
       if (previousItemsCount !== undefined && currentItemsCount > previousItemsCount) {
         triggerKitchenAlert(order, toast, "Nouvel article ajouté", "Un ou plusieurs articles ont été ajoutés à cette commande.")
       }
 
-      previous.set(order.id, currentPaymentStatus)
       previousItemCounts.set(order.id, currentItemsCount)
     })
   }, [kitchenOrders, toast])
 
   const updateStatus = React.useCallback(async (orderId: string, newOrderStatus: OrderOperationStatus) => {
-    if (!db || !user) return
+    if (!user) return
+    if (
+      newOrderStatus !== ORDER_OPERATION_STATUS.IN_PREPARATION &&
+      newOrderStatus !== ORDER_OPERATION_STATUS.READY
+    ) {
+      throw new Error("KITCHEN_COMMAND_FORBIDDEN")
+    }
     const order = ordersRef.current.find((currentOrder) => currentOrder.id === orderId)
     if (!order) return
 
     const currentStatus = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
-    const nextItemStatus = itemStatusFromOperationStatus(newOrderStatus)
-    const nextItems = (order.items || []).map((item) => {
-      if (!isKitchenItem(item)) {
-        return item
-      }
-
-      const itemStatus = normalizeOrderItemStatus((item as any).status ?? order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
-
-      if (itemStatus !== itemStatusFromOperationStatus(currentStatus)) {
-        return item
-      }
-
-      return {
-        ...item,
-        status: nextItemStatus,
-        ...(nextItemStatus === "served" ? { servedAt: new Date() } : {}),
-      }
-    })
-
-    const orderRef = doc(restaurantOrdersRef(db, restaurantId), orderId)
-    const historyStatus = toKitchenServedEventStatus(newOrderStatus)
-    const timestampField = getKitchenTimestampField(newOrderStatus)
-    if (nextItemStatus === "served") {
-      const warnings: string[] = []
-      for (const [index, item] of (order.items || []).entries()) {
-        if (!isKitchenItem(item)) continue
-        const currentItemStatus = normalizeOrderItemStatus(
-          (item as any).status
-            ?? order.kitchenStatus
-            ?? (order as any).status
-            ?? (order as any).orderStatus
-        )
-        if (currentItemStatus !== itemStatusFromOperationStatus(currentStatus)) continue
-        const result = await markOrderItemAsServedAndDeductStock({
-          db,
-          restaurantId,
-          orderId,
-          orderItemId: String(
-            (item as any).id
-              ?? (item as any).orderItemId
-              ?? `${(item as any).productId ?? "item"}-${index}`
-          ),
-          actorId: user.uid,
-        })
-        if (result.warning) warnings.push(result.warning)
-      }
-      if (warnings.length > 0) {
-        toast({
-          title: "Commande servie avec avertissement stock",
-          description: Array.from(new Set(warnings)).join(" "),
-        })
-      }
+    const targetStatus = itemStatusFromOperationStatus(newOrderStatus)
+    if (targetStatus !== "preparing" && targetStatus !== "ready") {
+      throw new Error("KITCHEN_COMMAND_FORBIDDEN")
     }
-    await updateDoc(orderRef, {
-      kitchenStatus: newOrderStatus,
-      ...(timestampField ? { [`timestamps.${timestampField}`]: serverTimestamp() } : {}),
-      statusHistory: arrayUnion({
-        status: historyStatus,
-        at: new Date(),
-        source: "kitchen",
-      }),
-      ...(nextItemStatus === "served" ? {} : { items: nextItems }),
-      updatedAt: serverTimestamp(),
+    const canonicalOrderId = isCanonicalKitchenBoardOrder(order)
+      ? order.__canonicalOrderId
+      : order.id
+    const eligibleItems = (order.items || []).filter((item) => {
+      if (!isKitchenItem(item)) return false
+      return normalizeOrderItemStatus(
+        (item as any).status ??
+        order.kitchenStatus ??
+        (order as any).status ??
+        (order as any).orderStatus
+      ) === itemStatusFromOperationStatus(currentStatus)
     })
-  }, [db, restaurantId, toast, user])
+    await executeKitchenItemsTransition({
+      user,
+      restaurantId,
+      orderId: canonicalOrderId,
+      targetStatus,
+      items: eligibleItems.map((item, index) => ({
+        orderItemId: String(
+          (item as any).orderItemId ??
+          (item as any).id ??
+          `${(item as any).productId ?? "item"}-${index}`
+        ),
+        expectedVersion: Number((item as any).version ?? 1),
+      })),
+    })
+  }, [restaurantId, user])
 
-  const delayedCount = React.useMemo(
-    () => kitchenOrders.filter((order) => isKitchenPaymentDelayed(order, nowMs)).length,
-    [kitchenOrders, nowMs]
-  )
   const loadMetrics = React.useMemo(() => [
     { id: "pending", label: "Nouvelles", value: groupedOrders.pending.length },
     { id: "preparing", label: "Préparation", value: groupedOrders.preparing.length },
     { id: "ready", label: "Prêtes", value: groupedOrders.ready.length, tone: "positive" as const },
-    { id: "overdue", label: "Retard", value: delayedCount, tone: delayedCount ? "critical" as const : "normal" as const },
     { id: "total", label: "Visibles", value: kitchenOrders.length },
-  ], [delayedCount, groupedOrders, kitchenOrders.length])
+  ], [groupedOrders, kitchenOrders.length])
 
   return (
     <KitchenPage
@@ -389,7 +309,7 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     >
       <div className="flex h-full min-h-0 flex-col gap-[var(--pos-layout-gap)]">
         <OperationalMetricStrip items={loadMetrics} label="Indicateurs de production Cuisine" />
-        <KitchenBoardLayout layout="adaptive" className="min-h-0 flex-1 overflow-y-auto md:auto-rows-[minmax(24rem,1fr)] xl:grid-cols-4 xl:auto-rows-fr xl:overflow-hidden">
+        <KitchenBoardLayout layout="adaptive" className="min-h-0 flex-1 overflow-y-auto md:auto-rows-[minmax(24rem,1fr)] xl:grid-cols-3 xl:auto-rows-fr xl:overflow-hidden">
         {KITCHEN_COLUMNS.map((column) => {
           const columnOrders = groupedOrders[column.status]
           const Icon = column.icon
@@ -425,29 +345,12 @@ function getCreatedAtMs(order: RestaurantOrder) {
 }
 
 function shouldShowInTodayKitchen(order: RestaurantOrder) {
-  if (isKitchenServedTodayOrder(order)) return true
-
   const status = orderStatusFromKitchenStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus)
   return (
     status === ORDER_OPERATION_STATUS.PENDING ||
     status === ORDER_OPERATION_STATUS.IN_PREPARATION ||
     status === ORDER_OPERATION_STATUS.READY
   )
-}
-
-function isKitchenServedTodayOrder(order: RestaurantOrder) {
-  return Boolean((order as any)[KITCHEN_JOURNAL_MARKER])
-}
-
-function getKitchenQueuePriority(order: RestaurantOrder) {
-  const paymentStatus = (order as { paymentStatus?: string | null }).paymentStatus
-  const isDineIn = normalizeOrderType(getKitchenOrderTypeValue(order)) === "dine_in"
-  const isVerified = paymentStatus === "verified"
-
-  if (!isDineIn && isVerified) return 0
-  if (isDineIn) return 1
-
-  return 2
 }
 
 function getKitchenOrderTypeValue(order: RestaurantOrder) {
@@ -458,18 +361,6 @@ function getKitchenOrderTypeValue(order: RestaurantOrder) {
   }
 
   return order.orderType ?? details.publicOrderType ?? details.type ?? details.mode
-}
-
-function getKitchenTimestampField(status: OrderOperationStatus) {
-  if (status === ORDER_OPERATION_STATUS.IN_PREPARATION) return "preparingAt"
-  if (status === ORDER_OPERATION_STATUS.READY) return "readyAt"
-  if (status === ORDER_OPERATION_STATUS.SERVED) return "servedAt"
-  if (status === ORDER_OPERATION_STATUS.PICKED_UP) return "pickedUpAt"
-  return null
-}
-
-function getOrderPaymentStatus(order: RestaurantOrder) {
-  return (order as { paymentStatus?: string | null }).paymentStatus ?? null
 }
 
 function debugKitchenBoardStage(stage: string, orders: RestaurantOrder[]) {
@@ -488,7 +379,6 @@ function debugKitchenBoardStage(stage: string, orders: RestaurantOrder[]) {
       orderType: order.orderType,
       type: (order as any).type,
       mode: (order as any).mode,
-      journalMarker: Boolean((order as any)[KITCHEN_JOURNAL_MARKER]),
       hasKitchenItems: orderHasKitchenItems(order.items || []),
       shouldShowInTodayKitchen: shouldShowInTodayKitchen(order),
       items: order.items,

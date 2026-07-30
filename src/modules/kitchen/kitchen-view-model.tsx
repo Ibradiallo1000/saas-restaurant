@@ -53,12 +53,8 @@ export const actionLabels: Record<string, string> = {
   pending: "En attente",
   preparing: "Commencer",
   ready: "Marquer prête",
-  served: "Servir",
-  picked_up: "Récupérer",
-  completed: "Terminer",
   en_preparation: "Commencer",
   pretes: "Marquer prête",
-  servies: "Servir",
 }
 
 export function createKitchenCardViewModel(order: RestaurantOrder, nowMs: number): KitchenCardViewModel {

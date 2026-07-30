@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 
 import { getApps, initializeApp, cert, applicationDefault, type ServiceAccount } from "firebase-admin/app"
 import { getAuth } from "firebase-admin/auth"
+import { getAppCheck } from "firebase-admin/app-check"
 import { getFirestore } from "firebase-admin/firestore"
 
 function getAdminCredential() {
@@ -89,6 +90,17 @@ export function getAdminFirestore() {
       })
 
   return getFirestore(app)
+}
+
+export function getAdminAppCheck() {
+  const app = getApps().length
+    ? getApps()[0]
+    : initializeApp({
+        credential: getAdminCredential(),
+        projectId: getFirebaseProjectId(),
+      })
+
+  return getAppCheck(app)
 }
 
 function getFirebaseProjectId() {

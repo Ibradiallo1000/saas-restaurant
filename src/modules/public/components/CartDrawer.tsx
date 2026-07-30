@@ -16,7 +16,6 @@ export default function CartDrawer({
   onClose,
   restaurantId,
   tableContext,
-  activeTableSession,
   activeOrderId,
 }: any) {
   const { items, total, updateQty, removeItem } = useCart()

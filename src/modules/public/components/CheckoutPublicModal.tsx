@@ -1,20 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { doc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore"
+import { doc } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import { ArrowRight, Banknote, CheckCircle, ChefHat, ChevronLeft, CreditCard, MapPin, Phone, ShoppingBag, Truck } from "lucide-react"
 
 import { PublicButton, PublicCheckoutModal, PublicOptionChoice, PublicOptionGroup, PublicPrice, PublicSurface, PublicTextField } from "@/components/public-ui"
-import { useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
+import { useDocOnce, useFirebaseApp, useFirestore, useMemoFirebase, useUser } from "@/firebase"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { getOptimizedImage } from "@/lib/image"
-import { recalculateConfiguredUnitPrice } from "@/lib/order-pricing"
-import { ORDER_PAYMENT_STATUS } from "@/lib/order-lifecycle"
-import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
-import { ORDER_OPERATION_STATUS } from "@/lib/order-lifecycle"
-import { generateReviewAccessToken, rememberOrderReviewAccess, restaurantReviewAccessRef, REVIEW_ACCESS_TOKEN_VERSION } from "@/lib/reputation/review-access-token"
-import { orderHasKitchenItems, resolveProductPreparationMode } from "@/utils/preparation-logic"
 import { buildUssdTelHref } from "@/lib/ussd"
 import {
   getAvailablePaymentMethods,
@@ -22,6 +16,15 @@ import {
 } from "@/services/payment-methods.service"
 import { useCart } from "../cart/CartContext"
 import { rememberTrackedOrder } from "../orderTrackingStorage"
+import {
+  clearPublicIdempotencyKey,
+  comparePublicOrderProjections,
+  createCanonicalQrOrder,
+  qrCanonicalEnabled,
+  requestCanonicalOrderPayment,
+  resolveQrCanonicalMode,
+  stablePublicIdempotencyKey,
+} from "../canonical"
 
 type OrderFlowStep = "cart" | "delivery" | "recap" | "payment"
 type PublicOrderType = "pickup" | "delivery"
@@ -74,6 +77,8 @@ export default function CheckoutPublicModal({
   restaurantFeatures?: RestaurantFeatures
 }) {
   const db = useFirestore()
+  const app = useFirebaseApp()
+  const { user } = useUser()
   const router = useRouter()
   const { items, total, clear } = useCart()
 
@@ -232,145 +237,95 @@ export default function CheckoutPublicModal({
     setError("")
 
     try {
-      const orderItems = await Promise.all(
-        items.map(async (item, index) => {
-          const productSnap = await getDoc(
-            doc(db, "restaurants", restaurantId, "products", item.productId)
-          )
-
-          if (!productSnap.exists()) {
-            throw new Error(`Produit introuvable: ${item.productId}`)
-          }
-
-          const product = { id: productSnap.id, ...productSnap.data() } as any
-          const unitPrice = recalculateConfiguredUnitPrice(product, item.selectedOptions ?? [])
-
-          let categoryName = item.categoryName || ""
-          if (!product.preparationMode && !categoryName && product.categoryId) {
-            const categorySnap = await getDoc(
-              doc(db, "restaurants", restaurantId, "categories", product.categoryId)
-            )
-            categoryName = categorySnap.data()?.name || ""
-          }
-
-          return {
-            id: `${item.productId}-${Date.now()}-${index}`,
-            productId: item.productId,
-            name: item.name,
-            status: "pending",
-            createdAt: new Date(),
-            unitPrice,
-            quantity: item.quantity,
-            total: unitPrice * item.quantity,
-            selectedOptions: item.selectedOptions ?? [],
-            imageUrl: item.imageUrl || null,
-            preparationMode: item.preparationMode || resolveProductPreparationMode(product, categoryName),
-            reviewsEnabled: product.reviewsEnabled === true,
-          }
-        })
-      )
-
-      const recalculatedSubtotal = orderItems.reduce((sum, item) => sum + item.total, 0)
-      const normalizedOrderType = flow.orderType === "pickup" ? "pickup" : "delivery"
-      const orderTotal = recalculatedSubtotal + deliveryFee
-      const requiresKitchen = orderHasKitchenItems(orderItems)
-
-      if (process.env.NODE_ENV !== "production") {
-        console.info("[preparationMode][public_checkout]", {
+      const qrMode = resolveQrCanonicalMode(restaurantId)
+      if (qrCanonicalEnabled(qrMode)) {
+        if (!user?.isAnonymous) {
+          throw new Error("La session client a expiré. Rechargez la page puis réessayez.")
+        }
+        const serviceMode = flow.orderType === "delivery" ? "delivery" : "takeaway"
+        const channel =
+          flow.orderType === "delivery" ? "public_delivery" : "public_takeaway"
+        const requestScope = `public-order:${restaurantId}:${serviceMode}`
+        const idempotencyKey = stablePublicIdempotencyKey(requestScope)
+        const primaryPhone = cleanPhone(flow.phone)
+        const response = await createCanonicalQrOrder({
+          app,
+          user,
           restaurantId,
-          orderType: normalizedOrderType,
-          paymentMethodCode: flow.paymentMethodCode,
-          items: orderItems.map((item) => ({
-            productId: item.productId,
-            name: item.name,
-            preparationMode: item.preparationMode,
-            sentToKitchen: item.preparationMode === "kitchen",
-          })),
-          kitchenItems: orderItems
-            .filter((item) => item.preparationMode === "kitchen")
-            .map((item) => item.productId),
-          requiresKitchen,
+          idempotencyKey,
+          body: {
+            schemaVersion: 1,
+            channel,
+            serviceMode,
+            clientRequestId: idempotencyKey,
+            items: items.map((item, index) => ({
+              clientLineId: `${item.productId}-${index}`,
+              productId: item.productId,
+              quantity: item.quantity,
+              options: (item.selectedOptions ?? []).map((option) => ({
+                optionName: option.optionName,
+                choiceName: option.choiceName,
+              })),
+              instructions: null,
+            })),
+            tableContext: null,
+            customer: { name: null, phone: primaryPhone || null },
+            delivery:
+              serviceMode === "delivery"
+                ? {
+                    address: flow.address.trim(),
+                    zoneId: null,
+                    instructions: flow.instructions.trim() || null,
+                  }
+                : null,
+            cashSessionId: null,
+            notes: flow.customerNote.trim() || null,
+          },
         })
+        if (qrMode === "compare" && process.env.NODE_ENV !== "production") {
+          console.info("[PUBLIC_ORDER][CANONICAL_COMPARE]", comparePublicOrderProjections(
+            {
+              lineCount: response.orderItemIds.length,
+              lines: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+              total: response.total,
+              serviceMode: response.serviceMode,
+              tableId: null,
+              status: response.orderStatus,
+            },
+            {
+              lineCount: items.length,
+              lines: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+              total: finalTotal,
+              serviceMode,
+              tableId: null,
+              status: items.some((item) => item.preparationMode === "kitchen") ? "pending" : "ready",
+            }
+          ))
+        }
+        await requestCanonicalOrderPayment({
+          app,
+          user,
+          restaurantId,
+          orderId: response.orderId,
+          idempotencyKey: stablePublicIdempotencyKey(
+            `public-payment:${restaurantId}:${response.orderId}`
+          ),
+          method: flow.paymentMethodCode === "cash" ? "cash" : "mobile",
+          provider:
+            flow.paymentMethodCode === "cash" ? null : flow.paymentMethodCode,
+          paymentProofSms:
+            flow.paymentMethodCode === "cash"
+              ? null
+              : flow.paymentProofSms.trim() || null,
+        })
+        clear()
+        clearPublicIdempotencyKey(requestScope)
+        onClose()
+        rememberTrackedOrder({ restaurantId, orderId: response.orderId })
+        router.push(`/order/${restaurantId}/${response.orderId}`)
+        return
       }
 
-      const primaryPhone = cleanPhone(flow.phone)
-      const secondaryPhone = cleanPhone(flow.secondaryPhone)
-
-      const order = {
-        restaurantId,
-        orderType: normalizedOrderType,
-        publicOrderType: flow.orderType,
-        source: "client",
-        kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
-        orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
-        sessionId: null,
-        tableId: null,
-        zoneId: null,
-        customer: {
-          phone: primaryPhone || null,
-          name: null,
-        },
-        phoneNumber: primaryPhone || null,
-        secondaryPhoneNumber: secondaryPhone || null,
-        table: null,
-        ...(flow.orderType === "delivery" && {
-          deliveryAddress: flow.address.trim(),
-          deliveryInstructions: flow.instructions.trim() || null,
-        }),
-        customerNote: flow.customerNote.trim() || null,
-        items: orderItems,
-        subtotal: recalculatedSubtotal,
-        deliveryFee,
-        total: orderTotal,
-        paymentMethod: flow.paymentMethodCode,
-        paymentMethodCode: flow.paymentMethodCode === "cash" ? null : flow.paymentMethodCode,
-        paymentType: flow.paymentMethodCode === "cash" ? "offline" : "mobile",
-        paymentIntentStatus: flow.paymentMethodCode === "cash" ? "pending" : "submitted",
-        paymentCode: flow.paymentCode || null,
-        paymentInstruction: flow.paymentInstruction || null,
-        paymentReference: null,
-        ...(flow.paymentMethodCode !== "cash" && {
-          paymentProofSms: flow.paymentProofSms.trim(),
-          paymentProofSubmittedAt: serverTimestamp(),
-          paymentProofStatus: "submitted",
-        }),
-        paymentStatus: flow.paymentMethodCode === "cash" ? "pending_cash" : "pending_mobile",
-        paidAt: null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }
-
-      const orderRef = doc(restaurantOrdersRef(db, restaurantId))
-      const reviewToken = generateReviewAccessToken()
-      const reviewAccessRef = restaurantReviewAccessRef(db, restaurantId, orderRef.id)
-      const batch = writeBatch(db)
-      batch.set(orderRef, order)
-      batch.set(reviewAccessRef, {
-        restaurantId,
-        orderId: orderRef.id,
-        reviewToken,
-        createdAt: serverTimestamp(),
-        expiresAt: null,
-        version: REVIEW_ACCESS_TOKEN_VERSION,
-      })
-      await batch.commit()
-
-      clear()
-      onClose()
-
-      if (orderRef.id) {
-        rememberOrderReviewAccess({
-          restaurantId,
-          orderId: orderRef.id,
-          reviewToken,
-        })
-        rememberTrackedOrder({
-          restaurantId,
-          orderId: orderRef.id,
-        })
-      }
-
-      router.push(`/order/${restaurantId}/${orderRef.id}?access=${encodeURIComponent(reviewToken)}`)
     } catch (checkoutError) {
       console.error(checkoutError)
       setError(checkoutError instanceof Error ? checkoutError.message : "Erreur lors de la commande")

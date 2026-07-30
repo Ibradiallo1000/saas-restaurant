@@ -2,10 +2,11 @@
 
 import * as React from "react"
 import { collection, doc, limit, query, where } from "firebase/firestore"
+import { signInAnonymously } from "firebase/auth"
 import { useRouter } from "next/navigation"
 import { ChefHat, ClipboardList, Coffee, Search, ShoppingBag, Utensils } from "lucide-react"
 
-import { useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
+import { useAuth, useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase, useUser } from "@/firebase"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { getOptimizedImage } from "@/lib/image"
 import { sortMenuCategories } from "@/lib/menu-category-order"
@@ -59,6 +60,8 @@ function PublicPageContent({
   navigationSource?: string | null
 }) {
   const db = useFirestore()
+  const auth = useAuth()
+  const { user } = useUser()
   const router = useRouter()
   const { addItem, count, items, restaurantId: cartRestaurantId, setRestaurantScope } = useCart()
 
@@ -68,7 +71,6 @@ function PublicPageContent({
   const [cartOpen, setCartOpen] = React.useState(false)
   const [activeNav, setActiveNav] = React.useState<"home" | "search" | "order" | "tracking">("home")
   const [tableSessionError, setTableSessionError] = React.useState("")
-  const [activeTableSession, setActiveTableSession] = React.useState<ActiveTableSession | null>(null)
   const [activeCategoryId, setActiveCategoryId] = React.useState<string>("")
   const [selectedProduct, setSelectedProduct] = React.useState<any | null>(null)
   const [coverState, setCoverState] = React.useState<"checking" | "visible" | "exiting" | "hidden">("checking")
@@ -95,6 +97,14 @@ function PublicPageContent({
   React.useEffect(() => {
     setClientReady(true)
   }, [])
+
+  React.useEffect(() => {
+    if (user) return
+    void signInAnonymously(auth).catch((authError) => {
+      console.error("[QR][ANONYMOUS_AUTH_ERROR]", authError)
+      setTableSessionError("Impossible d’ouvrir une session client sécurisée.")
+    })
+  }, [auth, user])
 
   React.useEffect(() => {
     if (!clientReady) return
@@ -176,38 +186,6 @@ function PublicPageContent({
 
     return () => window.clearTimeout(timeout)
   }, [restaurantId, tableContext, tableId])
-
-  React.useEffect(() => {
-    if (!restaurantId || !tableContext?.id) {
-      setActiveTableSession(null)
-      return
-    }
-
-    let cancelled = false
-
-    ensureActiveTableSession(restaurantId, tableContext.id)
-      .then((session) => {
-        if (!cancelled) {
-          setActiveTableSession(session)
-          setTableSessionError("")
-        }
-      })
-      .catch((error) => {
-        console.error("table session error", error)
-        if (!cancelled) {
-          setActiveTableSession(null)
-          setTableSessionError(
-            error instanceof Error
-              ? error.message
-              : "Table introuvable ou indisponible"
-          )
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [restaurantId, tableContext?.id])
 
   const productsQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
@@ -674,7 +652,6 @@ function PublicPageContent({
         onClose={closeCart}
         restaurantId={restaurantId}
         tableContext={tableContext}
-        activeTableSession={activeTableSession}
         activeOrderId={isDineInContinuation ? orderId : null}
       />
 
@@ -708,24 +685,6 @@ function PublicPageContent({
       ) : null}
     </div>
   )
-}
-
-async function ensureActiveTableSession(
-  restaurantId: string,
-  tableId: string
-): Promise<ActiveTableSession> {
-  const response = await fetch(`/api/restaurants/${restaurantId}/table-sessions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tableId }),
-  })
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => null)
-    throw new Error(body?.error || "Impossible de preparer la session de table")
-  }
-
-  return response.json()
 }
 
 export default function PublicPage({

@@ -85,14 +85,14 @@ async function setupTestData(seedData) {
 // ════════════════════════════════════════════════════════════════
 
 describe("1. Création de reviewAccess", () => {
-  describe("Cas valides — écriture atomique (batch) order + reviewAccess", () => {
-    it("QR takeaway public — création atomique réussie", async () => {
+  describe("Frontière canonique — aucune création publique directe", () => {
+    it("QR takeaway public — création directe refusée", async () => {
       const db = testEnv.unauthenticatedContext().firestore()
       const orderId = "valid-qr-takeaway-1"
       const orderRef = doc(db, "restaurants", RESTAURANT_ID, "orders", orderId)
       const reviewAccessRef = doc(db, "restaurants", RESTAURANT_ID, "reviewAccess", orderId)
 
-      await assertSucceeds(
+      await assertFails(
         (async () => {
           const batch = writeBatch(db)
           batch.set(orderRef, {
@@ -120,13 +120,13 @@ describe("1. Création de reviewAccess", () => {
       )
     })
 
-    it("Takeaway public — création atomique réussie", async () => {
+    it("Takeaway public — création directe refusée", async () => {
       const db = testEnv.unauthenticatedContext().firestore()
       const orderId = "test-takeaway-1"
       const orderRef = doc(db, "restaurants", RESTAURANT_ID, "orders", orderId)
       const reviewAccessRef = doc(db, "restaurants", RESTAURANT_ID, "reviewAccess", orderId)
 
-      await assertSucceeds(
+      await assertFails(
         (async () => {
           const batch = writeBatch(db)
           batch.set(orderRef, {
@@ -154,13 +154,13 @@ describe("1. Création de reviewAccess", () => {
       )
     })
 
-    it("Pickup public — création atomique réussie", async () => {
+    it("Pickup public — création directe refusée", async () => {
       const db = testEnv.unauthenticatedContext().firestore()
       const orderId = "test-pickup-1"
       const orderRef = doc(db, "restaurants", RESTAURANT_ID, "orders", orderId)
       const reviewAccessRef = doc(db, "restaurants", RESTAURANT_ID, "reviewAccess", orderId)
 
-      await assertSucceeds(
+      await assertFails(
         (async () => {
           const batch = writeBatch(db)
           batch.set(orderRef, {
@@ -188,13 +188,13 @@ describe("1. Création de reviewAccess", () => {
       )
     })
 
-    it("Delivery public — création atomique réussie", async () => {
+    it("Delivery public — création directe refusée", async () => {
       const db = testEnv.unauthenticatedContext().firestore()
       const orderId = "test-delivery-1"
       const orderRef = doc(db, "restaurants", RESTAURANT_ID, "orders", orderId)
       const reviewAccessRef = doc(db, "restaurants", RESTAURANT_ID, "reviewAccess", orderId)
 
-      await assertSucceeds(
+      await assertFails(
         (async () => {
           const batch = writeBatch(db)
           batch.set(orderRef, {
@@ -432,35 +432,30 @@ describe("1. Création de reviewAccess", () => {
     it("Doublon de reviewAccess — refusé", async () => {
       const db = testEnv.unauthenticatedContext().firestore()
       const orderId = "test-duplicate-1"
-      const orderRef = doc(db, "restaurants", RESTAURANT_ID, "orders", orderId)
       const reviewAccessRef = doc(db, "restaurants", RESTAURANT_ID, "reviewAccess", orderId)
 
-      await assertSucceeds(
-        (async () => {
-          const batch = writeBatch(db)
-          batch.set(orderRef, {
-            restaurantId: RESTAURANT_ID,
-            source: "client",
-            orderType: "delivery",
-            items: [],
-            total: 1000,
-            orderStatus: "pending",
-            paymentStatus: "unpaid",
-            sessionId: null,
-            tableId: null,
-            createdAt: serverTimestamp(),
-          })
-          batch.set(reviewAccessRef, {
-            restaurantId: RESTAURANT_ID,
-            orderId,
-            reviewToken: REVIEW_TOKEN,
-            version: 1,
-            createdAt: serverTimestamp(),
-            expiresAt: null,
-          })
-          await batch.commit()
-        })()
-      )
+      await setupTestData({
+        [`restaurants/${RESTAURANT_ID}/orders/${orderId}`]: {
+          restaurantId: RESTAURANT_ID,
+          source: "client",
+          orderType: "delivery",
+          items: [],
+          total: 1000,
+          orderStatus: "pending",
+          paymentStatus: "unpaid",
+          sessionId: null,
+          tableId: null,
+          createdAt: Timestamp.now(),
+        },
+        [`restaurants/${RESTAURANT_ID}/reviewAccess/${orderId}`]: {
+          restaurantId: RESTAURANT_ID,
+          orderId,
+          reviewToken: REVIEW_TOKEN,
+          version: 1,
+          createdAt: Timestamp.now(),
+          expiresAt: null,
+        },
+      })
 
       await assertFails(
         (async () => {

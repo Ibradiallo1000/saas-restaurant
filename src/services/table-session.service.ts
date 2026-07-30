@@ -53,6 +53,7 @@ export type ActiveTableSession = {
   createdAt?: unknown
   startedAt?: unknown
   lastActivityAt?: unknown
+  capability?: string
 }
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000
@@ -231,6 +232,25 @@ export async function getOrCreateActiveTableSession(
       totalAmount: 0,
     }
   })
+}
+
+export async function getOrCreateCanonicalTableSession(
+  restaurantId: string,
+  tableId: string
+): Promise<ActiveTableSession> {
+  const response = await fetch(
+    `/api/restaurants/${encodeURIComponent(restaurantId)}/table-sessions`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tableId }),
+    }
+  )
+  const body = await response.json().catch(() => null)
+  if (!response.ok || !body?.tableSessionId || !body?.capability) {
+    throw new Error(body?.error || "Impossible de préparer la session de table.")
+  }
+  return body as ActiveTableSession
 }
 
 export async function getTableSessionSnapshot(

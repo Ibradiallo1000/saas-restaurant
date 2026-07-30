@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import * as React from "react"
-import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore"
+import { collection, doc, onSnapshot, orderBy, query, where } from "firebase/firestore"
 import {
   Banknote,
   Bell,
@@ -22,7 +22,7 @@ import { OrderStepper } from "@/components/OrderStepper"
 import { PaymentBadge } from "@/components/PaymentBadge"
 import { PublicBadge, PublicBottomNavigation, PublicButton, PublicEmptyState, PublicHeader, PublicPageShell, PublicPrice, PublicStatusCard, PublicSurface } from "@/components/public-ui"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
-import { useCollection, useDoc, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
+import { useCollection, useDoc, useDocOnce, useFirebaseApp, useFirestore, useMemoFirebase, useUser } from "@/firebase"
 import { useToast } from "@/hooks/use-toast"
 import { PAYMENT_STATUS } from "@/lib/constants"
 import { getClientOrderStep, getClientStatusLabel } from "@/lib/getClientOrderStep"
@@ -45,6 +45,15 @@ import {
   getAvailablePaymentMethods,
   type AvailablePaymentMethod,
 } from "@/services/payment-methods.service"
+import {
+  getCanonicalPublicOrder,
+  getRememberedQrCapability,
+  qrCanonicalEnabled,
+  requestCanonicalTablePayment,
+  issueCanonicalReviewAccess,
+  resolveQrCanonicalMode,
+  stablePublicIdempotencyKey,
+} from "@/modules/public/canonical"
 
 type ClientOrderType = "dine_in" | "pickup" | "delivery"
 
@@ -58,6 +67,8 @@ export default function ClientOrderTrackingPage() {
 
 function ClientOrderTrackingContent() {
   const db = useFirestore()
+  const app = useFirebaseApp()
+  const { user } = useUser()
   const router = useRouter()
   const params = useParams()
   const searchParams = useSearchParams()
@@ -66,9 +77,12 @@ function ClientOrderTrackingContent() {
   const { toast } = useToast()
   const restaurantId = routeParams.restaurantId as string | undefined
   const orderId = routeParams.orderId as string | undefined
+  const qrMode = resolveQrCanonicalMode(restaurantId)
+  const useCanonicalQr = qrCanonicalEnabled(qrMode)
   const queryReviewToken = searchParams?.get("access")?.trim() || null
   const storedReviewToken = restaurantId && orderId ? getStoredReviewToken(restaurantId, orderId) : null
-  const reviewToken = queryReviewToken || storedReviewToken
+  const [canonicalReviewToken, setCanonicalReviewToken] = React.useState<string | null>(null)
+  const reviewToken = queryReviewToken || storedReviewToken || canonicalReviewToken
 
   const [order, setOrder] = React.useState<RestaurantOrder | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
@@ -122,13 +136,13 @@ function ClientOrderTrackingContent() {
   }, [])
 
   const tableSessionOrdersQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId || !activeTableSessionId) return null
+    if (!db || !restaurantId || !activeTableSessionId || useCanonicalQr) return null
     return query(
       collection(db, "restaurants", restaurantId, "orders"),
       where("tableSessionId", "==", activeTableSessionId),
       orderBy("createdAt", "desc")
     )
-  }, [activeTableSessionId, db, restaurantId])
+  }, [activeTableSessionId, db, restaurantId, useCanonicalQr])
 
   const { data: tableSessionOrdersData } = useCollection(tableSessionOrdersQuery)
 
@@ -141,7 +155,7 @@ function ClientOrderTrackingContent() {
   const localTableUserId = getLocalTableUserId()
 
   React.useEffect(() => {
-    if (!db || !restaurantId || !orderId) return
+    if (!db || !restaurantId || !orderId || useCanonicalQr) return
 
     setIsLoading(true)
     setError(null)
@@ -182,7 +196,98 @@ function ClientOrderTrackingContent() {
     )
 
     return () => unsubscribe()
-  }, [db, restaurantId, orderId])
+  }, [db, restaurantId, orderId, useCanonicalQr])
+
+  React.useEffect(() => {
+    if (!useCanonicalQr || !restaurantId || !orderId || !user?.isAnonymous) return
+    let cancelled = false
+    let timeout: number | null = null
+    let consecutiveErrors = 0
+    let terminal = false
+    const load = async () => {
+      try {
+        const response = await getCanonicalPublicOrder({
+          app,
+          user,
+          restaurantId,
+          orderId,
+        })
+        if (cancelled) return
+        const nextOrder = {
+          ...response.order,
+          items: response.orderItems,
+          canonicalItems: response.orderItems,
+          legacy: response.legacy,
+        } as RestaurantOrder
+        terminal = isClientTrackingComplete(nextOrder)
+        setOrder(nextOrder)
+        consecutiveErrors = 0
+        setError(null)
+        setIsLoading(false)
+        rememberTrackedOrder({
+          restaurantId,
+          orderId,
+          tableSessionId: (nextOrder as any).tableSessionId,
+          isCompleted: isClientTrackingComplete(nextOrder),
+        })
+      } catch (snapshotError) {
+        consecutiveErrors += 1
+        if (!cancelled) {
+          console.error(snapshotError)
+          setError(
+            snapshotError instanceof Error
+              ? snapshotError.message
+              : "Impossible de charger le suivi de commande."
+          )
+          setIsLoading(false)
+        }
+      } finally {
+        if (!cancelled) {
+          const delay = terminal
+            ? 15000
+            : Math.min(30000, 2500 * 2 ** Math.min(consecutiveErrors, 4))
+          timeout = window.setTimeout(load, delay)
+        }
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+      if (timeout !== null) window.clearTimeout(timeout)
+    }
+  }, [app, orderId, restaurantId, useCanonicalQr, user])
+
+  React.useEffect(() => {
+    if (
+      !useCanonicalQr ||
+      !restaurantId ||
+      !orderId ||
+      !user?.isAnonymous ||
+      !order ||
+      order.paymentStatus !== "paid" ||
+      (order as any).orderStatus !== "completed" ||
+      reviewToken
+    ) {
+      return
+    }
+    let cancelled = false
+    void issueCanonicalReviewAccess({ app, user, restaurantId, orderId })
+      .then((response) => {
+        if (cancelled || !response.reviewToken) return
+        rememberReviewToken({
+          restaurantId,
+          orderId,
+          reviewToken: response.reviewToken,
+        })
+        setCanonicalReviewToken(response.reviewToken)
+      })
+      .catch((reviewError) => {
+        console.error("[QR][REVIEW_ACCESS_ERROR]", reviewError)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [app, order, orderId, restaurantId, reviewToken, useCanonicalQr, user])
 
   React.useEffect(() => {
     if (!restaurantId || !orderId || !queryReviewToken) return
@@ -428,11 +533,21 @@ function ClientOrderTrackingContent() {
 
     setIsCashPaying(true)
     try {
-      await updateDoc(doc(db, "restaurants", restaurantId, "tableSessions", safeOrder.tableSessionId), {
-        "paymentRequest.status": "requested",
-        "paymentRequest.method": "cash",
-        "paymentRequest.requestedAt": serverTimestamp(),
-      })
+      if (useCanonicalQr) {
+        if (!user?.isAnonymous) throw new Error("Session client expirée.")
+        const capability = getRememberedQrCapability(safeOrder.id)
+        if (!capability) throw new Error("Session QR expirée. Rescannez le QR de la table.")
+        await requestCanonicalTablePayment({
+          app,
+          user,
+          restaurantId,
+          tableSessionId: safeOrder.tableSessionId,
+          capability,
+          idempotencyKey: stablePublicIdempotencyKey(`cash-payment:${safeOrder.id}`),
+          method: "cash",
+        })
+        return
+      }
     } catch (paymentError) {
       console.error(paymentError)
       setError("Impossible de signaler le paiement en caisse.")
@@ -448,29 +563,43 @@ function ClientOrderTrackingContent() {
     }
     if (!db || !restaurantId || isMobilePaying) return
 
-    const sessionRef = doc(db, "restaurants", restaurantId, "tableSessions", safeOrder.tableSessionId)
-    const paymentRequest = {
-      status: "requested",
-      method: "mobile",
-      provider: method.name || method.code,
-      requestedAt: serverTimestamp(),
-    }
-
-    if (method.paymentCode && typeof window !== "undefined") {
-      window.location.href =
-        method.paymentCodeType === "ussd"
-          ? buildUssdTelHref(method.paymentCode)
-          : method.paymentCode
-    }
-
-    setIsMobilePaying(true)
-    updateDoc(sessionRef, { paymentRequest })
-      .catch(console.error)
-      .finally(() => {
-        setIsMobilePaying(false)
+    if (useCanonicalQr) {
+      if (!user?.isAnonymous) {
+        setError("Session client expirée.")
+        return
+      }
+      const capability = getRememberedQrCapability(safeOrder.id)
+      if (!capability) {
+        setError("Session QR expirée. Rescannez le QR de la table.")
+        return
+      }
+      setIsMobilePaying(true)
+      void requestCanonicalTablePayment({
+        app,
+        user,
+        restaurantId,
+        tableSessionId: safeOrder.tableSessionId,
+        capability,
+        idempotencyKey: stablePublicIdempotencyKey(`mobile-payment:${safeOrder.id}:${method.code}`),
+        method: "mobile",
+        provider: method.name || method.code,
+      }).then(() => {
+        if (method.paymentCode && typeof window !== "undefined") {
+          window.location.href =
+            method.paymentCodeType === "ussd"
+              ? buildUssdTelHref(method.paymentCode)
+              : method.paymentCode
+        }
         setPaymentProofSms("")
         setMobilePaymentOpen(false)
-      })
+      }).catch((paymentError) => {
+        console.error(paymentError)
+        setError(paymentError instanceof Error ? paymentError.message : "Paiement impossible.")
+      }).finally(() => setIsMobilePaying(false))
+      return
+    }
+
+    setError("Le paiement sécurisé est momentanément indisponible.")
   }
 
   const handleConfirmMobilePayment = async () => {
@@ -486,18 +615,23 @@ function ClientOrderTrackingContent() {
     }
     setIsConfirming(true)
     try {
-      const paymentRequest = {
-        status: "pending_confirmation",
-        method: "mobile",
-        provider: tableSession?.paymentRequest?.provider || "Mobile Money",
-        paymentProofSms: proofSms,
-        paymentProofSubmittedAt: serverTimestamp(),
-        paymentProofStatus: "submitted",
-        confirmedByClientAt: serverTimestamp(),
+      if (useCanonicalQr) {
+        if (!user?.isAnonymous) throw new Error("Session client expirée.")
+        const capability = getRememberedQrCapability(safeOrder.id)
+        if (!capability) throw new Error("Session QR expirée. Rescannez le QR de la table.")
+        await requestCanonicalTablePayment({
+          app,
+          user,
+          restaurantId,
+          tableSessionId: safeOrder.tableSessionId,
+          capability,
+          idempotencyKey: stablePublicIdempotencyKey(`mobile-proof:${safeOrder.id}`),
+          method: "mobile",
+          provider: tableSession?.paymentRequest?.provider || "Mobile Money",
+          paymentProofSms: proofSms,
+        })
+        return
       }
-      await updateDoc(doc(db, "restaurants", restaurantId, "tableSessions", safeOrder.tableSessionId), {
-        paymentRequest,
-      })
     } catch (e) {
       console.error(e)
     } finally {

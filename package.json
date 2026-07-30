@@ -2,6 +2,9 @@
   "name": "nextn",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22 <23"
+  },
   "scripts": {
     "dev": "next dev --turbopack -p 9002",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
@@ -10,10 +13,14 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "guard:deploy": "node scripts/guard-deploy-target.mjs",
 "migrate:order-status":"node scripts/migrate-order-status.js",
     "migrate:inventory-v1-v2":"node scripts/migrate-inventory-v1-to-v2.mjs",
     "test:marketplace-discovery": "node --experimental-strip-types --test tests/marketplace-discovery/*.test.mjs",
     "test:marketplace-transaction": "node --experimental-strip-types --test tests/marketplace-transaction/*.test.mjs",
+    "test:orders-core": "node --experimental-strip-types --test tests/orders/*.test.mjs",
+    "test:orders-lot2": "node --experimental-strip-types --test tests/orders/canonical-order-commands*.test.mjs",
+    "test:orders-lot3": "node --experimental-strip-types --test tests/orders/order-aggregate.test.mjs tests/orders/canonical-order-commands-emulator.test.mjs",
     "functions:build": "npm --prefix functions run build",
     "functions:typecheck": "npm --prefix functions run typecheck",
     "marketplace:backfill": "tsx scripts/marketplace-discovery-backfill.mjs",

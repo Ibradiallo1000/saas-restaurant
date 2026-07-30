@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
 import { FieldValue, Timestamp } from "firebase-admin/firestore"
 
-import { getAdminFirestore } from "@/server/firebase-admin"
+import { getAdminAuth, getAdminFirestore } from "@/server/firebase-admin"
+import { createTableCapability } from "@/server/orders/create/security"
+import { assertPublicOrderSecurityConfigured } from "@/server/orders/public-security-config"
+import { verifyOrderAppCheckToken } from "@/server/orders/verify-app-check"
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000
 
@@ -12,6 +15,8 @@ type RouteContext = {
 export async function POST(request: Request, context: RouteContext) {
   try {
     const { restaurantId } = await context.params
+    assertPublicOrderSecurityConfigured(restaurantId)
+    await authenticatePublic(request)
     const body = await request.json().catch(() => null)
     const tableId = typeof body?.tableId === "string" ? body.tableId.trim() : ""
 
@@ -164,7 +169,18 @@ export async function POST(request: Request, context: RouteContext) {
       }
     })
 
-    return NextResponse.json(result)
+    const capability = createTableCapability({
+      restaurantId,
+      tableId: result.tableId,
+      tableSessionId: result.tableSessionId,
+      expiresAt: Date.now() + SESSION_TIMEOUT_MS,
+    })
+
+    return NextResponse.json({
+      ok: true,
+      ...result,
+      capability,
+    })
   } catch (error) {
     console.error("Session error:", error)
 
@@ -181,6 +197,18 @@ export async function POST(request: Request, context: RouteContext) {
       },
       { status: 500 }
     )
+  }
+}
+
+async function authenticatePublic(request: Request) {
+  const authorization = request.headers.get("authorization")
+  const idToken = authorization?.startsWith("Bearer ") ? authorization.slice(7) : ""
+  const appCheckToken = request.headers.get("x-firebase-appcheck") ?? ""
+  if (!idToken || !appCheckToken) throw new Error("missing public proof")
+  await verifyOrderAppCheckToken(appCheckToken)
+  const decoded = await getAdminAuth().verifyIdToken(idToken, true)
+  if (decoded.firebase?.sign_in_provider !== "anonymous") {
+    throw new Error("anonymous authentication required")
   }
 }
 

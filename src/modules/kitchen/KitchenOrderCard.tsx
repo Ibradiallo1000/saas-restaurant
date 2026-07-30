@@ -32,22 +32,13 @@ function KitchenOrderCardComponent({ isNew = false, nowMs, onUpdateStatus, order
   const [isDetailOpen, setIsDetailOpen] = React.useState(false)
   const effectiveNowMs = nowMs ?? Date.now()
   const model = React.useMemo(() => createKitchenCardViewModel(order, effectiveNowMs), [effectiveNowMs, order])
-  const nextStatus = nextOrderStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus, getKitchenOrderTypeValue(order))
-  const previousPaymentLockedRef = React.useRef(model.isPaymentLocked)
-
-  React.useEffect(() => {
-    const wasLocked = previousPaymentLockedRef.current
-    previousPaymentLockedRef.current = model.isPaymentLocked
-    if (!wasLocked || model.isPaymentLocked) return
-    toast({ title: "Paiement vérifié", description: `${model.reference} peut passer en préparation.` })
-  }, [model.isPaymentLocked, model.reference, toast])
-
+  const proposedNextStatus = nextOrderStatus(order.kitchenStatus ?? (order as any).status ?? (order as any).orderStatus, getKitchenOrderTypeValue(order))
+  const nextStatus =
+    proposedNextStatus === "preparing" || proposedNextStatus === "ready"
+      ? proposedNextStatus
+      : null
   const handleAction = React.useCallback(async () => {
     if (!nextStatus || isUpdating) return
-    if (model.isPaymentLocked) {
-      toast({ title: "Paiement en attente", description: "Cette commande doit être vérifiée avant préparation.", variant: "destructive" })
-      return
-    }
     setIsUpdating(true)
     try {
       await onUpdateStatus(order.id, nextStatus)
@@ -58,17 +49,16 @@ function KitchenOrderCardComponent({ isNew = false, nowMs, onUpdateStatus, order
     } finally {
       setIsUpdating(false)
     }
-  }, [isUpdating, model.isPaymentLocked, model.reference, nextStatus, onUpdateStatus, order.id, toast])
+  }, [isUpdating, model.reference, nextStatus, onUpdateStatus, order.id, toast])
 
   const notes = (
     <>
       {model.note ? <KitchenNote label="Note client" content={model.note} variant="attention" /> : null}
-      {model.isPaymentLocked ? <KitchenNote label={model.isPaymentDelayed ? "Retard de paiement" : "Paiement en attente"} content={model.isPaymentDelayed ? `En attente depuis ${String(model.timer.value)}` : "Vérification requise avant préparation."} variant={model.isPaymentDelayed ? "critical" : "attention"} /> : null}
       {model.isRecentActivity ? <KitchenNote label="Activité récente" content={model.isNewOrder ? "Nouvelle commande" : "Article ajouté à la commande"} variant="neutral" /> : null}
     </>
   )
 
-  const actions = nextStatus && !model.isPaymentLocked ? (
+  const actions = nextStatus ? (
     <KitchenActionBar
       primary={{ id: nextStatus, label: actionLabels[nextStatus] || nextStatus, onSelect: handleAction, loading: isUpdating, disabled: isUpdating }}
       density="comfortable"

@@ -5,14 +5,22 @@ import test from "node:test"
 const centralPath =
   "src/modules/stock/automatic-simple/infrastructure/mark-order-item-served.ts"
 
-test("POS et Cuisine utilisent la transaction client centrale", async () => {
-  const [pos, kitchen] = await Promise.all([
+test("le POS conserve le moteur client uniquement pour rollback et la Cuisine reste hors du service", async () => {
+  const [pos, kitchen, kitchenClient] = await Promise.all([
     readFile("src/app/(dashboard)/pos/components/POSClient.tsx", "utf8"),
     readFile("src/modules/kitchen/KitchenBoard.tsx", "utf8"),
+    readFile(
+      "src/modules/kitchen/canonical-read/kitchen-command-client.ts",
+      "utf8"
+    ),
   ])
-  for (const source of [pos, kitchen]) {
-    assert.match(source, /markOrderItemAsServedAndDeductStock/)
-  }
+
+  assert.match(pos, /markOrderItemAsServedAndDeductStock/)
+  assert.doesNotMatch(kitchen, /markOrderItemAsServedAndDeductStock/)
+  assert.doesNotMatch(kitchen, /stockBalancesV2|stockOperationsV2/)
+  assert.match(kitchenClient, /\/commands/)
+  assert.match(kitchenClient, /MARK_ORDER_ITEM_PREPARING/)
+  assert.match(kitchenClient, /MARK_ORDER_ITEM_READY/)
 })
 
 test("la transaction centrale lie service, balance, opération, progression et idempotence", async () => {
@@ -66,34 +74,36 @@ test("une commande POS directe reste prête jusqu’à l’action explicite de s
   assert.match(pos, /\[DIRECT\]\[PAYMENT_CONFIRMED\][\s\S]*?stockEngineCalled:\s*false/)
 })
 
-test("l’action POS directe appelle le moteur central une fois avec la quantité complète", async () => {
+test("l’action POS canonique appelle la commande serveur avec la quantité restante", async () => {
   const pos = await readFile(
     "src/app/(dashboard)/pos/components/POSClient.tsx",
     "utf8"
   )
   const handlerStart = pos.indexOf("const markOrderItemServed")
-  const handlerEnd = pos.indexOf("const releaseTableIfPaidAndServed", handlerStart)
+  const handlerEnd = pos.indexOf("const handleOrderTypeChange", handlerStart)
   const handler = pos.slice(handlerStart, handlerEnd)
 
   assert.ok(handlerStart >= 0 && handlerEnd > handlerStart)
   assert.match(handler, /if\s*\(!selectedItem\s*\|\|\s*isServedOrderItem\(selectedItem\)\)\s*return/)
   assert.match(handler, /\[DIRECT\]\[SERVICE_ACTION\]/)
   assert.match(handler, /\[DIRECT\]\[STOCK_CALL\]/)
-  assert.match(handler, /markOrderItemAsServedAndDeductStock\(\{/)
-  assert.match(handler, /servedQuantity:\s*Number\(selectedItem\.quantity\s*\?\?\s*0\)/)
-  assert.match(handler, /\[DIRECT\]\[STOCK_SUCCESS\]/)
+  assert.match(handler, /command:\s*"MARK_ORDER_ITEM_SERVED"/)
+  assert.match(handler, /expectedVersion:\s*Number\(selectedItem\.version\s*\?\?\s*1\)/)
+  assert.match(handler, /quantityToServe/)
+  assert.match(handler, /posCommandIdempotencyKey/)
   assert.match(handler, /\[DIRECT\]\[STOCK_ERROR\]/)
 })
 
-test("une commande mixte réserve le service POS aux lignes non cuisine", async () => {
+test("une commande mixte sert chaque ligne éligible sans modifier directement le parent canonique", async () => {
   const pos = await readFile(
     "src/app/(dashboard)/pos/components/POSClient.tsx",
     "utf8"
   )
 
-  assert.match(pos, /group\.mode\s*!==\s*"kitchen"/)
-  assert.match(pos, /nextItems\.every\(isServedOrderItem\)/)
-  assert.match(pos, /source:\s*"pos-direct-service"/)
+  assert.match(pos, /canServePosOrderItem\(item\)/)
+  assert.match(pos, /item\.status\s*===\s*"ready"/)
+  assert.match(pos, /item\.preparationMode\s*===\s*"direct"/)
+  assert.match(pos, /posCanonicalMode\s*===\s*"canonical"/)
 })
 
 test("OrderService crée chaque ligne avec son orderItemId comme documentId", async () => {

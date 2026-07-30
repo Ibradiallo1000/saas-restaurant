@@ -13,7 +13,7 @@ test("les avis restaurant sont stockés sous le restaurant et créés uniquement
 
 test("les capacités d'avis ne sont jamais lisibles publiquement", () => {
   assert.match(rules, /match \/reviewAccess\/\{orderId\}/)
-  assert.match(rules, /allow create: if isValidReviewAccessCreate\(restaurantId, orderId\)/)
+  assert.match(rules, /allow create: if false/)
   assert.match(rules, /allow get, list, update, delete: if false/)
 })
 
@@ -107,9 +107,9 @@ test("isFinalReviewOrderStatus inclut les statuts localisés français manquants
 
 // ─── Sources publiques ────────────────────────────────────────────────
 
-test("isPublicReviewOrderSource accepte uniquement les sources publiques client, qr et qr_table", () => {
+test("isPublicReviewOrderSource accepte les sources publiques legacy et canoniques", () => {
   assert.match(rules, /function isPublicReviewOrderSource\(/)
-  assert.match(rules, /"client", "qr", "qr_table"/)
+  assert.match(rules, /"client", "qr", "qr_table", "public_takeaway", "public_delivery"/)
   const match = rules.match(/function isPublicReviewOrderSource[\s\S]{0,200}\];/)
   assert.ok(match, "isPublicReviewOrderSource doit exister")
   assert.equal(match[0].indexOf('"manual"'), -1, "manual ne doit pas être dans les sources d'avis publiques")

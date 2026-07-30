@@ -1,26 +1,24 @@
 "use client"
 
 import * as React from "react"
-import { doc, getDoc, increment, runTransaction, serverTimestamp } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import { CheckCircle } from "lucide-react"
 
 import { PublicButton, PublicCheckoutModal, PublicPrice, PublicSurface } from "@/components/public-ui"
-import { useFirestore } from "@/firebase"
-import { ORDER_OPERATION_STATUS } from "@/lib/order-lifecycle"
-import { recalculateConfiguredUnitPrice } from "@/lib/order-pricing"
-import { restaurantOrdersRef } from "@/lib/restaurant-firestore-paths"
-import { generateReviewAccessToken, rememberOrderReviewAccess, restaurantReviewAccessRef, REVIEW_ACCESS_TOKEN_VERSION } from "@/lib/reputation/review-access-token"
-import {
-  type RestaurantTableRecord,
-  getOrCreateActiveTableSession,
-} from "@/services/table-session.service"
-import {
-  orderHasKitchenItems,
-  resolveProductPreparationMode,
-} from "@/utils/preparation-logic"
+import { useFirebaseApp, useUser } from "@/firebase"
+import { type RestaurantTableRecord } from "@/services/table-session.service"
 import { useCart } from "../cart/CartContext"
 import { rememberTrackedOrder } from "../orderTrackingStorage"
+import {
+  clearPublicIdempotencyKey,
+  comparePublicOrderProjections,
+  createCanonicalTableSession,
+  createCanonicalQrOrder,
+  qrCanonicalEnabled,
+  rememberQrCapability,
+  resolveQrCanonicalMode,
+  stablePublicIdempotencyKey,
+} from "../canonical"
 
 export default function CheckoutQRModal({
   open,
@@ -34,7 +32,8 @@ export default function CheckoutQRModal({
   tableContext: RestaurantTableRecord
   activeOrderId?: string | null
 }) {
-  const db = useFirestore()
+  const app = useFirebaseApp()
+  const { user } = useUser()
   const router = useRouter()
   const { items, total, clear } = useCart()
   const [loading, setLoading] = React.useState(false)
@@ -64,159 +63,85 @@ export default function CheckoutQRModal({
     setLoading(true)
 
     try {
-      const tableSession = await getOrCreateActiveTableSession(
-        db,
-        restaurantId,
-        tableContext.id
-      )
-      const tableSessionId = tableSession.tableSessionId || tableSession.sessionId
-      const tableZoneId = tableSession.zoneId || tableContext.zoneId || "main"
-
-      const clientUserId = getOrCreateTableUserId()
-
-      const orderItems = await Promise.all(
-        items.map(async (item, index) => {
-          const productSnap = await getDoc(
-            doc(db, "restaurants", restaurantId, "products", item.productId)
-          )
-
-          if (!productSnap.exists()) {
-            throw new Error(`Produit introuvable: ${item.productId}`)
-          }
-
-          const product = { id: productSnap.id, ...productSnap.data() } as any
-          const unitPrice = recalculateConfiguredUnitPrice(
-            product,
-            item.selectedOptions ?? []
-          )
-          let categoryName = item.categoryName || ""
-          if (!product.preparationMode && !categoryName && product.categoryId) {
-            const categorySnap = await getDoc(
-              doc(db, "restaurants", restaurantId, "categories", product.categoryId)
-            )
-            categoryName = categorySnap.data()?.name || ""
-          }
-          const preparationMode = item.preparationMode || resolveProductPreparationMode(product, categoryName)
-
-          return {
-            id: `${item.productId}-${Date.now()}-${index}`,
-            productId: item.productId,
-            name: item.name,
-            status: "pending",
-            createdAt: new Date(),
-            unitPrice,
-            quantity: item.quantity,
-            total: unitPrice * item.quantity,
-            selectedOptions: item.selectedOptions ?? [],
-            imageUrl: item.imageUrl || null,
-            preparationMode,
-            reviewsEnabled: product.reviewsEnabled === true,
-          }
-        })
-      )
-
-      const recalculatedTotal = orderItems.reduce((sum, item) => sum + item.total, 0)
-      const requiresKitchen = orderHasKitchenItems(orderItems)
-
-      if (process.env.NODE_ENV !== "production") {
-        console.info("[preparationMode][qr_table]", {
+      const qrMode = resolveQrCanonicalMode(restaurantId)
+      if (qrCanonicalEnabled(qrMode)) {
+        if (!user?.isAnonymous) {
+          throw new Error("La session client a expiré. Rechargez la page puis réessayez.")
+        }
+        const tableSession = await createCanonicalTableSession({
+          app,
+          user,
           restaurantId,
-          tableSessionId,
-          items: orderItems.map((item) => ({
-            productId: item.productId,
-            name: item.name,
-            preparationMode: item.preparationMode,
-            sentToKitchen: item.preparationMode === "kitchen",
-          })),
-          kitchenItems: orderItems
-            .filter((item) => item.preparationMode === "kitchen")
-            .map((item) => item.productId),
-          requiresKitchen,
+          tableId: tableContext.id,
         })
-      }
-
-      const order = {
-        restaurantId,
-        orderType: "dine_in",
-        source: "qr_table",
-        kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
-        orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.COMPLETED,
-        sessionActive: true,
-        sessionId: tableSessionId,
-        tableSessionId,
-        createdBy: clientUserId,
-        createdByLabel: "Toi",
-        tableId: tableContext.id,
-        zoneId: tableZoneId,
-        customer: {
-          phone: null,
-          name: null,
-        },
-        customerNote: customerNote.trim() || null,
-        table: tableSession.tableName || tableContext.name,
-        items: orderItems,
-        subtotal: recalculatedTotal,
-        deliveryFee: 0,
-        total: recalculatedTotal,
-        totalAmount: recalculatedTotal,
-        paymentMethod: null,
-        paymentMethodCode: null,
-        paymentType: null,
-        paymentIntentStatus: "none",
-        paymentCode: null,
-        paymentInstruction: null,
-        paymentStatus: "unpaid",
-        needsCashCollection: false,
-        paidAt: null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }
-
-      const orderRef = doc(restaurantOrdersRef(db, restaurantId))
-      const tableSessionRef = doc(db, "restaurants", restaurantId, "tableSessions", tableSessionId)
-      const reviewToken = generateReviewAccessToken()
-      const reviewAccessRef = restaurantReviewAccessRef(db, restaurantId, orderRef.id)
-
-      await runTransaction(db, async (transaction) => {
-        const sessionSnap = await transaction.get(tableSessionRef)
-        if (!sessionSnap.exists() || sessionSnap.data()?.status !== "active") {
-          throw new Error("Session de table introuvable ou fermee")
+        const requestScope = `qr-order:${restaurantId}:${tableSession.tableSessionId}`
+        const idempotencyKey = stablePublicIdempotencyKey(requestScope)
+        const response = await createCanonicalQrOrder({
+          app,
+          user,
+          restaurantId,
+          idempotencyKey,
+          body: {
+            schemaVersion: 1,
+            channel: "qr_table",
+            serviceMode: "dine_in",
+            clientRequestId: idempotencyKey,
+            items: items.map((item, index) => ({
+              clientLineId: `${item.productId}-${index}`,
+              productId: item.productId,
+              quantity: item.quantity,
+              options: (item.selectedOptions ?? []).map((option: any) => ({
+                optionName: String(option.optionName ?? option.groupName ?? option.name ?? ""),
+                choiceName: String(option.choiceName ?? option.name ?? option.value ?? ""),
+              })),
+              instructions: null,
+            })),
+            tableContext: {
+              tableId: tableContext.id,
+              tableSessionId: tableSession.tableSessionId,
+              capability: tableSession.capability,
+            },
+            customer: null,
+            delivery: null,
+            cashSessionId: null,
+            notes: customerNote.trim() || null,
+          },
+        })
+        if (qrMode === "compare" && process.env.NODE_ENV !== "production") {
+          console.info("[QR][CANONICAL_COMPARE]", comparePublicOrderProjections(
+            {
+              lineCount: response.orderItemIds.length,
+              lines: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+              total: response.total,
+              serviceMode: response.serviceMode,
+              tableId: tableContext.id,
+              status: response.orderStatus,
+            },
+            {
+              lineCount: items.length,
+              lines: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+              total,
+              serviceMode: "dine_in",
+              tableId: tableContext.id,
+              status: items.some((item) => item.preparationMode === "kitchen") ? "pending" : "ready",
+            }
+          ))
         }
 
-        transaction.set(orderRef, order)
-        transaction.set(reviewAccessRef, {
-          restaurantId,
-          orderId: orderRef.id,
-          reviewToken,
-          createdAt: serverTimestamp(),
-          expiresAt: null,
-          version: REVIEW_ACCESS_TOKEN_VERSION,
-        })
-        transaction.update(tableSessionRef, {
-          totalAmount: increment(recalculatedTotal),
-          lastActivityAt: serverTimestamp(),
-        })
-      })
-
-      clear()
-      onClose()
-
-      if (orderRef.id) {
-        rememberOrderReviewAccess({
-          restaurantId,
-          orderId: orderRef.id,
-          reviewToken,
-        })
+        clear()
+        clearPublicIdempotencyKey(requestScope)
+        onClose()
         rememberTrackedOrder({
           restaurantId,
-          orderId: orderRef.id,
-          tableSessionId,
+          orderId: response.orderId,
+          tableSessionId: tableSession.tableSessionId,
         })
+        rememberQrCapability(response.orderId, tableSession.capability ?? "")
+        router.push(
+          `/order/${restaurantId}/${response.orderId}?tableSessionId=${tableSession.tableSessionId}`
+        )
+        return
       }
-
-      router.push(
-        `/order/${restaurantId}/${orderRef.id}?tableSessionId=${tableSessionId}&access=${encodeURIComponent(reviewToken)}`
-      )
     } catch (e) {
       console.error(e)
       setError(e instanceof Error ? e.message : "Erreur lors de la commande")

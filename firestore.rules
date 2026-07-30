@@ -47,6 +47,7 @@ service cloud.firestore {
 
     function isRestaurantOwnerEmail(restaurantId) {
       return isSignedIn()
+        && "ownerEmail" in get(/databases/$(database)/documents/restaurants/$(restaurantId)).data
         && get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.ownerEmail == request.auth.token.email;
     }
 
@@ -347,7 +348,7 @@ service cloud.firestore {
 
     function isPublicReviewOrderSource(source) {
       return source is string
-        && source in ["client", "qr", "qr_table"];
+        && source in ["client", "qr", "qr_table", "public_takeaway", "public_delivery"];
     }
 
     function publicReviewOrderExists(restaurantId, orderId) {
@@ -1597,7 +1598,8 @@ service cloud.firestore {
       }
 
       match /reviewAccess/{orderId} {
-        allow create: if isValidReviewAccessCreate(restaurantId, orderId);
+        // Issued by the authenticated server boundary only.
+        allow create: if false;
         allow get, list, update, delete: if false;
       }
 
@@ -1741,8 +1743,7 @@ service cloud.firestore {
           && request.resource.data.zoneId is string
           && request.resource.data.status == "free"
           && request.resource.data.currentSessionId == null;
-        allow update: if canUseRestaurant(restaurantId)
-          || canUpdatePublicTableSessionPointer(restaurantId, tableId);
+        allow update: if canUseRestaurant(restaurantId);
         allow delete: if isSuperAdmin();
       }
 
@@ -1755,12 +1756,8 @@ service cloud.firestore {
           && request.resource.data.zoneId is string
           && request.resource.data.status == "active"
           && request.resource.data.closedAt == null
-        ) || canCreatePublicTableSession(restaurantId);
-        allow update: if canUseRestaurant(restaurantId)
-          || canUpdatePublicTablePaymentRequest()
-          || canUpdatePublicTableSessionTotal()
-          || canTouchPublicTableSession()
-          || canClosePublicTableSession();
+        );
+        allow update: if canUseRestaurant(restaurantId);
         allow delete: if isSuperAdmin();
       }
 
@@ -1781,7 +1778,9 @@ service cloud.firestore {
       }
 
       match /orders/{orderId} {
-        allow create: if
+        // Public canonical creation is server-only. Admin SDK bypasses Rules.
+        allow create: if canUseRestaurant(restaurantId)
+          &&
           request.resource.data.restaurantId == restaurantId
           && request.resource.data.items is list
           && request.resource.data.total is number
@@ -1831,30 +1830,16 @@ service cloud.firestore {
             )
           );
 
-        allow get: if canUseRestaurant(restaurantId)
-          || (
-            resource.data.restaurantId == restaurantId
-            && resource.data.source in ["client", "qr", "qr_table", "manual"]
-            && (
-              resource.data.sessionId is string
-              || resource.data.tableSessionId is string
-              || (
-                resource.data.orderType in ["takeaway", "pickup", "delivery"]
-                && resource.data.sessionId == null
-                && resource.data.tableId == null
-              )
-            )
-          );
+        allow get: if (
+            isSignedIn()
+            && resource.data.restaurantId == restaurantId
+            && resource.data.createdBy == request.auth.uid
+            && resource.data.source in ["qr_table", "public_takeaway", "public_delivery"]
+          )
+          || canUseRestaurant(restaurantId);
 
-        allow list: if canUseRestaurant(restaurantId)
-          || (
-            resource.data.restaurantId == restaurantId
-            && resource.data.source in ["client", "qr", "qr_table", "manual"]
-            && (resource.data.sessionId is string || resource.data.tableSessionId is string)
-          );
-        allow update: if canUpdateOrder(restaurantId)
-          || canUpdatePublicPaymentIntent(restaurantId)
-          || canAppendActiveDineInOrder(restaurantId);
+        allow list: if canUseRestaurant(restaurantId);
+        allow update: if canUpdateOrder(restaurantId);
         allow delete: if false;
 
         match /auditLogs/{logId} {
@@ -2180,6 +2165,41 @@ service cloud.firestore {
         && request.resource.data.schemaVersion == 1;
 
       allow delete: if canManageRestaurantMenu(resource.data.restaurantId);
+    }
+
+    match /{path=**}/orderItems/{itemId} {
+      allow list: if resource.data.restaurantId is string
+        && request.query.limit != null
+        && request.query.limit <= 500
+        && (
+          (
+            (
+              userExists()
+              && userDoc().data.restaurantId == resource.data.restaurantId
+              && userDoc().data.role in ["cashier", "manager", "owner"]
+            )
+            || (
+              isRestaurantStaff(resource.data.restaurantId)
+              && get(/databases/$(database)/documents/restaurants/$(resource.data.restaurantId)/staff/$(request.auth.uid)).data.role in ["cashier", "manager", "owner"]
+            )
+          )
+          ||
+          (
+            (
+              (
+                userExists()
+                && userDoc().data.restaurantId == resource.data.restaurantId
+                && userDoc().data.role == "kitchen"
+              )
+              || (
+                isRestaurantStaff(resource.data.restaurantId)
+                && get(/databases/$(database)/documents/restaurants/$(resource.data.restaurantId)/staff/$(request.auth.uid)).data.role == "kitchen"
+              )
+            )
+            && resource.data.preparationMode == "kitchen"
+            && resource.data.status in ["pending", "preparing", "ready"]
+          )
+        );
     }
 
     match /{document=**} {

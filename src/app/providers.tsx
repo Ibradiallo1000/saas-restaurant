@@ -2,6 +2,7 @@
 "use client"
 
 import { FirebaseProvider } from "@/firebase/provider"
+import { connectFirebaseEmulators } from "@/firebase/connect-emulators"
 import { ThemeProvider } from "@/contexts/theme-context"
 import { PlatformProvider } from "@/contexts/platform-context"
 import { initializeApp, getApps, getApp } from 'firebase/app'
@@ -24,6 +25,7 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp()
 const firestore = getFirestore(app)
 const auth = getAuth(app)
+connectFirebaseEmulators(auth, firestore)
 
 export default function Providers({
   children,

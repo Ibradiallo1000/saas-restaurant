@@ -1,10 +1,16 @@
 "use client"
 
 import * as React from "react"
-import { doc, serverTimestamp, updateDoc } from "firebase/firestore"
 import { Banknote, CreditCard } from "lucide-react"
 
-import { useFirestore } from "@/firebase"
+import { useFirebaseApp, useFirestore, useUser } from "@/firebase"
+import {
+  getRememberedQrCapability,
+  qrCanonicalEnabled,
+  requestCanonicalTablePayment,
+  resolveQrCanonicalMode,
+  stablePublicIdempotencyKey,
+} from "@/modules/public/canonical"
 import {
   getAvailablePaymentMethods,
   type AvailablePaymentMethod,
@@ -25,7 +31,9 @@ export default function QRPaymentModal({
   order,
   onClose,
 }: QRPaymentModalProps) {
+  const app = useFirebaseApp()
   const db = useFirestore()
+  const { user } = useUser()
   const [methods, setMethods] = React.useState<AvailablePaymentMethod[]>([])
   const [loadingMethods, setLoadingMethods] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
@@ -82,7 +90,7 @@ export default function QRPaymentModal({
 
   const handlePaymentClick = async (method: AvailablePaymentMethod) => {
     if (order.paymentStatus !== "unpaid") return
-    if (!db || !restaurantId || !order?.id || isPaymentLocked) return
+    if (!restaurantId || !order?.id || isPaymentLocked) return
 
     setPaymentStarted(true)
     setSaving(true)
@@ -91,60 +99,33 @@ export default function QRPaymentModal({
     setFallbackCode("")
 
     try {
-      const orderRef = doc(db, "restaurants", restaurantId, "orders", order.id)
-
-      if (method.type === "cash") {
-        await updateDoc(orderRef, {
-          paymentMethod: "cash",
-          paymentMethodCode: null,
-          paymentProvider: null,
-          paymentType: "cash",
-          paymentStatus: "pending_cash",
-          paymentIntentStatus: "pending",
-          needsCashCollection: true,
-          source: "qr_table",
-          updatedAt: serverTimestamp(),
+      if (qrCanonicalEnabled(resolveQrCanonicalMode(restaurantId))) {
+        if (!user?.isAnonymous || !order?.tableSessionId) {
+          throw new Error("Session client expirée.")
+        }
+        const capability = getRememberedQrCapability(order.id)
+        if (!capability) throw new Error("Session QR expirée.")
+        await requestCanonicalTablePayment({
+          app,
+          user,
+          restaurantId,
+          tableSessionId: order.tableSessionId,
+          capability,
+          idempotencyKey: stablePublicIdempotencyKey(
+            `qr-payment-modal:${order.id}:${method.code}`
+          ),
+          method: method.type === "cash" ? "cash" : "mobile",
+          provider: method.type === "cash" ? null : method.code,
         })
-
-        setStatusMessage("Un serveur va passer pour encaisser votre paiement")
+        setStatusMessage(
+          method.type === "cash"
+            ? "Un serveur va passer pour encaisser votre paiement"
+            : "Paiement en cours de validation..."
+        )
         onClose()
         return
       }
 
-      await updateDoc(orderRef, {
-        paymentMethod: method.code,
-        paymentMethodCode: method.code,
-        paymentProvider: method.code,
-        paymentType: "mobile_money",
-        paymentStatus: "pending_mobile",
-        paymentIntentStatus: "submitted",
-        paymentCode: method.paymentCode || null,
-        paymentInstruction:
-          method.paymentCodeType === "ussd"
-            ? "La composition du code a ete lancee automatiquement."
-            : "Suivez les instructions du moyen choisi.",
-        paymentVerificationStatus: "pending_manual_review",
-        paymentVerificationRequestedAt: serverTimestamp(),
-        needsCashCollection: false,
-        source: "qr_table",
-        updatedAt: serverTimestamp(),
-      })
-
-      setStatusMessage("Paiement en cours de validation...")
-
-      if (method.paymentCodeType === "ussd" && method.paymentCode) {
-        if (typeof window === "undefined") {
-          setFallbackCode(method.paymentCode)
-          return
-        }
-
-        try {
-          window.location.href = `tel:${encodeURIComponent(method.paymentCode)}`
-        } catch (ussdError) {
-          console.error(ussdError)
-          setFallbackCode(method.paymentCode)
-        }
-      }
     } catch (paymentError) {
       console.error(paymentError)
       setPaymentStarted(false)
