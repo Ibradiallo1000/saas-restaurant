@@ -1,6 +1,6 @@
 import type { OrderItemSnapshot } from "../commands/types.ts"
 
-export type AggregateStatus = "pending" | "preparing" | "ready" | "served" | "completed" | "cancelled"
+export type AggregateStatus = "pending" | "preparing" | "partially_ready" | "ready" | "served" | "completed" | "cancelled"
 export interface AggregateParent {
   orderStatus: string
   kitchenStatus: string

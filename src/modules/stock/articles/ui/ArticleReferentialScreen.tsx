@@ -111,12 +111,6 @@ export function ArticleReferentialScreen({
       )
     : false
 
-  React.useEffect(() => {
-    if (!loading && restaurantId && !enabled) {
-      router.replace("/manager/stock")
-    }
-  }, [enabled, loading, restaurantId, router])
-
   if (loading) return <AdminRouteSkeleton />
   if (!restaurantId || !user || !principal) {
     return (
@@ -127,7 +121,12 @@ export function ArticleReferentialScreen({
     )
   }
   if (!enabled) {
-    return <AdminRouteSkeleton />
+    return (
+      <StatePanel
+        title="Stock indisponible"
+        description="Le référentiel Stock V2 n’est pas activé pour ce restaurant."
+      />
+    )
   }
   if (!canPerformArticleAction(principal, "read", restaurantId)) {
     return (

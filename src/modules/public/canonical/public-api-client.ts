@@ -1,4 +1,5 @@
 import type { FirebaseApp } from "firebase/app"
+import { resolveFirebaseAppCheckSiteKey } from "@/lib/firebase-app-check-config"
 import { getToken, initializeAppCheck, ReCaptchaV3Provider, type AppCheck } from "firebase/app-check"
 import type { User } from "firebase/auth"
 
@@ -165,7 +166,7 @@ async function publicHeaders(app: FirebaseApp, user: User) {
       "x-firebase-appcheck": localProof,
     }
   }
-  const siteKey = process.env.NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY?.trim()
+  const siteKey = resolveFirebaseAppCheckSiteKey()
   if (!siteKey) {
     throw new PublicOrderApiError(
       "APP_CHECK_NOT_CONFIGURED",

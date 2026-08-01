@@ -138,6 +138,34 @@ service cloud.firestore {
         );
     }
 
+    function kitchenCanAccessPreparationItem(restaurantId, item) {
+      let staff = get(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid)).data;
+      return isRestaurantKitchen(restaurantId)
+        && item.status in ["pending", "preparing", "ready"]
+        && (
+          (
+            staff.keys().hasAny(["allowedPreparationStationIds"])
+            && item.preparationStationId is string
+            && item.preparationStationId in staff.allowedPreparationStationIds
+          )
+          || (
+            !staff.keys().hasAny(["allowedPreparationStationIds"])
+            && !item.keys().hasAny(["preparationStationId"])
+            && item.preparationMode == "kitchen"
+          )
+        );
+    }
+
+    function kitchenCanAccessStation(restaurantId, stationId) {
+      let staff = get(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid)).data;
+      return isRestaurantKitchen(restaurantId)
+        && stationId is string
+        && (
+          (staff.keys().hasAny(["allowedPreparationStationIds"]) && stationId in staff.allowedPreparationStationIds)
+          || (!staff.keys().hasAny(["allowedPreparationStationIds"]) && stationId == "VIRTUAL_KITCHEN")
+        );
+    }
+
     function hasValidOperationalAvailability(product) {
       return !("operationalAvailability" in product)
         || (
@@ -1167,7 +1195,102 @@ service cloud.firestore {
 
       match /staff/{staffId} {
         allow read: if canUseRestaurant(restaurantId);
-        allow write: if isSuperAdmin() || isRestaurantOwner(restaurantId);
+        allow create, delete: if isSuperAdmin() || isRestaurantOwner(restaurantId);
+        allow update: if isSuperAdmin() || isRestaurantOwner(restaurantId)
+          || (
+            canApproveCashSession(restaurantId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              "allowedPosStationIds",
+              "defaultPosStationId",
+              "allowedPreparationStationIds",
+              "updatedAt"
+            ])
+            && request.resource.data.allowedPosStationIds is list
+            && (!request.resource.data.keys().hasAny(["allowedPreparationStationIds"])
+              || request.resource.data.allowedPreparationStationIds is list)
+            && (request.resource.data.defaultPosStationId == null
+              || request.resource.data.defaultPosStationId is string)
+          );
+      }
+
+      match /posStations/{stationId} {
+        allow get, list: if canUseRestaurant(restaurantId);
+        allow create: if canApproveCashSession(restaurantId)
+          && stationId != "DEFAULT"
+          && request.resource.data.keys().hasOnly([
+            "name", "code", "isActive", "catalogMode",
+            "allowedCategoryIds", "allowedProductIds", "excludedProductIds",
+            "activeSessionId", "createdAt", "updatedAt", "createdBy", "updatedBy"
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.code is string
+          && request.resource.data.isActive is bool
+          && request.resource.data.catalogMode in ["ALL", "RESTRICTED"]
+          && request.resource.data.allowedCategoryIds is list
+          && request.resource.data.allowedProductIds is list
+          && request.resource.data.excludedProductIds is list
+          && request.resource.data.activeSessionId == null
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.updatedAt is timestamp;
+        allow update: if canApproveCashSession(restaurantId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "name", "code", "isActive", "catalogMode",
+            "allowedCategoryIds", "allowedProductIds", "excludedProductIds",
+            "updatedAt", "updatedBy"
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.code is string
+          && request.resource.data.isActive is bool
+          && request.resource.data.catalogMode in ["ALL", "RESTRICTED"]
+          && request.resource.data.allowedCategoryIds is list
+          && request.resource.data.allowedProductIds is list
+          && request.resource.data.excludedProductIds is list
+          && request.resource.data.activeSessionId == resource.data.activeSessionId
+          && (request.resource.data.isActive == true || resource.data.activeSessionId == null)
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.updatedAt is timestamp;
+        allow delete: if canApproveCashSession(restaurantId)
+          && resource.data.activeSessionId == null;
+      }
+
+      match /preparationStations/{stationId} {
+        allow get, list: if canUseRestaurant(restaurantId);
+        allow create: if canApproveCashSession(restaurantId)
+          && request.resource.data.name is string
+          && request.resource.data.code is string
+          && request.resource.data.type is string
+          && request.resource.data.isActive is bool
+          && request.resource.data.acceptsOrders is bool
+          && request.resource.data.displayOrder is int
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.updatedAt is timestamp
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdAt is timestamp;
+        allow update: if canApproveCashSession(restaurantId)
+          && request.resource.data.name is string
+          && request.resource.data.code is string
+          && request.resource.data.type is string
+          && request.resource.data.isActive is bool
+          && request.resource.data.acceptsOrders is bool
+          && request.resource.data.displayOrder is int
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.updatedAt is timestamp;
+        allow delete: if canApproveCashSession(restaurantId);
+      }
+
+      match /preparationIssues/{issueId} {
+        allow get, list: if canApproveCashSession(restaurantId)
+          || (
+            canUseRestaurant(restaurantId)
+            && (
+              (userExists() && userDoc().data.role == "cashier")
+              || (isRestaurantStaff(restaurantId) && get(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid)).data.role == "cashier")
+              || kitchenCanAccessStation(restaurantId, resource.data.preparationStationId)
+            )
+          );
+        allow create, update, delete: if false;
       }
 
       match /categories/{categoryId} {
@@ -1734,18 +1857,8 @@ service cloud.firestore {
 
       match /cashSessions/{sessionId} {
         allow get, list: if canUseRestaurant(restaurantId);
-        allow create: if (
-          canUseRestaurant(restaurantId)
-          && request.resource.data.restaurantId == restaurantId
-          && (request.resource.data.cashierId == request.auth.uid || request.resource.data.userId == request.auth.uid)
-          && request.resource.data.status == "open"
-        ) || (
-          canApproveCashSession(restaurantId)
-          && request.resource.data.restaurantId == restaurantId
-          && request.resource.data.cashierId is string
-          && request.resource.data.status == "open"
-          && request.resource.data.approvedBy == request.auth.uid
-        );
+        // Openings are server-only so station and cashier locks remain atomic.
+        allow create: if false;
         allow update: if isCashSessionAggregateUpdate(restaurantId)
           || (
             resource.data.status != "validated"
@@ -2305,8 +2418,7 @@ service cloud.firestore {
                 && get(/databases/$(database)/documents/restaurants/$(resource.data.restaurantId)/staff/$(request.auth.uid)).data.role == "kitchen"
               )
             )
-            && resource.data.preparationMode == "kitchen"
-            && resource.data.status in ["pending", "preparing", "ready"]
+            && kitchenCanAccessPreparationItem(resource.data.restaurantId, resource.data)
           )
         );
     }

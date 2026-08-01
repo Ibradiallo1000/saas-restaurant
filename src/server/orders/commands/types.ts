@@ -106,6 +106,7 @@ export interface OrderItemSnapshot {
   restaurantId: string
   productId: string
   preparationMode: PreparationMode
+  preparationStationId: string | null
   status: OrderItemStatus
   quantity: number
   servedQuantity: number

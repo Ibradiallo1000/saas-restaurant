@@ -77,10 +77,15 @@ export async function POST(
     }
 
     const batch = db.batch()
+    const cashSessionSnapshot = await restaurantRef.collection("cashSessions").doc(cashSessionId).get()
+    const cashSession = cashSessionSnapshot.data() || {}
     batch.update(sessionRef, {
       "paymentRequest.status": "validated",
       "paymentRequest.handledAt": FieldValue.serverTimestamp(),
       "paymentRequest.handledBy": principal.uid,
+      "paymentRequest.posStationId": String(cashSession.posStationId || "DEFAULT"),
+      "paymentRequest.posStationName": String(cashSession.posStationName || "Caisse principale"),
+      "paymentRequest.posStationCode": String(cashSession.posStationCode || "DEFAULT"),
       status: "closed",
       closedAt: FieldValue.serverTimestamp(),
       lastActivityAt: FieldValue.serverTimestamp(),

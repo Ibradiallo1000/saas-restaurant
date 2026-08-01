@@ -26,7 +26,7 @@ function request(overrides = {}) {
     tableContext: null,
     customer: null,
     delivery: null,
-    cashSessionId: null,
+    cashSessionId: "cash-session-1",
     notes: null,
     ...overrides,
   }
@@ -63,6 +63,11 @@ function authorities(overrides = {}) {
       ["drinks", { id: "drinks", name: "Boissons", active: true, preparationMode: "direct" }],
     ]),
     tableSession: null,
+    posSession: {
+      id: "cash-session-1", cashierId: "cashier-1", active: true,
+      stationId: "DEFAULT", stationName: "Caisse principale", stationCode: "DEFAULT", stationActive: true,
+      catalogScope: { catalogMode: "ALL", allowedCategoryIds: [], allowedProductIds: [], excludedProductIds: [] },
+    },
     ...overrides,
   }
 }

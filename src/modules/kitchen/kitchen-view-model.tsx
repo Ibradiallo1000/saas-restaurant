@@ -119,7 +119,7 @@ export function getKitchenCardSignature(order: RestaurantOrder) {
       item.itemStatus, item.preparationMode, item.destination, item.productionArea, item.note, item.notes,
       stableJson(item.options), stableJson(item.extras), stableJson(item.selectedOptions),
       stableJson(item.supplements), stableJson(item.supplementNames), item.imageUrl, toTimestampMs(item.createdAt),
-      toTimestampMs(item.servedAt)].join(":")) .join("|"),
+      toTimestampMs(item.servedAt), stableJson(item.preparationIssue)].join(":")) .join("|"),
   ].join("||")
 }
 

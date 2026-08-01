@@ -13,6 +13,7 @@ import {
   type FinancialLedgerEntry,
 } from "../../lib/finance/payment-ledger-domain.ts"
 import { FinancialLedgerError } from "./firestore-payment-ledger.ts"
+import { DEFAULT_POS_STATION_ID, resolveSessionPosStationId } from "../../lib/pos-stations.ts"
 
 export class FirestoreCashSessionClose {
   private readonly db: Firestore
@@ -34,10 +35,12 @@ export class FirestoreCashSessionClose {
       const sessionRef = root.collection("cashSessions").doc(input.sessionId)
       const handoverRef = root.collection("cashHandovers").doc(`session-${input.sessionId}`)
       const ledgerQuery = root.collection("payments").where("sessionId", "==", input.sessionId)
-      const [sessionSnapshot, ledgerSnapshot, handoverSnapshot] = await Promise.all([
+      const [sessionSnapshot, ledgerSnapshot, handoverSnapshot, restaurantSnapshot, stationsSnapshot] = await Promise.all([
         transaction.get(sessionRef),
         transaction.get(ledgerQuery),
         transaction.get(handoverRef),
+        transaction.get(root),
+        transaction.get(root.collection("posStations")),
       ])
       if (!sessionSnapshot.exists) {
         throw new FinancialLedgerError("CASH_SESSION_NOT_FOUND", "Session caisse introuvable.")
@@ -105,6 +108,9 @@ export class FirestoreCashSessionClose {
         },
         capturedAt: now,
         capturedBy: input.cashierId,
+        posStationId: String(session.posStationId || "DEFAULT"),
+        posStationName: String(session.posStationName || "Caisse principale"),
+        posStationCode: String(session.posStationCode || "DEFAULT"),
       }
       const isMobileOnlySettlement =
         close.expectedHandover === 0 && close.expectedMobileMoney > 0
@@ -114,6 +120,9 @@ export class FirestoreCashSessionClose {
           restaurantId: input.restaurantId,
           sessionId: input.sessionId,
           cashierId: input.cashierId,
+          posStationId: String(session.posStationId || "DEFAULT"),
+          posStationName: String(session.posStationName || "Caisse principale"),
+          posStationCode: String(session.posStationCode || "DEFAULT"),
           expectedAmount: 0,
           declaredAmount: 0,
           declarationDifference: 0,
@@ -161,6 +170,17 @@ export class FirestoreCashSessionClose {
         } : {}),
         updatedAt: now,
       })
+      const stationId = resolveSessionPosStationId(session)
+      if (stationId === DEFAULT_POS_STATION_ID) {
+        if (restaurantSnapshot.data()?.defaultPosStationActiveSessionId === input.sessionId) {
+          transaction.update(root, { defaultPosStationActiveSessionId: null, updatedAt: now })
+        }
+      } else {
+        const stationSnapshot = stationsSnapshot.docs.find((entry) => entry.id === stationId)
+        if (stationSnapshot?.data()?.activeSessionId === input.sessionId) {
+          transaction.update(stationSnapshot.ref, { activeSessionId: null, updatedAt: now, updatedBy: input.cashierId })
+        }
+      }
       return { replayed: false, close }
     })
   }

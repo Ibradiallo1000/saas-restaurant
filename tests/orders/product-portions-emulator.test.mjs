@@ -36,16 +36,16 @@ test("la dernière portion n'est attribuée qu'à une commande et une annulation
   const store = new FirestoreAtomicOrderCreationStore(db)
   const create = (suffix) => createCanonicalOrder({ store }, {
     restaurantId,
-    principal: { kind: "staff", uid: `cashier-${suffix}`, roles: ["cashier"] },
+    principal: { kind: "public", uid: `customer-${suffix}`, roles: [] },
     idempotencyKey: `portion_${suffix}_1234567890`,
     body: {
-      schemaVersion: 1, channel: "pos", serviceMode: "takeaway", clientRequestId: `request-${suffix}`,
+      schemaVersion: 1, channel: "public_takeaway", serviceMode: "takeaway", clientRequestId: `request-${suffix}`,
       items: [{ clientLineId: `line-${suffix}`, productId: "dish", quantity: 1, options: [], instructions: null }],
       tableContext: null, customer: null, delivery: null, cashSessionId: null, notes: null,
     },
   })
   const results = await Promise.allSettled([create("a"), create("b")])
-  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1)
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1, results.map((result) => result.status === "rejected" ? `${result.reason?.code}:${result.reason?.message}` : "fulfilled").join(" | "))
   const success = results.find((result) => result.status === "fulfilled").value
   const productAfterSale = (await root.collection("products").doc("dish").get()).data()
   assert.equal(productAfterSale.portionControl.available, 0)

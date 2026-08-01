@@ -42,6 +42,7 @@ import type {
 import { commandHashPayload } from "./validation.ts"
 import { resolveOperationalAvailabilityState, resolvePortionControl } from "../../../lib/product-availability.ts"
 import { writeHistory } from "../../availability/availability-service.ts"
+import { resolveAllowedPreparationStationIds, VIRTUAL_PREPARATION_STATIONS } from "../../../lib/preparation-stations.ts"
 
 interface StockApplication {
   warning?: string
@@ -108,6 +109,18 @@ export class FirestoreAtomicOrderCommandStore implements AtomicOrderCommandPort 
           toOrderItemSnapshot(snapshot.id, snapshot.data())
         )
         items.forEach((entry) => assertItemTenant(entry, input.restaurantId, input.orderId))
+        if (input.actor.role === "kitchen") {
+          const staffSnapshot = await transaction.get(restaurantRef.collection("staff").doc(input.actor.id))
+          const allowed = new Set(resolveAllowedPreparationStationIds(staffSnapshot.data()))
+          const targetIds = "expectedItems" in input
+            ? new Set(input.expectedItems.map((entry) => entry.orderItemId))
+            : new Set(orderItemId ? [orderItemId] : [])
+          const forbidden = items.filter((entry) => targetIds.has(entry.id)).some((entry) => {
+            const stationId = entry.preparationStationId || (entry.preparationMode === "kitchen" ? VIRTUAL_PREPARATION_STATIONS.kitchen.id : entry.preparationMode === "bar" ? VIRTUAL_PREPARATION_STATIONS.bar.id : "")
+            return !stationId || !allowed.has(stationId)
+          })
+          if (forbidden) throw new OrderCommandError("FORBIDDEN_ACTOR", "Ce poste de préparation n’est pas affecté à cet utilisateur.")
+        }
         const item = orderItemId ? items.find((entry) => entry.id === orderItemId) ?? null : null
         if (itemRef && !item) throw new OrderCommandError("ORDER_ITEM_NOT_FOUND", "Ligne introuvable.")
         order.hasUnaggregatedCancellation = items.some((entry) => entry.cancelledQuantity > 0)
@@ -729,6 +742,7 @@ function toOrderItemSnapshot(id: string, data: DocumentData): OrderItemSnapshot 
     restaurantId: stringOr(data.restaurantId, ""),
     productId: stringOr(data.productId, ""),
     preparationMode: preparationMode(data.preparationMode),
+    preparationStationId: typeof data.preparationStationId === "string" ? data.preparationStationId : null,
     status: itemStatus(data.status),
     quantity: numberOr(data.quantity, 0),
     servedQuantity: numberOr(data.servedQuantity, data.status === "served" ? data.quantity : 0),

@@ -39,6 +39,7 @@ export function isRouteAllowedForRole(pathname: string, role: AppRouteRole | nul
     case "owner":
       return (
         pathname.startsWith("/owner") ||
+        pathname.startsWith("/preparation") ||
         pathname.startsWith("/settings") ||
         pathname.startsWith("/menu") ||
         pathname.startsWith("/tables") ||
@@ -53,6 +54,9 @@ export function isRouteAllowedForRole(pathname: string, role: AppRouteRole | nul
         pathname.startsWith("/manager/dashboard") ||
         pathname.startsWith("/manager/commandes") ||
         pathname.startsWith("/manager/caisse") ||
+        pathname.startsWith("/manager/pos-stations") ||
+        pathname.startsWith("/manager/preparation-stations") ||
+        pathname.startsWith("/preparation") ||
         pathname.startsWith("/manager/menu") ||
         pathname.startsWith("/manager/availability") ||
         pathname.startsWith("/manager/tables") ||
@@ -69,7 +73,7 @@ export function isRouteAllowedForRole(pathname: string, role: AppRouteRole | nul
     case "cashier":
       return pathname.startsWith("/pos")
     case "kitchen":
-      return pathname.startsWith("/kitchen")
+      return pathname.startsWith("/kitchen") || pathname.startsWith("/preparation")
     default:
       return false
   }

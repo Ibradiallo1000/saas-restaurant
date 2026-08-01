@@ -43,7 +43,6 @@ export function toKitchenOrderItemView(
   if (
     stringValue(data.restaurantId) !== parent.restaurantId ||
     stringValue(data.orderId) !== parent.orderId ||
-    stringValue(data.preparationMode) !== "kitchen" ||
     !ACTIVE_KITCHEN_ITEM_STATUSES.includes(stringValue(data.status) as ActiveKitchenItemStatus)
   ) return null
 

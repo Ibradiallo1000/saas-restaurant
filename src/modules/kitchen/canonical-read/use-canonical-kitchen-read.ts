@@ -21,6 +21,7 @@ const EMPTY_STATE: CanonicalKitchenReadState = {
 export function useCanonicalKitchenRead(input: {
   restaurantId?: string
   userId?: string
+  preparationStationId?: string
   enabled: boolean
 }) {
   const db = useFirestore()
@@ -35,6 +36,7 @@ export function useCanonicalKitchenRead(input: {
     return subscribeCanonicalKitchenRead({
       db,
       restaurantId: input.restaurantId,
+      preparationStationId: input.preparationStationId,
       log: console,
       onData: (snapshot) => {
         setState({
@@ -51,7 +53,7 @@ export function useCanonicalKitchenRead(input: {
         }))
       },
     })
-  }, [db, input.enabled, input.restaurantId, input.userId])
+  }, [db, input.enabled, input.preparationStationId, input.restaurantId, input.userId])
 
   return state
 }

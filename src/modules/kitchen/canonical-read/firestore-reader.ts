@@ -43,12 +43,13 @@ export interface CanonicalKitchenSnapshot {
 
 export function createCanonicalKitchenItemsQuery(
   db: Firestore,
-  restaurantId: string
+  restaurantId: string,
+  preparationStationId?: string
 ): Query {
   return query(
     collectionGroup(db, "orderItems"),
     where("restaurantId", "==", restaurantId),
-    where("preparationMode", "==", "kitchen"),
+    where(preparationStationId ? "preparationStationId" : "preparationMode", "==", preparationStationId || "kitchen"),
     where("status", "in", ["pending", "preparing", "ready"]),
     orderBy("createdAt", "asc"),
     limit(KITCHEN_ACTIVE_ITEM_LIMIT)
@@ -58,6 +59,7 @@ export function createCanonicalKitchenItemsQuery(
 export function subscribeCanonicalKitchenRead(input: {
   db: Firestore
   restaurantId: string
+  preparationStationId?: string
   onData(snapshot: CanonicalKitchenSnapshot): void
   onError(error: Error): void
   log?: Pick<Console, "warn">
@@ -66,7 +68,7 @@ export function subscribeCanonicalKitchenRead(input: {
   let generation = 0
   let latestKitchenSnapshot: QuerySnapshot<DocumentData> | null = null
   let parentUnsubscribes: Unsubscribe[] = []
-  const kitchenQuery = createCanonicalKitchenItemsQuery(input.db, input.restaurantId)
+  const kitchenQuery = createCanonicalKitchenItemsQuery(input.db, input.restaurantId, input.preparationStationId)
 
   const refresh = async () => {
       const snapshot = latestKitchenSnapshot

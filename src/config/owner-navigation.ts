@@ -38,6 +38,7 @@ export const OWNER_SIDEBAR_SECTIONS: OwnerNavigationSection[] = [
     label: "Activité",
     items: [
       { id: "orders", label: "Commandes", href: "/owner/commandes", icon: "orders" },
+      { id: "preparation", label: "Préparation", href: "/preparation", icon: "orders" },
       { id: "cash", label: "Caisse", href: "/owner/caisse", icon: "cash" },
       { id: "reviews", label: "Avis clients", href: "/owner/avis", icon: "reviews" },
       { id: "availability", label: "Disponibilités", href: "/owner/availability", icon: "menu" },
@@ -68,6 +69,8 @@ export const OWNER_SIDEBAR_SECTIONS: OwnerNavigationSection[] = [
       { id: "tables", label: "Tables et QR codes", href: "/tables", icon: "tables" },
       { id: "media", label: "Médias", href: "/images", icon: "images" },
       { id: "settings", label: "Paramètres", href: "/settings", icon: "settings" },
+      { id: "pos-stations", label: "Postes de caisse", href: "/owner/pos-stations", icon: "cash" },
+      { id: "preparation-stations", label: "Postes de préparation", href: "/owner/preparation-stations", icon: "settings" },
     ],
   },
 ]
@@ -86,7 +89,7 @@ export const OWNER_MORE_SECTIONS: OwnerNavigationSection[] = [
   },
 ]
 
-const OWNER_ACTIVITY_PATHS = ["/owner/activite", "/owner/commandes", "/owner/avis", "/owner/availability"]
+const OWNER_ACTIVITY_PATHS = ["/owner/activite", "/owner/commandes", "/owner/avis", "/owner/availability", "/preparation"]
 const OWNER_FINANCE_PATHS = [
   "/owner/finances",
   "/owner/caisse",
@@ -101,7 +104,7 @@ const OWNER_STOCK_PATHS = [
   "/owner/stock/alerts",
   "/owner/stock/movements",
 ]
-const OWNER_MORE_PATHS = ["/menu", "/tables", "/images", "/settings"]
+const OWNER_MORE_PATHS = ["/menu", "/tables", "/images", "/settings", "/owner/pos-stations", "/owner/preparation-stations"]
 
 export type OwnerMobileDestination = "home" | "activity" | "finances" | "stock" | "more" | null
 

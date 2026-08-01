@@ -94,11 +94,14 @@ export class FirestorePaymentLedger {
     }
 
     const now = Timestamp.now()
-    const payment: FinancialLedgerEntry & Record<string, unknown> = {
+      const payment: FinancialLedgerEntry & Record<string, unknown> = {
       restaurantId: input.restaurantId,
       orderId: input.orderId,
       sessionId: input.sessionId,
       cashierId: input.cashierId,
+      posStationId: String(session?.posStationId || "DEFAULT"),
+      posStationName: String(session?.posStationName || "Caisse principale"),
+      posStationCode: String(session?.posStationCode || "DEFAULT"),
       source: input.source,
       type: input.type,
       provider: input.provider,
@@ -213,6 +216,9 @@ export class FirestorePaymentLedger {
         orderId: payment.orderId,
         sessionId: payment.sessionId,
         cashierId: input.cashierId,
+        posStationId: String((payment as any).posStationId || sessionSnapshot.data()?.posStationId || "DEFAULT"),
+        posStationName: String((payment as any).posStationName || sessionSnapshot.data()?.posStationName || "Caisse principale"),
+        posStationCode: String((payment as any).posStationCode || sessionSnapshot.data()?.posStationCode || "DEFAULT"),
         source: payment.source,
         type: payment.type,
         provider: payment.provider ?? null,

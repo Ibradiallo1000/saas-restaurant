@@ -12,6 +12,7 @@ export function computeOrderAggregate(input: { parent: AggregateParent; items: A
   else if (active.every((row) => row.served)) status = payment === "paid" ? "completed" : "served"
   else if (active.every((row) => row.served || row.item.status === "ready")) status = "ready"
   else if (active.some((row) => row.item.status === "preparing")) status = "preparing"
+  else if (active.some((row) => row.item.status === "ready" || row.served)) status = "partially_ready"
   else status = "pending"
   const summary = {
     schemaVersion: 1 as const,

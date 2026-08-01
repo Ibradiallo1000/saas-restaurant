@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { signOut } from "firebase/auth"
 import { Bell, LogOut, Menu, Settings, User } from "lucide-react"
 
@@ -26,16 +26,10 @@ import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveD
 export default function OperationalMobileHeader() {
   const auth = useAuth()
   const router = useRouter()
-  const pathname = usePathname() ?? ""
   const { restaurant } = useRestaurant()
   const { user, role } = useTenant()
   const { cashSessionRequests, pendingCashValidationCount, unpaidServedCount, activeOrders } = useRestaurantLiveData()
   const restaurantName = restaurant?.name?.trim() || "Restaurant"
-  const isInventory =
-    pathname === "/manager/inventory" ||
-    pathname.startsWith("/manager/inventory/") ||
-    pathname === "/manager/stock" ||
-    pathname.startsWith("/manager/stock/")
   const userLabel = user?.displayName || user?.email?.split("@")[0] || "Utilisateur"
   const lateOrdersCount = React.useMemo(
     () => (activeOrders || []).filter((order: any) => isLateKitchenOrder(order)).length,
@@ -60,8 +54,8 @@ export default function OperationalMobileHeader() {
             />
           ) : null}
           <div className="min-w-0 py-1">
-            <p className="truncate text-sm font-black leading-tight">{getOwnerPageTitle(pathname)}</p>
-            <p className="truncate text-[10px] font-medium text-muted-foreground">{restaurantName}</p>
+            <p className="truncate text-sm font-black leading-tight">{restaurantName}</p>
+            <p className="truncate text-[10px] font-medium text-muted-foreground">Owner</p>
           </div>
         </div>
         <ThemeToggle />
@@ -136,9 +130,10 @@ export default function OperationalMobileHeader() {
             className="h-7 w-7 shrink-0 rounded-md object-cover"
           />
         ) : null}
-        <span className="truncate text-sm font-black uppercase tracking-tight">
-          {isInventory ? "Stock" : restaurantName}
-        </span>
+        <div className="min-w-0 py-1">
+          <p className="truncate text-sm font-black leading-tight">{restaurantName}</p>
+          {role === ROLES.MANAGER ? <p className="truncate text-[10px] font-medium text-muted-foreground">Manager</p> : null}
+        </div>
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
@@ -162,25 +157,6 @@ export default function OperationalMobileHeader() {
     </header>
   )
 }
-
-function getOwnerPageTitle(pathname: string) {
-  if (pathname === "/owner") return "Vue d’ensemble"
-  if (pathname.startsWith("/owner/activite")) return "Activité"
-  if (pathname.startsWith("/owner/commandes")) return "Commandes"
-  if (pathname.startsWith("/owner/avis")) return "Avis clients"
-  if (pathname.startsWith("/owner/finances")) return "Finances"
-  if (pathname.startsWith("/owner/caisse")) return "Caisse"
-  if (pathname.startsWith("/owner/tresorerie")) return "Trésorerie"
-  if (pathname.startsWith("/owner/depenses")) return "Dépenses"
-  if (pathname.startsWith("/owner/stock")) return "Stock"
-  if (pathname.startsWith("/menu")) return "Menu"
-  if (pathname.startsWith("/tables")) return "Tables et QR codes"
-  if (pathname.startsWith("/images")) return "Médias"
-  if (pathname.startsWith("/settings")) return "Paramètres"
-  return restaurantNameFallback
-}
-
-const restaurantNameFallback = "Restaurant"
 
 function isLateKitchenOrder(order: any) {
   const status = order?.kitchenStatus ?? order?.status

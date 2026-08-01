@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { collection, doc } from "firebase/firestore"
 
 import { OrdersProvider, useOrders } from "@/modules/orders/OrdersProvider"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
@@ -12,7 +13,8 @@ import {
 } from "@/modules/kitchen/canonical-read"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
 import { KitchenErrorState, KitchenLoadingState, KitchenOrderCardSkeleton, KitchenPage as KitchenPageShell } from "@/components/kitchen-ui"
-import { useUser } from "@/firebase"
+import { useCollection, useDoc, useFirestore, useMemoFirebase, useUser } from "@/firebase"
+import { resolveAllowedPreparationStationIds, VIRTUAL_PREPARATION_STATIONS } from "@/lib/preparation-stations"
 
 export default function KitchenPage() {
   const { restaurantId } = useRestaurant()
@@ -61,10 +63,25 @@ function CanonicalKitchenPageContent({
   restaurantId?: string
 }) {
   const { user, isUserLoading } = useUser()
+  const db = useFirestore()
+  const staffRef = useMemoFirebase(() => db && restaurantId && user ? doc(db, "restaurants", restaurantId, "staff", user.uid) : null, [db, restaurantId, user])
+  const stationsRef = useMemoFirebase(() => db && restaurantId ? collection(db, "restaurants", restaurantId, "preparationStations") : null, [db, restaurantId])
+  const staff = useDoc<any>(staffRef)
+  const stationResult = useCollection<any>(stationsRef)
+  const allowedIds = React.useMemo(() => resolveAllowedPreparationStationIds(staff.data), [staff.data])
+  const stations = React.useMemo(() => (stationResult.data || []).filter((station: any) => allowedIds.includes(station.id) && station.isActive !== false && station.acceptsOrders !== false), [allowedIds, stationResult.data])
+  const [selectedStationId, setSelectedStationId] = React.useState<string | undefined>()
+  React.useEffect(() => {
+    const next = stations[0]?.id
+    if (selectedStationId && stations.some((station: any) => station.id === selectedStationId)) return
+    setSelectedStationId(next)
+  }, [selectedStationId, stations])
+  const usesVirtualKitchen = allowedIds.includes(VIRTUAL_PREPARATION_STATIONS.kitchen.id) && stations.length === 0
   const state = useCanonicalKitchenRead({
     restaurantId,
     userId: user?.uid,
-    enabled: Boolean(restaurantId && user),
+    preparationStationId: usesVirtualKitchen ? undefined : selectedStationId,
+    enabled: Boolean(restaurantId && user && !staff.isLoading && (usesVirtualKitchen || selectedStationId)),
   })
   const orders = React.useMemo(
     () => adaptCanonicalGroupsToKitchenBoard(state.groups),
@@ -82,6 +99,7 @@ function CanonicalKitchenPageContent({
   }
   return (
     <>
+      {stations.length > 1 ? <div className="mb-3 max-w-sm"><label className="text-sm font-bold" htmlFor="preparation-station">Poste de préparation</label><select id="preparation-station" className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={selectedStationId || ""} onChange={(event) => setSelectedStationId(event.target.value)}>{stations.map((station: any) => <option key={station.id} value={station.id}>{station.name}</option>)}</select></div> : null}
       {state.isSaturated ? (
         <p role="alert" className="sr-only">
           La limite de 200 lignes actives est atteinte.

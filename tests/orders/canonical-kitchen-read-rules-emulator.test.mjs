@@ -60,6 +60,10 @@ before(async () => {
         role: "kitchen",
         active: true,
       }),
+      db.doc("users/manager-a").set({ restaurantId: "restaurant-a", role: "manager", active: true }),
+      db.doc("restaurants/restaurant-a/staff/manager-a").set({ restaurantId: "restaurant-a", role: "manager", active: true }),
+      db.doc("users/kitchen-station").set({ restaurantId: "restaurant-c", role: "kitchen", active: true }),
+      db.doc("restaurants/restaurant-c/staff/kitchen-station").set({ restaurantId: "restaurant-c", role: "kitchen", active: true, allowedPreparationStationIds: ["hot"] }),
       db.doc("restaurants/restaurant-b/staff/kitchen-b").set({
         restaurantId: "restaurant-b",
         role: "kitchen",
@@ -74,9 +78,12 @@ before(async () => {
       db.doc("restaurants/restaurant-a/orders/order-a/orderItems/item-served").set(
         item("restaurant-a", "order-a", "kitchen", "served")
       ),
+      db.doc("restaurants/restaurant-c/orders/order-c/orderItems/item-hot").set({ ...item("restaurant-c", "order-c", "kitchen", "pending"), preparationStationId: "hot" }),
+      db.doc("restaurants/restaurant-c/orders/order-c/orderItems/item-cold").set({ ...item("restaurant-c", "order-c", "kitchen", "pending"), preparationStationId: "cold" }),
       db.doc("restaurants/restaurant-b/orders/order-b/orderItems/item-other").set(
         item("restaurant-b", "order-b", "kitchen", "pending")
       ),
+      db.doc("restaurants/restaurant-a/preparationIssues/issue-a").set({ restaurantId:"restaurant-a",orderId:"order-a",orderItemId:"item-kitchen",preparationStationId:"VIRTUAL_KITCHEN",status:"OPEN" }),
     ])
   })
 })
@@ -94,6 +101,13 @@ integration("Cuisine lit les orderItems actifs de son restaurant", async () => {
 integration("Cuisine ne peut pas lire les orderItems d’un autre restaurant", async () => {
   const db = environment.authenticatedContext("kitchen-a").firestore()
   await assertFails(getDocs(kitchenQuery(db, "restaurant-b")))
+})
+
+integration("Cuisine affectée ne lit que son poste de préparation", async () => {
+  const db = environment.authenticatedContext("kitchen-station").firestore()
+  const snapshot = await assertSucceeds(getDocs(stationQuery(db, "restaurant-c", "hot")))
+  assert.deepEqual(snapshot.docs.map((document) => document.id), ["item-hot"])
+  await assertFails(getDocs(stationQuery(db, "restaurant-c", "cold")))
 })
 
 integration("une lecture collectionGroup non authentifiée est refusée", async () => {
@@ -137,6 +151,15 @@ integration("le POS ne peut pas écrire directement une ligne canonique", async 
   )
 })
 
+integration("POS et Manager voient immédiatement les signalements sans pouvoir les écrire", async () => {
+  for (const uid of ["cashier-a","manager-a"]) {
+    const db=environment.authenticatedContext(uid).firestore()
+    const snapshot=await assertSucceeds(db.collection("restaurants/restaurant-a/preparationIssues").where("status","==","OPEN").limit(100).get())
+    assert.equal(snapshot.size,1)
+    await assertFails(db.doc("restaurants/restaurant-a/preparationIssues/issue-a").update({status:"RESOLVED"}))
+  }
+})
+
 function kitchenQuery(db, restaurantId) {
   return query(
     collectionGroup(db, "orderItems"),
@@ -155,6 +178,10 @@ function posQuery(db, restaurantId) {
     orderBy("createdAt", "asc"),
     limit(500)
   )
+}
+
+function stationQuery(db, restaurantId, stationId) {
+  return query(collectionGroup(db, "orderItems"), where("restaurantId", "==", restaurantId), where("preparationStationId", "==", stationId), where("status", "in", ["pending", "preparing", "ready"]), orderBy("createdAt", "asc"), limit(200))
 }
 
 function item(restaurantId, orderId, preparationMode, status) {

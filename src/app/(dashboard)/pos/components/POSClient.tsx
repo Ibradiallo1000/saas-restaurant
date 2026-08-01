@@ -4,7 +4,7 @@ import * as React from "react"
 import { addDoc, arrayUnion, collection, doc, getDocs, limit, query, serverTimestamp, updateDoc, where, writeBatch } from "firebase/firestore"
 import { signOut } from "firebase/auth"
 import { useSearchParams, useRouter } from "next/navigation"
-import { useCollection, useFirestore, useMemoFirebase, useAuth } from "@/firebase"
+import { useCollection, useDoc, useFirestore, useMemoFirebase, useAuth } from "@/firebase"
 import { 
   Banknote, 
   CheckCircle2,
@@ -61,6 +61,7 @@ import {
 import { generatePaymentLinkOrUSSD } from "@/lib/payment-generation"
 import { printService, type PrintableOrder } from "@/services/print.service"
 import { playNewOrderNotificationSound } from "@/services/notification-sound.service"
+import { PreparationIssuesAlert } from "@/modules/preparation/PreparationIssuesAlert"
 import {
   processOrderPaymentTransaction,
   releaseOrderTableIfNeeded,
@@ -88,7 +89,8 @@ import {
   resolvePosCanonicalMode,
   useCanonicalPosOrders,
 } from "@/modules/pos/canonical"
-import { closeCashSessionV2 } from "@/modules/pos/canonical/cash-session-command-client"
+import { closeCashSessionV2, openCashSession } from "@/modules/pos/canonical/cash-session-command-client"
+import { DEFAULT_POS_STATION, isProductAllowedAtPosStation, resolvePosStation, resolveStaffDefaultPosStationId, resolveStaffPosStationIds } from "@/lib/pos-stations"
 import type { SelectedCartOption } from "@/modules/restaurant/types"
 import {
   productUnavailableMessage,
@@ -195,6 +197,23 @@ function POSPageContent() {
     tables: liveTables,
   } = useRestaurantLiveData()
   const { toast } = useToast()
+  const stationsQuery = useMemoFirebase(() => db && restaurantId
+    ? query(collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "posStations"), limit(100))
+    : null, [db, restaurantId])
+  const staffRef = useMemoFirebase(() => db && restaurantId && user?.uid
+    ? doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "staff", user.uid)
+    : null, [db, restaurantId, user?.uid])
+  const stationsResult = useCollection<any>(stationsQuery)
+  const staffResult = useDoc<any>(staffRef)
+  const configuredStations = React.useMemo(() => (stationsResult.data || []).map((station: any) => resolvePosStation(station)), [stationsResult.data])
+  const allowedStationIds = React.useMemo(() => resolveStaffPosStationIds(staffResult.data || profile), [profile, staffResult.data])
+  const allowedStations = React.useMemo(() => allowedStationIds.map((stationId) => stationId === "DEFAULT" ? { ...DEFAULT_POS_STATION } : configuredStations.find((station) => station.id === stationId)).filter((station): station is NonNullable<typeof station> => Boolean(station?.isActive)), [allowedStationIds, configuredStations])
+  const [selectedPosStationId, setSelectedPosStationId] = React.useState("")
+  React.useEffect(() => {
+    if (selectedPosStationId && allowedStations.some((station) => station.id === selectedPosStationId)) return
+    const preferred = resolveStaffDefaultPosStationId(staffResult.data || profile)
+    setSelectedPosStationId(allowedStations.find((station) => station.id === preferred)?.id || allowedStations[0]?.id || "DEFAULT")
+  }, [allowedStations, profile, selectedPosStationId, staffResult.data])
   const safeProducts = React.useMemo(() => Array.isArray(products) ? products : [], [products])
   const previousAvailabilityRef = React.useRef<Map<string, string> | null>(null)
   React.useEffect(() => {
@@ -300,6 +319,20 @@ function POSPageContent() {
       return sessionUserId === user?.uid && session.status === "open"
     }) ?? null
   }, [safeCashSessions, user?.uid])
+  const stationProducts = React.useMemo(
+    () => activeCashSession
+      ? safeProducts.filter((product: any) => isProductAllowedAtPosStation(activeCashSession, product))
+      : safeProducts,
+    [activeCashSession, safeProducts]
+  )
+  const stationCategoryIds = React.useMemo(
+    () => new Set(stationProducts.map((product: any) => String(product.categoryId || "")).filter(Boolean)),
+    [stationProducts]
+  )
+  const stationCategories = React.useMemo(
+    () => safeCategories.filter((category: any) => stationCategoryIds.has(category.id)),
+    [safeCategories, stationCategoryIds]
+  )
   const pendingSessionRequest = React.useMemo(() => {
     return safeCashSessionRequests.find((request: any) => request.cashierId === user?.uid) ?? null
   }, [safeCashSessionRequests, user?.uid])
@@ -515,7 +548,7 @@ function POSPageContent() {
 
   // Filtrer les produits par categorie
   const filteredProducts = React.useMemo(() => {
-    let filtered = safeProducts.filter((p: any) => p.isActive !== false)
+    let filtered = stationProducts.filter((p: any) => p.isActive !== false)
     if (selectedCategoryId) {
       filtered = filtered.filter((p: any) => p.categoryId === selectedCategoryId)
     }
@@ -528,7 +561,7 @@ function POSPageContent() {
       })
     }
     return filtered
-  }, [productSearch, safeProducts, selectedCategoryId])
+  }, [productSearch, selectedCategoryId, stationProducts])
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / productsPerPage))
   const safeCurrentPage = Math.min(currentPage, totalPages - 1)
@@ -598,6 +631,10 @@ function POSPageContent() {
 
   const addToCart = React.useCallback((product: any) => {
     if (!product?.id) return
+    if (activeCashSession && !isProductAllowedAtPosStation(activeCashSession, product)) {
+      toast({ variant: "destructive", title: "Produit non vendu", description: `${product.name || "Ce produit"} n’est pas vendu par cette caisse.` })
+      return
+    }
     const operationalAvailability = resolveEffectiveProductAvailability(product)
     if (!operationalAvailability.orderable) {
       toast({
@@ -638,7 +675,7 @@ function POSPageContent() {
     if (!turboMode) {
       toast({ title: "Ajouté", description: product.name, duration: 500 })
     }
-  }, [safeCategories, stockByProduct, toast, turboMode])
+  }, [activeCashSession, safeCategories, stockByProduct, toast, turboMode])
 
   const removeFromCart = (productId: string) => {
     setCart((current) => {
@@ -891,6 +928,13 @@ function POSPageContent() {
     if (unavailableSelection) {
       const availability = resolveEffectiveProductAvailability(unavailableSelection)
       setConfigValidationError(productUnavailableMessage(unavailableSelection.name, availability.operationalState))
+      return
+    }
+    const forbiddenSelection = safeProducts.find((product: any) =>
+      selectedProductIds.has(product.id) && activeCashSession && !isProductAllowedAtPosStation(activeCashSession, product)
+    )
+    if (forbiddenSelection) {
+      setConfigValidationError(`${forbiddenSelection.name} n’est pas vendu par cette caisse.`)
       return
     }
 
@@ -1243,27 +1287,10 @@ function POSPageContent() {
     setRequestingSession(true)
     try {
       if (cashierApprovalMode === "optional") {
-        await addDoc(collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS), {
-          restaurantId,
-          cashierId: user.uid,
-          userId: user.uid,
-          staffId: staffSnapshot.staffId,
-          staffName: staffSnapshot.staffName,
-          staffPhone: staffSnapshot.staffPhone,
-          status: "open",
-          openedAt: serverTimestamp(),
-          closedAt: null,
-          openingBalance: 0,
-          closingBalance: null,
-          totalCash: 0,
-          totalMobile: 0,
-          totalOrders: 0,
-          validatedByManager: false,
-          approvedBy: user.uid,
-          approvedRole: "cashier",
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
+        const result = await openCashSession({ restaurantId, user, posStationId: selectedPosStationId || "DEFAULT", deviceInstanceId: getPosDeviceInstanceId() })
+        if (result.replayed && result.session?.deviceInstanceId && result.session.deviceInstanceId !== getPosDeviceInstanceId()) {
+          toast({ title: "Session déjà active", description: `La session ${result.session.posStationName || "Caisse principale"} est aussi utilisée sur un autre appareil.` })
+        }
         toast({ title: "Caisse ouverte" })
         return
       }
@@ -1276,6 +1303,8 @@ function POSPageContent() {
         staffName: staffSnapshot.staffName,
         staffPhone: staffSnapshot.staffPhone,
         cashierName: staffSnapshot.staffName,
+        posStationId: selectedPosStationId || "DEFAULT",
+        deviceInstanceId: getPosDeviceInstanceId(),
         status: "pending",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -1979,6 +2008,7 @@ function POSPageContent() {
 
   return (
     <>
+    <PreparationIssuesAlert />
     <POSLayout
       restaurantName={restaurant?.name}
       restaurantLogoUrl={restaurant?.logoUrl}
@@ -1997,7 +2027,7 @@ function POSPageContent() {
           <PosCatalog
             className="h-full rounded-none border-x-0 border-b-0 md:rounded-[var(--radius-dashboard-widget)] md:border lg:h-auto lg:self-start lg:overflow-visible"
             contentClassName="pb-24 md:pb-3 lg:h-auto lg:flex-none lg:overflow-y-visible lg:overscroll-auto lg:p-2.5"
-            categories={<CategorySidebar categories={safeCategories} selectedCategoryId={selectedCategoryId} onSelectCategory={setSelectedCategoryId} />}
+            categories={<CategorySidebar categories={stationCategories} selectedCategoryId={selectedCategoryId} onSelectCategory={setSelectedCategoryId} />}
             footer={totalPages > 1 ? (
               <div className="flex items-center justify-center gap-2 bg-[var(--pos-catalog)] sm:gap-3">
                 <Button variant="outline" size="sm" className="min-h-11 gap-1 rounded-full px-3 text-xs font-black" disabled={safeCurrentPage === 0} onClick={() => setCurrentPage((page) => page - 1)}>
@@ -2015,7 +2045,7 @@ function POSPageContent() {
               <PosSearchField className="mb-2 md:hidden" label="Rechercher un produit" placeholder="Nom ou référence" value={productSearch} onChange={setProductSearch} onClear={() => setProductSearch("")} resultCount={filteredProducts.length} />
               <ProductGrid
                 products={paginatedProducts}
-                categories={safeCategories}
+                categories={stationCategories}
                 loading={isLoadingVisible}
                 formatPrice={formatDisplayPrice}
                 onProductClick={openProductSelector}
@@ -2026,7 +2056,7 @@ function POSPageContent() {
             {configProduct ? (
               <ProductConfiguratorModal
                 product={configProduct}
-                catalogProducts={safeProducts}
+                catalogProducts={stationProducts}
                 embeddedSelections={configSelections}
                 linkedSelections={configLinkedSelections}
                 unitPrice={getConfiguredUnitPrice(configProduct, Object.values(configSelections))}
@@ -2083,7 +2113,7 @@ function POSPageContent() {
           <div aria-label="Résumé de session" className="grid shrink-0 grid-cols-3 gap-2">
             <POSFooterCard icon={<Clock3 />} label="Début" value={formatSessionDateTime(activeCashSession.openedAt)} />
             <POSFooterCard icon={<Percent />} label="Remise" value={discountRate > 0 ? `${Math.round(discountRate * 100)}%` : "0%"} />
-            <POSFooterCard icon={<UserRound />} label="Caissier" value={staffSnapshot.staffName} />
+            <POSFooterCard icon={<UserRound />} label="Poste" value={activeCashSession.posStationName || "Caisse principale"} />
           </div>
           </div>
         ) : undefined
@@ -2097,6 +2127,9 @@ function POSPageContent() {
                 pendingValidation={Boolean(pendingValidationSession)}
                 requesting={requestingSession}
                 approvalMode={cashierApprovalMode}
+                stations={allowedStations}
+                selectedStationId={selectedPosStationId}
+                onStationChange={setSelectedPosStationId}
                 onRequest={requestCashSessionOpening}
               />
             </div>
@@ -2565,7 +2598,7 @@ function POSPageContent() {
               <div aria-label="Résumé de session" className="grid grid-cols-3 gap-2">
                 <POSFooterCard icon={<Clock3 />} label="Début" value={formatSessionDateTime(activeCashSession.openedAt)} />
                 <POSFooterCard icon={<Percent />} label="Remise" value={discountRate > 0 ? `${Math.round(discountRate * 100)}%` : "0%"} />
-                <POSFooterCard icon={<UserRound />} label="Caissier" value={staffSnapshot.staffName} />
+            <POSFooterCard icon={<UserRound />} label="Poste" value={activeCashSession.posStationName || "Caisse principale"} />
               </div>
             }
             onOrderTypeChange={handleOrderTypeChange}
@@ -3248,15 +3281,21 @@ function ClosedCashSessionPanel({
   requesting,
   approvalMode,
   onRequest,
+  stations,
+  selectedStationId,
+  onStationChange,
 }: {
   pending: boolean
   pendingValidation: boolean
   requesting: boolean
   approvalMode: "required" | "optional"
   onRequest: () => void
+  stations: Array<{ id: string; name: string }>
+  selectedStationId: string
+  onStationChange: (stationId: string) => void
 }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-2">
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 p-2">
       <div className="flex items-center gap-2">
         <div className="h-7 w-7 rounded-full bg-red-100 flex items-center justify-center">
           <Banknote className="h-3.5 w-3.5 text-red-600" />
@@ -3274,6 +3313,7 @@ function ClosedCashSessionPanel({
           </p>
         </div>
       </div>
+      {stations.length > 1 && !pending && !pendingValidation ? <label className="text-[10px] font-bold">Poste<select className="ml-2 min-h-8 rounded-md border bg-background px-2" value={selectedStationId} onChange={(event) => onStationChange(event.target.value)}>{stations.map((station) => <option key={station.id} value={station.id}>{station.name}</option>)}</select></label> : stations.length === 1 ? <span className="text-[10px] font-bold">{stations[0].name}</span> : null}
       <Button
         size="sm"
         className="h-7 px-3 text-[10px] font-bold"
@@ -3292,6 +3332,16 @@ function ClosedCashSessionPanel({
       </Button>
     </div>
   )
+}
+
+function getPosDeviceInstanceId() {
+  if (typeof window === "undefined") return null
+  const key = "oordera-pos-device-instance"
+  const existing = window.localStorage.getItem(key)
+  if (existing) return existing
+  const created = window.crypto?.randomUUID?.() || `device-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  window.localStorage.setItem(key, created)
+  return created
 }
 
 function getCashierOrderTypeLabel(order: any) {

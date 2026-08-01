@@ -29,6 +29,7 @@ import {
   resolvePortionControl,
 } from "../../../lib/product-availability.ts"
 import { writeHistory } from "../../availability/availability-service.ts"
+import { DEFAULT_POS_STATION_ID, resolvePosCatalogScope, resolveSessionPosStationId } from "../../../lib/pos-stations.ts"
 
 export class FirestoreAtomicOrderCreationStore implements AtomicOrderCreationPort {
   private readonly db: Firestore
@@ -168,6 +169,47 @@ async function loadAuthorities(input: {
     }
   }
 
+  let posSession = null
+  if (input.input.request.channel === "pos" && input.input.request.cashSessionId) {
+    const sessionSnapshot = await input.transaction.get(
+      input.restaurantRef.collection("cashSessions").doc(input.input.request.cashSessionId)
+    )
+    if (sessionSnapshot.exists) {
+      const session = sessionSnapshot.data() ?? {}
+      const stationId = resolveSessionPosStationId(session)
+      let stationActive = true
+      if (stationId !== DEFAULT_POS_STATION_ID) {
+        const stationSnapshot = await input.transaction.get(input.restaurantRef.collection("posStations").doc(stationId))
+        stationActive = stationSnapshot.exists
+          && stationSnapshot.data()?.isActive !== false
+          && stationSnapshot.data()?.activeSessionId === sessionSnapshot.id
+      }
+      posSession = {
+        id: sessionSnapshot.id,
+        cashierId: String(session.cashierId || session.userId || session.staffId || ""),
+        active: session.status === "open",
+        stationId,
+        stationName: String(session.posStationName || "Caisse principale"),
+        stationCode: String(session.posStationCode || DEFAULT_POS_STATION_ID),
+        stationActive,
+        catalogScope: resolvePosCatalogScope(session),
+      }
+    }
+  }
+  const preparationStationsSnapshot = await input.transaction.get(input.restaurantRef.collection("preparationStations"))
+  const preparationStations = new Map(preparationStationsSnapshot.docs.map((snapshot) => {
+    const data = snapshot.data() || {}
+    return [snapshot.id, {
+      id: snapshot.id,
+      name: stringOr(data.name, snapshot.id),
+      code: stringOr(data.code, snapshot.id),
+      type: stringOr(data.type, "preparation"),
+      isActive: data.isActive !== false,
+      acceptsOrders: data.acceptsOrders !== false,
+      virtual: false,
+    }]
+  }))
+
   return {
     restaurant: toRestaurantAuthority(
       input.restaurantRef.id,
@@ -176,6 +218,8 @@ async function loadAuthorities(input: {
     products,
     categories,
     tableSession,
+    posSession,
+    preparationStations,
   }
 }
 
@@ -276,7 +320,9 @@ function toProductAuthority(id: string, data: DocumentData): ProductAuthority {
     options: Array.isArray(data.options) ? data.options.map(toProductOptionAuthority) : [],
     reviewsEnabled: data.reviewsEnabled === true,
     portionControl,
+    preparationStationId: nullableString(data.preparationStationId),
   }
+
 }
 
 function reservePortions(
@@ -356,6 +402,7 @@ function toCategoryAuthority(id: string, data: DocumentData): CategoryAuthority 
     name: stringOr(data.name, id),
     active: data.isActive !== false && data.active !== false,
     preparationMode: preparationModeOrNull(data.preparationMode),
+    preparationStationId: nullableString(data.preparationStationId),
   }
 }
 

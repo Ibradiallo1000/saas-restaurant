@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { collection, limit, onSnapshot, query, where } from "firebase/firestore"
+import { collection, onSnapshot, query, where } from "firebase/firestore"
 
 import { useFirestore } from "@/firebase"
 import { COLLECTION_NAMES } from "@/lib/constants"
@@ -81,8 +81,7 @@ export function CatalogProvider({
           safeRestaurantId,
           COLLECTION_NAMES.PRODUCTS
         ),
-        where("isActive", "==", true),
-        limit(50)
+        where("isActive", "==", true)
       )
     const categoriesQuery = query(
         collection(
@@ -90,8 +89,7 @@ export function CatalogProvider({
           COLLECTION_NAMES.RESTAURANTS,
           safeRestaurantId,
           "categories"
-        ),
-        limit(50)
+        )
       )
 
     const unsubscribeProducts = onSnapshot(productsQuery, (snapshot) => {

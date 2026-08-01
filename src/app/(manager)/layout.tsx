@@ -43,12 +43,16 @@ import { ROLES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/useIsMobile"
 import { RestaurantLiveDataProvider, useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
+import { PreparationIssuesAlert } from "@/modules/preparation/PreparationIssuesAlert"
 
 const MANAGER_NAV_GROUPS = [
   { label: "Vue d’ensemble", items: [{ label: "Vue d’ensemble", href: "/manager/dashboard", icon: LayoutDashboard }] },
   { label: "Opérations", items: [
     { label: "Commandes", href: "/manager/commandes", icon: ClipboardList },
+    { label: "Préparation", href: "/preparation", icon: ClipboardList },
     { label: "Caisse", href: "/manager/caisse", icon: Wallet },
+    { label: "Postes de caisse", href: "/manager/pos-stations", icon: Wallet },
+    { label: "Postes de préparation", href: "/manager/preparation-stations", icon: ClipboardList },
     { label: "Tables", href: "/manager/tables", icon: Table2 },
     { label: "Disponibilités", href: "/manager/availability", icon: MenuSquare },
   ] },
@@ -121,9 +125,10 @@ function ManagerLayoutContent({ children }: { children: React.ReactNode }) {
 
   if (isMobile) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen max-w-full overflow-x-hidden bg-background">
         <OperationalMobileHeader />
-        <main className="flex flex-col gap-4 px-3 pb-[calc(80px+env(safe-area-inset-bottom))] pt-[calc(56px+env(safe-area-inset-top)+8px)]">
+        <main className="flex min-w-0 max-w-full flex-col gap-4 overflow-x-hidden px-3 pb-[calc(80px+env(safe-area-inset-bottom))] pt-[calc(56px+env(safe-area-inset-top)+8px)]">
+          <PreparationIssuesAlert />
           {children}
         </main>
         <OperationalBottomNav />
@@ -136,6 +141,7 @@ function ManagerLayoutContent({ children }: { children: React.ReactNode }) {
       <ManagerSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <main className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+          <PreparationIssuesAlert />
           {children}
         </main>
       </div>

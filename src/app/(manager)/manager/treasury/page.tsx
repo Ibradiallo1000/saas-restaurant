@@ -17,6 +17,8 @@ import {
 } from "@/services/treasury.service"
 import { ManagerReportsView } from "./ManagerReportsView"
 import { buildManagerReportsViewModel, type ManagerTreasuryMovementReport } from "./manager-reports-view-model"
+import { EMPTY_POS_FINANCIAL_FILTERS, matchesPosFinancialFilters } from "@/lib/finance/pos-report-filters"
+import { PosFinancialFilters } from "@/components/reports/PosFinancialFilters"
 
 type MovementDirectionFilter = "all" | "in" | "out" | "transfer"
 
@@ -28,6 +30,7 @@ export function ManagerTreasuryPageContent() {
   const [directionFilter, setDirectionFilter] = React.useState<MovementDirectionFilter>("all")
   const [accountFilter, setAccountFilter] = React.useState("all")
   const [sourceFilter, setSourceFilter] = React.useState("all")
+  const [posFilters, setPosFilters] = React.useState(EMPTY_POS_FINANCIAL_FILTERS)
   const service = React.useMemo(() => (db ? new TreasuryService(db) : null), [db])
 
   React.useEffect(() => {
@@ -68,6 +71,11 @@ export function ManagerTreasuryPageContent() {
   const sessionById = React.useMemo(() => {
     return new Map((cashSessions || []).map((session: any) => [session.id, session]))
   }, [cashSessions])
+  const paymentsBySession = React.useMemo(() => {
+    const result = new Map<string, any[]>()
+    for (const payment of payments || []) { const id = String(payment.sessionId || ""); if (id) result.set(id, [...(result.get(id) || []), payment]) }
+    return result
+  }, [payments])
   const safeMovements = React.useMemo(() => {
     return expandLegacySessionMovements(movements || [], sessionById)
       .sort((a, b) => getTimeMs(b.createdAt) - getTimeMs(a.createdAt))
@@ -99,25 +107,36 @@ export function ManagerTreasuryPageContent() {
       if (directionFilter !== "all" && direction !== directionFilter) return false
       if (accountFilter !== "all" && getMovementAccountId(movement) !== accountFilter) return false
       if (sourceFilter !== "all" && String(movement.source || "manual") !== sourceFilter) return false
+      const sessionId = String(movement.sessionId || movement.sourceSessionId || "")
+      if (!matchesPosFinancialFilters({ filters: posFilters, movement, session: sessionById.get(sessionId), payments: paymentsBySession.get(sessionId) })) return false
       return true
     })
-  }, [accountFilter, directionFilter, safeMovements, sourceFilter])
+  }, [accountFilter, directionFilter, paymentsBySession, posFilters, safeMovements, sessionById, sourceFilter])
+  const hasPosFilter = Object.values(posFilters).some((value) => value !== "all")
+  const filteredMovementSummary = React.useMemo(() => buildMovementSummary(filteredMovements), [filteredMovements])
+  const reportDeposits = hasPosFilter ? filteredMovementSummary.in : displayDeposits
+  const reportExpenses = hasPosFilter ? filteredMovementSummary.out : displayExpenses
   const sourceOptions = React.useMemo(() => {
     return Array.from(new Set(safeMovements.map((movement) => String(movement.source || "manual")))).sort()
   }, [safeMovements])
   const viewModel = React.useMemo(() => buildManagerReportsViewModel({
-    periodLabel: getPeriodLabel(type, range.startDate, range.endDate), balance: displayBalance, deposits: displayDeposits, expenses: displayExpenses,
+    periodLabel: getPeriodLabel(type, range.startDate, range.endDate), balance: displayBalance, deposits: reportDeposits, expenses: reportExpenses,
     balanceUsesFallback: usesAccountFallback || accountTotal <= 0, movementsUseFallback: movementSummary.in <= 0 || movementSummary.out <= 0,
     containsLegacyExpansion: safeMovements.some((movement) => Boolean(movement.legacyExpandedFrom)),
     accounts: safeAccounts.map((account) => ({ id: account.id, name: account.name, kind: formatAccountKind(account.kind), balance: Number(account.balance || 0) })),
     movements: filteredMovements.map(toMovementReport),
-  }), [accountTotal, displayBalance, displayDeposits, displayExpenses, filteredMovements, movementSummary.in, movementSummary.out, range.endDate, range.startDate, safeAccounts, safeMovements, type, usesAccountFallback])
+  }), [accountTotal, displayBalance, filteredMovements, movementSummary.in, movementSummary.out, range.endDate, range.startDate, reportDeposits, reportExpenses, safeAccounts, safeMovements, type, usesAccountFallback])
 
   if (!restaurantId || isLoadingAccounts || isLoadingMovements || isLoadingPayments || isLoadingCashSessions) {
     return <ReportsLoadingState label="Chargement des rapports financiers Manager" />
   }
 
-  return <ManagerReportsView model={viewModel} errors={[accountsError && "comptes", movementsError && "mouvements", sessionsError && "sessions", paymentsError && "paiements"].filter(Boolean) as string[]} directionFilter={directionFilter} accountFilter={accountFilter} sourceFilter={sourceFilter} accountOptions={safeAccounts.map((account) => ({ id: account.id, label: account.name }))} sourceOptions={sourceOptions.map((source) => ({ id: source, label: formatSource(source) }))} onDirectionFilterChange={(value) => setDirectionFilter(value as MovementDirectionFilter)} onAccountFilterChange={setAccountFilter} onSourceFilterChange={setSourceFilter} />
+  return <><div className="mb-4 rounded-lg border bg-card p-3"><PosFinancialFilters value={posFilters} onChange={setPosFilters} {...buildPosFilterOptions(cashSessions || [], payments || [])} /></div><ManagerReportsView model={viewModel} errors={[accountsError && "comptes", movementsError && "mouvements", sessionsError && "sessions", paymentsError && "paiements"].filter(Boolean) as string[]} directionFilter={directionFilter} accountFilter={accountFilter} sourceFilter={sourceFilter} accountOptions={safeAccounts.map((account) => ({ id: account.id, label: account.name }))} sourceOptions={sourceOptions.map((source) => ({ id: source, label: formatSource(source) }))} onDirectionFilterChange={(value) => setDirectionFilter(value as MovementDirectionFilter)} onAccountFilterChange={setAccountFilter} onSourceFilterChange={setSourceFilter} /></>
+}
+
+function buildPosFilterOptions(sessions: any[], payments: any[]) {
+  const unique = (rows: Array<{ id: string; label: string }>) => [...new Map(rows.filter((row) => row.id).map((row) => [row.id, row])).values()]
+  return { stations: unique(sessions.map((s) => ({ id: String(s.posStationId || "DEFAULT"), label: String(s.posStationName || "Caisse principale") }))), cashiers: unique(sessions.map((s) => ({ id: String(s.cashierId || s.userId || ""), label: String(s.cashierName || s.staffName || s.cashierId || "Caissier") }))), sessions: sessions.map((s) => ({ id: s.id, label: `${s.posStationName || "Caisse principale"} · ${s.id.slice(0, 8)}` })), channels: [...new Set(payments.map((p) => String(p.source || p.channel || "")).filter(Boolean))], paymentMethods: [...new Set(payments.map((p) => String(p.type || p.paymentMethod || "")).filter(Boolean))] }
 }
 
 export default function LegacyManagerTreasuryPage() {

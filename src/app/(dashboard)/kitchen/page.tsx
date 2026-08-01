@@ -1,5 +1,5 @@
-import KitchenLazy from "./components/KitchenLazy"
+import { redirect } from "next/navigation"
 
 export default function KitchenPage() {
-  return <KitchenLazy />
+  redirect("/preparation")
 }

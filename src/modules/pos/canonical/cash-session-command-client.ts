@@ -51,3 +51,32 @@ export async function closeCashSessionV2(input: {
   }
   return payload.result
 }
+
+export async function openCashSession(input: {
+  restaurantId: string
+  user: User
+  posStationId?: string | null
+  legacySessionId?: string | null
+  cashierId?: string | null
+  openingBalance?: number
+  deviceInstanceId?: string | null
+}) {
+  const token = await input.user.getIdToken()
+  const response = await fetch(`/api/restaurants/${encodeURIComponent(input.restaurantId)}/cash-sessions/commands`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      command: "OPEN_SESSION",
+      posStationId: input.posStationId ?? null,
+      legacySessionId: input.legacySessionId ?? null,
+      cashierId: input.cashierId ?? null,
+      openingBalance: input.openingBalance ?? 0,
+      deviceInstanceId: input.deviceInstanceId ?? null,
+    }),
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || payload?.ok !== true) {
+    throw new CashSessionCommandClientError(payload?.error?.code || "CASH_SESSION_OPEN_FAILED", payload?.error?.message || "L’ouverture de caisse a échoué.", response.status)
+  }
+  return payload.result
+}

@@ -1,72 +1,39 @@
-import {
-  doc,
-  runTransaction,
-  serverTimestamp,
-  type Firestore,
-} from "firebase/firestore"
+import type { User } from "firebase/auth"
+import { doc, serverTimestamp, updateDoc, type Firestore } from "firebase/firestore"
 
 import { COLLECTION_NAMES } from "@/lib/constants"
+import { openCashSession } from "@/modules/pos/canonical/cash-session-command-client"
 
 export async function approveCashOpeningRequest({
   db,
   restaurantId,
   request,
-  approverId,
-  approverRole,
+  user,
 }: {
   db: Firestore
   restaurantId: string
   request: any
-  approverId: string
-  approverRole: string
+  user: User
 }) {
   const cashierId = request.cashierId || request.userId || request.staffId
   if (!cashierId) throw new Error("Utilisateur de caisse introuvable.")
-
-  const staffId = request.staffId || cashierId
-  const sessionId = request.sessionId || request.id
-  const sessionPayload = {
+  const result = await openCashSession({
     restaurantId,
+    user,
     cashierId,
-    userId: cashierId,
-    staffId,
-    staffName: request.staffName || request.cashierName || "Caissier",
-    cashierName: request.cashierName || request.staffName || "Caissier",
-    staffPhone: request.staffPhone || null,
-    status: "open",
-    openedAt: serverTimestamp(),
-    closedAt: null,
-    openingBalance: Number(request.openingBalance || 0),
-    closingBalance: null,
-    totalCash: 0,
-    totalMobile: 0,
-    totalOrders: 0,
-    validatedByManager: false,
-    approvedBy: approverId,
-    approvedRole: approverRole,
-    approvedAt: serverTimestamp(),
-    createdAt: request.createdAt || serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  }
-
-  await runTransaction(db, async (transaction) => {
-    if (request.source === "session") {
-      const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS, request.id)
-      transaction.update(sessionRef, { ...sessionPayload, activatedFrom: "cashSession" })
-      return
-    }
-
-    const requestRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "cashSessionRequests", request.id)
-    const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS, sessionId)
-    transaction.set(sessionRef, { ...sessionPayload, requestId: request.id, activatedFrom: "cashSessionRequest" })
-    transaction.update(requestRef, {
+    posStationId: request.posStationId || null,
+    legacySessionId: request.source === "session" ? request.id : null,
+    openingBalance: Number(request.openingBalance || request.initialAmount || 0),
+    deviceInstanceId: request.deviceInstanceId || null,
+  })
+  if (request.source !== "session" && request.id) {
+    await updateDoc(doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "cashSessionRequests", request.id), {
       status: "approved",
-      sessionId,
-      approvedBy: approverId,
+      sessionId: result.sessionId,
+      approvedBy: user.uid,
       approvedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
-  })
-
-  return sessionId
+  }
+  return result.sessionId
 }

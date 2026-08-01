@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { COLLECTION_NAMES } from "@/lib/constants"
-import { closeCashSessionV2 } from "@/modules/pos/canonical/cash-session-command-client"
+import { closeCashSessionV2, openCashSession } from "@/modules/pos/canonical/cash-session-command-client"
 import { submitCashHandover } from "@/modules/pos/canonical/cash-handover-command-client"
 import { CashierService, type CashSession } from "@/services/cashier.service"
 import { PosSessionReportsView } from "../session/PosSessionReportsView"
@@ -96,7 +96,7 @@ export default function CashierSessionPage() {
     sessionMutationLockRef.current = true
     setSaving(true)
     try {
-      await cashierService.openShift(restaurantId, user.uid, Number(openingBalance || 0))
+      await openCashSession({ restaurantId, user, openingBalance: Number(openingBalance || 0) })
       toast({ title: "Session ouverte" })
       await loadSession()
     } catch (error: any) {

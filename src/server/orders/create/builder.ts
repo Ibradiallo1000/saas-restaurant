@@ -12,6 +12,8 @@ import {
   productUnavailableMessage,
   resolveProductPreparationMode as resolveSharedPreparationMode,
 } from "../../../lib/product-availability.ts"
+import { isProductAllowedAtPosStation } from "../../../lib/pos-stations.ts"
+import { resolvePreparationStation } from "../../../lib/preparation-stations.ts"
 
 export function buildCanonicalOrder(input: {
   restaurantId: string
@@ -33,6 +35,7 @@ export function buildCanonicalOrder(input: {
     throw new CanonicalOrderError("PUBLIC_ORDERING_CLOSED", "Les commandes publiques sont fermées.")
   }
   assertTableSession(input.request, input.authorities)
+  assertPosSession(input)
   if (input.orderItemIds.length !== input.request.items.length) {
     throw new CanonicalOrderError("ORDER_CREATION_FAILED", "Impossible de préparer les lignes.")
   }
@@ -44,6 +47,9 @@ export function buildCanonicalOrder(input: {
     }
     if (!product.active) {
       throw new CanonicalOrderError("PRODUCT_UNAVAILABLE", `${product.name} n'est plus disponible.`)
+    }
+    if (input.request.channel === "pos" && !isProductAllowedAtPosStation(input.authorities.posSession?.catalogScope, product)) {
+      throw new CanonicalOrderError("PRODUCT_NOT_ALLOWED_AT_STATION", `${product.name} n’est pas vendu par cette caisse.`)
     }
     const operationalAvailabilityState = product.operationalAvailabilityState ?? "AVAILABLE"
     if (operationalAvailabilityState !== "AVAILABLE") {
@@ -60,6 +66,17 @@ export function buildCanonicalOrder(input: {
     }
 
     const preparationMode = resolvePreparationMode(product, input.authorities)
+    const category = product.categoryId ? input.authorities.categories.get(product.categoryId) : null
+    const preparationStation = resolvePreparationStation({
+      preparationMode,
+      productStationId: product.preparationStationId,
+      categoryStationId: category?.preparationStationId,
+      stations: input.authorities.preparationStations,
+    })
+    const explicitStationId = product.preparationStationId || category?.preparationStationId
+    if (preparationMode !== "direct" && (!preparationStation || !preparationStation.isActive || !preparationStation.acceptsOrders)) {
+      throw new CanonicalOrderError("PREPARATION_STATION_UNAVAILABLE", explicitStationId ? "Le poste de préparation configuré est indisponible." : `${product.name} n’a aucune destination de préparation disponible.`)
+    }
     const pricing = resolveCanonicalLinePrice(product, line)
     const orderItemId = input.orderItemIds[index]
     const status = preparationMode === "kitchen" ? "pending" : "ready"
@@ -83,6 +100,9 @@ export function buildCanonicalOrder(input: {
       selectedOptions: pricing.selectedOptions,
       instructions: line.instructions,
       preparationMode,
+      preparationStationId: preparationStation?.id ?? null,
+      preparationStationName: preparationStation?.name ?? null,
+      preparationStationCode: preparationStation?.code ?? null,
       status,
       reviewsEnabled: product.reviewsEnabled,
       portionReserved: product.portionControl?.enabled === true,
@@ -121,6 +141,12 @@ export function buildCanonicalOrder(input: {
       sessionId: input.request.tableContext?.tableSessionId ?? null,
       tableSessionId: input.request.tableContext?.tableSessionId ?? null,
       cashSessionId: input.request.cashSessionId,
+      ...(input.request.channel === "pos" ? {
+        originPosStationId: input.authorities.posSession?.stationId ?? null,
+        originPosStationName: input.authorities.posSession?.stationName ?? null,
+        originPosStationCode: input.authorities.posSession?.stationCode ?? null,
+        cashierId: input.principal.uid,
+      } : {}),
       customerName: input.request.customer?.name || "Client Anonyme",
       customerPhone: input.request.customer?.phone ?? null,
       customer: {
@@ -157,6 +183,20 @@ export function buildCanonicalOrder(input: {
       createdAt: input.now,
       updatedAt: input.now,
     },
+  }
+}
+
+function assertPosSession(input: Parameters<typeof buildCanonicalOrder>[0]) {
+  if (input.request.channel !== "pos") return
+  const session = input.authorities.posSession
+  if (!session || !session.active || session.id !== input.request.cashSessionId) {
+    throw new CanonicalOrderError("CASH_SESSION_NOT_OPEN", "La session de caisse n’est pas ouverte.")
+  }
+  if (session.cashierId !== input.principal.uid) {
+    throw new CanonicalOrderError("CASH_SESSION_FORBIDDEN", "Cette session appartient à un autre caissier.")
+  }
+  if (!session.stationActive) {
+    throw new CanonicalOrderError("POS_STATION_INACTIVE", "Le poste de caisse n’est plus actif.")
   }
 }
 

@@ -75,12 +75,12 @@ function ProtectedAppShellContent({ children, mode }: ProtectedAppShellProps) {
       : isFullscreenRoute
         ? "flex-1 overflow-y-auto"
       : shouldShowOperationalMobileHeader
-        ? "flex-1 overflow-y-auto px-4 pb-[calc(80px+env(safe-area-inset-bottom))] pt-[calc(56px+env(safe-area-inset-top)+16px)] md:px-8 md:pb-8 md:pt-6"
+        ? "min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-[calc(80px+env(safe-area-inset-bottom))] pt-[calc(56px+env(safe-area-inset-top)+16px)] md:px-8 md:pb-8 md:pt-6"
         : "flex-1 overflow-y-auto px-4 pb-[calc(80px+env(safe-area-inset-bottom))] pt-6 md:px-8 md:pb-8"
   const containerClassName =
     mode === "platform"
       ? "app-background flex min-h-screen w-full"
-      : "app-background flex min-h-screen w-full text-foreground"
+      : "app-background flex min-h-screen w-full max-w-full overflow-x-hidden text-foreground"
   const isRedirectingForRole =
     !isLoading &&
     !shouldRedirectToLogin &&

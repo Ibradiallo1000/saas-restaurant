@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { SectionNavigation } from "@/design-system/components"
+import { PageHeader, SectionNavigation } from "@/design-system/components"
 
 const STOCK_SECTIONS = [
   { label: "Articles", href: "/manager/stock" },
@@ -11,5 +11,5 @@ const STOCK_SECTIONS = [
 ]
 
 export default function ManagerStockLayout({ children }: { children: ReactNode }) {
-  return <div className="space-y-4"><SectionNavigation parentHref="/manager/stock" parentLabel="Stock" items={STOCK_SECTIONS} showBack={false} />{children}</div>
+  return <div className="min-w-0 max-w-full space-y-4 overflow-hidden"><PageHeader title="Stock" density="compact" /><SectionNavigation parentHref="/manager/stock" parentLabel="Stock" items={STOCK_SECTIONS} showBack={false} />{children}</div>
 }

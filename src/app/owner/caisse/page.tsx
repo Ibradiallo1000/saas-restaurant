@@ -97,8 +97,7 @@ export default function OwnerCaissePage() {
         db,
         restaurantId,
         request,
-        approverId: user.uid,
-        approverRole: "owner",
+        user,
       })
       toast({ title: "Ouverture approuvée", description: `La session de ${cashier} est maintenant ouverte.` })
     } catch (error) {

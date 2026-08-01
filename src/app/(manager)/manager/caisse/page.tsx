@@ -285,8 +285,7 @@ export default function ManagerCaissePage() {
         db,
         restaurantId,
         request,
-        approverId: user.uid,
-        approverRole: role || "manager",
+        user,
       })
     } finally {
       setActivatingRequestId(null)

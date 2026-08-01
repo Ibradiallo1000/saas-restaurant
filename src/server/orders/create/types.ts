@@ -73,6 +73,7 @@ export interface ProductAuthority {
   options: ProductOptionAuthority[]
   reviewsEnabled: boolean
   portionControl?: { enabled: boolean; available: number | null }
+  preparationStationId?: string | null
 }
 
 export interface CategoryAuthority {
@@ -80,6 +81,7 @@ export interface CategoryAuthority {
   name: string
   active: boolean
   preparationMode: PreparationMode | null
+  preparationStationId?: string | null
 }
 
 export interface RestaurantAuthority {
@@ -106,6 +108,24 @@ export interface OrderCreationAuthorities {
   products: Map<string, ProductAuthority>
   categories: Map<string, CategoryAuthority>
   tableSession: TableSessionAuthority | null
+  posSession?: PosSessionAuthority | null
+  preparationStations?: Map<string, import("../../../lib/preparation-stations.ts").PreparationStation>
+}
+
+export interface PosSessionAuthority {
+  id: string
+  cashierId: string
+  active: boolean
+  stationId: string
+  stationName: string
+  stationCode: string
+  stationActive: boolean
+  catalogScope: {
+    catalogMode: "ALL" | "RESTRICTED"
+    allowedCategoryIds: string[]
+    allowedProductIds: string[]
+    excludedProductIds: string[]
+  }
 }
 
 export interface CanonicalOrderItem {
@@ -131,6 +151,9 @@ export interface CanonicalOrderItem {
   }>
   instructions: string | null
   preparationMode: PreparationMode
+  preparationStationId: string | null
+  preparationStationName: string | null
+  preparationStationCode: string | null
   status: "pending" | "ready"
   reviewsEnabled: boolean
   portionReserved: boolean
@@ -152,6 +175,10 @@ export interface CanonicalOrderParent {
   sessionId: string | null
   tableSessionId: string | null
   cashSessionId: string | null
+  originPosStationId?: string | null
+  originPosStationName?: string | null
+  originPosStationCode?: string | null
+  cashierId?: string | null
   customerName: string
   customerPhone: string | null
   customer: { name: string | null; phone: string | null }

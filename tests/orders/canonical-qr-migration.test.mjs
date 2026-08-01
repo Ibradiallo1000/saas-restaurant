@@ -70,7 +70,7 @@ test("legacy exige App Check et la capacité QR comme canonical", async () => {
   assert.match(route, /authenticatePublic\(request\)/)
   assert.match(route, /createTableCapability/)
   assert.doesNotMatch(route, /capability\s*:\s*null/)
-  assert.match(security, /NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY/)
+  assert.match(security, /resolveFirebaseAppCheckSiteKey/)
   assert.match(security, /ORDER_QR_CAPABILITY_SECRET/)
   assert.doesNotMatch(security, /return false/)
 })
