@@ -63,7 +63,9 @@ function ProtectedAppShellContent({ children, mode }: ProtectedAppShellProps) {
   const isAllowedForRole = isRouteAllowedForRole(pathname ?? "/", routeRole as any)
   const roleHomePath = getRoleHomePath(routeRole as any)
   const isFullscreenRoute =
-    (pathname ?? "").startsWith("/pos") || (pathname ?? "").startsWith("/kitchen")
+    (pathname ?? "").startsWith("/pos") ||
+    (pathname ?? "").startsWith("/kitchen") ||
+    (pathname ?? "").startsWith("/preparation")
   const shouldShowOperationalBottomNav =
     mode === "dashboard" &&
     (tenant.role === ROLES.OWNER || tenant.role === ROLES.MANAGER) &&

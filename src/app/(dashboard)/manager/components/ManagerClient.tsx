@@ -53,6 +53,7 @@ import { getOrderDisplayId } from "@/lib/order-display-id"
 import { normalizePaymentMethod, normalizePaymentStatus } from "@/lib/order-payment"
 import { getFinancialSummary, getSupportedBusinessTimeZone } from "@/lib/finance/financial-summary"
 import { getRestaurantOpenStatus } from "@/lib/restaurant-hours"
+import { resolvePreparationStation } from "@/lib/preparation-stations"
 import {
   ORDER_OPERATION_STATUS,
   getOrderStatus,
@@ -492,6 +493,11 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     )
   }, [db])
   const { data: marketplaceCategories } = useCollection<MarketplaceFoodCategoryDocument>(marketplaceCategoriesQuery)
+  const preparationStationsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId || mode !== "menu") return null
+    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "preparationStations")
+  }, [db, mode, restaurantId])
+  const { data: preparationStations } = useCollection<any>(preparationStationsQuery)
 
   const [searchTerm, setSearchTerm] = React.useState("")
   const [selectedCategory, setSelectedCategory] = React.useState<string | null>(null)
@@ -532,6 +538,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     imageUrl: "",
     imageId: "",
     preparationMode: "kitchen" as PreparationMode,
+    preparationStationId: "",
     marketplaceCategoryId: "",
     reviewsPolicy: "inherit" as ProductReviewsPolicy,
     stockArticleId: "",
@@ -1092,6 +1099,10 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       linkedOptionGroups: sanitizedLinkedOptionGroups,
       hasComplexConsumption: false,
       preparationMode: productForm.preparationMode,
+      preparationStationId:
+        productForm.preparationMode === "direct" || !productForm.preparationStationId
+          ? null
+          : productForm.preparationStationId,
       marketplaceCategoryId: productForm.marketplaceCategoryId || null,
       reviewsPolicy: productReviewsPolicy,
       reviewsEnabled: resolvedReviewsEnabled,
@@ -1229,6 +1240,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
         imageUrl: "",
         imageId: "",
         preparationMode: "kitchen",
+        preparationStationId: "",
         marketplaceCategoryId: "",
         reviewsPolicy: "inherit",
         stockArticleId: "",
@@ -1296,6 +1308,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       imageUrl: product.imageUrl || "",
       imageId: product.imageId || "",
       preparationMode: product.preparationMode || getDefaultPreparationMode(categoryName),
+      preparationStationId: product.preparationStationId || "",
       marketplaceCategoryId: product.marketplaceCategoryId || "",
       reviewsPolicy: getProductReviewsPolicy(product),
       stockArticleId: product.stockArticleId || activeAssociation?.articleId || "",
@@ -1320,6 +1333,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
       imageUrl: "",
       imageId: "",
       preparationMode: getDefaultPreparationMode(categoryName),
+      preparationStationId: "",
       marketplaceCategoryId: "",
       reviewsPolicy: "inherit",
       stockArticleId: "",
@@ -1339,6 +1353,26 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   const productFormCategory = React.useMemo(
     () => categories?.find((category: any) => category.id === productForm.categoryId) ?? null,
     [categories, productForm.categoryId]
+  )
+  const activePreparationStations = React.useMemo(
+    () => (preparationStations || [])
+      .filter((station: any) => station.isActive !== false && station.acceptsOrders !== false)
+      .sort((left: any, right: any) => String(left.code || "").localeCompare(String(right.code || ""))),
+    [preparationStations]
+  )
+  const compatiblePreparationStations = React.useMemo(
+    () => productForm.preparationMode === "direct"
+      ? []
+      : activePreparationStations.filter((station: any) => station.type === productForm.preparationMode),
+    [activePreparationStations, productForm.preparationMode]
+  )
+  const inheritedPreparationStation = React.useMemo(
+    () => resolvePreparationStation({
+      preparationMode: productForm.preparationMode,
+      categoryStationId: productFormCategory?.preparationStationId,
+      stations: activePreparationStations,
+    }),
+    [activePreparationStations, productForm.preparationMode, productFormCategory?.preparationStationId]
   )
   const productFormReviewsPolicy = normalizeProductReviewsPolicy(productForm.reviewsPolicy)
   const productFormReviewsEnabled = resolveProductReviewsEnabled({
@@ -1765,6 +1799,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
                   ...productForm,
                   categoryId,
                   preparationMode: getDefaultPreparationMode(category?.name || ""),
+                  preparationStationId: "",
                 })
               }}
             >
@@ -1788,6 +1823,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
                   setProductForm({
                     ...productForm,
                     preparationMode: e.target.value as PreparationMode,
+                    preparationStationId: "",
                   })
                 }
               >
@@ -1798,7 +1834,39 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
                 ))}
               </select>
               <p className="text-xs text-muted-foreground">
-                Cuisine : envoyé en cuisine. Service direct : servi immédiatement (eau, soda…). Bar : préparé au bar (jus, café…).
+                À préparer : envoyé vers un poste compatible. Service direct : remis immédiatement. À préparer au bar/comptoir : envoyé vers un poste Bar.
+              </p>
+            </div>
+
+            <div className="space-y-2 rounded-xl bg-secondary/30 p-3">
+              <label htmlFor="preparationStationId" className="text-sm font-semibold">
+                Poste de préparation
+              </label>
+              <select
+                id="preparationStationId"
+                className="w-full rounded-xl border-none bg-background p-3 disabled:cursor-not-allowed disabled:opacity-60"
+                value={productForm.preparationMode === "direct" ? "" : productForm.preparationStationId}
+                disabled={productForm.preparationMode === "direct"}
+                onChange={(event) => setProductForm({
+                  ...productForm,
+                  preparationStationId: event.target.value,
+                })}
+              >
+                <option value="">
+                  Hériter de la catégorie
+                </option>
+                {compatiblePreparationStations.map((station: any) => (
+                  <option key={station.id} value={station.id}>{station.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                {productForm.preparationMode === "direct"
+                  ? "Service direct : aucun poste de préparation."
+                  : productForm.preparationStationId
+                    ? `Exception produit : ${compatiblePreparationStations.find((station: any) => station.id === productForm.preparationStationId)?.name || "poste indisponible"}.`
+                    : inheritedPreparationStation
+                      ? `Destination héritée : ${inheritedPreparationStation.name}.`
+                      : "La destination héritée est actuellement indisponible."}
               </p>
             </div>
 

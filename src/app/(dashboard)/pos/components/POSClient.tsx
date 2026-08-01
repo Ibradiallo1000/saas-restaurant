@@ -91,6 +91,7 @@ import {
 } from "@/modules/pos/canonical"
 import { closeCashSessionV2, openCashSession } from "@/modules/pos/canonical/cash-session-command-client"
 import { DEFAULT_POS_STATION, isProductAllowedAtPosStation, resolvePosStation, resolveStaffDefaultPosStationId, resolveStaffPosStationIds } from "@/lib/pos-stations"
+import { resolveStaffDisplayName } from "@/lib/staff-identity"
 import type { SelectedCartOption } from "@/modules/restaurant/types"
 import {
   productUnavailableMessage,
@@ -111,6 +112,7 @@ import ProductConfiguratorModal, {
 import {
   getEffectivePreparationMode,
   getKitchenOrderItems,
+  getPreparationModeLabel,
   orderHasKitchenItems,
   resolveProductPreparationMode,
 } from "@/utils/preparation-logic"
@@ -350,15 +352,10 @@ function POSPageContent() {
   const staffSnapshot = React.useMemo(() => {
     return {
       staffId: profile?.id || user?.uid || null,
-      staffName:
-        profile?.nomComplet ||
-        profile?.name ||
-        user?.displayName ||
-        user?.email?.split("@")[0] ||
-        "Caissier",
+      staffName: resolveStaffDisplayName(staffResult.data || profile?.staffProfile || profile, user, "Caissier"),
       staffPhone: profile?.telephone || profile?.phone || null,
     }
-  }, [profile, user?.displayName, user?.email, user?.uid])
+  }, [profile, staffResult.data, user])
   const posColumns = React.useMemo(() => [
     { id: ORDER_OPERATION_STATUS.PENDING, color: "border-amber-500" },
     { id: ORDER_OPERATION_STATUS.IN_PREPARATION, color: "border-blue-500" },
@@ -441,7 +438,7 @@ function POSPageContent() {
     )
   }, [posOrders, safeTableSessions, tableLabelPrefix, tables])
 
-  const readyOrderCount = posOrders[ORDER_OPERATION_STATUS.READY]?.length ?? 0
+  const pendingOrderCount = posOrders[ORDER_OPERATION_STATUS.PENDING]?.length ?? 0
 
   const selectedOrderDetail = React.useMemo(() => {
     if (!selectedOrderDetailId) return null
@@ -2013,7 +2010,7 @@ function POSPageContent() {
       restaurantName={restaurant?.name}
       restaurantLogoUrl={restaurant?.logoUrl}
       activeTab={activeTab}
-      readyOrderCount={readyOrderCount}
+      pendingOrderCount={pendingOrderCount}
       isCashSessionOpen={Boolean(activeCashSession)}
       totalAmount={sessionPaidTotal}
       userName={staffSnapshot.staffName}
@@ -3160,9 +3157,9 @@ function normalizeMoneyInput(value: string) {
 
 function groupCashierOrderItems(items: any[]) {
   const groups = [
-    { mode: "kitchen" as const, label: "Cuisine", items: [] as any[] },
-    { mode: "direct" as const, label: "Service direct", items: [] as any[] },
-    { mode: "bar" as const, label: "Bar / Comptoir", items: [] as any[] },
+    { mode: "kitchen" as const, label: getPreparationModeLabel("kitchen"), items: [] as any[] },
+    { mode: "direct" as const, label: getPreparationModeLabel("direct"), items: [] as any[] },
+    { mode: "bar" as const, label: getPreparationModeLabel("bar"), items: [] as any[] },
   ]
   const groupByMode = new Map(groups.map((group) => [group.mode, group]))
 
@@ -3175,12 +3172,6 @@ function groupCashierOrderItems(items: any[]) {
   })
 
   return groups.filter((group) => group.items.length > 0)
-}
-
-function getPreparationModeLabel(mode: "kitchen" | "direct" | "bar") {
-  if (mode === "direct") return "Service direct"
-  if (mode === "bar") return "Bar / Comptoir"
-  return "Cuisine"
 }
 
 function isServedOrderItem(item: any) {

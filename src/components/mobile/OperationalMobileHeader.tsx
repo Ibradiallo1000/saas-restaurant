@@ -22,15 +22,16 @@ import { useAuth } from "@/firebase"
 import { ROLES } from "@/lib/constants"
 import { getOptimizedImage } from "@/lib/image"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
+import { resolveStaffDisplayName } from "@/lib/staff-identity"
 
 export default function OperationalMobileHeader() {
   const auth = useAuth()
   const router = useRouter()
   const { restaurant } = useRestaurant()
-  const { user, role } = useTenant()
+  const { user, role, profile } = useTenant()
   const { cashSessionRequests, pendingCashValidationCount, unpaidServedCount, activeOrders } = useRestaurantLiveData()
   const restaurantName = restaurant?.name?.trim() || "Restaurant"
-  const userLabel = user?.displayName || user?.email?.split("@")[0] || "Utilisateur"
+  const userLabel = resolveStaffDisplayName(profile?.staffProfile, user)
   const lateOrdersCount = React.useMemo(
     () => (activeOrders || []).filter((order: any) => isLateKitchenOrder(order)).length,
     [activeOrders]

@@ -799,19 +799,24 @@ function ProductFormCard({
             />
           </Field>
           <Field className="md:col-span-2" label="Mode de preparation">
-            <select
-              value={form.preparationMode}
-              onChange={(event) =>
-                onChange({ ...form, preparationMode: event.target.value as PreparationMode })
-              }
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              {PREPARATION_MODES.map((mode) => (
-                <option key={mode.value} value={mode.value}>
-                  {mode.label}
-                </option>
-              ))}
-            </select>
+            <div className="space-y-1.5">
+              <select
+                value={form.preparationMode}
+                onChange={(event) =>
+                  onChange({ ...form, preparationMode: event.target.value as PreparationMode })
+                }
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {PREPARATION_MODES.map((mode) => (
+                  <option key={mode.value} value={mode.value}>
+                    {mode.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Le poste précis sera configuré ou résolu dans le restaurant après l’import.
+              </p>
+            </div>
           </Field>
           <ToggleFormField
             label="Actif"

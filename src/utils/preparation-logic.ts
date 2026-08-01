@@ -10,10 +10,13 @@ export type PreparationModeConfig = {
 };
 
 export const PREPARATION_MODES: PreparationModeConfig[] = [
-  { value: 'kitchen', label: 'Cuisine', color: 'bg-amber-500', badgeClass: 'bg-amber-100 text-amber-800' },
+  { value: 'kitchen', label: 'À préparer', color: 'bg-amber-500', badgeClass: 'bg-amber-100 text-amber-800' },
   { value: 'direct', label: 'Service direct', color: 'bg-green-500', badgeClass: 'bg-green-100 text-green-800' },
-  { value: 'bar', label: 'Bar / Comptoir', color: 'bg-blue-500', badgeClass: 'bg-blue-100 text-blue-800' },
+  { value: 'bar', label: 'À préparer au bar/comptoir', color: 'bg-blue-500', badgeClass: 'bg-blue-100 text-blue-800' },
 ];
+
+export const getPreparationModeLabel = (mode: PreparationMode): string =>
+  PREPARATION_MODES.find((entry) => entry.value === mode)?.label ?? PREPARATION_MODES[0].label;
 
 /**
  * Détermine le mode par défaut selon le nom de la catégorie (compatibilité produits existants).

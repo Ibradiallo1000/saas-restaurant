@@ -37,6 +37,7 @@ import { useAuth, useDocOnce, useFirestore, useMemoFirebase } from "@/firebase"
 import { useCurrentUser } from "@/hooks/use-current-user"
 import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
+import { resolveStaffDisplayName, resolveStaffRoleLabel } from "@/lib/staff-identity"
 
 type NavItem = {
   name: string
@@ -65,6 +66,11 @@ export function Sidebar() {
     return doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId)
   }, [db, restaurantId])
   const { data: restaurant } = useDocOnce(restaurantRef)
+  const staffRef = useMemoFirebase(() => {
+    if (!db || !restaurantId || !user?.uid) return null
+    return doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "staff", user.uid)
+  }, [db, restaurantId, user?.uid])
+  const { data: staffProfile } = useDocOnce(staffRef)
   const restaurantName = restaurant?.name?.trim() || "Restaurant"
   const restaurantInitial = restaurantName.charAt(0).toUpperCase() || "R"
 
@@ -213,9 +219,9 @@ export function Sidebar() {
               <Users className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-              <div className="truncate text-xs font-medium text-white">{user.email?.split("@")[0]}</div>
-              <div className="truncate text-[10px] font-semibold uppercase text-muted-foreground">
-                {isSuperAdmin ? ROLES.SUPER_ADMIN : restaurantRole}
+              <div className="truncate text-xs font-medium text-white">{resolveStaffDisplayName(staffProfile, user)}</div>
+              <div className="truncate text-[10px] font-semibold text-muted-foreground">
+                {resolveStaffRoleLabel(isSuperAdmin ? ROLES.SUPER_ADMIN : staffProfile?.role || restaurantRole)}
               </div>
             </div>
             <Button

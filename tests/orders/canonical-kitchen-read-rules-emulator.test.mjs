@@ -151,6 +151,17 @@ integration("le POS ne peut pas écrire directement une ligne canonique", async 
   )
 })
 
+integration("Cuisine peut lire les lignes servies du jour de son poste sans les modifier", async () => {
+  const db = environment.authenticatedContext("kitchen-a").firestore()
+  const snapshot = await assertSucceeds(getDocs(servedHistoryQuery(db, "restaurant-a")))
+  assert.deepEqual(snapshot.docs.map((document) => document.id), ["item-served"])
+  await assertFails(
+    db.doc("restaurants/restaurant-a/orders/order-a/orderItems/item-served").update({
+      status: "ready",
+    })
+  )
+})
+
 integration("POS et Manager voient immédiatement les signalements sans pouvoir les écrire", async () => {
   for (const uid of ["cashier-a","manager-a"]) {
     const db=environment.authenticatedContext(uid).firestore()
@@ -184,6 +195,10 @@ function stationQuery(db, restaurantId, stationId) {
   return query(collectionGroup(db, "orderItems"), where("restaurantId", "==", restaurantId), where("preparationStationId", "==", stationId), where("status", "in", ["pending", "preparing", "ready"]), orderBy("createdAt", "asc"), limit(200))
 }
 
+function servedHistoryQuery(db, restaurantId) {
+  return query(collectionGroup(db, "orderItems"), where("restaurantId", "==", restaurantId), where("preparationMode", "==", "kitchen"), where("status", "==", "served"), where("servedAt", ">=", new Date("2026-01-01T00:00:00.000Z")), orderBy("servedAt", "desc"), limit(250))
+}
+
 function item(restaurantId, orderId, preparationMode, status) {
   return {
     restaurantId,
@@ -199,5 +214,6 @@ function item(restaurantId, orderId, preparationMode, status) {
     version: 1,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    ...(status === "served" ? { servedAt: new Date("2026-01-01T12:00:00.000Z") } : {}),
   }
 }

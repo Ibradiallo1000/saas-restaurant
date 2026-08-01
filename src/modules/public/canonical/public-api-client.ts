@@ -185,10 +185,26 @@ async function publicHeaders(app: FirebaseApp, user: User) {
   // Firebase Auth and App Check are independent proofs. Preparing both at the
   // same time removes one network round-trip from every public action while
   // preserving the exact same server-side verification.
-  const [idToken, appCheckToken] = await Promise.all([
-    user.getIdToken(),
-    getToken(appCheck, false),
-  ])
+  let idToken: string
+  let appCheckToken: Awaited<ReturnType<typeof getToken>>
+  try {
+    ;[idToken, appCheckToken] = await Promise.all([
+      user.getIdToken(),
+      getToken(appCheck, false),
+    ])
+  } catch (error) {
+    if (typeof window !== "undefined" && isLocalHostname(window.location.hostname)) {
+      throw new PublicOrderApiError(
+        "APP_CHECK_DEBUG_TOKEN_NOT_REGISTERED",
+        "Le jeton App Check de développement n’est pas autorisé. Enregistrez le jeton affiché dans la console du navigateur dans Firebase Console > App Check > Gérer les jetons de débogage."
+      )
+    }
+    throw new PublicOrderApiError(
+      "APP_CHECK_TOKEN_FAILED",
+      "La protection de la commande publique n’a pas pu être vérifiée. Réessayez ou contactez le restaurant.",
+      true
+    )
+  }
   return {
     authorization: `Bearer ${idToken}`,
     "x-firebase-appcheck": appCheckToken.token,

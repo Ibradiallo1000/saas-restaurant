@@ -57,6 +57,7 @@ import { getOptimizedImage } from "@/lib/image"
 import { ROLES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import { OrdersBadge } from "@/components/orders-badge"
+import { resolveStaffDisplayName, resolveStaffRoleLabel } from "@/lib/staff-identity"
 import {
   OWNER_SIDEBAR_SECTIONS,
   type OwnerNavigationIcon,
@@ -279,10 +280,10 @@ const AppSidebarComponent = () => {
               {!isCollapsed ? (
                 <div className="flex flex-col overflow-hidden">
                   <span className="truncate text-xs font-semibold text-foreground">
-                    {user.email?.split("@")[0]}
+                    {resolveStaffDisplayName(profile?.staffProfile, user)}
                   </span>
                   <span className="text-[9px] text-muted-foreground uppercase">
-                    {profile?.role || role}
+                    {resolveStaffRoleLabel(profile?.staffProfile?.role || profile?.role || role)}
                   </span>
                 </div>
               ) : null}

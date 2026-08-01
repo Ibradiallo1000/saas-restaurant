@@ -33,7 +33,7 @@ type POSHeaderProps = {
   restaurantName?: string | null
   restaurantLogoUrl?: string | null
   activeTab: POSTab
-  readyOrderCount: number
+  pendingOrderCount: number
   isCashSessionOpen: boolean
   userName?: string | null
   roleLabel?: string
@@ -52,7 +52,7 @@ export default function POSHeader({
   restaurantName,
   restaurantLogoUrl,
   activeTab,
-  readyOrderCount,
+  pendingOrderCount,
   isCashSessionOpen,
   userName,
   roleLabel = "Caissier",
@@ -85,13 +85,13 @@ export default function POSHeader({
       <TabButton active={activeTab === "orders"} onClick={() => onTabChange("orders")}>
         <ClipboardList className="h-4 w-4" aria-hidden="true" />
         Commandes
-        {readyOrderCount > 0 && (
+        {pendingOrderCount > 0 && (
           <span
             role="status"
-            aria-label={`${readyOrderCount} commande${readyOrderCount > 1 ? "s" : ""} prête${readyOrderCount > 1 ? "s" : ""} à traiter`}
+            aria-label={`${pendingOrderCount} commande${pendingOrderCount > 1 ? "s" : ""} en attente`}
             className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-black text-white shadow-sm"
           >
-            {readyOrderCount}
+            {pendingOrderCount}
           </span>
         )}
       </TabButton>

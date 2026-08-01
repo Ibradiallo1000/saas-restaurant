@@ -141,7 +141,7 @@ service cloud.firestore {
     function kitchenCanAccessPreparationItem(restaurantId, item) {
       let staff = get(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid)).data;
       return isRestaurantKitchen(restaurantId)
-        && item.status in ["pending", "preparing", "ready"]
+        && item.status in ["pending", "preparing", "ready", "served"]
         && (
           (
             staff.keys().hasAny(["allowedPreparationStationIds"])

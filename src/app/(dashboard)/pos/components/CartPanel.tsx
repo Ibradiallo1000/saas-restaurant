@@ -9,6 +9,7 @@ import { groupCartLinesByBundle } from "@/lib/linked-option-groups"
 import { cn } from "@/lib/utils"
 import { formatTableDisplayName } from "@/lib/table-display"
 import { getOptimizedImage } from "@/lib/image"
+import { getPreparationModeLabel } from "@/utils/preparation-logic"
 
 export type PosPaymentMode = "cash" | "mobile"
 type CartPanelProps = { cart: any[]; subtotal: number; discountAmount: number; total: number; processing: boolean; canCheckout: boolean; unavailableItems?: Array<{ id: string; message: string }>; orderType: "dine-in" | "takeaway"; tableNumber: string | null; tableLabelPrefix?: string; tables: any[]; mobileSheet?: boolean; sessionInfo?: React.ReactNode; onOrderTypeChange: (type: "dine-in" | "takeaway") => void; onTableSelect: (tableId: string) => void; onIncrease: (item: any) => void; onDecrease: (itemId: string) => void; onRemove: (itemId: string) => void; onClear: () => void; onHold: () => void; onDiscount: () => void; onCheckout: () => void }
@@ -110,4 +111,3 @@ function getTableSearchText(table: any) { return [table?.name, table?.label, tab
 function ActionButton({ icon, label, disabled, onClick }: { icon: React.ReactElement<{ className?: string }>; label: string; disabled: boolean; onClick: () => void }) { return <Button type="button" variant="outline" disabled={disabled} onClick={onClick} className="min-h-11 min-w-0 px-2 text-xs"><span aria-hidden="true">{React.cloneElement(icon, { className: "size-4" })}</span><span className="truncate">{label}</span></Button> }
 type CartPreparationMode = "kitchen" | "direct" | "bar"
 function getCartPreparationMode(item: any): CartPreparationMode { if (item?.preparationMode === "direct" || item?.preparationMode === "service_direct") return "direct"; if (item?.preparationMode === "bar" || item?.preparationMode === "counter") return "bar"; return "kitchen" }
-function getPreparationModeLabel(mode: CartPreparationMode) { if (mode === "direct") return "Service direct"; if (mode === "bar") return "Bar / Comptoir"; return "Cuisine" }

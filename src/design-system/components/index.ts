@@ -1,5 +1,6 @@
 export { Card } from "./Card"
 export { FilterTabs } from "./FilterTabs"
 export { PageHeader } from "./PageHeader"
+export { QuickSetupCard, QuickSetupGrid, getQuickSetupVisual } from "./QuickSetupCard"
 export { StatCard } from "./StatCard"
 export { BackLink, NavigationTile, ResponsiveTileGrid, SectionNavigation, type NavigationTileProps, type ResponsiveTileGridProps, type SectionNavigationItem } from "./NavigationPrimitives"

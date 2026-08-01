@@ -30,16 +30,17 @@ import {
   preserveOwnerTimeParams,
 } from "@/config/owner-navigation"
 import { ROLES } from "@/lib/constants"
+import { resolveStaffDisplayName } from "@/lib/staff-identity"
 
 export default function OperationalBottomNav() {
   const auth = useAuth()
   const router = useRouter()
   const pathname = usePathname() ?? ""
   const searchParams = useSearchParams()
-  const { role, user } = useTenant()
+  const { role, user, profile } = useTenant()
   const { cashSessionRequests, pendingCashValidationCount, unpaidServedCount } = useRestaurantLiveData()
   const [open, setOpen] = React.useState(false)
-  const userLabel = user?.displayName || user?.email?.split("@")[0] || "Utilisateur"
+  const userLabel = resolveStaffDisplayName(profile?.staffProfile, user)
   const navigation = React.useMemo(() => {
     const current = getNavigationByRole(role)
     return {

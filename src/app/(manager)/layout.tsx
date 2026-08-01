@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/useIsMobile"
 import { RestaurantLiveDataProvider, useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 import { PreparationIssuesAlert } from "@/modules/preparation/PreparationIssuesAlert"
+import { resolveStaffDisplayName, resolveStaffRoleLabel } from "@/lib/staff-identity"
 
 const MANAGER_NAV_GROUPS = [
   { label: "Vue d’ensemble", items: [{ label: "Vue d’ensemble", href: "/manager/dashboard", icon: LayoutDashboard }] },
@@ -155,7 +156,7 @@ function ManagerSidebar() {
   const searchParams = useSearchParams()
   const auth = useAuth()
   const { restaurant } = useRestaurant()
-  const { user, role } = useTenant()
+  const { user, role, profile } = useTenant()
   const pendingPaymentCount = useManagerPendingPaymentCount()
   const pendingCashOpeningCount = useManagerPendingCashOpeningCount()
   const [collapsed, setCollapsed] = React.useState(false)
@@ -262,8 +263,8 @@ function ManagerSidebar() {
             </div>
             {!compact ? (
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-black">{user?.displayName || user?.email?.split("@")[0] || "Utilisateur"}</p>
-                <p className="text-[10px] font-bold uppercase text-muted-foreground">{role}</p>
+                <p className="truncate text-xs font-black">{resolveStaffDisplayName(profile?.staffProfile, user)}</p>
+                <p className="text-[10px] font-bold text-muted-foreground">{resolveStaffRoleLabel(profile?.staffProfile?.role || role)}</p>
               </div>
             ) : null}
             {!compact ? (
@@ -319,7 +320,7 @@ function ManagerMobileDrawer({
   const searchParams = useSearchParams()
   const auth = useAuth()
   const { restaurant } = useRestaurant()
-  const { user, role } = useTenant()
+  const { user, role, profile } = useTenant()
   const pendingPaymentCount = useManagerPendingPaymentCount()
   const pendingCashOpeningCount = useManagerPendingCashOpeningCount()
 
@@ -404,9 +405,9 @@ function ManagerMobileDrawer({
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-black">
-                {user?.displayName || user?.email?.split("@")[0] || "Utilisateur"}
+                {resolveStaffDisplayName(profile?.staffProfile, user)}
               </p>
-              <p className="text-[10px] font-bold uppercase text-muted-foreground">{role}</p>
+              <p className="text-[10px] font-bold text-muted-foreground">{resolveStaffRoleLabel(profile?.staffProfile?.role || role)}</p>
             </div>
             <button
               type="button"

@@ -5,3 +5,12 @@ runConfig:
   # Increase this value if you'd like to automatically spin up
   # more instances in response to increased traffic.
   maxInstances: 1
+
+# Public order security. The value itself lives in Google Cloud Secret Manager
+# and is injected only into the server runtime; it is never exposed to Next.js
+# browser bundles.
+env:
+  - variable: ORDER_QR_CAPABILITY_SECRET
+    secret: ORDER_QR_CAPABILITY_SECRET
+    availability:
+      - RUNTIME

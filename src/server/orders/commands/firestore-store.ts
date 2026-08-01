@@ -666,6 +666,10 @@ function withMutationMetadata(
     result.servedAt = now
     result.servedBy = input.actor.id
   }
+  if (commandName === "MarkOrderItemReady") {
+    result.readyAt = now
+    result.readyBy = input.actor.id
+  }
   if (commandName === "CancelOrderItemQuantity") {
     result.cancelledAt = now
     result.cancelledBy = input.actor.id

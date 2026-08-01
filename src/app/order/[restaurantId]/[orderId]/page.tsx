@@ -7,6 +7,7 @@ import {
   Bell,
   CheckCircle,
   CheckCircle2,
+  ChevronDown,
   ChefHat,
   ClipboardList,
   CreditCard,
@@ -460,7 +461,6 @@ function ClientOrderTrackingContent() {
   const rawOrderType = (safeOrder as any).type || safeOrder.orderType
   const orderType = normalizeOrderType(safeOrder.orderType) as ClientOrderType
   const isDeliveryOrder = orderType === "delivery"
-  const isPickupOrder = orderType === "pickup"
   const isQrTableOrder = orderType === "dine_in" && (safeOrder.source === "qr_table" || safeOrder.source === "qr")
   const step = getClientOrderStep(mainOrder)
   const label = getClientStatusLabel(mainOrder)
@@ -480,13 +480,6 @@ function ClientOrderTrackingContent() {
     (tableSessionOrders.length > 0 && tableSessionOrders.every((sessionOrder: any) => isPaidPaymentStatus(sessionOrder.paymentStatus))) ||
     isPaidPaymentStatus(safeOrder.paymentStatus)
   
-  // ✅ CRITICAL: Condition pour l'écran final QR - uniquement pour les commandes sur place
-  // Le paiement confirmé ne marque la fin que pour le parcours QR
-  const shouldShowQrTableFinalScreen =
-    isQrTableOrder &&
-    allServed &&
-    sessionPaymentConfirmed
-
   const effectivePaymentStatus =
     sessionPaymentConfirmed ||
     tableSessionOrders.some((sessionOrder: any) => isPaidPaymentStatus(sessionOrder.paymentStatus))
@@ -494,6 +487,7 @@ function ClientOrderTrackingContent() {
       : safeOrder.paymentStatus
   const isProductionComplete = step === 4
   const isTrackingComplete = isClientTrackingComplete(mainOrder) || allServed
+  const shouldShowCompactCompletion = isTrackingComplete && sessionPaymentConfirmed
   const orderWithPaymentVerification = safeOrder as RestaurantOrder & {
     paymentIntentStatus?: string | null
     paymentVerificationStatus?: string | null
@@ -516,13 +510,6 @@ function ClientOrderTrackingContent() {
   const continueOrdering = () => {
     router.push(buildContinueOrderingPath(slug, safeOrder))
   }
-
-  // ✅ Condition pour l'avis client hors QR
-  // Pour la livraison et l'emporté, l'avis apparaît uniquement lorsque la commande est terminée ET payée
-  const shouldShowNonQrReview =
-    !isQrTableOrder &&
-    isTrackingComplete &&
-    sessionPaymentConfirmed
 
   const handleCashPaymentSession = async () => {
     if (!safeOrder.tableSessionId) {
@@ -639,8 +626,9 @@ function ClientOrderTrackingContent() {
     }
   }
 
-  // ✅ Écran final QR - UNIQUEMENT pour les commandes sur place servies et payées
-  if (shouldShowQrTableFinalScreen) {
+  // La vue finale reste purement présentationnelle : les statuts et le paiement
+  // continuent d'être déterminés par les règles métier existantes.
+  if (shouldShowCompactCompletion) {
     return (
       <PublicTrackingLayout
         restaurant={restaurant}
@@ -652,11 +640,13 @@ function ClientOrderTrackingContent() {
         onHome={goHome}
       >
         <div className="mx-auto max-w-[480px] space-y-3">
-          <h1 className="text-[22px] font-public-extrabold leading-7 text-[var(--text-primary)] sm:text-[28px] sm:leading-[34px]">
-            Paiement confirmé
-          </h1>
-
-          <PaymentConfirmedSummary amount={sessionTotal} />
+          <CompactCompletionCard
+            orderType={orderType}
+            orderDisplayId={orderDisplayId}
+            order={safeOrder}
+            restaurantName={restaurant?.name}
+            orderPhone={shouldShowPhone ? orderPhone : ""}
+          />
 
           {restaurantId ? (
             <>
@@ -827,21 +817,6 @@ function ClientOrderTrackingContent() {
           />
         ) : null}
 
-        {/* ✅ Avis client hors QR - UNIQUEMENT quand la commande est terminée ET payée */}
-        {shouldShowNonQrReview && restaurantId ? (
-          <>
-            <RestaurantReviewCard
-              restaurantId={restaurantId}
-              order={mainOrder}
-              reviewToken={reviewToken}
-            />
-            <DishReviewsCard
-              restaurantId={restaurantId}
-              order={mainOrder}
-              reviewToken={reviewToken}
-            />
-          </>
-        ) : null}
       </div>
     </PublicTrackingLayout>
   )
@@ -1005,7 +980,9 @@ function getReadyDescription(orderType: string | null | undefined) {
 }
 
 function getFinalStatusTitle(orderType: string | null | undefined, label: string) {
-  if (isDeliveryOrderType(orderType)) return "Commande livrée"
+  // Le dernier jalon suivi par le restaurant correspond à la remise au livreur,
+  // pas à une preuve de livraison au client.
+  if (isDeliveryOrderType(orderType)) return "Commande remise au livreur"
   if (label.toLowerCase().includes("serv")) return "Bon appétit !"
   if (label.toLowerCase().includes("récup") || label.toLowerCase().includes("recup")) return "Commande récupérée"
   return "Commande terminée"
@@ -1013,7 +990,7 @@ function getFinalStatusTitle(orderType: string | null | undefined, label: string
 
 function getFinalStatusDescription(orderType: string | null | undefined) {
   if (isDeliveryOrderType(orderType)) {
-    return "Merci pour votre commande. Nous espérons vous revoir bientôt."
+    return "Le livreur vous contactera bientôt pour effectuer la livraison."
   }
 
   return "Votre commande vous a été servie. Bon appétit !"
@@ -1036,33 +1013,78 @@ function formatTrackingTime(date: Date) {
   return date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
 }
 
-function PaymentConfirmedSummary({ amount }: { amount: number }) {
+function CompactCompletionCard({
+  orderType,
+  orderDisplayId,
+  order,
+  restaurantName,
+  orderPhone,
+}: {
+  orderType: ClientOrderType
+  orderDisplayId: string
+  order: any
+  restaurantName?: string | null
+  orderPhone?: string | null
+}) {
+  const createdAt = toTrackingDate(order?.createdAt)
+  const copy = getCompactCompletionCopy(orderType)
+
   return (
     <PublicStatusCard
-      title="Merci pour votre visite"
+      title={copy.title}
+      description={copy.description}
       icon={<CheckCircle2 />}
       variant="success"
       emphasis="primary"
-      badge={<PublicBadge label="Confirmé" variant="success" />}
+      headingAs="h1"
     >
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--border-public-subtle)] pb-4">
-        <span className="text-public-sm font-public-semibold text-[var(--text-secondary)]">
-          Montant payé
-        </span>
-
-        <PublicPrice
-          role="total"
-          value={formatMoney(amount)}
-          suffix="FCFA"
-          aria-label={`Montant payé ${formatMoney(amount)} FCFA`}
-        />
+      <div className="space-y-2 border-t border-[var(--border-public-subtle)] pt-4 text-public-sm">
+        <p className="text-[var(--text-secondary)]">
+          Commande n° <strong className="break-all text-[var(--text-primary)]">{orderDisplayId}</strong>
+        </p>
+        <p className="flex items-center gap-2 font-public-bold text-[var(--success)]">
+          <CheckCircle className="size-4 shrink-0" aria-hidden="true" />
+          Paiement confirmé
+        </p>
       </div>
 
-      <p className="mt-2 text-public-xs text-[var(--text-secondary)]">
-        Nous espérons vous revoir bientôt.
-      </p>
+      <details className="group mt-4 border-t border-[var(--border-public-subtle)] pt-3">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-public-sm)] px-1 text-public-sm font-public-semibold text-[var(--text-secondary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] [&::-webkit-details-marker]:hidden">
+          <span>Voir les détails de la commande</span>
+          <ChevronDown className="size-4 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
+        </summary>
+        <dl className="mt-2 grid gap-2.5 border-t border-[var(--border-public-subtle)] pt-3 text-public-sm">
+          {restaurantName ? <TrackingInfoRow label="Restaurant" value={restaurantName} /> : null}
+          {order?.table ? <TrackingInfoRow label="Table" value={order.table} /> : null}
+          {order?.deliveryAddress ? <TrackingInfoRow label="Adresse" value={order.deliveryAddress} /> : null}
+          {orderPhone ? <TrackingInfoRow label="Téléphone" value={orderPhone} icon={<Phone />} /> : null}
+          {createdAt ? <TrackingInfoRow label="Commandée à" value={formatTrackingTime(createdAt)} /> : null}
+          <TrackingInfoRow label="Total" value={`${formatMoney(getOrderTotal(order))} FCFA`} />
+        </dl>
+      </details>
     </PublicStatusCard>
   )
+}
+
+function getCompactCompletionCopy(orderType: ClientOrderType) {
+  if (orderType === "delivery") {
+    return {
+      title: "Commande remise au livreur",
+      description: "Merci pour votre commande. Le livreur vous contactera bientôt pour effectuer la livraison.",
+    }
+  }
+
+  if (orderType === "pickup") {
+    return {
+      title: "Commande récupérée",
+      description: "Merci pour votre commande. Nous espérons vous revoir bientôt.",
+    }
+  }
+
+  return {
+    title: "Commande terminée",
+    description: "Merci pour votre visite. Nous espérons vous revoir bientôt.",
+  }
 }
 
 function PaymentConfirmedPanel() {

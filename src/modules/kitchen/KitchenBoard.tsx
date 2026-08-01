@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import {
   ChefHat,
   CheckCircle2,
+  CalendarCheck2,
   Clock3,
   CookingPot,
   LogOut,
@@ -24,6 +25,7 @@ import {
 } from "@/components/operational-ui"
 import { PosHeader } from "@/components/pos-ui"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { useAuth } from "@/firebase"
@@ -41,15 +43,22 @@ import { KitchenOrderCard } from "@/modules/kitchen/KitchenOrderCard"
 import {
   executeKitchenItemsTransition,
   isCanonicalKitchenBoardOrder,
+  type ServedPreparationItem,
 } from "@/modules/kitchen/canonical-read"
 import type { RestaurantOrder } from "@/modules/restaurant/types"
 import { playNewOrderNotificationSound } from "@/services/notification-sound.service"
 import { isKitchenItem, orderHasKitchenItems } from "@/utils/preparation-logic"
 import { KitchenAvailabilityPanel } from "@/modules/kitchen/KitchenAvailabilityPanel"
+import { resolveStaffDisplayName, resolveStaffRoleLabel } from "@/lib/staff-identity"
 
 type KitchenBoardProps = {
   orders: RestaurantOrder[]
   restaurantId: string
+  stationName?: string
+  stationSelector?: React.ReactNode
+  servedItems?: ServedPreparationItem[]
+  servedHistoryLoading?: boolean
+  servedHistoryError?: Error | null
 }
 
 type KitchenColumnStatus =
@@ -84,11 +93,13 @@ const KITCHEN_COLUMNS: Array<{
   },
 ]
 
-export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
+export function KitchenBoard({ orders, servedItems = [], servedHistoryLoading = false, servedHistoryError = null, restaurantId, stationName = "Cuisine principale", stationSelector }: KitchenBoardProps) {
   const auth = useAuth()
   const router = useRouter()
   const { restaurant } = useRestaurant()
-  const { user } = useTenant()
+  const { user, profile, role } = useTenant()
+  const staffName = resolveStaffDisplayName(profile?.staffProfile, user, "Membre de l’équipe")
+  const staffRole = resolveStaffRoleLabel(profile?.staffProfile?.role || role)
   const { toast } = useToast()
   const previousItemCountsRef = React.useRef<Map<string, number>>(new Map())
   const ordersRef = React.useRef(orders)
@@ -102,7 +113,7 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
   const [mobileColumn, setMobileColumn] = React.useState<KitchenColumnStatus>(
     ORDER_OPERATION_STATUS.PENDING
   )
-  const [workspaceTab, setWorkspaceTab] = React.useState<"orders" | "availability">("orders")
+  const [workspaceTab, setWorkspaceTab] = React.useState<"orders" | "availability" | "served">("orders")
   React.useEffect(() => {
     const interval = window.setInterval(() => setNowMs(Date.now()), 30_000)
     return () => window.clearInterval(interval)
@@ -271,6 +282,12 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     { id: "ready", label: "Prêtes", value: groupedOrders.ready.length },
   ] satisfies Array<{ id: KitchenColumnStatus; label: string; value: number }>, [groupedOrders])
 
+  const readyQuantity = React.useMemo(() => groupedOrders.ready.reduce(
+    (total, currentOrder) => total + (currentOrder.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+    0
+  ), [groupedOrders.ready])
+  const servedQuantity = React.useMemo(() => servedItems.reduce((total, item) => total + item.quantity, 0), [servedItems])
+
   return (
     <KitchenPage
       fullScreen
@@ -283,60 +300,50 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
                 fallbackIcon={ChefHat}
                 restaurantLogoUrl={restaurant?.logoUrl}
                 restaurantName={restaurant?.name}
-                subtitle="Cuisine"
+                subtitle={stationName}
               />
+              {stationSelector ? <div className="mt-1 max-w-48">{stationSelector}</div> : null}
               <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
                 Cuisine active
                 <CheckCircle2 aria-hidden="true" className="size-3" />
               </span>
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <ThemeToggle />
-              <button
-                type="button"
-                onClick={handleLogout}
-                aria-label="Déconnexion"
-                title="Déconnexion"
-                className="dashboard-focus-visible inline-flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--pos-muted)] hover:text-foreground"
-              >
-                <LogOut aria-hidden="true" className="size-4" />
-              </button>
-            </div>
+            <PreparationAccountActions staffName={staffName} staffRole={staffRole} onLogout={handleLogout} compact />
           </header>
           <PosHeader
             className="hidden md:block"
             title={
-              <OperationalStationIdentity
-                fallbackIcon={ChefHat}
-                restaurantLogoUrl={restaurant?.logoUrl}
-                restaurantName={restaurant?.name}
-                subtitle="Cuisine"
-              />
+              <>
+                <OperationalStationIdentity
+                  fallbackIcon={ChefHat}
+                  restaurantLogoUrl={restaurant?.logoUrl}
+                  restaurantName={restaurant?.name}
+                  subtitle={stationName}
+                />
+                {stationSelector ? <div className="mt-1 max-w-xs">{stationSelector}</div> : null}
+              </>
             }
             sessionStatus="active"
             sessionLabel="Cuisine active"
             actions={
-              <>
-                <span className="hidden text-sm font-semibold text-[var(--dashboard-subtitle)] sm:inline">
-                  {user?.displayName || user?.email?.split("@")[0] || "Cuisine01"}
-                </span>
-                <ThemeToggle />
-                <button type="button" onClick={handleLogout} className="dashboard-focus-visible inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-dashboard-button)] border border-[var(--pos-divider)] px-3 text-sm font-semibold hover:bg-[var(--pos-muted)]">
-                  <LogOut aria-hidden="true" className="size-4" />
-                  <span>Déconnexion</span>
-                </button>
-              </>
+              <PreparationAccountActions staffName={staffName} staffRole={staffRole} onLogout={handleLogout} />
             }
           />
         </>
       }
     >
       <div className="-mt-[var(--kitchen-gutter-y)] flex h-[calc(100%+var(--kitchen-gutter-y))] min-h-0 flex-col gap-2 md:mt-0 md:h-full md:gap-[var(--pos-layout-gap)]">
-        <div className="grid shrink-0 grid-cols-2 gap-2 py-2" role="tablist" aria-label="Espace Cuisine">
+        <div className="grid shrink-0 grid-cols-3 gap-2 py-2" role="tablist" aria-label="Espace Cuisine">
           <button type="button" role="tab" aria-selected={workspaceTab === "orders"} onClick={() => setWorkspaceTab("orders")} className={workspaceTab === "orders" ? "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-bold text-white" : "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--order-surface-muted)] px-4 text-sm font-bold"}>Commandes</button>
           <button type="button" role="tab" aria-selected={workspaceTab === "availability"} onClick={() => setWorkspaceTab("availability")} className={workspaceTab === "availability" ? "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-bold text-white" : "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--order-surface-muted)] px-4 text-sm font-bold"}>Disponibilités</button>
+          <button type="button" role="tab" aria-selected={workspaceTab === "served"} onClick={() => setWorkspaceTab("served")} className={workspaceTab === "served" ? "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--brand-primary)] px-2 text-sm font-bold text-white" : "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--order-surface-muted)] px-2 text-sm font-bold"}>Servies aujourd’hui</button>
         </div>
-        {workspaceTab === "availability" ? <div className="min-h-0 flex-1 overflow-hidden"><KitchenAvailabilityPanel restaurantId={restaurantId} orders={orders} /></div> : <>
+        {workspaceTab === "availability" ? <div className="min-h-0 flex-1 overflow-hidden"><KitchenAvailabilityPanel restaurantId={restaurantId} orders={orders} /></div> : workspaceTab === "served" ? <ServedTodayPanel items={servedItems} loading={servedHistoryLoading} error={servedHistoryError} /> : <>
+        <div className="grid shrink-0 grid-cols-3 gap-2" aria-label="Compteurs du service courant">
+          <PreparationCounter label="Préparées aujourd’hui" value={readyQuantity + servedQuantity} />
+          <PreparationCounter label="Servies aujourd’hui" value={servedQuantity} />
+          <PreparationCounter label="Encore prêtes à remettre" value={readyQuantity} />
+        </div>
         <div className="grid shrink-0 grid-cols-3 gap-2 py-2 md:hidden" role="tablist" aria-label="Colonnes Cuisine">
           {mobileTabs.map((tab) => {
             const activeTab = mobileColumn === tab.id
@@ -409,6 +416,99 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
         </>}
       </div>
     </KitchenPage>
+  )
+}
+
+function PreparationCounter({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-[var(--kitchen-border)] bg-[var(--kitchen-card)] px-2 py-2 text-center shadow-sm sm:px-3">
+      <strong className="block text-lg font-black tabular-nums text-[var(--dashboard-title)]">{value}</strong>
+      <span className="block break-words text-[10px] font-semibold leading-tight text-[var(--dashboard-muted)] sm:text-xs">{label}</span>
+    </div>
+  )
+}
+
+function ServedTodayPanel({ items, loading, error }: { items: ServedPreparationItem[]; loading: boolean; error: Error | null }) {
+  return (
+    <section className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-[var(--kitchen-border)] bg-[var(--kitchen-card)] p-3" aria-labelledby="served-today-title">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 id="served-today-title" className="flex items-center gap-2 font-black text-[var(--dashboard-title)]">
+            <CalendarCheck2 className="size-5 shrink-0" aria-hidden="true" />
+            Servies aujourd’hui
+          </h2>
+          <p className="text-xs text-[var(--dashboard-muted)]">Historique en lecture seule du poste sélectionné.</p>
+        </div>
+        <span className="shrink-0 rounded-full bg-[var(--order-surface-muted)] px-2.5 py-1 text-sm font-black tabular-nums">{items.reduce((total, item) => total + item.quantity, 0)}</span>
+      </div>
+      {loading ? <p role="status" className="py-10 text-center text-sm text-[var(--dashboard-muted)]">Chargement des lignes servies…</p> : error ? <p role="alert" className="py-10 text-center text-sm font-semibold text-destructive">Impossible de charger l’historique du jour.</p> : items.length === 0 ? <KitchenEmptyState title="Aucune ligne servie" description="Les lignes remises depuis le POS apparaîtront ici immédiatement." className="min-h-52 border-0 bg-transparent" /> : (
+        <div className="grid gap-2 lg:grid-cols-2 xl:grid-cols-3">
+          {items.map((item) => (
+            <article key={`${item.orderId}:${item.orderItemId}`} className="min-w-0 rounded-xl border border-[var(--kitchen-border)] bg-[var(--kitchen-card-muted)] p-3">
+              <div className="flex min-w-0 gap-3">
+                <div className="size-14 shrink-0 overflow-hidden rounded-lg bg-[var(--kitchen-card)]">
+                  {item.productImageUrl ? <img src={item.productImageUrl} alt="" loading="lazy" className="size-full object-cover" /> : <Utensils className="m-4 size-6 text-[var(--dashboard-muted)]" aria-hidden="true" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <h3 className="min-w-0 break-words font-bold text-[var(--dashboard-title)]">{item.quantity}× {item.productName}</h3>
+                    <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">Servie</span>
+                  </div>
+                  <p className="mt-1 truncate text-xs font-semibold text-[var(--dashboard-subtitle)]">Commande {item.orderNumber}</p>
+                  <p className="mt-1 break-words text-xs text-[var(--dashboard-muted)]">{formatPreparationContext(item)}</p>
+                </div>
+              </div>
+              <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[var(--kitchen-border)] pt-2 text-xs">
+                <div><dt className="text-[var(--dashboard-muted)]">Prête à</dt><dd className="font-bold tabular-nums">{formatPreparationTime(item.preparedAt)}</dd></div>
+                <div className="text-right"><dt className="text-[var(--dashboard-muted)]">Servie à</dt><dd className="font-bold tabular-nums">{formatPreparationTime(item.servedAt)}</dd></div>
+              </dl>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function formatPreparationContext(item: ServedPreparationItem) {
+  if (item.tableNumber) return `Table ${item.tableNumber}`
+  const type = normalizeOrderType(item.orderType)
+  if (type === "delivery") return "Livraison"
+  if (type === "pickup") return "À emporter"
+  return "Sur place"
+}
+
+function formatPreparationTime(value: number) {
+  if (!value) return "—"
+  return new Date(value).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+}
+
+function PreparationAccountActions({ staffName, staffRole, onLogout, compact = false }: { staffName: string; staffRole: string; onLogout: () => void; compact?: boolean }) {
+  return (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <ThemeToggle />
+      <div className="flex min-w-0 items-center gap-1">
+        <span className={compact ? "hidden max-w-32 min-w-0 flex-col text-right min-[390px]:flex" : "hidden min-w-0 flex-col text-right sm:flex"}>
+          <b className={compact ? "truncate text-xs" : "max-w-48 truncate text-sm text-[var(--dashboard-subtitle)]"}>{staffName}</b>
+          <small className="truncate text-[10px] text-muted-foreground sm:text-xs">{staffRole}</small>
+        </span>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={onLogout}
+                aria-label="Se déconnecter"
+                className="dashboard-focus-visible inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-[var(--pos-divider)] text-muted-foreground hover:bg-[var(--pos-muted)] hover:text-foreground"
+              >
+                <LogOut aria-hidden="true" className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Se déconnecter</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+    </div>
   )
 }
 

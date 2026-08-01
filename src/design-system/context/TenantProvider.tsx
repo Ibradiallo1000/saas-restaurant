@@ -10,6 +10,7 @@ import { COLLECTION_NAMES, ROLES } from "@/lib/constants"
 type TenantProfile = {
   restaurantId?: string | null
   role?: string | null
+  staffProfile?: Record<string, unknown> | null
   [key: string]: any
 }
 
@@ -66,12 +67,24 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
 
         if (docSnapshot.exists()) {
           const userData = docSnapshot.data() as TenantProfile
+          let staffProfile: Record<string, unknown> | null = null
+          if (userData.restaurantId) {
+            try {
+              const staffSnapshot = await getDoc(
+                doc(db, COLLECTION_NAMES.RESTAURANTS, userData.restaurantId, "staff", uid)
+              )
+              staffProfile = staffSnapshot.exists() ? staffSnapshot.data() : null
+            } catch {
+              // L'identité Firebase reste disponible si l'ancienne fiche Personnel est absente.
+            }
+          }
+          const resolvedProfile = { ...userData, staffProfile }
 
-          globalCache.set(uid, userData)
+          globalCache.set(uid, resolvedProfile)
 
           setProfile((prev) => {
-            if (JSON.stringify(prev) === JSON.stringify(userData)) return prev
-            return userData
+            if (JSON.stringify(prev) === JSON.stringify(resolvedProfile)) return prev
+            return resolvedProfile
           })
         } else {
           setProfile(null)
