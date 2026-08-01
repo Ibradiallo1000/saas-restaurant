@@ -52,6 +52,7 @@ import type { MarketplaceFoodCategoryDocument } from "@/lib/marketplace-discover
 import { getOrderDisplayId } from "@/lib/order-display-id"
 import { normalizePaymentMethod, normalizePaymentStatus } from "@/lib/order-payment"
 import { getFinancialSummary, getSupportedBusinessTimeZone } from "@/lib/finance/financial-summary"
+import { getRestaurantOpenStatus } from "@/lib/restaurant-hours"
 import {
   ORDER_OPERATION_STATUS,
   getOrderStatus,
@@ -500,6 +501,7 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
   const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
   const [isSavingCategory, setIsSavingCategory] = React.useState(false)
   const [isSavingProduct, setIsSavingProduct] = React.useState(false)
+  const [deletingProductId, setDeletingProductId] = React.useState<string | null>(null)
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false)
   const [isLibraryImportOpen, setIsLibraryImportOpen] = React.useState(false)
   const [isImagePickerOpen, setIsImagePickerOpen] = React.useState(false)
@@ -1262,8 +1264,10 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
 
   // DELETE PRODUCT
   const handleDeleteProduct = async (productId: string, productName: string) => {
-    if (!restaurantId) return
+    if (!restaurantId || deletingProductId) return
+    if (!window.confirm([`Supprimer définitivement « ${productName} » ?`, "Le produit disparaîtra du menu et ne pourra pas être restauré depuis cette interface.", "Les commandes historiques ne sont pas supprimées."].join("\n"))) return
 
+    setDeletingProductId(productId)
     try {
       await deleteDoc(doc(db, "restaurants", restaurantId, "products", productId))
       refreshCatalog()
@@ -1271,6 +1275,8 @@ function ManagerDashboardContent({ mode }: { mode: ManagerMode }) {
     } catch (error) {
       console.error(error)
       toast({ title: "Erreur lors de la suppression", variant: "destructive" })
+    } finally {
+      setDeletingProductId(null)
     }
   }
 
@@ -2305,11 +2311,13 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
     cashSessions,
     pendingCashValidationCount,
     payments,
+    tables,
   } = useRestaurantLiveData()
   const {
     counts: orderCounts,
     error: ordersError,
     isLoading,
+    orderedOrders,
   } = useManagerOperationalOrders(db, restaurantId, orderRange, now)
 
   const cashMovementsQuery = useMemoFirebase(() => {
@@ -2329,7 +2337,8 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
     }
   }, [ordersError])
 
-  const activeCashSession = cashSessions.find((session: any) => session.status === "open") ?? null
+  const openCashSessions = cashSessions.filter((session: any) => session.status === "open")
+  const activeCashSession = openCashSessions[0] ?? null
   const activeCashSessionId = activeCashSession?.id ?? null
   const financialScope = React.useMemo(
     () =>
@@ -2360,6 +2369,20 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
       }),
     [businessTimeZone, cashMovements, financialScope, now, payments]
   )
+  const tableSummary = React.useMemo(() => ({
+    total: tables.length,
+    occupied: tables.filter((table: any) => table.status === "occupied").length,
+    free: tables.filter((table: any) => table.status !== "occupied").length,
+  }), [tables])
+  const restaurantStatus = React.useMemo(
+    () => getRestaurantOpenStatus({ openingHours: restaurant?.openingHours, timezone: restaurant?.timezone, now: new Date(now) }),
+    [now, restaurant?.openingHours, restaurant?.timezone]
+  )
+  const openCashSessionItems = React.useMemo(() => openCashSessions.map((session: any) => ({
+    id: String(session.id),
+    label: String(session.staffName || session.cashierName || session.userName || "Utilisateur non identifié"),
+  })), [openCashSessions])
+  const orderTrend = React.useMemo(() => buildManagerOrderTrend(orderedOrders, orderRange), [orderedOrders, orderRange])
 
   if (!restaurantId) {
     return <ManagerDashboardView
@@ -2369,9 +2392,13 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
       inventorySummary={inventorySummary}
       isLoading={false}
       orderCounts={orderCounts}
+      orderTrend={[]}
       ordersError={false}
       pendingCashValidationCount={pendingCashValidationCount}
       pendingSessionRequestCount={pendingSessionRequests.length}
+      openCashSessions={[]}
+      tableSummary={{ total: 0, occupied: 0, free: 0 }}
+      restaurantStatus={{ isOpenNow: false, label: "Fermé", detail: "Indisponible" }}
       periodLabel="Restaurant non disponible"
       restaurantUnavailable
     />
@@ -2386,9 +2413,13 @@ function ManagerDashboardPage({ restaurantId }: { restaurantId: string | null })
     inventorySummary={inventorySummary}
     isLoading={isLoading}
     orderCounts={orderCounts}
+    orderTrend={orderTrend}
     ordersError={Boolean(ordersError)}
     pendingCashValidationCount={pendingCashValidationCount}
     pendingSessionRequestCount={pendingSessionRequests.length}
+    openCashSessions={openCashSessionItems}
+    tableSummary={tableSummary}
+    restaurantStatus={restaurantStatus}
     periodLabel={periodLabel}
   />
 }
@@ -2419,6 +2450,7 @@ function getDashboardInventorySummary(items: any[], balances: any[], costs: any[
   }, 0)
 
   return {
+    normalCount: Math.max(0, active.length - outOfStockCount - lowStockCount),
     outOfStockCount,
     lowStockCount,
     stockValue: Math.round(stockValue),
@@ -2502,6 +2534,26 @@ function useManagerOperationalOrders(
     isLoading,
     orderedOrders,
   }
+}
+
+function buildManagerOrderTrend(orders: any[], range: ManagerOrderDateRange) {
+  const hourly = range.endDate.getTime() - range.startDate.getTime() <= 2 * 24 * 60 * 60 * 1000
+  const buckets = new Map<number, number>()
+  for (const order of orders) {
+    const date = order.createdAt?.toDate?.() ?? (order.createdAt instanceof Date ? order.createdAt : null)
+    if (!date || date < range.startDate || date > range.endDate) continue
+    const bucketDate = new Date(date)
+    if (hourly) bucketDate.setMinutes(0, 0, 0)
+    else bucketDate.setHours(0, 0, 0, 0)
+    const key = bucketDate.getTime()
+    buckets.set(key, (buckets.get(key) || 0) + 1)
+  }
+  return [...buckets.entries()].sort(([left], [right]) => left - right).map(([timestamp, value]) => ({
+    label: hourly
+      ? new Date(timestamp).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }).replace(":00", "h")
+      : new Date(timestamp).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }),
+    value,
+  }))
 }
 
 function ManagerMetric({

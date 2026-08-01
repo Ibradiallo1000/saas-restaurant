@@ -13,8 +13,11 @@ import {
 } from "firebase/firestore"
 
 import { COLLECTION_NAMES } from "@/lib/constants"
+import {
+  aggregateFinancialEntries,
+} from "@/lib/finance/payment-ledger-domain"
 
-export type PaymentSource = "pos" | "qr_table" | "delivery"
+export type PaymentSource = "pos" | "qr_table" | "delivery" | "legacy"
 export type PaymentType = "cash" | "mobile_money"
 export type PaymentStatus = "pending" | "confirmed" | "failed" | "refunded" | "voided"
 
@@ -43,6 +46,8 @@ export type SessionPaymentAggregate = {
   totalConfirmed: number
   totalPayments: number
   totalOrders: number
+  totalRefunded: number
+  totalRefunds: number
   totalsByProvider: Record<string, number>
   totalsBySource: Record<PaymentSource, number>
   statusCounts: Record<PaymentStatus, number>
@@ -109,6 +114,10 @@ export class PaymentLedgerService {
     return aggregatePaymentDocs(payments)
   }
 
+  /**
+   * @deprecated Compatibility-only close snapshot. Active cash-session closure
+   * is performed by the server-side CLOSE_SESSION V2 command.
+   */
   async snapshotSessionClose(input: {
     restaurantId: string
     sessionId: string
@@ -216,7 +225,11 @@ export class PaymentLedgerService {
       transaction.get(orderRef),
     ])
 
-    assertOpenSession(sessionSnap.exists() ? sessionSnap.data() : null, input.sessionId)
+    assertOpenSession(
+      sessionSnap.exists() ? sessionSnap.data() : null,
+      input.sessionId,
+      input.cashierId
+    )
     assertOrderAmountMatches(orderSnap.exists() ? orderSnap.data() : null, input.amount)
 
     if (paymentSnap.exists()) {
@@ -330,7 +343,11 @@ export class PaymentLedgerService {
       transaction.get(sessionRef),
       orderRef ? transaction.get(orderRef) : Promise.resolve(null),
     ])
-    assertOpenSession(sessionSnap.exists() ? sessionSnap.data() : null, payment.sessionId)
+    assertOpenSession(
+      sessionSnap.exists() ? sessionSnap.data() : null,
+      payment.sessionId,
+      input.cashierId
+    )
     assertOrderAmountMatches(orderSnap?.exists() ? orderSnap.data() : null, Number(payment.amount || 0))
 
     if (payment.status === "confirmed") {
@@ -406,7 +423,11 @@ export class PaymentLedgerService {
 
     const sessionRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, input.restaurantId, COLLECTION_NAMES.CASH_SESSIONS, payment.sessionId)
     const sessionSnap = await transaction.get(sessionRef)
-    assertOpenSession(sessionSnap.exists() ? sessionSnap.data() : null, payment.sessionId)
+    assertOpenSession(
+      sessionSnap.exists() ? sessionSnap.data() : null,
+      payment.sessionId,
+      input.cashierId
+    )
 
     transaction.update(paymentRef, {
       status: "failed",
@@ -514,12 +535,22 @@ function normalizeIdempotencyKey(key: string) {
   return normalized
 }
 
-function assertOpenSession(session: Record<string, any> | null, sessionId: string) {
+function assertOpenSession(
+  session: Record<string, any> | null,
+  sessionId: string,
+  cashierId: string
+) {
   if (!session) {
     throw new Error(`Session caisse introuvable: ${sessionId}`)
   }
   if (session.status !== "open") {
     throw new Error("Aucun paiement ne peut etre enregistre sur une session fermee.")
+  }
+  const owners = [session.cashierId, session.userId, session.staffId]
+    .filter(Boolean)
+    .map(String)
+  if (!owners.includes(cashierId)) {
+    throw new Error("La session de caisse n'appartient pas au caissier actif.")
   }
 }
 
@@ -556,94 +587,15 @@ function applySessionAggregateCache(
 }
 
 function aggregatePaymentDocs(payments: Array<Record<string, any>>): SessionPaymentAggregate {
-  const aggregate: SessionPaymentAggregate = {
-    totalCash: 0,
-    totalMobile: 0,
-    totalMobileMoney: 0,
-    totalConfirmed: 0,
-    totalPayments: 0,
-    totalOrders: 0,
-    totalsByProvider: {},
-    totalsBySource: {
-      pos: 0,
-      qr_table: 0,
-      delivery: 0,
-    },
+  const aggregate = aggregateFinancialEntries(payments as any)
+  return {
+    ...aggregate,
     statusCounts: {
-      pending: 0,
-      confirmed: 0,
-      failed: 0,
-      refunded: 0,
-      voided: 0,
+      pending: aggregate.statusCounts.pending || 0,
+      confirmed: aggregate.statusCounts.confirmed || 0,
+      failed: aggregate.statusCounts.failed || 0,
+      refunded: aggregate.statusCounts.refunded || 0,
+      voided: aggregate.statusCounts.voided || 0,
     },
   }
-  const seenIdempotencyKeys = new Set<string>()
-
-  payments.forEach((payment) => {
-    const status = payment.status as PaymentStatus
-    if (status && aggregate.statusCounts[status] !== undefined) {
-      aggregate.statusCounts[status] += 1
-    }
-    if (status !== "confirmed") return
-
-    if (payment.type !== "cash" && payment.type !== "mobile_money") {
-      console.error("[payment-ledger] Invalid confirmed payment type", {
-        id: payment.id,
-        idempotencyKey: payment.idempotencyKey,
-        type: payment.type,
-        amount: payment.amount,
-      })
-      throw new Error(`Type de paiement invalide dans le ledger: ${payment.type || "missing"}`)
-    }
-
-    const idempotencyKey = String(payment.idempotencyKey || payment.id || "").trim()
-    if (!idempotencyKey) {
-      console.error("[payment-ledger] Confirmed payment without idempotencyKey", payment)
-      throw new Error("Paiement confirme sans cle d'idempotence.")
-    }
-    if (seenIdempotencyKeys.has(idempotencyKey)) {
-      console.warn("[payment-ledger] Duplicate payment ignored during aggregation", {
-        id: payment.id,
-        idempotencyKey,
-        type: payment.type,
-        amount: payment.amount,
-      })
-      return
-    }
-    seenIdempotencyKeys.add(idempotencyKey)
-
-    const amount = Number(payment.amount)
-    if (!Number.isFinite(amount) || amount <= 0) {
-      console.error("[payment-ledger] Invalid confirmed payment amount", {
-        id: payment.id,
-        idempotencyKey,
-        type: payment.type,
-        amount: payment.amount,
-      })
-      throw new Error("Montant de paiement confirme invalide.")
-    }
-
-    aggregate.totalPayments += 1
-    aggregate.totalOrders += 1
-    aggregate.totalConfirmed += amount
-
-    const source = payment.source as PaymentSource
-    if (source && aggregate.totalsBySource[source] !== undefined) {
-      aggregate.totalsBySource[source] += amount
-    }
-
-    if (payment.type === "cash") {
-      aggregate.totalCash += amount
-      return
-    }
-
-    if (payment.type === "mobile_money") {
-      const provider = payment.provider || "unknown"
-      aggregate.totalMobile += amount
-      aggregate.totalMobileMoney += amount
-      aggregate.totalsByProvider[provider] = (aggregate.totalsByProvider[provider] || 0) + amount
-    }
-  })
-
-  return aggregate
 }

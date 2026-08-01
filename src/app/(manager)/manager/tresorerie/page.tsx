@@ -1,2 +1,5 @@
-export { default } from "../treasury/page"
+import { ManagerTreasuryPageContent } from "../treasury/page"
 
+export default function ManagerTresoreriePage() {
+  return <ManagerTreasuryPageContent />
+}

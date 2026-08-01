@@ -158,6 +158,30 @@ describe("création canonique", () => {
     assert.equal(plan.parent.paymentStatus, "unpaid")
   })
 
+  it("conserve le vrai numéro de table sans exposer son identifiant technique", async () => {
+    const store = new MemoryAtomicStore(authorities({
+      tableSession: {
+        id: "session-table-9",
+        tableId: "9lkVsfYMPOYztahvOOkU",
+        tableName: "Table 9",
+        zoneId: "salle",
+        active: true,
+      },
+    }))
+    const result = await create(store, request({
+      serviceMode: "dine_in",
+      tableContext: {
+        tableId: "9lkVsfYMPOYztahvOOkU",
+        tableSessionId: "session-table-9",
+        capability: null,
+      },
+    }))
+    const parent = store.orders.get(result.orderId).parent
+
+    assert.equal(parent.tableId, "9lkVsfYMPOYztahvOOkU")
+    assert.equal(parent.table, "Table 9")
+  })
+
   it("crée plusieurs lignes et recalcule options, taxe et total", async () => {
     const configurable = product({
       price: 1000,
@@ -239,6 +263,27 @@ describe("création canonique", () => {
 
     assert.deepEqual(items.map((item) => item.status), ["ready", "ready", "pending"])
     assert.equal(result.orderStatus, "pending")
+  })
+
+  it("conserve les observations générales et instructions de ligne nettoyées", async () => {
+    const store = new MemoryAtomicStore()
+    const result = await create(store, request({
+      notes: "Ajouter un peu de piment 🌶️ <script>alert(1)</script>\u0000",
+      items: [{
+        clientLineId: "line-1",
+        productId: "coca",
+        quantity: 2,
+        options: [],
+        instructions: "sans oignon & allergie arachide\u0007",
+      }],
+    }))
+    const plan = store.orders.get(result.orderId)
+    assert.equal(
+      plan.parent.notes,
+      "Ajouter un peu de piment 🌶️ <script>alert(1)</script>"
+    )
+    assert.equal(plan.items[0].instructions, "sans oignon & allergie arachide")
+    assert.equal(plan.parent.items[0].instructions, "sans oignon & allergie arachide")
   })
 
   it("refuse une commande vide et plus de 50 lignes", async () => {

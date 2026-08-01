@@ -131,6 +131,10 @@ export type CartItem = {
   bundleId?: string
   isBundleMain?: boolean
   linkedGroupTitle?: string
+  instructions?: string
+  note?: string
+  notes?: string
+  specialInstructions?: string
 }
 
 // types.ts - AJOUTE À LA FIN

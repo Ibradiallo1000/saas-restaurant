@@ -104,7 +104,7 @@ export function buildCanonicalOrder(input: {
       orderType: input.request.serviceMode,
       serviceMode: input.request.serviceMode,
       tableId: input.request.tableContext?.tableId ?? null,
-      table: input.request.tableContext?.tableId ?? null,
+      table: tableSession?.tableName ?? null,
       zoneId: tableSession?.zoneId ?? null,
       sessionId: input.request.tableContext?.tableSessionId ?? null,
       tableSessionId: input.request.tableContext?.tableSessionId ?? null,

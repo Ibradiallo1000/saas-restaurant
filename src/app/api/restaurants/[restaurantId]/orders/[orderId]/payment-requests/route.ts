@@ -106,7 +106,6 @@ async function authenticatePublic(request: NextRequest) {
   if (!idToken || !appCheckToken) throw new Error("missing token")
   await verifyOrderAppCheckToken(appCheckToken)
   const decoded = await getAdminAuth().verifyIdToken(idToken, true)
-  if (decoded.firebase?.sign_in_provider !== "anonymous") throw new Error("not anonymous")
   return decoded.uid
 }
 

@@ -15,7 +15,6 @@ import {
   Clock,
   Package,
   ReceiptText,
-  Settings,
   Table2,
   User,
   UserRound,
@@ -45,19 +44,32 @@ import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/useIsMobile"
 import { RestaurantLiveDataProvider, useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 
-const MANAGER_NAV = [
-  { label: "Dashboard", href: "/manager/dashboard", icon: LayoutDashboard },
-  { label: "Commandes", href: "/manager/commandes", icon: ClipboardList, withBadge: true },
-  { label: "Caisse", href: "/manager/caisse", icon: Wallet },
-  { label: "Trésorerie", href: "/manager/tresorerie", icon: Banknote },
-  { label: "Dépenses", href: "/manager/depenses", icon: ReceiptText },
-  { label: "Menu", href: "/manager/menu", icon: MenuSquare },
-  { label: "Tables", href: "/manager/tables", icon: Table2 },
-  { label: "Images", href: "/manager/images", icon: ImageIcon },
-  { label: "Inventaire", href: "/manager/inventory", icon: Package },
-  { label: "Horaires", href: "/manager/hours", icon: Clock },
-  { label: "Fournisseurs", href: "/manager/suppliers", icon: UserRound },
+const MANAGER_NAV_GROUPS = [
+  { label: "Vue d’ensemble", items: [{ label: "Vue d’ensemble", href: "/manager/dashboard", icon: LayoutDashboard }] },
+  { label: "Opérations", items: [
+    { label: "Commandes", href: "/manager/commandes", icon: ClipboardList },
+    { label: "Caisse", href: "/manager/caisse", icon: Wallet },
+    { label: "Tables", href: "/manager/tables", icon: Table2 },
+  ] },
+  { label: "Finances", items: [
+    { label: "Trésorerie", href: "/manager/tresorerie", icon: Banknote },
+    { label: "Dépenses", href: "/manager/depenses", icon: ReceiptText },
+    { label: "Fournisseurs", href: "/manager/suppliers", icon: UserRound },
+  ] },
+  { label: "Stock", items: [
+    { label: "Stock", href: "/manager/stock", icon: Package },
+    { label: "Contrôles", href: "/manager/stock/controls", icon: ClipboardList },
+    { label: "Réapprovisionnement", href: "/manager/stock/replenishment", icon: Package },
+    { label: "Historique", href: "/manager/stock/history", icon: Clock },
+  ] },
+  { label: "Équipe", items: [{ label: "Horaires", href: "/manager/hours", icon: Clock }] },
+  { label: "Configuration", items: [
+    { label: "Menu", href: "/manager/menu", icon: MenuSquare },
+    { label: "Médias", href: "/manager/images", icon: ImageIcon },
+  ] },
 ]
+
+const MANAGER_NAV = MANAGER_NAV_GROUPS.flatMap((group) => group.items)
 
 const MOBILE_MANAGER_DRAWER_NAV: typeof MANAGER_NAV = []
 
@@ -140,6 +152,8 @@ function ManagerSidebar() {
   const pendingPaymentCount = useManagerPendingPaymentCount()
   const pendingCashOpeningCount = useManagerPendingCashOpeningCount()
   const [collapsed, setCollapsed] = React.useState(false)
+  const compactViewport = useCompactManagerRail()
+  const compact = collapsed || compactViewport
 
   const handleLogout = React.useCallback(async () => {
     try {
@@ -155,10 +169,10 @@ function ManagerSidebar() {
   return (
     <aside className={cn(
       "flex h-screen shrink-0 flex-col border-r bg-card text-card-foreground transition-all",
-      collapsed ? "w-40" : "w-64"
+      compact ? "w-[68px]" : "w-64"
     )}>
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-        <div className={cn("flex min-w-0 items-center gap-2", collapsed && "justify-center")}>
+        <div className={cn("flex min-w-0 items-center gap-2", compact && "justify-center")}>
           {restaurant?.logoUrl ? (
             <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-transparent">
               <img
@@ -172,7 +186,7 @@ function ManagerSidebar() {
               <Wallet className="h-5 w-5" />
             </div>
           )}
-          {!collapsed ? (
+          {!compact ? (
             <p className="min-w-0 break-words text-sm font-black uppercase leading-snug">
               {restaurant?.name || "Restaurant"}
             </p>
@@ -181,20 +195,22 @@ function ManagerSidebar() {
 
         <div className="flex shrink-0 items-center gap-2">
           <ThemeToggle />
-          <button
+          {!compactViewport ? <button
             type="button"
             onClick={() => setCollapsed((value) => !value)}
             className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            title={collapsed ? "Ouvrir la sidebar" : "Reduire la sidebar"}
-            aria-label={collapsed ? "Ouvrir la sidebar" : "Reduire la sidebar"}
+            title={collapsed ? "Ouvrir la barre latérale" : "Réduire la barre latérale"}
+            aria-label={collapsed ? "Ouvrir la barre latérale" : "Réduire la barre latérale"}
           >
             {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </button>
+          </button> : null}
         </div>
       </div>
 
-      <nav className={cn("flex-1 space-y-1", collapsed ? "px-2 py-3" : "px-3 py-3")}>
-        {MANAGER_NAV.map((item) => {
+      <nav className={cn("flex-1 space-y-3 overflow-y-auto", compact ? "px-2 py-3" : "px-3 py-3")}>
+        {MANAGER_NAV_GROUPS.map((group) => <div key={group.label} className="space-y-1">
+          {!compact ? <p className="px-3 pt-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{group.label}</p> : null}
+          {group.items.map((item) => {
           const active = isActivePath(pathname, item.href)
           const Icon = item.icon
           const badgeCount =
@@ -208,41 +224,42 @@ function ManagerSidebar() {
             <button
               type="button"
               key={item.href}
-              title={collapsed ? item.label : undefined}
+              title={compact ? item.label : undefined}
               onClick={() => router.push(getManagerTargetHref(item.href, searchParams))}
               className={cn(
-                "flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-bold transition",
-                collapsed && "justify-center px-0",
+                "relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-bold transition",
+                compact && "justify-center px-0",
                 active
                   ? "bg-[var(--color-primary)] text-white"
                   : "text-card-foreground hover:bg-muted"
               )}
             >
               <Icon className="h-5 w-5" />
-              {!collapsed ? <span className="flex-1">{item.label}</span> : null}
-              {badgeCount > 0 && !collapsed ? (
+              {!compact ? <span className="flex-1">{item.label}</span> : null}
+              {badgeCount > 0 && !compact ? (
                 <span className="ml-2 rounded-full bg-red-500 px-2 py-0.5 text-xs text-white">
                   {badgeCount}
                 </span>
               ) : null}
+              {badgeCount > 0 && compact ? <span className="absolute ml-7 -mt-7 size-2 rounded-full bg-red-500" aria-label={`${badgeCount} élément(s) en attente`} /> : null}
             </button>
           )
-        })}
+        })}</div>)}
       </nav>
 
       <div className="border-t p-3">
-        <div className={cn("rounded-lg border bg-background p-3", collapsed && "p-2")}>
-          <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
+        <div className={cn("rounded-lg border bg-background p-3", compact && "p-2")}>
+          <div className={cn("flex items-center gap-3", compact && "justify-center")}>
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
               <User className="h-4 w-4" />
             </div>
-            {!collapsed ? (
+            {!compact ? (
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-black">{user?.displayName || user?.email?.split("@")[0] || "Utilisateur"}</p>
                 <p className="text-[10px] font-bold uppercase text-muted-foreground">{role}</p>
               </div>
             ) : null}
-            {!collapsed ? (
+            {!compact ? (
               <button
                 type="button"
                 onClick={handleLogout}
@@ -254,7 +271,7 @@ function ManagerSidebar() {
               </button>
             ) : null}
           </div>
-          {collapsed ? (
+          {compact ? (
             <button
               type="button"
               onClick={handleLogout}
@@ -269,6 +286,18 @@ function ManagerSidebar() {
       </div>
     </aside>
   )
+}
+
+function useCompactManagerRail() {
+  const [compact, setCompact] = React.useState(false)
+  React.useEffect(() => {
+    const query = window.matchMedia("(min-width: 768px) and (max-width: 1279px)")
+    const update = () => setCompact(query.matches)
+    update()
+    query.addEventListener("change", update)
+    return () => query.removeEventListener("change", update)
+  }, [])
+  return compact
 }
 
 function ManagerMobileDrawer({

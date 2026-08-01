@@ -11,6 +11,7 @@ import {
   User,
   ClipboardList,
   ChevronDown,
+  MoreVertical,
 } from "lucide-react"
 
 import { ThemeToggle } from "@/components/ui/theme-toggle"
@@ -32,7 +33,7 @@ type POSHeaderProps = {
   restaurantName?: string | null
   restaurantLogoUrl?: string | null
   activeTab: POSTab
-  unpaidServedCount: number
+  readyOrderCount: number
   isCashSessionOpen: boolean
   userName?: string | null
   roleLabel?: string
@@ -51,7 +52,7 @@ export default function POSHeader({
   restaurantName,
   restaurantLogoUrl,
   activeTab,
-  unpaidServedCount,
+  readyOrderCount,
   isCashSessionOpen,
   userName,
   roleLabel = "Caissier",
@@ -75,7 +76,7 @@ export default function POSHeader({
 
   // Onglets Caisse / Commandes
   const tabs = (
-    <div className="flex shrink-0 rounded-full border bg-muted/50 p-1 shadow-inner">
+    <div className="flex w-full min-w-0 rounded-xl border bg-muted/50 p-1 shadow-inner">
       <TabButton active={activeTab === "cashier"} onClick={() => onTabChange("cashier")}>
         <ReceiptText className="h-4 w-4" aria-hidden="true" />
         Caisse
@@ -84,27 +85,18 @@ export default function POSHeader({
       <TabButton active={activeTab === "orders"} onClick={() => onTabChange("orders")}>
         <ClipboardList className="h-4 w-4" aria-hidden="true" />
         Commandes
-        {unpaidServedCount > 0 && (
-          <span className="ml-1 rounded-full bg-[var(--brand-primary)] px-1.5 text-xs text-white">
-            {unpaidServedCount}
+        {readyOrderCount > 0 && (
+          <span
+            role="status"
+            aria-label={`${readyOrderCount} commande${readyOrderCount > 1 ? "s" : ""} prête${readyOrderCount > 1 ? "s" : ""} à traiter`}
+            className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs font-black text-white shadow-sm"
+          >
+            {readyOrderCount}
           </span>
         )}
       </TabButton>
     </div>
   )
-
-  // Bouton Clôturer (juste après les onglets)
-  const closeAction = isCashSessionOpen ? (
-    <button
-      type="button"
-      onClick={onCloseSession}
-      disabled={!canCloseSession}
-      className="dashboard-focus-visible hidden min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-[var(--brand-primary)]/20 bg-white px-3.5 text-sm font-semibold text-[var(--brand-primary)] shadow-sm hover:bg-[var(--brand-primary-soft)] disabled:cursor-not-allowed disabled:opacity-50 lg:inline-flex"
-    >
-      <LockKeyhole className="size-4" aria-hidden="true" />
-      Clôturer
-    </button>
-  ) : null
 
   // Total caisse (carte indépendante)
   const totalCard = (
@@ -122,13 +114,14 @@ export default function POSHeader({
   const userMenu = (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="hidden shrink-0 items-center gap-2 rounded-xl border bg-background px-3 py-1.5 shadow-sm transition-colors hover:bg-muted/50 lg:inline-flex">
-          <User className="size-4 text-muted-foreground" aria-hidden="true" />
-          <div className="text-left">
+        <button type="button" aria-label="Ouvrir les actions du compte et de la caisse" className="inline-flex size-10 shrink-0 items-center justify-center gap-2 rounded-xl border bg-background shadow-sm transition-colors hover:bg-muted/50 lg:size-auto lg:min-h-11 lg:px-3 lg:py-1.5">
+          <MoreVertical className="size-5 text-muted-foreground lg:hidden" aria-hidden="true" />
+          <User className="hidden size-4 text-muted-foreground lg:block" aria-hidden="true" />
+          <div className="hidden text-left lg:block">
             <p className="text-xs font-black leading-tight">{userName || "Utilisateur"}</p>
             <p className="text-[10px] text-muted-foreground">{roleLabel}</p>
           </div>
-          <ChevronDown className="size-3 text-muted-foreground" />
+          <ChevronDown className="hidden size-3 text-muted-foreground lg:block" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
@@ -138,6 +131,13 @@ export default function POSHeader({
             <span className="text-xs text-muted-foreground">{roleLabel}</span>
           </div>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="space-y-1 font-normal">
+          <span className="flex justify-between gap-3 text-xs"><span>Statut</span><strong>{isCashSessionOpen ? "Caisse ouverte" : "Caisse fermée"}</strong></span>
+          <span className="flex justify-between gap-3 text-xs"><span>Total encaissé</span><strong className="tabular-nums">{formatPrice(totalAmount)} FCFA</strong></span>
+        </DropdownMenuLabel>
+        {isCashSessionOpen ? <DropdownMenuItem disabled={!canCloseSession} onSelect={onCloseSession}><LockKeyhole className="mr-2 size-4" />Clôturer la caisse</DropdownMenuItem> : null}
+        <DropdownMenuItem onSelect={(event) => event.preventDefault()} className="justify-between">Thème <ThemeToggle /></DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={onLogout}
@@ -160,6 +160,10 @@ export default function POSHeader({
       <div className="flex min-h-14 min-w-0 items-center justify-between gap-1.5">
         {renderIdentity(true)}
         <div className="flex shrink-0 items-center gap-0.5">
+          <div className="hidden min-[390px]:block pr-1 text-right">
+            <p className="text-[10px] font-semibold text-muted-foreground">Total encaissé</p>
+            <p className="text-xs font-black tabular-nums">{formatPrice(totalAmount)} FCFA</p>
+          </div>
           <span
             role="status"
             aria-label={mobileSessionLabel}
@@ -176,7 +180,7 @@ export default function POSHeader({
               <CircleOff className="size-4" aria-hidden="true" />
             )}
           </span>
-          <ThemeToggle />
+          {userMenu}
         </div>
       </div>
       <nav aria-label="Navigation du point de vente" className="mt-1">
@@ -188,19 +192,10 @@ export default function POSHeader({
   // ✅ Actions sans doublon du badge Active
   // Le badge Active est géré par PosHeaderPrimitive via sessionStatus/sessionLabel
   const actions = (
-    <div className="flex w-full items-center justify-between gap-4">
-      {/* Groupe 1 : Thème uniquement (le badge Active est déjà dans PosHeaderPrimitive) */}
-      <div className="flex shrink-0 items-center gap-2">
-        <ThemeToggle />
-      </div>
-
-      {/* Groupe 2 : Onglets + Clôturer */}
-      <div className="flex shrink-0 items-center gap-2">
+    <div className="flex w-full min-w-0 items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         {tabs}
-        {closeAction}
       </div>
-
-      {/* Groupe 3 : Total + Profil (à droite) */}
       <div className="flex shrink-0 items-center gap-2">
         {totalCard}
         {userMenu}
@@ -238,7 +233,7 @@ function TabButton({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "dashboard-focus-visible inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-black transition",
+        "dashboard-focus-visible inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-black transition",
         active
           ? "bg-[var(--brand-primary)] text-white shadow-sm"
           : "text-muted-foreground hover:bg-background hover:text-foreground"

@@ -8,7 +8,7 @@ type POSLayoutProps = {
   restaurantName?: string | null
   restaurantLogoUrl?: string | null
   activeTab: POSTab
-  unpaidServedCount: number
+  readyOrderCount: number
   isCashSessionOpen: boolean
   userName?: string | null
   roleLabel?: string
@@ -26,7 +26,7 @@ export default function POSLayout({
   restaurantName,
   restaurantLogoUrl,
   activeTab,
-  unpaidServedCount,
+  readyOrderCount,
   isCashSessionOpen,
   userName,
   roleLabel,
@@ -43,7 +43,7 @@ export default function POSLayout({
         restaurantName={restaurantName}
         restaurantLogoUrl={restaurantLogoUrl}
         activeTab={activeTab}
-        unpaidServedCount={unpaidServedCount}
+        readyOrderCount={readyOrderCount}
         isCashSessionOpen={isCashSessionOpen}
         userName={userName}
         roleLabel={roleLabel}

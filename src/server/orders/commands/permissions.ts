@@ -40,7 +40,22 @@ export function assertPermission(input: {
     ) return
   }
   if (
+    (commandName === "MarkOrderItemsPreparing" || commandName === "MarkOrderItemsReady") &&
+    actor.role === "kitchen" &&
+    sourceChannel === "kitchen"
+  ) return
+  if (
     commandName === "MarkOrderItemServed" &&
+    sourceChannel === "pos" &&
+    (actor.role === "cashier" || actor.role === "server")
+  ) return
+  if (
+    commandName === "ServeOrderItems" &&
+    sourceChannel === "pos" &&
+    (actor.role === "cashier" || actor.role === "server")
+  ) return
+  if (
+    commandName === "HandOffOrderItems" &&
     sourceChannel === "pos" &&
     (actor.role === "cashier" || actor.role === "server")
   ) return

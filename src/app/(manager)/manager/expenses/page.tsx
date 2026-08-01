@@ -3,7 +3,7 @@
 import * as React from "react"
 import { collection, query, where } from "firebase/firestore"
 import { Banknote, Plus, ReceiptText, Trash2 } from "lucide-react"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 
 import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
 import { ManagerPeriodFilter } from "@/components/layout/manager-period-filter"
@@ -54,7 +54,7 @@ const EXPENSE_TYPES: Array<{ value: ExpenseType; label: string }> = [
   { value: "supply", label: "Approvisionnement" },
 ]
 
-export default function ManagerExpensesPage() {
+export function ManagerExpensesPageContent() {
   const searchParams = useSearchParams()
   const isSupplyRequest = searchParams?.get("type") === "supply"
   const requestedSupplyArticleId =
@@ -496,6 +496,16 @@ export default function ManagerExpensesPage() {
             </div>
           </section>
 
+          <section aria-labelledby="expense-summary-title" className="rounded-xl border bg-muted/30 p-4">
+            <h2 id="expense-summary-title" className="text-sm font-black">Récapitulatif avant enregistrement</h2>
+            <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+              <div><dt className="text-muted-foreground">Opération</dt><dd className="font-bold">{formatExpenseType(type)}</dd></div>
+              <div><dt className="text-muted-foreground">Fournisseur</dt><dd className="font-bold">{selectedSupplier?.name || "Aucun fournisseur"}</dd></div>
+              <div><dt className="text-muted-foreground">Paiement immédiat</dt><dd className="font-bold">{formatMoney(effectivePaidAmount)} FCFA</dd></div>
+              <div><dt className="text-muted-foreground">Dette créée</dt><dd className="font-bold">{formatMoney(Math.max(0, effectiveAmount - effectivePaidAmount))} FCFA</dd></div>
+            </dl>
+          </section>
+
           <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-wide text-muted-foreground">
@@ -549,6 +559,12 @@ export default function ManagerExpensesPage() {
       </section>
     </main>
   )
+}
+
+export default function LegacyManagerExpensesPage() {
+  const router = useRouter()
+  React.useEffect(() => { router.replace("/manager/depenses") }, [router])
+  return <AdminRouteSkeleton />
 }
 
 function PaymentOption({ value, label }: { value: ExpensePaymentStatus; label: string }) {

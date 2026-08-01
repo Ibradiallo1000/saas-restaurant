@@ -5,9 +5,15 @@ export interface KitchenParentContext {
   restaurantId: string
   orderId: string
   orderType: string
+  serviceMode: string
+  paymentStatus: string
+  tableId: string | null
   tableNumber: string | null
   orderNumber: string
   customerName: string | null
+  customerPhone: string | null
+  deliveryAddress: string | Record<string, unknown> | null
+  orderNote: string | null
   createdAt: number
   canonicalItemCount: number
   canonicalProjectionCount: number | null
@@ -20,6 +26,7 @@ export interface KitchenOrderItemView {
   orderItemId: string
   productId: string
   productName: string
+  productImageUrl: string | null
   quantity: number
   activeQuantity: number
   cancelledQuantity: number
@@ -31,9 +38,15 @@ export interface KitchenOrderItemView {
   supplements: readonly unknown[]
   customerNote: string | null
   orderType: string
+  serviceMode: string
+  paymentStatus: string
+  tableId: string | null
   tableNumber: string | null
   orderNumber: string
   customerName: string | null
+  customerPhone: string | null
+  deliveryAddress: string | Record<string, unknown> | null
+  orderNote: string | null
   createdAt: number
   updatedAt: number
   elapsedTime: number
@@ -45,9 +58,15 @@ export interface KitchenOrderGroup {
   orderId: string
   restaurantId: string
   orderType: string
+  serviceMode: string
+  paymentStatus: string
+  tableId: string | null
   tableNumber: string | null
   orderNumber: string
   customerName: string | null
+  customerPhone: string | null
+  deliveryAddress: string | Record<string, unknown> | null
+  orderNote: string | null
   createdAt: number
   isMixed: boolean
   legacyState: KitchenOrderItemView["legacyState"]

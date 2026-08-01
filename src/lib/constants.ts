@@ -176,6 +176,7 @@ export const COLLECTION_NAMES = {
   REVIEWS: 'reviews',
   CASHIER_SESSIONS: 'cashierSessions',
   CASH_SESSIONS: 'cashSessions',
+  CASH_HANDOVERS: 'cashHandovers',
   INVOICES: 'invoices',
   CONTACT_REQUESTS: 'contactRequests',
   ERROR_LOGS: 'errorLogs',

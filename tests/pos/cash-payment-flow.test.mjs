@@ -20,6 +20,14 @@ const posClientSource = await readFile(
   new URL("../../src/app/(dashboard)/pos/components/POSClient.tsx", import.meta.url),
   "utf8"
 )
+const productGridSource = await readFile(
+  new URL("../../src/app/(dashboard)/pos/components/ProductGrid.tsx", import.meta.url),
+  "utf8"
+)
+const categoryRailSource = await readFile(
+  new URL("../../src/app/(dashboard)/pos/components/CategorySidebar.tsx", import.meta.url),
+  "utf8"
+)
 
 test("la sélection Espèces conditionne l'affichage du flux cash", () => {
   assert.match(paymentFlowSource, /paymentMode === "cash"/)
@@ -77,6 +85,29 @@ test("le verrou existant empêche une double confirmation", () => {
   assert.match(posClientSource, /checkoutLockRef\.current\) return false/)
   assert.match(posClientSource, /checkoutLockRef\.current = true/)
   assert.match(posClientSource, /checkoutLockRef\.current = false/)
+})
+
+test("un encaissement réussi ferme directement le modal sans écran de succès", () => {
+  assert.doesNotMatch(paymentFlowSource, /PosPaymentSuccessState|Vente validée|>Fermer<|success:/)
+  assert.doesNotMatch(posClientSource, /paymentFlowSuccess|setPaymentFlowSuccess/)
+  assert.match(posClientSource, /if \(succeeded\) \{\s*setPaymentDialogOpen\(false\)/)
+  assert.match(posClientSource, /currentOrderId === collectingOrder\.id \? null : currentOrderId/)
+})
+
+test("le détail de commande POS utilise un format compact", () => {
+  assert.match(posClientSource, /max-h-\[82vh\] max-w-2xl/)
+  assert.match(posClientSource, /max-h-\[55vh\] overflow-y-auto/)
+})
+
+test("le parcours mobile conserve catalogue, ticket et paiement accessibles", () => {
+  assert.match(posClientSource, /PosSearchField/)
+  assert.match(posClientSource, /Voir le ticket/)
+  assert.match(posClientSource, /h-\[100dvh\] max-h-\[100dvh\]/)
+  assert.match(posClientSource, /setMobileCartOpen\(false\)[\s\S]*setPaymentDialogOpen\(true\)/)
+  assert.match(paymentFlowSource, /h-\[100dvh\] max-h-\[100dvh\]/)
+  assert.match(productGridSource, /min-h-\[8\.75rem\][\s\S]*md:min-h-\[11rem\]/)
+  assert.match(productGridSource, /hidden md:inline/)
+  assert.match(categoryRailSource, /\[&>button\]:min-h-12[\s\S]*md:\[&>button\]:min-h-\[4\.75rem\]/)
 })
 
 test("la saisie clavier reste contrôlée et rejette les caractères non numériques", () => {

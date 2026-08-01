@@ -87,15 +87,16 @@ export function getFinancialSummary(input: FinancialSummaryInput): FinancialSumm
     if (paymentKey && seenPaymentKeys.has(paymentKey)) return
     if (paymentKey) seenPaymentKeys.add(paymentKey)
 
-    summary.deposits += amount
-    summary.confirmedPaymentCount += 1
+    const direction = payment.entryType === "refund" ? -1 : 1
+    summary.deposits += amount * direction
+    if (direction > 0) summary.confirmedPaymentCount += 1
 
     if (isPaymentConfirmedOnBusinessDay(payment, todayBusinessDate, businessTimeZone)) {
-      summary.todayDeposits += amount
+      summary.todayDeposits += amount * direction
     }
 
     if (isPaymentConfirmedInBusinessMonth(payment, currentBusinessMonth, businessTimeZone)) {
-      summary.thisMonthDeposits += amount
+      summary.thisMonthDeposits += amount * direction
     }
   })
 
@@ -117,6 +118,9 @@ export function getFinancialSummary(input: FinancialSummaryInput): FinancialSumm
 
 export function isConfirmedFinancePayment(payment: any) {
   if (payment.status !== "confirmed") return false
+  if (payment.entryType === "refund") {
+    return Boolean(payment.parentPaymentId)
+  }
 
   const invalidStatus = payment.refundStatus || payment.voidStatus || payment.cancellationStatus
   if (["refunded", "voided", "cancelled", "canceled"].includes(String(invalidStatus || "").toLowerCase())) {

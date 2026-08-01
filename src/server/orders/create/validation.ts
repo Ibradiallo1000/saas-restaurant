@@ -63,10 +63,40 @@ export function parseCreateOrderRequest(value: unknown): CreateOrderRequest {
     )
   }
 
-  const request = parsed.data as CreateOrderRequest
+  const request = sanitizeCreateOrderText(parsed.data as CreateOrderRequest)
   assertUniqueClientLineIds(request)
   assertChannelCoherence(request)
   return request
+}
+
+function sanitizeCreateOrderText(request: CreateOrderRequest): CreateOrderRequest {
+  const clean = (value: string | null) =>
+    value?.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "") || null
+  return {
+    ...request,
+    notes: clean(request.notes),
+    customer: request.customer
+      ? {
+          name: clean(request.customer.name),
+          phone: clean(request.customer.phone),
+        }
+      : null,
+    delivery: request.delivery
+      ? {
+          ...request.delivery,
+          address: clean(request.delivery.address) ?? "",
+          instructions: clean(request.delivery.instructions),
+        }
+      : null,
+    items: request.items.map((item) => ({
+      ...item,
+      instructions: clean(item.instructions),
+      options: item.options.map((option) => ({
+        optionName: clean(option.optionName) ?? "",
+        choiceName: clean(option.choiceName) ?? "",
+      })),
+    })),
+  }
 }
 
 export function validateRequestForPrincipal(

@@ -118,7 +118,7 @@ export function getKitchenCardSignature(order: RestaurantOrder) {
     (order.items || []).map((item: any) => [item.id, item.productId, item.name, item.quantity, item.status,
       item.itemStatus, item.preparationMode, item.destination, item.productionArea, item.note, item.notes,
       stableJson(item.options), stableJson(item.extras), stableJson(item.selectedOptions),
-      stableJson(item.supplements), stableJson(item.supplementNames), toTimestampMs(item.createdAt),
+      stableJson(item.supplements), stableJson(item.supplementNames), item.imageUrl, toTimestampMs(item.createdAt),
       toTimestampMs(item.servedAt)].join(":")) .join("|"),
   ].join("||")
 }
@@ -155,6 +155,7 @@ function createKitchenItemPresentation(order: RestaurantOrder, item: any, index:
     id: String(item.id ?? `${order.id}-${item.productId ?? index}-${item.name}`),
     quantity: item.quantity,
     name: item.name,
+    imageUrl: item.imageUrl ?? null,
     options: optionLines.length ? optionLines.join(" · ") : undefined,
     note: note ?? undefined,
     completed: status === ORDER_ITEM_STATUS.SERVED,
@@ -196,9 +197,14 @@ function getKitchenContextLines(order: RestaurantOrder, type: KitchenDisplayOrde
   const phone = details.customer?.phone || details.phoneNumber || details.customerPhone || null
   const table = details.table || details.tableNumber || details.tableId || null
   const address = formatDeliveryAddress(details.deliveryAddress)
-  if (type === "dine_in") return [`Sur place${table ? ` • Table ${table}` : ""}`]
+  if (type === "dine_in") {
+    const tableLabel = table
+      ? (/^table/i.test(String(table)) ? String(table) : `Table ${table}`)
+      : null
+    return [`Sur place${tableLabel ? ` • ${tableLabel}` : ""}`]
+  }
   if (type === "delivery") return ["Livraison", customerName ? `Client : ${customerName}` : null, phone ? `Tél. : ${phone}` : null, address ? `Adresse : ${address}` : null].filter(Boolean) as string[]
-  return ["À emporter"]
+  return ["À emporter", phone ? `Tél. : ${phone}` : null].filter(Boolean) as string[]
 }
 
 function formatDeliveryAddress(value: any) {

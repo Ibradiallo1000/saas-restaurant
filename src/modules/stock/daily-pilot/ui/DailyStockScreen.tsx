@@ -62,7 +62,7 @@ const filters: readonly { value: DailyStockFilter; label: string }[] = [
 
 export function DailyStockScreen({
   mode,
-  disabledFallbackHref = "/manager/inventory",
+  disabledFallbackHref = "/manager/stock",
 }: {
   mode: ScreenMode
   disabledFallbackHref?: string | null

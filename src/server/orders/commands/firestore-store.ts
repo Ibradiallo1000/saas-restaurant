@@ -4,7 +4,7 @@ import type {
   Firestore,
   Transaction,
 } from "firebase-admin/firestore"
-import { Timestamp } from "firebase-admin/firestore"
+import { FieldValue, Timestamp } from "firebase-admin/firestore"
 
 import {
   automaticAssociationId,
@@ -13,6 +13,11 @@ import {
   servingProgressId,
 } from "../../../modules/stock/automatic-simple/domain/served-stock.ts"
 import { computeOrderAggregate } from "../aggregate/compute.ts"
+import {
+  FinancialLedgerError,
+  FirestorePaymentLedger,
+  resolveFinancialSource,
+} from "../../finance/firestore-payment-ledger.ts"
 import {
   commandProofId,
   commandRequestHash,
@@ -27,6 +32,7 @@ import type {
   CanonicalCommandResult,
   CommandMutationPlan,
   ConfirmOrderPaymentInput,
+  HandOffOrderItemsInput,
   OrderCommandName,
   OrderCommandState,
   OrderItemSnapshot,
@@ -41,6 +47,11 @@ interface StockApplication {
   previousQuantity?: number
   deductedQuantity: number
   newQuantity?: number
+  balancePath?: string
+  balanceRef?: DocumentReference
+  quantityBefore?: number
+  requestedDeduction?: number
+  apply?: (forceInsufficient?: boolean, skipBalanceWrite?: boolean) => void
 }
 
 export class FirestoreAtomicOrderCommandStore implements AtomicOrderCommandPort {
@@ -100,10 +111,22 @@ export class FirestoreAtomicOrderCommandStore implements AtomicOrderCommandPort 
         order.hasUnaggregatedCancellation = items.some((entry) => entry.cancelledQuantity > 0)
 
         const plan = transition({ order, item, items })
+        if (commandName === "HandOffOrderItems") {
+          await assertOpenCashSession(
+            transaction,
+            restaurantRef,
+            (input as HandOffOrderItemsInput).cashSessionId
+          )
+        }
+        const itemUpdates = new Map(
+          (plan.itemUpdates ?? []).map((entry) => [entry.orderItemId, entry.update])
+        )
         const effectiveItems = items.map((entry) =>
-          itemRef && entry.id === orderItemId && plan.itemUpdate
-            ? { ...entry, ...plan.itemUpdate } as OrderItemSnapshot
-            : entry
+          itemUpdates.has(entry.id)
+            ? { ...entry, ...itemUpdates.get(entry.id) } as OrderItemSnapshot
+            : itemRef && entry.id === orderItemId && plan.itemUpdate
+              ? { ...entry, ...plan.itemUpdate } as OrderItemSnapshot
+              : entry
         )
         const effectivePayment = String(plan.orderUpdate?.paymentStatus ?? order.paymentStatus)
         const aggregate = computeOrderAggregate({
@@ -119,23 +142,88 @@ export class FirestoreAtomicOrderCommandStore implements AtomicOrderCommandPort 
           items: effectiveItems,
         })
         const now = Timestamp.now()
-        const stock = plan.stock
-          ? await prepareStockWrites(transaction, restaurantRef, input, plan, now)
+        const stockPlans = plan.stocks ?? (plan.stock ? [plan.stock] : [])
+        const stockApplications = stockPlans.length > 0
+          ? await Promise.all(stockPlans.map((stockPlan) =>
+              prepareStockWrites(
+                transaction,
+                restaurantRef,
+                input,
+                { ...plan, stock: stockPlan },
+                now
+              )
+            ))
+          : []
+        const requestedByBalance = new Map<string, {
+          total: number
+          quantityBefore: number
+          applications: StockApplication[]
+        }>()
+        for (const application of stockApplications) {
+          if (!application.balancePath) continue
+          const current = requestedByBalance.get(application.balancePath) ?? {
+            total: 0,
+            quantityBefore: Number(application.quantityBefore ?? 0),
+            applications: [],
+          }
+          current.total += Number(application.requestedDeduction ?? 0)
+          current.applications.push(application)
+          requestedByBalance.set(application.balancePath, current)
+        }
+        for (const group of requestedByBalance.values()) {
+          const forceInsufficient = group.total > group.quantityBefore
+          if (!forceInsufficient && group.applications[0]?.balanceRef) {
+            transaction.update(group.applications[0].balanceRef, {
+              quantity: FieldValue.increment(-group.total),
+              version: FieldValue.increment(group.applications.length),
+              lastOperationAt: now,
+              lastOperationId: group.applications.at(-1)?.operationId ?? null,
+            })
+          }
+          for (const application of group.applications) {
+            application.apply?.(forceInsufficient, true)
+          }
+        }
+        for (const application of stockApplications.filter((entry) => !entry.balancePath)) {
+          application.apply?.()
+        }
+        const stock = stockApplications.length > 0
+          ? {
+              deductedQuantity: stockApplications.reduce(
+                (sum, application) => sum + application.deductedQuantity,
+                0
+              ),
+              warning: stockApplications.find((application) => application.warning)?.warning,
+              operationId: stockApplications.length === 1
+                ? stockApplications[0].operationId
+                : undefined,
+              previousQuantity: stockApplications.length === 1
+                ? stockApplications[0].previousQuantity
+                : undefined,
+              newQuantity: stockApplications.length === 1
+                ? stockApplications[0].newQuantity
+                : undefined,
+            }
           : null
         const paymentId = plan.paymentLedger
           ? await preparePaymentWrites(
               transaction,
               restaurantRef,
-              orderRef,
               input as ConfirmOrderPaymentInput,
               plan,
               commandId,
-              now
+              order
             )
           : undefined
 
         if (plan.itemUpdate && itemRef) {
           transaction.update(itemRef, withMutationMetadata(plan.itemUpdate, input, commandName, now))
+        }
+        for (const entry of plan.itemUpdates ?? []) {
+          transaction.update(
+            orderRef.collection("orderItems").doc(entry.orderItemId),
+            withMutationMetadata(entry.update, input, commandName, now)
+          )
         }
         const aggregateVersion = aggregate.projectionChanged
           ? order.aggregateVersion + 1
@@ -153,7 +241,11 @@ export class FirestoreAtomicOrderCommandStore implements AtomicOrderCommandPort 
         } : {}
         if (plan.orderUpdate || aggregate.projectionChanged) {
           transaction.update(orderRef, {
-            ...(plan.orderUpdate ? withPaymentMetadata(plan.orderUpdate, input, now) : {}),
+            ...(plan.orderUpdate
+              ? commandName === "ConfirmOrderPayment"
+                ? withPaymentMetadata(plan.orderUpdate, input, now)
+                : withMutationMetadata(plan.orderUpdate, input, commandName, now)
+              : {}),
             ...aggregateUpdate,
           })
         }
@@ -261,7 +353,7 @@ async function prepareStockWrites(
     ? stringOr(productSnapshot.data()?.stockArticleId, "")
     : ""
   if (!articleId) {
-    return warning("Produit servi sans association d’inventaire active.")
+    return { ...warning("Produit servi sans association d’inventaire active."), apply() {} }
   }
 
   const associationId = automaticAssociationId(stock.productId, articleId)
@@ -295,14 +387,14 @@ async function prepareStockWrites(
     stringOr(associationSnapshot.data()?.productId, "") !== stock.productId ||
     stringOr(associationSnapshot.data()?.articleId, "") !== articleId
   ) {
-    return warning("Produit servi sans association d’inventaire active.")
+    return { ...warning("Produit servi sans association d’inventaire active."), apply() {} }
   }
   if (
     !articleSnapshot.exists ||
     articleSnapshot.data()?.status !== "active" ||
     articleSnapshot.data()?.trackingMode !== "AUTOMATIC_SIMPLE"
   ) {
-    return warning("Article servi sans déduction automatique active.")
+    return { ...warning("Article servi sans déduction automatique active."), apply() {} }
   }
   if (!balanceSnapshot.exists) {
     throw Object.assign(new Error("Balance de stock introuvable."), { stockFailure: true })
@@ -326,134 +418,150 @@ async function prepareStockWrites(
     })
   }
   if (proofSnapshot.exists || delta.servedDelta === 0) {
-    return { operationId, deductedQuantity: 0 }
+    return { operationId, deductedQuantity: 0, apply() {} }
   }
 
   const balance = balanceSnapshot.data() ?? {}
   const quantityBefore = numberOr(balance.quantity, 0)
-  const quantityAfter = quantityBefore - delta.quantityToDeduct
-  const insufficient = quantityAfter < 0
-  const appliedQuantityAfter = insufficient ? quantityBefore : quantityAfter
-  const deductedQuantity = insufficient ? 0 : delta.quantityToDeduct
-  const operationType = insufficient
-    ? "AUTOMATIC_DEDUCTION_SKIPPED_INSUFFICIENT_STOCK"
-    : "AUTOMATIC_DEDUCTION"
-
-  if (!insufficient) {
-    transaction.update(balanceRef, {
-      quantity: appliedQuantityAfter,
-      version: numberOr(balance.version, 0) + 1,
-      lastOperationAt: now,
-      lastOperationId: operationId,
-    })
-  }
-  transaction.create(operationRef, {
-    restaurantId: input.restaurantId,
-    articleId,
-    productId: stock.productId,
-    orderId: input.orderId,
-    orderItemId: stock.orderItemId,
-    associationId,
-    type: operationType,
-    status: insufficient ? "WARNING" : "APPLIED",
-    warningCode: insufficient ? "INSUFFICIENT_STOCK" : null,
+  const application: StockApplication = {
+    operationId,
+    balancePath: balanceRef.path,
+    balanceRef,
     quantityBefore,
-    quantityAfter: appliedQuantityAfter,
-    variation: -deductedQuantity,
     requestedDeduction: delta.quantityToDeduct,
-    unit: stringOr(associationSnapshot.data()?.unit ?? balance.unit, ""),
-    servedQuantityBefore: processed,
-    servedQuantityAfter: stock.servedQuantityAfter,
-    quantityPerSale,
-    businessReference: input.orderId,
-    idempotencyKey: operationId,
-    occurredAt: now,
-    createdAt: now,
-    createdBy: input.actor.id,
-  })
-  transaction.set(progressRef, {
-    restaurantId: input.restaurantId,
-    orderId: input.orderId,
-    orderItemId: stock.orderItemId,
-    productId: stock.productId,
-    articleId,
-    associationId,
-    servedQuantity: stock.servedQuantityAfter,
-    lastOperationId: operationId,
-    warningCode: insufficient ? "INSUFFICIENT_STOCK" : null,
-    updatedAt: now,
-    updatedBy: input.actor.id,
-  })
-  transaction.create(stockProofRef, {
-    restaurantId: input.restaurantId,
-    articleId,
-    operationId,
-    fingerprint: [
-      input.orderId,
-      stock.orderItemId,
-      articleId,
-      stock.servedQuantityAfter,
-      delta.quantityToDeduct,
-    ].join("|"),
-    result: insufficient ? "WARNING" : "APPLIED",
-    createdAt: now,
-    createdBy: input.actor.id,
-  })
-
-  return {
-    operationId,
-    previousQuantity: quantityBefore,
-    deductedQuantity,
-    newQuantity: appliedQuantityAfter,
-    ...(insufficient
-      ? { warning: "Service enregistré, mais stock insuffisant : aucune déduction appliquée." }
-      : {}),
+    deductedQuantity: 0,
+    apply(forceInsufficient = false, skipBalanceWrite = false) {
+      const insufficient = forceInsufficient || quantityBefore - delta.quantityToDeduct < 0
+      const deductedQuantity = insufficient ? 0 : delta.quantityToDeduct
+      const appliedQuantityAfter = insufficient
+        ? quantityBefore
+        : quantityBefore - delta.quantityToDeduct
+      application.previousQuantity = quantityBefore
+      application.deductedQuantity = deductedQuantity
+      application.newQuantity = appliedQuantityAfter
+      if (insufficient) {
+        application.warning =
+          "Service enregistré, mais stock insuffisant : aucune déduction appliquée."
+      } else if (!skipBalanceWrite) {
+        transaction.update(balanceRef, {
+          quantity: FieldValue.increment(-deductedQuantity),
+          version: FieldValue.increment(1),
+          lastOperationAt: now,
+          lastOperationId: operationId,
+        })
+      }
+      transaction.create(operationRef, {
+        restaurantId: input.restaurantId,
+        articleId,
+        productId: stock.productId,
+        orderId: input.orderId,
+        orderItemId: stock.orderItemId,
+        associationId,
+        type: insufficient
+          ? "AUTOMATIC_DEDUCTION_SKIPPED_INSUFFICIENT_STOCK"
+          : "AUTOMATIC_DEDUCTION",
+        status: insufficient ? "WARNING" : "APPLIED",
+        warningCode: insufficient ? "INSUFFICIENT_STOCK" : null,
+        quantityBefore,
+        quantityAfter: appliedQuantityAfter,
+        variation: -deductedQuantity,
+        requestedDeduction: delta.quantityToDeduct,
+        unit: stringOr(associationSnapshot.data()?.unit ?? balance.unit, ""),
+        servedQuantityBefore: processed,
+        servedQuantityAfter: stock.servedQuantityAfter,
+        quantityPerSale,
+        businessReference: input.orderId,
+        idempotencyKey: operationId,
+        occurredAt: now,
+        createdAt: now,
+        createdBy: input.actor.id,
+      })
+      transaction.set(progressRef, {
+        restaurantId: input.restaurantId,
+        orderId: input.orderId,
+        orderItemId: stock.orderItemId,
+        productId: stock.productId,
+        articleId,
+        associationId,
+        servedQuantity: stock.servedQuantityAfter,
+        lastOperationId: operationId,
+        warningCode: insufficient ? "INSUFFICIENT_STOCK" : null,
+        updatedAt: now,
+        updatedBy: input.actor.id,
+      })
+      transaction.create(stockProofRef, {
+        restaurantId: input.restaurantId,
+        articleId,
+        operationId,
+        fingerprint: [
+          input.orderId,
+          stock.orderItemId,
+          articleId,
+          stock.servedQuantityAfter,
+          delta.quantityToDeduct,
+        ].join("|"),
+        result: insufficient ? "WARNING" : "APPLIED",
+        createdAt: now,
+        createdBy: input.actor.id,
+      })
+    },
   }
+  return application
 }
 
 async function preparePaymentWrites(
   transaction: Transaction,
   restaurantRef: DocumentReference,
-  orderRef: DocumentReference,
   input: ConfirmOrderPaymentInput,
   plan: CommandMutationPlan,
   paymentId: string,
-  now: Timestamp
+  order: OrderSnapshot
 ) {
   const ledger = plan.paymentLedger
   if (!ledger) throw new OrderCommandError("INVALID_COMMAND", "Plan de paiement invalide.")
-  const sessionRef = restaurantRef.collection("cashSessions").doc(ledger.cashSessionId)
-  const paymentRef = restaurantRef.collection("payments").doc(paymentId)
-  const [sessionSnapshot, paymentSnapshot] = await Promise.all([
-    transaction.get(sessionRef),
-    transaction.get(paymentRef),
-  ])
+  try {
+    const result = await new FirestorePaymentLedger(restaurantRef.firestore)
+      .createConfirmedPaymentInTransaction(transaction, {
+        restaurantId: input.restaurantId,
+        paymentId,
+        orderId: input.orderId,
+        sessionId: ledger.cashSessionId,
+        cashierId: input.actor.id,
+        source: resolveFinancialSource(order as unknown as Record<string, unknown>),
+        type: ledger.method,
+        provider: ledger.provider,
+        externalReference: ledger.externalReference,
+        amount: ledger.amount,
+        receivedAmount: ledger.receivedAmount,
+        changeDue: ledger.changeDue,
+        idempotencyKey: sha256(input.idempotencyKey),
+      })
+    return result.id
+  } catch (error) {
+    if (error instanceof FinancialLedgerError) {
+      const code =
+        error.code === "CASH_SESSION_OWNERSHIP_MISMATCH"
+          ? "FORBIDDEN_ACTOR"
+          : error.code === "PAYMENT_IDEMPOTENCY_CONFLICT"
+            ? "IDEMPOTENCY_CONFLICT"
+            : "INVALID_COMMAND"
+      throw new OrderCommandError(code, error.message)
+    }
+    throw error
+  }
+}
+
+async function assertOpenCashSession(
+  transaction: Transaction,
+  restaurantRef: DocumentReference,
+  cashSessionId: string
+) {
+  const sessionSnapshot = await transaction.get(
+    restaurantRef.collection("cashSessions").doc(cashSessionId)
+  )
   if (!sessionSnapshot.exists || sessionSnapshot.data()?.status !== "open") {
     throw new OrderCommandError("INVALID_COMMAND", "La session de caisse n'est pas ouverte.")
   }
-  if (paymentSnapshot.exists) {
-    throw new OrderCommandError("IDEMPOTENCY_CORRUPTED", "Le ledger existe sans preuve de commande.")
-  }
-  transaction.create(paymentRef, {
-    restaurantId: input.restaurantId,
-    orderId: input.orderId,
-    sessionId: ledger.cashSessionId,
-    cashierId: input.actor.id,
-    source: "pos",
-    type: ledger.method,
-    provider: ledger.provider,
-    externalReference: ledger.externalReference,
-    amount: ledger.amount,
-    receivedAmount: ledger.receivedAmount,
-    changeDue: ledger.changeDue,
-    status: "confirmed",
-    idempotencyKeyHash: sha256(input.idempotencyKey),
-    confirmedAt: now,
-    confirmedBy: input.actor.id,
-    createdAt: now,
-  })
-  void orderRef
-  return paymentRef.id
 }
 
 function withMutationMetadata(
@@ -519,7 +627,14 @@ function toOrderSnapshot(id: string, data: DocumentData): OrderSnapshot {
   return {
     id,
     restaurantId: stringOr(data.restaurantId, ""),
+    serviceMode: stringOr(data.serviceMode, stringOr(data.orderType, stringOr(data.type, ""))),
+    orderType: stringOr(data.orderType, stringOr(data.serviceMode, stringOr(data.type, ""))),
+    source: stringOr(data.source, ""),
     paymentStatus: stringOr(data.paymentStatus, "unpaid"),
+    cashSessionId: nullableStringOr(data.cashSessionId),
+    paymentCashSessionId: nullableStringOr(data.paymentCashSessionId),
+    handledCashSessionId: nullableStringOr(data.handledCashSessionId),
+    completedCashSessionId: nullableStringOr(data.completedCashSessionId),
     paymentVersion: positiveVersion(data.paymentVersion),
     totalAmount: numberOr(data.totalAmount, numberOr(data.total, 0)),
     total: numberOr(data.total, numberOr(data.totalAmount, 0)),
@@ -586,6 +701,10 @@ function numberOr(value: unknown, fallback: number) {
 
 function stringOr(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback
+}
+
+function nullableStringOr(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

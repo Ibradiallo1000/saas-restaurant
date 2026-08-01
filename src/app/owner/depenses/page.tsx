@@ -239,6 +239,7 @@ export default function OwnerDepensesPage() {
 
       <MetricGroup className="xl:grid-cols-4">
         <MetricCard
+          variant="warning"
           label="Dépenses totales"
           value={formatMoney(kpis.totalExpenses)}
           unit="FCFA"
@@ -246,6 +247,7 @@ export default function OwnerDepensesPage() {
           icon={<ReceiptText />}
         />
         <MetricCard
+          variant="finance"
           label="Montant payé"
           value={formatMoney(kpis.paidAmount)}
           unit="FCFA"
@@ -253,6 +255,7 @@ export default function OwnerDepensesPage() {
           icon={<Wallet />}
         />
         <MetricCard
+          variant="warning"
           label="Dette créée"
           value={formatMoney(kpis.debtCreated)}
           unit="FCFA"
@@ -260,12 +263,14 @@ export default function OwnerDepensesPage() {
           icon={<TrendingDown />}
         />
         <MetricCard
+          variant="neutral"
           label="Nombre de dépenses"
           value={kpis.expenseCount}
           description="Documents enregistrés sur la période."
           icon={<FileText />}
         />
         <MetricCard
+          variant="info"
           label="Dépense moyenne"
           value={formatMoney(kpis.averageExpense)}
           unit="FCFA"
@@ -273,6 +278,7 @@ export default function OwnerDepensesPage() {
           icon={<Banknote />}
         />
         <MetricCard
+          variant="info"
           label="Impact trésorerie"
           value={formatMoney(kpis.treasuryImpact)}
           unit="FCFA"
@@ -280,6 +286,7 @@ export default function OwnerDepensesPage() {
           icon={<CreditCard />}
         />
         <MetricCard
+          variant="warning"
           label="Dette fournisseurs actuelle"
           value={formatMoney(kpis.currentSupplierDebt)}
           unit="FCFA"
@@ -287,6 +294,7 @@ export default function OwnerDepensesPage() {
           icon={<Users />}
         />
         <MetricCard
+          variant="finance"
           label="Paiements fournisseurs"
           value={formatMoney(kpis.supplierPayments)}
           unit="FCFA"

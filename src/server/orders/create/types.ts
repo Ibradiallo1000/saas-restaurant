@@ -93,6 +93,7 @@ export interface RestaurantAuthority {
 export interface TableSessionAuthority {
   id: string
   tableId: string
+  tableName: string | null
   zoneId: string | null
   active: boolean
 }

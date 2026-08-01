@@ -60,6 +60,7 @@ export default function DashboardTablesPage() {
   const [tableCount, setTableCount] = React.useState(10)
   const [prefix, setPrefix] = React.useState("T")
   const [isSaving, setIsSaving] = React.useState(false)
+  const [releasingTableId, setReleasingTableId] = React.useState<string | null>(null)
 
   const zones = React.useMemo(() => {
     return Array.from(new Set((tables || []).map((table) => table.zoneId || "Zone")))
@@ -160,10 +161,13 @@ export default function DashboardTablesPage() {
     }
   }
 
-  const releaseTable = async (tableId: string) => {
-    if (!db || !restaurantId) return
+  const releaseTable = async (table: RestaurantTableRecord, metric?: SessionMetric) => {
+    if (!db || !restaurantId || releasingTableId) return
+    const hasActiveBusiness = Boolean(table.currentSessionId) && (Number(metric?.orderCount || 0) > 0 || Number(metric?.totalAmount || 0) > 0)
+    if (hasActiveBusiness && !window.confirm([`Libérer ${table.name} ?`, `Session active : ${table.currentSessionId}`, `Commandes actives : ${metric?.orderCount || 0}`, `Montant actif : ${Number(metric?.totalAmount || 0).toLocaleString("fr-FR")} FCFA`, "La session sera clôturée avec le fonctionnement actuel."].join("\n"))) return
+    setReleasingTableId(table.id)
     try {
-      await closeActiveTableSession(db, restaurantId, tableId)
+      await closeActiveTableSession(db, restaurantId, table.id)
       toast({ title: "Table liberee" })
     } catch (error) {
       console.error(error)
@@ -172,6 +176,8 @@ export default function DashboardTablesPage() {
         title: "Erreur",
         description: "Impossible de liberer cette table.",
       })
+    } finally {
+      setReleasingTableId(null)
     }
   }
 
@@ -242,7 +248,8 @@ export default function DashboardTablesPage() {
                       table={table}
                       qrUrl={qrUrl}
                       metric={metric}
-                      onRelease={() => releaseTable(table.id)}
+                      releasing={releasingTableId === table.id}
+                      onRelease={() => releaseTable(table, metric)}
                     />
                   )
                 })}
@@ -366,11 +373,13 @@ function TableQrCard({
   table,
   qrUrl,
   metric,
+  releasing,
   onRelease,
 }: {
   table: RestaurantTableRecord
   qrUrl: string
   metric?: SessionMetric
+  releasing: boolean
   onRelease: () => void
 }) {
   const occupied = table.status === "occupied"
@@ -431,9 +440,9 @@ function TableQrCard({
               POS
             </Link>
           </Button>
-          <Button type="button" variant="primary" disabled={!occupied} onClick={onRelease}>
+          <Button type="button" variant="primary" disabled={!occupied || releasing} onClick={onRelease}>
             <Unlock className="h-4 w-4" />
-            Liberer
+            {releasing ? "Libération..." : "Libérer"}
           </Button>
         </div>
       </CardContent>

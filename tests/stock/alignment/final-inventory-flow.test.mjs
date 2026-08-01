@@ -88,7 +88,7 @@ test("les fournisseurs priorisent leurs articles sans masquer le référentiel c
     "Valeur du stock",
     "Achats du mois",
     "Paiements en attente",
-    "Impact trésorerie du mois",
+    "impact trésorerie du mois",
     "Top produits consommés ce mois",
     "Mouvements récents",
   ]) {

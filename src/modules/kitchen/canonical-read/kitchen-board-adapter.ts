@@ -29,14 +29,21 @@ export function adaptCanonicalGroupsToKitchenBoard(
         displayId: group.orderNumber,
         orderNumber: group.orderNumber,
         orderType: group.orderType,
+        serviceMode: group.serviceMode,
         type: group.orderType,
+        tableId: group.tableId,
         table: group.tableNumber,
         tableNumber: group.tableNumber,
         customerName: group.customerName,
-        customer: group.customerName ? { name: group.customerName } : null,
+        customerPhone: group.customerPhone,
+        customer: group.customerName || group.customerPhone
+          ? { name: group.customerName, phone: group.customerPhone }
+          : null,
+        deliveryAddress: group.deliveryAddress,
+        notes: group.orderNote,
         kitchenStatus: status,
         orderStatus: status,
-        paymentStatus: "verified",
+        paymentStatus: group.paymentStatus,
         createdAt: timestampLike(first.createdAt),
         updatedAt: timestampLike(
           Math.max(...items.map((item) => item.updatedAt))
@@ -46,6 +53,7 @@ export function adaptCanonicalGroupsToKitchenBoard(
           orderItemId: item.orderItemId,
           productId: item.productId,
           name: item.productName,
+          imageUrl: item.productImageUrl,
           quantity: item.activeQuantity,
           status: item.status,
           version: item.version,
@@ -76,4 +84,3 @@ function timestampLike(milliseconds: number) {
     toDate: () => new Date(milliseconds),
   }
 }
-

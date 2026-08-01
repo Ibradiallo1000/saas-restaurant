@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { collection } from "firebase/firestore"
-import { Activity, AlertTriangle, Banknote, ChevronRight, Clock3, PackageSearch, ReceiptText, ShoppingCart, Truck } from "lucide-react"
+import { AlertTriangle, Banknote, ChevronRight, Clock3, PackageSearch, ReceiptText, ShoppingCart, Truck } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,7 @@ import { useTenant } from "@/design-system/context/TenantProvider"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { stockUnitLabel } from "@/modules/stock/shared/inventory-referential"
 import { useInventoryReferential } from "@/modules/stock/shared/use-inventory-referential"
-import { PageHeader } from "@/design-system/components"
+import { NavigationTile, PageHeader, ResponsiveTileGrid } from "@/design-system/components"
 
 export default function OwnerStockPage() {
   const db = useFirestore()
@@ -72,26 +72,23 @@ export default function OwnerStockPage() {
   const topConsumed = [...consumedByArticle.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
 
   return (
-    <main className="space-y-6 pb-24 md:pb-8">
-      <PageHeader
-        title="Supervision du stock"
-        subtitle="Les mêmes quantités et opérations que le Manager, complétées par la vision financière Owner."
-      />
+    <main className="space-y-5 pb-24 md:space-y-6 md:pb-8">
+      <PageHeader title="Stock" density="compact" />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <Metric href="/owner/stock/articles?view=value" title="Valeur du stock" value={`${formatMoney(stockValue)} FCFA`} icon={<Banknote className="h-5 w-5" />} />
-        <Metric href="/owner/stock/articles" title="Articles suivis" value={String(followed.length)} icon={<PackageSearch className="h-5 w-5" />} />
-        <Metric href="/owner/stock/alerts" title="Alertes critiques" value={String(critical)} icon={<AlertTriangle className="h-5 w-5" />} />
-        <Metric href="/owner/stock/suppliers" title="Dette fournisseurs" value={`${formatMoney(supplierDebt)} FCFA`} icon={<Truck className="h-5 w-5" />} />
-        <Metric href="/owner/stock/supplies" title="Achats du mois" value={`${formatMoney(monthlyPurchases)} FCFA`} icon={<ShoppingCart className="h-5 w-5" />} />
-        <Metric title="Paiements en attente" value={String(pendingPayments)} icon={<Clock3 className="h-5 w-5" />} />
-        <Metric title="Impact trésorerie du mois" value={`-${formatMoney(treasuryImpact)} FCFA`} icon={<Activity className="h-5 w-5" />} />
-      </section>
+      <ResponsiveTileGrid desktopColumns={6} aria-label="Indicateurs du stock">
+        <NavigationTile variant="stock" href="/owner/stock/articles?view=value" title="Valeur du stock" value={`${formatMoney(stockValue)} FCFA`} icon={<Banknote />} />
+        <NavigationTile variant="stock" href="/owner/stock/articles" title="Articles suivis" value={String(followed.length)} icon={<PackageSearch />} />
+        <NavigationTile variant={critical > 0 ? "danger" : "success"} href="/owner/stock/alerts" title="Alertes" value={String(critical)} icon={<AlertTriangle />} />
+        <NavigationTile variant="warning" href="/owner/stock/suppliers" title="Dettes fournisseurs" value={`${formatMoney(supplierDebt)} FCFA`} icon={<Truck />} />
+        <NavigationTile variant="info" href="/owner/stock/supplies" title="Achats du mois" value={`${formatMoney(monthlyPurchases)} FCFA`} icon={<ShoppingCart />} />
+        <NavigationTile variant={pendingPayments > 0 ? "warning" : "neutral"} title="Paiements en attente" value={String(pendingPayments)} icon={<Clock3 />} />
+      </ResponsiveTileGrid>
 
       <Card>
         <CardHeader><CardTitle>Achats et fournisseurs</CardTitle></CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-3">
+        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <p className="rounded-xl border p-3 text-sm"><strong>{supplies.length}</strong><br />approvisionnement(s) enregistré(s)</p>
+          <p className="rounded-xl border p-3 text-sm"><strong>−{formatMoney(treasuryImpact)} FCFA</strong><br />impact trésorerie du mois</p>
           <Button asChild variant="outline"><Link href="/owner/depenses"><ReceiptText className="mr-2 h-4 w-4" />Achats et dettes</Link></Button>
           <Button asChild variant="outline"><Link href="/owner/tresorerie"><Banknote className="mr-2 h-4 w-4" />Impact trésorerie</Link></Button>
         </CardContent>
@@ -138,36 +135,6 @@ export default function OwnerStockPage() {
       </section>
     </main>
   )
-}
-
-function Metric({
-  title,
-  value,
-  icon,
-  href,
-}: {
-  title: string
-  value: string
-  icon: React.ReactNode
-  href?: string
-}) {
-  const content = (
-    <CardContent className="flex items-start justify-between gap-3 p-4">
-      <div><p className="text-xs font-black uppercase text-muted-foreground">{title}</p><p className="mt-2 text-2xl font-black">{value}</p></div>
-      <span className="flex items-center gap-1 text-primary">{icon}{href ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : null}</span>
-    </CardContent>
-  )
-  return href ? (
-    <Link
-      href={href}
-      aria-label={`Voir le détail : ${title}`}
-      className="group rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-    >
-      <Card className="h-full cursor-pointer transition-colors group-hover:border-primary/40 group-hover:bg-muted/40">
-        {content}
-      </Card>
-    </Link>
-  ) : <Card>{content}</Card>
 }
 
 function formatMoney(value: number) {

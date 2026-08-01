@@ -14,6 +14,7 @@ import {
 } from "@/services/treasury.service"
 import { OwnerReportsView } from "./OwnerReportsView"
 import { buildOwnerReportsViewModel, type OwnerTreasuryMovementReport } from "./owner-reports-view-model"
+import { resolveOwnerTreasuryBalance } from "@/modules/owner-dashboard/owner-dashboard-metrics"
 
 type MovementDirection = "in" | "out" | "transfer"
 type MovementDirectionFilter = "all" | MovementDirection
@@ -70,7 +71,11 @@ export default function OwnerTresoreriePage() {
     () => safeAccounts.reduce((sum, account) => sum + Number(account.balance || 0), 0),
     [safeAccounts]
   )
-  const displayBalance = accountTotal !== 0 ? accountTotal : summary.net
+  const treasuryResolution = React.useMemo(
+    () => resolveOwnerTreasuryBalance(safeAccounts, safeMovements),
+    [safeAccounts, safeMovements]
+  )
+  const displayBalance = treasuryResolution.balance
   const sessionControls = React.useMemo(
     () => buildCashSessionControls(cashSessions || [], range.startDate, range.endDate),
     [cashSessions, range.endDate, range.startDate]

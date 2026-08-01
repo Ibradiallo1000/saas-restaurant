@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { ArrowRight, Banknote, CheckCircle, ChefHat, ChevronLeft, CreditCard, MapPin, Phone, ShoppingBag, Truck } from "lucide-react"
 
 import { PublicButton, PublicCheckoutModal, PublicOptionChoice, PublicOptionGroup, PublicPrice, PublicSurface, PublicTextField } from "@/components/public-ui"
-import { useDocOnce, useFirebaseApp, useFirestore, useMemoFirebase, useUser } from "@/firebase"
+import { useAuth, useDocOnce, useFirebaseApp, useFirestore, useMemoFirebase, useUser } from "@/firebase"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { getOptimizedImage } from "@/lib/image"
 import { buildUssdTelHref } from "@/lib/ussd"
@@ -16,6 +16,7 @@ import {
 } from "@/services/payment-methods.service"
 import { useCart } from "../cart/CartContext"
 import { rememberTrackedOrder } from "../orderTrackingStorage"
+import { ensurePublicFirebaseUser } from "../public-auth"
 import {
   clearPublicIdempotencyKey,
   comparePublicOrderProjections,
@@ -78,6 +79,7 @@ export default function CheckoutPublicModal({
 }) {
   const db = useFirestore()
   const app = useFirebaseApp()
+  const auth = useAuth()
   const { user } = useUser()
   const router = useRouter()
   const { items, total, clear } = useCart()
@@ -144,9 +146,16 @@ export default function CheckoutPublicModal({
   React.useEffect(() => {
     if (!open) return
 
+    console.info("[PUBLIC_AUTH][CHECKOUT_OPEN_STATE]", {
+      hasUser: Boolean(user),
+      uid: user?.uid ?? null,
+      isAnonymous: user?.isAnonymous ?? null,
+      providerId: user?.providerId ?? null,
+      providerData: user?.providerData.map((provider) => provider.providerId) ?? [],
+    })
     setFlow(DEFAULT_FLOW_STATE)
     setError("")
-  }, [open])
+  }, [open, user])
 
   React.useEffect(() => () => {
     if (stepTransitionTimeoutRef.current !== null) {
@@ -237,10 +246,25 @@ export default function CheckoutPublicModal({
     setError("")
 
     try {
+      console.info("[PUBLIC_AUTH][PAYMENT_SUBMIT_STATE]", {
+        hasUser: Boolean(user),
+        uid: user?.uid ?? null,
+        isAnonymous: user?.isAnonymous ?? null,
+        providerId: user?.providerId ?? null,
+        providerData: user?.providerData.map((provider) => provider.providerId) ?? [],
+      })
       const qrMode = resolveQrCanonicalMode(restaurantId)
       if (qrCanonicalEnabled(qrMode)) {
-        if (!user?.isAnonymous) {
-          throw new Error("La session client a expiré. Rechargez la page puis réessayez.")
+        let orderUser = user
+        if (!user) {
+          try {
+            orderUser = await ensurePublicFirebaseUser(auth)
+          } catch {
+            throw new Error("Impossible d’ouvrir une session client sécurisée. Réessayez dans quelques instants.")
+          }
+        }
+        if (!orderUser) {
+          throw new Error("La session client sécurisée est en cours d’initialisation. Réessayez dans quelques instants.")
         }
         const serviceMode = flow.orderType === "delivery" ? "delivery" : "takeaway"
         const channel =
@@ -250,7 +274,7 @@ export default function CheckoutPublicModal({
         const primaryPhone = cleanPhone(flow.phone)
         const response = await createCanonicalQrOrder({
           app,
-          user,
+          user: orderUser,
           restaurantId,
           idempotencyKey,
           body: {
@@ -266,7 +290,12 @@ export default function CheckoutPublicModal({
                 optionName: option.optionName,
                 choiceName: option.choiceName,
               })),
-              instructions: null,
+              instructions:
+                item.instructions?.trim() ||
+                item.note?.trim() ||
+                item.notes?.trim() ||
+                item.specialInstructions?.trim() ||
+                null,
             })),
             tableContext: null,
             customer: { name: null, phone: primaryPhone || null },
@@ -304,7 +333,7 @@ export default function CheckoutPublicModal({
         }
         await requestCanonicalOrderPayment({
           app,
-          user,
+          user: orderUser,
           restaurantId,
           orderId: response.orderId,
           idempotencyKey: stablePublicIdempotencyKey(

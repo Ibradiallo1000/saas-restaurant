@@ -28,6 +28,12 @@ class RouteCommandStore {
     this.mutations = 0
     this.audits = 0
     this.error = overrides.error
+    this.order = {
+      serviceMode: "dine_in",
+      orderType: "dine_in",
+      paymentStatus: "unpaid",
+      ...overrides.order,
+    }
   }
 
   async execute(commandName, input, transition) {
@@ -48,7 +54,9 @@ class RouteCommandStore {
       order: {
         id: ORDER_ID,
         restaurantId: RESTAURANT_ID,
-        paymentStatus: "unpaid",
+        serviceMode: this.order.serviceMode,
+        orderType: this.order.orderType,
+        paymentStatus: this.order.paymentStatus,
         paymentVersion: 1,
         totalAmount: 1000,
         total: 1000,
@@ -231,6 +239,19 @@ describe("LOT 4.1 — frontière serveur Cuisine", () => {
     const result = await invoke({ dependencies: dependencies({ store }) })
     assert.equal(result.response.status, 409)
     assert.equal(result.body.error.code, "INVALID_TRANSITION")
+  })
+
+  it("14b. retourne le message métier lorsque le prépaiement est obligatoire", async () => {
+    const store = new RouteCommandStore({
+      order: { serviceMode: "delivery", orderType: "delivery", paymentStatus: "unpaid" },
+    })
+    const result = await invoke({ dependencies: dependencies({ store }) })
+    assert.equal(result.response.status, 409)
+    assert.deepEqual(result.body.error, {
+      code: "PREPAYMENT_REQUIRED_BEFORE_PREPARATION",
+      message: "Le paiement doit être confirmé avant de traiter cette commande.",
+      retryable: false,
+    })
   })
 
   it("15. retourne 409 pour un conflit de version", async () => {

@@ -3,8 +3,10 @@ import type {
   CancelOrderItemQuantityInput,
   CanonicalCommandResult,
   ConfirmOrderPaymentInput,
+  HandOffOrderItemsInput,
   MarkOrderItemPreparingInput,
   MarkOrderItemReadyInput,
+  MarkOrderItemsTransitionInput,
   MarkOrderItemServedInput,
   OrderCommandName,
 } from "./types.ts"
@@ -12,14 +14,20 @@ import { assertPermission } from "./permissions.ts"
 import {
   planCancellation,
   planPayment,
+  planHandOff,
   planPreparing,
   planReady,
+  planItemsPreparing,
+  planItemsReady,
   planServed,
+  planServeOrderItems,
 } from "./transitions.ts"
 import {
   validateBase,
   validateItemBase,
   validatePayment,
+  validateHandOff,
+  validateItemsTransition,
   validatePositiveQuantity,
 } from "./validation.ts"
 
@@ -43,6 +51,22 @@ export function markOrderItemReady(
   return execute(dependencies, "MarkOrderItemReady", input, planReady)
 }
 
+export function markOrderItemsPreparing(
+  dependencies: OrderCommandDependencies,
+  input: MarkOrderItemsTransitionInput
+): Promise<CanonicalCommandResult> {
+  validateItemsTransition(input)
+  return execute(dependencies, "MarkOrderItemsPreparing", input, planItemsPreparing)
+}
+
+export function markOrderItemsReady(
+  dependencies: OrderCommandDependencies,
+  input: MarkOrderItemsTransitionInput
+): Promise<CanonicalCommandResult> {
+  validateItemsTransition(input)
+  return execute(dependencies, "MarkOrderItemsReady", input, planItemsReady)
+}
+
 export function markOrderItemServed(
   dependencies: OrderCommandDependencies,
   input: MarkOrderItemServedInput
@@ -50,6 +74,22 @@ export function markOrderItemServed(
   validateItemBase(input)
   validatePositiveQuantity(input.quantityToServe)
   return execute(dependencies, "MarkOrderItemServed", input, planServed)
+}
+
+export function handOffOrderItems(
+  dependencies: OrderCommandDependencies,
+  input: HandOffOrderItemsInput
+): Promise<CanonicalCommandResult> {
+  validateHandOff(input)
+  return execute(dependencies, "HandOffOrderItems", input, planHandOff)
+}
+
+export function serveOrderItems(
+  dependencies: OrderCommandDependencies,
+  input: MarkOrderItemsTransitionInput
+): Promise<CanonicalCommandResult> {
+  validateItemsTransition(input)
+  return execute(dependencies, "ServeOrderItems", input, planServeOrderItems)
 }
 
 export function cancelOrderItemQuantity(

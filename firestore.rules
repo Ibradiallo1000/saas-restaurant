@@ -1624,9 +1624,9 @@ service cloud.firestore {
 
       match /cashierSessions/{sessionId} {
         allow get, list: if canUseRestaurant(restaurantId);
-        allow create, update: if canUseRestaurant(restaurantId)
-          && request.resource.data.restaurantId == restaurantId;
-        allow delete: if isSuperAdmin();
+        // Legacy format: readable during the compatibility window, frozen for
+        // every client. Migration/archival is performed by an Admin boundary.
+        allow create, update, delete: if false;
       }
 
       match /cashSessions/{sessionId} {
@@ -1664,12 +1664,25 @@ service cloud.firestore {
 
       match /payments/{paymentId} {
         allow get, list: if canApproveCashSession(restaurantId) || canUseRestaurant(restaurantId);
-        allow create: if isValidPaymentCreate(restaurantId);
-        allow update: if canUseRestaurant(restaurantId)
-          && resource.data.status != "confirmed"
-          && isValidPaymentStatusTransition()
-          && hasOpenCashSession(restaurantId, resource.data.sessionId, resource.data.cashierId);
+        // Financial ledger mutations are server-only. Legacy documents remain
+        // readable, but clients cannot create, confirm, void or refund entries.
+        allow create, update: if false;
         allow delete: if false;
+      }
+
+      match /cashHandovers/{handoverId} {
+        allow get: if canApproveCashSession(restaurantId)
+          || (
+            canUseRestaurant(restaurantId)
+            && resource.data.cashierId == request.auth.uid
+          );
+        allow list: if canApproveCashSession(restaurantId)
+          || (
+            canUseRestaurant(restaurantId)
+            && resource.data.cashierId == request.auth.uid
+          );
+        // Submission, review and treasury posting are atomic server commands.
+        allow create, update, delete: if false;
       }
 
       match /treasuryAccounts/{accountId} {
@@ -1707,18 +1720,11 @@ service cloud.firestore {
           && request.resource.data.source in ["session", "manual", "expense", "payment", "supplier_payment", "transfer"]
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.createdAt is timestamp
+          // Session deposits are emitted only by REVIEW_HANDOVER on the server.
+          && request.resource.data.source != "session"
           && (
             request.resource.data.type != "deposit"
-            || (
-              request.resource.data.source == "session"
-              && request.resource.data.sessionId is string
-              && (
-                movementId == "session-" + request.resource.data.sessionId
-                || movementId == "session-" + request.resource.data.sessionId + "-cash"
-                || movementId == "session-" + request.resource.data.sessionId + "-mobile"
-              )
-              && !exists(/databases/$(database)/documents/restaurants/$(restaurantId)/cashMovements/$(movementId))
-            )
+            || request.resource.data.source != "session"
           );
         allow update, delete: if false;
       }

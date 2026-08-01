@@ -5,10 +5,10 @@ import { signOut } from "firebase/auth"
 import { useRouter } from "next/navigation"
 import {
   ChefHat,
+  CheckCircle2,
   Clock3,
   CookingPot,
   LogOut,
-  RefreshCw,
   Utensils,
   type LucideIcon,
 } from "lucide-react"
@@ -20,7 +20,6 @@ import {
   KitchenPage,
 } from "@/components/kitchen-ui"
 import {
-  OperationalMetricStrip,
   OperationalStationIdentity,
 } from "@/components/operational-ui"
 import { PosHeader } from "@/components/pos-ui"
@@ -99,6 +98,9 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     () => new Set()
   )
   const [nowMs, setNowMs] = React.useState(() => Date.now())
+  const [mobileColumn, setMobileColumn] = React.useState<KitchenColumnStatus>(
+    ORDER_OPERATION_STATUS.PENDING
+  )
   React.useEffect(() => {
     const interval = window.setInterval(() => setNowMs(Date.now()), 30_000)
     return () => window.clearInterval(interval)
@@ -261,55 +263,98 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
     })
   }, [restaurantId, user])
 
-  const loadMetrics = React.useMemo(() => [
+  const mobileTabs = React.useMemo(() => [
     { id: "pending", label: "Nouvelles", value: groupedOrders.pending.length },
     { id: "preparing", label: "Préparation", value: groupedOrders.preparing.length },
-    { id: "ready", label: "Prêtes", value: groupedOrders.ready.length, tone: "positive" as const },
-    { id: "total", label: "Visibles", value: kitchenOrders.length },
-  ], [groupedOrders, kitchenOrders.length])
+    { id: "ready", label: "Prêtes", value: groupedOrders.ready.length },
+  ] satisfies Array<{ id: KitchenColumnStatus; label: string; value: number }>, [groupedOrders])
 
   return (
     <KitchenPage
+      fullScreen
       header={
-        <PosHeader
-          title={
-            <OperationalStationIdentity
-              fallbackIcon={ChefHat}
-              restaurantLogoUrl={restaurant?.logoUrl}
-              restaurantName={restaurant?.name}
-              subtitle="Cuisine"
-            />
-          }
-          sessionStatus="active"
-          sessionLabel="Cuisine active"
-          actions={
-            <>
-              <span className="hidden text-sm font-semibold text-[var(--dashboard-subtitle)] sm:inline">
-                {user?.displayName || user?.email?.split("@")[0] || "Cuisine01"}
+        <>
+          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--pos-divider)] bg-[var(--pos-panel)] px-[calc(var(--pos-gutter-x)+var(--safe-left,0px))] pb-2 pt-[calc(.5rem+var(--safe-top,0px))] pr-[calc(var(--pos-gutter-x)+var(--safe-right,0px))] shadow-[var(--shadow-dashboard-surface)] md:hidden">
+            <div className="min-w-0">
+              <OperationalStationIdentity
+                compact
+                fallbackIcon={ChefHat}
+                restaurantLogoUrl={restaurant?.logoUrl}
+                restaurantName={restaurant?.name}
+                subtitle="Cuisine"
+              />
+              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                Cuisine active
+                <CheckCircle2 aria-hidden="true" className="size-3" />
               </span>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
               <ThemeToggle />
               <button
                 type="button"
-                onClick={() => router.refresh()}
-                aria-label="Actualiser la Cuisine"
-                title="Actualiser"
-                className="dashboard-focus-visible inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--radius-dashboard-button)] border border-[var(--pos-divider)] hover:bg-[var(--pos-muted)]"
+                onClick={handleLogout}
+                aria-label="Déconnexion"
+                title="Déconnexion"
+                className="dashboard-focus-visible inline-flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--pos-muted)] hover:text-foreground"
               >
-                <RefreshCw aria-hidden="true" className="size-4" />
-              </button>
-              <button type="button" onClick={handleLogout} className="dashboard-focus-visible inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-dashboard-button)] border border-[var(--pos-divider)] px-3 text-sm font-semibold hover:bg-[var(--pos-muted)]">
                 <LogOut aria-hidden="true" className="size-4" />
-                <span className="hidden sm:inline">Déconnexion</span>
-                <span className="sr-only sm:hidden">Se déconnecter</span>
               </button>
-            </>
-          }
-        />
+            </div>
+          </header>
+          <PosHeader
+            className="hidden md:block"
+            title={
+              <OperationalStationIdentity
+                fallbackIcon={ChefHat}
+                restaurantLogoUrl={restaurant?.logoUrl}
+                restaurantName={restaurant?.name}
+                subtitle="Cuisine"
+              />
+            }
+            sessionStatus="active"
+            sessionLabel="Cuisine active"
+            actions={
+              <>
+                <span className="hidden text-sm font-semibold text-[var(--dashboard-subtitle)] sm:inline">
+                  {user?.displayName || user?.email?.split("@")[0] || "Cuisine01"}
+                </span>
+                <ThemeToggle />
+                <button type="button" onClick={handleLogout} className="dashboard-focus-visible inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-dashboard-button)] border border-[var(--pos-divider)] px-3 text-sm font-semibold hover:bg-[var(--pos-muted)]">
+                  <LogOut aria-hidden="true" className="size-4" />
+                  <span>Déconnexion</span>
+                </button>
+              </>
+            }
+          />
+        </>
       }
     >
-      <div className="flex h-full min-h-0 flex-col gap-[var(--pos-layout-gap)]">
-        <OperationalMetricStrip items={loadMetrics} label="Indicateurs de production Cuisine" />
-        <KitchenBoardLayout layout="adaptive" className="min-h-0 flex-1 overflow-y-auto md:auto-rows-[minmax(24rem,1fr)] xl:grid-cols-3 xl:auto-rows-fr xl:overflow-hidden">
+      <div className="-mt-[var(--kitchen-gutter-y)] flex h-[calc(100%+var(--kitchen-gutter-y))] min-h-0 flex-col gap-2 md:mt-0 md:h-full md:gap-[var(--pos-layout-gap)]">
+        <div className="grid shrink-0 grid-cols-3 gap-2 py-2 md:hidden" role="tablist" aria-label="Colonnes Cuisine">
+          {mobileTabs.map((tab) => {
+            const activeTab = mobileColumn === tab.id
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={activeTab}
+                onClick={() => setMobileColumn(tab.id)}
+                className={activeTab
+                  ? "dashboard-focus-visible flex min-h-12 min-w-0 items-center justify-center gap-1 rounded-xl bg-[var(--brand-primary)] px-2 text-xs font-bold text-white shadow-sm"
+                  : "dashboard-focus-visible flex min-h-12 min-w-0 items-center justify-center gap-1 rounded-xl bg-[var(--order-surface-muted)] px-2 text-xs font-bold text-[var(--dashboard-title)]"
+                }
+              >
+                <span className="truncate">{tab.label}</span>
+                <span className={activeTab ? "rounded-full bg-white/20 px-1.5 py-0.5 tabular-nums" : "rounded-full bg-[var(--dashboard-section)] px-1.5 py-0.5 tabular-nums"}>
+                  {tab.value}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        <KitchenBoardLayout layout="stack" className="hidden min-h-0 flex-1 grid-cols-3 overflow-hidden md:grid">
         {KITCHEN_COLUMNS.map((column) => {
           const columnOrders = groupedOrders[column.status]
           const Icon = column.icon
@@ -322,7 +367,7 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
               description={column.emptyDescription}
               variant={column.status}
               emptyState={<KitchenEmptyState title="Aucune commande" description={column.emptyDescription} className="min-h-52 border-0 bg-transparent" />}
-              className="min-h-[24rem] xl:min-h-0"
+              className="min-h-0"
             >
               {columnOrders.map((order) => (
                 <KitchenOrderCard key={order.id} order={order} nowMs={nowMs} onUpdateStatus={updateStatus} isNew={enteringOrderIds.has(order.id)} />
@@ -331,6 +376,29 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
           )
         })}
         </KitchenBoardLayout>
+
+        <div className="min-h-0 flex-1 md:hidden">
+          {(() => {
+            const selectedColumn = KITCHEN_COLUMNS.find((column) => column.status === mobileColumn) ?? KITCHEN_COLUMNS[0]
+            const columnOrders = groupedOrders[selectedColumn.status]
+            const Icon = selectedColumn.icon
+            return (
+              <KitchenColumn
+                id={`kitchen-mobile-${mobileColumn}`}
+                title={<span className="inline-flex items-center gap-2"><Icon aria-hidden="true" className="size-5" />{selectedColumn.title}</span>}
+                count={columnOrders.length}
+                description={selectedColumn.emptyDescription}
+                variant={selectedColumn.status}
+                emptyState={<KitchenEmptyState title="Aucune commande" description={selectedColumn.emptyDescription} className="min-h-52 border-0 bg-transparent" />}
+                className="h-full min-h-0"
+              >
+                {columnOrders.map((order) => (
+                  <KitchenOrderCard key={order.id} order={order} nowMs={nowMs} onUpdateStatus={updateStatus} isNew={enteringOrderIds.has(order.id)} />
+                ))}
+              </KitchenColumn>
+            )
+          })()}
+        </div>
       </div>
     </KitchenPage>
   )

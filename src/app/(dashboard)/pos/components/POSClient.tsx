@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { PosCatalog, PosSessionClosingDialog, PosVarianceDisplay } from "@/components/pos-ui"
+import { PosCatalog, PosSearchField, PosSessionClosingDialog, PosVarianceDisplay } from "@/components/pos-ui"
 import { PublicSheet } from "@/components/public-ui"
 import { useToast } from "@/hooks/use-toast"
 import { OrderService } from "@/services/order.service"
@@ -46,6 +46,10 @@ import { getOptimizedImage } from "@/lib/image"
 import { formatTableDisplayName, getRestaurantTableDisplayPrefix } from "@/lib/table-display"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { getOrderDisplayId } from "@/lib/order-display-id"
+import {
+  aggregateFinancialEntries,
+  type FinancialLedgerEntry,
+} from "@/lib/finance/payment-ledger-domain"
 import {
   ORDER_OPERATION_STATUS,
   ORDER_PAYMENT_STATUS,
@@ -61,14 +65,7 @@ import { playNewOrderNotificationSound } from "@/services/notification-sound.ser
 import {
   processOrderPaymentTransaction,
   releaseOrderTableIfNeeded,
-  updateCashSessionTotals,
-  validateMobilePaymentTransaction,
 } from "@/services/pos-security.service"
-import {
-  buildPaymentIdempotencyKey,
-  normalizePaymentProvider,
-  PaymentLedgerService,
-} from "@/services/payment-ledger.service"
 import {
   getConfiguredCartItemId,
   recalculateConfiguredUnitPrice,
@@ -82,11 +79,17 @@ import { markOrderItemAsServedAndDeductStock } from "@/modules/stock/automatic-s
 import { usePosStockAvailability } from "@/modules/stock/use-pos-stock-availability"
 import {
   createCanonicalPosOrder,
+  confirmTableSessionPayment,
   executePosCommand,
+  getCanonicalMobileMoneyProvider,
+  getCanonicalPaymentAmount,
+  isPosCollectionCandidate,
   posCommandIdempotencyKey,
+  resolvePosOrderColumn,
   resolvePosCanonicalMode,
   useCanonicalPosOrders,
 } from "@/modules/pos/canonical"
+import { closeCashSessionV2 } from "@/modules/pos/canonical/cash-session-command-client"
 import type { SelectedCartOption } from "@/modules/restaurant/types"
 import {
   buildBundleCartLines,
@@ -184,6 +187,7 @@ function POSPageContent() {
     activeOrders,
     cashSessionRequests,
     cashSessions,
+    payments,
     tableSessions,
     tables: liveTables,
   } = useRestaurantLiveData()
@@ -220,6 +224,7 @@ function POSPageContent() {
     [cashSessionRequests]
   )
   const safeCashSessions = React.useMemo(() => Array.isArray(cashSessions) ? cashSessions : [], [cashSessions])
+  const safePayments = React.useMemo(() => Array.isArray(payments) ? payments : [], [payments])
   const safeTableSessions = React.useMemo(() => Array.isArray(tableSessions) ? tableSessions : [], [tableSessions])
   const safeTables = React.useMemo(() => Array.isArray(liveTables) ? liveTables : [], [liveTables])
   const { availabilityByProduct: stockByProduct } = usePosStockAvailability(
@@ -232,6 +237,8 @@ function POSPageContent() {
   const [orderType, setOrderType] = React.useState<"dine-in" | "takeaway">("takeaway")
   const [tableNumber, setTableNumber] = React.useState<string | null>(null)
   const [processing, setProcessing] = React.useState(false)
+  const [pendingOrderActionIds, setPendingOrderActionIds] = React.useState<Set<string>>(() => new Set())
+  const pendingOrderActionIdsRef = React.useRef<Set<string>>(new Set())
   const [selectedMobileMethodCode, setSelectedMobileMethodCode] = React.useState<string | null>(null)
   const [collectingOrderId, setCollectingOrderId] = React.useState<string | null>(null)
   const [activeTab, setActiveTab] = React.useState<POSTab>("cashier")
@@ -242,7 +249,6 @@ function POSPageContent() {
   const [cashReceivedInput, setCashReceivedInput] = React.useState("")
   const [paymentDialogOpen, setPaymentDialogOpen] = React.useState(false)
   const [paymentFlowError, setPaymentFlowError] = React.useState<string | null>(null)
-  const [paymentFlowSuccess, setPaymentFlowSuccess] = React.useState(false)
   const checkoutLockRef = React.useRef(false)
   const closeSessionLockRef = React.useRef(false)
   const [closeDialogOpen, setCloseDialogOpen] = React.useState(false)
@@ -250,7 +256,7 @@ function POSPageContent() {
   const [mobileOrderStatus, setMobileOrderStatus] = React.useState<string>(ORDER_OPERATION_STATUS.PENDING)
   const [showAllCompletedOrders, setShowAllCompletedOrders] = React.useState(false)
   const [declaredCashInput, setDeclaredCashInput] = React.useState("")
-  const [declaredMobileInput, setDeclaredMobileInput] = React.useState("")
+  const [retainedFloatInput, setRetainedFloatInput] = React.useState("")
   const [configProduct, setConfigProduct] = React.useState<any | null>(null)
   const [configSelections, setConfigSelections] = React.useState<Record<string, SelectedCartOption>>({})
   const [configLinkedSelections, setConfigLinkedSelections] = React.useState<LinkedOptionSelection[]>([])
@@ -262,7 +268,7 @@ function POSPageContent() {
   const [currentPage, setCurrentPage] = React.useState(0)
   const { isPhoneViewport, productsPerPage } = usePOSProductsPerPage()
   const [mobileCartOpen, setMobileCartOpen] = React.useState(false)
-  const productSearch = ""
+  const [productSearch, setProductSearch] = React.useState("")
 
   const tables = safeTables as RestaurantTableRecord[]
   const tableLabelPrefix = getRestaurantTableDisplayPrefix(restaurant)
@@ -308,11 +314,38 @@ function POSPageContent() {
   ], [])
 
   const posVisibleOrders = React.useMemo(() => {
-    return safeActiveOrders.filter((order: any) => {
-      if (activeCashSession?.id && order.cashSessionId === activeCashSession.id) return true
-      return isPOSCollectionCandidate(order)
-    })
-  }, [activeCashSession?.id, safeActiveOrders])
+    const productImages = new Map(
+      safeProducts.map((product: any) => [
+        String(product.id),
+        product.imageUrl || product.image || product.photoUrl || null,
+      ])
+    )
+    return safeActiveOrders
+      .filter((order: any) => {
+        return isPosCollectionCandidate(
+          order,
+          getPOSOperationStatus(order),
+          activeCashSession?.id
+        )
+      })
+      .map((order: any) => ({
+        ...order,
+        items: Array.isArray(order.items)
+          ? order.items.map((item: any) => ({
+              ...item,
+              imageUrl:
+                item.imageUrl ||
+                item.imageSnapshot ||
+                productImages.get(String(item.productId ?? "")) ||
+                null,
+            }))
+          : order.items,
+      }))
+  }, [activeCashSession?.id, safeActiveOrders, safeProducts])
+  const collectingOrder = React.useMemo(() => {
+    if (!collectingOrderId) return null
+    return posVisibleOrders.find((order: any) => order.id === collectingOrderId) ?? null
+  }, [collectingOrderId, posVisibleOrders])
 
   const posOrders = React.useMemo(() => {
     const groups: Record<string, any[]> = {
@@ -325,15 +358,7 @@ function POSPageContent() {
 
     posVisibleOrders.forEach((order: any) => {
       const orderStatus = getPOSOperationStatus(order)
-      const isTerminalProductionStatus =
-        orderStatus === ORDER_OPERATION_STATUS.SERVED ||
-        orderStatus === ORDER_OPERATION_STATUS.PICKED_UP
-      const status =
-        isTerminalProductionStatus && isOrderPaid(order)
-          ? ORDER_OPERATION_STATUS.COMPLETED
-          : isTerminalProductionStatus
-            ? ORDER_OPERATION_STATUS.SERVED
-            : orderStatus
+      const status = resolvePosOrderColumn(order, orderStatus)
 
       if (groups[status]) {
         groups[status].push(order)
@@ -362,15 +387,7 @@ function POSPageContent() {
     )
   }, [posOrders, safeTableSessions, tableLabelPrefix, tables])
 
-  const unpaidServedCount = React.useMemo(() => {
-    return posVisibleOrders.filter((order: any) => {
-      const orderStatus = getPOSOperationStatus(order)
-      return (
-        orderStatus === ORDER_OPERATION_STATUS.SERVED ||
-        orderStatus === ORDER_OPERATION_STATUS.PICKED_UP
-      ) && !isOrderPaid(order)
-    }).length
-  }, [posVisibleOrders])
+  const readyOrderCount = posOrders[ORDER_OPERATION_STATUS.READY]?.length ?? 0
 
   const selectedOrderDetail = React.useMemo(() => {
     if (!selectedOrderDetailId) return null
@@ -380,6 +397,14 @@ function POSPageContent() {
     if (!selectedOrderDetail) return null
     return getPaymentSessionForOrder(selectedOrderDetail, safeTableSessions)
   }, [safeTableSessions, selectedOrderDetail])
+  const startOrderAction = React.useCallback((id: string) => {
+    pendingOrderActionIdsRef.current.add(id)
+    setPendingOrderActionIds(new Set(pendingOrderActionIdsRef.current))
+  }, [])
+  const finishOrderAction = React.useCallback((id: string) => {
+    pendingOrderActionIdsRef.current.delete(id)
+    setPendingOrderActionIds(new Set(pendingOrderActionIdsRef.current))
+  }, [])
 
   React.useEffect(() => {
     const currentOrderIds = new Set(posVisibleOrders.map((order: any) => order.id).filter(Boolean))
@@ -550,16 +575,6 @@ function POSPageContent() {
     }
   }
 
-  const updateActiveCashSessionTotals = async (method: "cash" | "mobile", amount: number) => {
-    if (!db || !restaurantId || !activeCashSession?.id || amount <= 0) return
-
-    try {
-      await updateCashSessionTotals(db, restaurantId, activeCashSession.id, method, amount)
-    } catch (error) {
-      console.error("POS cash session total update error:", error)
-    }
-  }
-
   const addToCart = React.useCallback((product: any) => {
     if (!product?.id) return
     if ((stockByProduct.get(product.id)?.quantity ?? 1) <= 0) {
@@ -641,14 +656,21 @@ function POSPageContent() {
   const discountAmount = Math.round(subtotal * discountRate)
   const total = Math.max(0, subtotal - discountAmount)
   const cashReceivedAmount = React.useMemo(() => normalizeMoneyInput(cashReceivedInput), [cashReceivedInput])
+  const authoritativeSessionAggregate = React.useMemo(() => {
+    if (!activeCashSession?.id) return null
+    const entries = safePayments.filter((payment: any) => payment.sessionId === activeCashSession.id)
+    if (entries.length === 0) return null
+    return aggregateFinancialEntries(entries as FinancialLedgerEntry[])
+  }, [activeCashSession?.id, safePayments])
   const sessionPaidTotal = React.useMemo(() => {
     if (!activeCashSession?.id) return 0
 
     return Number(
+      authoritativeSessionAggregate?.totalConfirmed ??
       activeCashSession.totalConfirmed ??
       Number(activeCashSession.totalCash || 0) + Number(activeCashSession.totalMobile || 0)
     )
-  }, [activeCashSession])
+  }, [activeCashSession, authoritativeSessionAggregate])
 
   const sessionCalculatedTotals = React.useMemo(() => {
     if (!activeCashSession?.id) {
@@ -656,29 +678,28 @@ function POSPageContent() {
     }
 
     return {
-      totalCash: Number(activeCashSession.totalCash || 0),
-      totalMobile: Number(activeCashSession.totalMobile || 0),
-      totalOrders: Number(activeCashSession.totalOrders || 0),
+      totalCash: Number(authoritativeSessionAggregate?.totalCash ?? activeCashSession.totalCash ?? 0),
+      totalMobile: Number(authoritativeSessionAggregate?.totalMobileMoney ?? activeCashSession.totalMobile ?? 0),
+      totalOrders: Number(authoritativeSessionAggregate?.totalOrders ?? activeCashSession.totalOrders ?? 0),
     }
-  }, [activeCashSession])
+  }, [activeCashSession, authoritativeSessionAggregate])
   const declaredCashAmount = React.useMemo(() => normalizeMoneyInput(declaredCashInput), [declaredCashInput])
-  const declaredMobileAmount = React.useMemo(() => normalizeMoneyInput(declaredMobileInput), [declaredMobileInput])
+  const retainedFloatAmount = React.useMemo(() => normalizeMoneyInput(retainedFloatInput), [retainedFloatInput])
   const closeSessionDiff = React.useMemo(() => {
-    const systemCash = sessionCalculatedTotals.totalCash
+    const openingBalance = Number(activeCashSession?.openingBalance || 0)
+    const systemCash = openingBalance + sessionCalculatedTotals.totalCash
     const systemMobile = sessionCalculatedTotals.totalMobile
-    const declaredTotal = declaredCashAmount + declaredMobileAmount
     const systemTotal = systemCash + systemMobile
 
     return {
+      openingBalance,
       systemCash,
       systemMobile,
       systemTotal,
-      declaredTotal,
       cash: declaredCashAmount - systemCash,
-      mobile: declaredMobileAmount - systemMobile,
-      total: declaredTotal - systemTotal,
+      expectedHandover: Math.max(0, declaredCashAmount - retainedFloatAmount),
     }
-  }, [declaredCashAmount, declaredMobileAmount, sessionCalculatedTotals])
+  }, [activeCashSession?.openingBalance, declaredCashAmount, retainedFloatAmount, sessionCalculatedTotals])
 
   React.useEffect(() => {
     if (!activeCashSession?.id || activeCashSession.status !== "open") return
@@ -900,7 +921,7 @@ function POSPageContent() {
     }
   }
 
-  const handleCheckout = async (method: "cash" | "mobile") => {
+  const handleCheckout = async (method?: "cash" | "mobile") => {
     if (!db || !restaurantId || !user || cart.length === 0 || processing || checkoutLockRef.current) return false
 
     if (!activeCashSession) {
@@ -956,6 +977,7 @@ function POSPageContent() {
           priceSnapshot,
           quantity: item.quantity,
           selectedOptions: item.selectedOptions ?? [],
+          instructions: item.instructions ?? item.note ?? item.notes ?? item.specialInstructions ?? null,
           preparationMode: resolveProductPreparationMode(product, categoryName),
           reviewsEnabled: product.reviewsEnabled === true,
         }
@@ -1035,7 +1057,7 @@ function POSPageContent() {
                   optionName: option.optionName,
                   choiceName: option.choiceName,
                 })),
-                instructions: null,
+                instructions: item.instructions?.trim?.() || null,
               })),
               tableContext: orderType === "dine-in"
                 ? {
@@ -1052,60 +1074,44 @@ function POSPageContent() {
           })
         : null
       const orderId = canonicalCreation?.orderId ?? await orderService.createOrder(orderData)
+      const isDineInCreation = orderType === "dine-in"
       const printableOrder: PrintableOrder = {
         ...orderData,
         id: orderId,
         total,
         totalAmount: total,
-        paymentMethod: method === "mobile" ? selectedMobileConfig?.code : "cash",
-        paymentStatus: ORDER_PAYMENT_STATUS.PAID,
+        paymentMethod: isDineInCreation ? null : method === "mobile" ? selectedMobileConfig?.code : "cash",
+        paymentStatus: isDineInCreation ? ORDER_PAYMENT_STATUS.UNPAID : ORDER_PAYMENT_STATUS.PAID,
         kitchenStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.READY,
         orderStatus: requiresKitchen ? ORDER_OPERATION_STATUS.PENDING : ORDER_OPERATION_STATUS.READY,
         createdAt: new Date(),
       }
 
-      if (posCanonicalMode === "canonical") {
+      if (!isDineInCreation) {
         await executePosCommand({
-          user,
-          restaurantId,
-          orderId,
-          command: "CONFIRM_ORDER_PAYMENT",
-          payload: {
-            expectedPaymentVersion: 1,
-            expectedAmount: Number(canonicalCreation?.total ?? total),
-            receivedAmount: method === "cash"
-              ? Math.max(cashReceivedAmount, Number(canonicalCreation?.total ?? total))
-              : Number(canonicalCreation?.total ?? total),
-            method: method === "cash" ? "cash" : "mobile_money",
-            provider: method === "mobile" ? selectedMobileConfig?.code ?? null : null,
-            externalReference: null,
-            cashSessionId: activeCashSession.id,
-            idempotencyKey: posCommandIdempotencyKey([
-              "pos-payment",
-              orderId,
-              1,
-              method,
-            ]),
-          },
-        })
-      } else await processOrderPaymentTransaction({
-        db,
+        user,
         restaurantId,
         orderId,
-        method,
-        paymentMethod: method === "mobile" ? selectedMobileConfig?.code : "cash",
-        paymentProviderName: method === "mobile" ? selectedMobileConfig?.name : null,
-        paymentCode: mobilePaymentCode,
-        cashSessionId: activeCashSession.id,
-        amount: total,
-        staff: {
-          userId: user.uid,
-          staffId: staffSnapshot.staffId,
-          staffName: staffSnapshot.staffName,
+        command: "CONFIRM_ORDER_PAYMENT",
+        payload: {
+          expectedPaymentVersion: 1,
+          expectedAmount: Number(canonicalCreation?.total ?? total),
+          receivedAmount: method === "cash"
+            ? Math.max(cashReceivedAmount, Number(canonicalCreation?.total ?? total))
+            : Number(canonicalCreation?.total ?? total),
+          method: method === "cash" ? "cash" : "mobile_money",
+          provider: method === "mobile" ? selectedMobileConfig?.code ?? null : null,
+          externalReference: mobilePaymentCode,
+          cashSessionId: activeCashSession.id,
+          idempotencyKey: posCommandIdempotencyKey([
+            "pos-payment",
+            orderId,
+            1,
+            method,
+          ]),
         },
-        printedClient: true,
-      })
-      console.info("[DIRECT][PAYMENT_CONFIRMED]", {
+        })
+        console.info("[DIRECT][PAYMENT_CONFIRMED]", {
         restaurantId,
         orderId,
         requiresKitchen,
@@ -1118,10 +1124,7 @@ function POSPageContent() {
             status: item.status,
           })),
         stockEngineCalled: false,
-      })
-
-      if (posCanonicalMode !== "canonical") {
-        await updateActiveCashSessionTotals(method, total)
+        })
       }
 
       if (orderHasKitchenItems(recalculatedItems)) {
@@ -1149,7 +1152,9 @@ function POSPageContent() {
       setCashReceivedInput("")
       setSelectedPaymentMode(null)
       setSelectedMobileMethodCode(null)
-      toast({ title: "Vente validée", description: `Encaissement ${method.toUpperCase()} terminé.` })
+      toast(isDineInCreation
+        ? { title: "Commande envoyée", description: "La commande est transmise aux postes de préparation." }
+        : { title: "Vente validée", description: `Encaissement ${method?.toUpperCase()} terminé.` })
       
       if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate(100)
@@ -1222,25 +1227,23 @@ function POSPageContent() {
 
   const openCloseCashSessionDialog = () => {
     if (!activeCashSession?.id || processing) return
-    setDeclaredCashInput(String(sessionCalculatedTotals.totalCash))
-    setDeclaredMobileInput(String(sessionCalculatedTotals.totalMobile))
+    setDeclaredCashInput(String(Number(activeCashSession.openingBalance || 0) + sessionCalculatedTotals.totalCash))
+    setRetainedFloatInput(String(Number(activeCashSession.openingBalance || 0)))
     setCloseDialogOpen(true)
   }
 
   const closeMyCashSession = async () => {
-    if (!db || !restaurantId || !activeCashSession?.id || processing || closeSessionLockRef.current) return
+    if (!restaurantId || !user || !activeCashSession?.id || processing || closeSessionLockRef.current) return
 
     closeSessionLockRef.current = true
     setProcessing(true)
     try {
-      const ledger = new PaymentLedgerService(db)
-      await ledger.snapshotSessionClose({
+      await closeCashSessionV2({
         restaurantId,
         sessionId: activeCashSession.id,
-        closedBy: user?.uid || staffSnapshot.staffId || "cashier",
-        closingBalance: declaredCashAmount + declaredMobileAmount,
-        declaredCash: declaredCashAmount,
-        declaredMobileMoney: declaredMobileAmount,
+        user,
+        countedPhysicalCash: declaredCashAmount,
+        retainedFloat: retainedFloatAmount,
       })
 
       toast({
@@ -1263,7 +1266,7 @@ function POSPageContent() {
   const confirmCanonicalPayment = async (
     order: any,
     method: "cash" | "mobile",
-    receivedAmount = getOrderComputedTotal(order)
+    receivedAmount = getCanonicalPaymentAmount(order)
   ) => {
     if (!user || !activeCashSession?.id) {
       throw new Error("Une session de caisse ouverte est obligatoire.")
@@ -1271,7 +1274,11 @@ function POSPageContent() {
     const selectedMobileConfig = mobilePaymentMethods.find(
       (item: any) => item.code === selectedMobileMethodCode
     )
-    const expectedAmount = getOrderComputedTotal(order)
+    const expectedAmount = getCanonicalPaymentAmount(order)
+    const mobileMoneyProvider = getCanonicalMobileMoneyProvider(
+      order,
+      selectedMobileConfig?.code
+    )
     return executePosCommand({
       user,
       restaurantId: restaurantId ?? "",
@@ -1282,7 +1289,7 @@ function POSPageContent() {
         expectedAmount,
         receivedAmount,
         method: method === "cash" ? "cash" : "mobile_money",
-        provider: method === "mobile" ? selectedMobileConfig?.code ?? null : null,
+        provider: method === "mobile" ? mobileMoneyProvider : null,
         externalReference: null,
         cashSessionId: activeCashSession.id,
         idempotencyKey: posCommandIdempotencyKey([
@@ -1296,7 +1303,7 @@ function POSPageContent() {
   }
 
   const handleCollectOrder = async (order: any, method: "cash" | "mobile") => {
-    if (!db || !restaurantId || !user) return
+    if (!db || !restaurantId || !user || pendingOrderActionIdsRef.current.has(order.id)) return false
 
     if (!isOrderServed(order)) {
       toast({
@@ -1304,7 +1311,7 @@ function POSPageContent() {
         description: "Seules les commandes servies peuvent etre encaissees.",
         variant: "destructive",
       })
-      return
+      return false
     }
 
     if (!activeCashSession) {
@@ -1313,19 +1320,19 @@ function POSPageContent() {
         description: "Ouvrez une session de caisse avant d'encaisser.",
         variant: "destructive",
       })
-      return
+      return false
     }
 
-    setProcessing(true)
+    startOrderAction(order.id)
     try {
       if (posCanonicalMode === "canonical") {
         if (order.__legacyReadOnly) {
           throw new Error("Cette commande historique est en lecture seule.")
         }
         await confirmCanonicalPayment(order, method)
-        setCollectingOrderId(null)
+        await releaseOrderTableIfNeeded(db, restaurantId, order)
         toast({ title: "Commande encaissée" })
-        return
+        return true
       }
       let paymentCode: string | null = null
       let paymentMethod = "cash"
@@ -1356,7 +1363,24 @@ function POSPageContent() {
         }
       }
 
-      const beforeOrder = await processOrderPaymentTransaction({
+      if (method === "cash" || order.source === "pos") {
+        await confirmCanonicalPayment(order, method)
+        await releaseOrderTableIfNeeded(db, restaurantId, order)
+        queuePrint(
+          {
+            ...order,
+            paymentMethod,
+            paymentStatus: "paid",
+            createdAt: order.createdAt ?? new Date(),
+          },
+          "client",
+          { automatic: true }
+        )
+        toast({ title: "Commande encaissée" })
+        return true
+      }
+
+      await processOrderPaymentTransaction({
         db,
         restaurantId,
         orderId: order.id,
@@ -1374,35 +1398,21 @@ function POSPageContent() {
         printedClient: !order.printedClient,
       })
 
-      if (method === "cash" || order.source === "pos") {
-        await updateActiveCashSessionTotals(method, getOrderComputedTotal(order))
-        await releaseOrderTableIfNeeded(db, restaurantId, beforeOrder)
-        queuePrint(
-          {
-            ...order,
-            paymentMethod,
-            paymentStatus: "paid",
-            createdAt: order.createdAt ?? new Date(),
-          },
-          "client",
-          { automatic: true }
-        )
-      }
-
-      setCollectingOrderId(null)
       toast({
-        title: method === "cash" || order.source === "pos" ? "Commande encaissee" : "Paiement mobile genere",
+        title: "Paiement mobile genere",
         description: paymentCode ? `Code: ${paymentCode}` : undefined,
       })
+      return true
     } catch (error: any) {
       toast({ variant: "destructive", title: "Erreur", description: error.message || "Encaissement impossible." })
+      return false
     } finally {
-      setProcessing(false)
+      finishOrderAction(order.id)
     }
   }
 
   const markOrderPaid = async (order: any) => {
-    if (!db || !restaurantId || !user || processing) return
+    if (!db || !restaurantId || !user || pendingOrderActionIdsRef.current.has(order.id)) return
     const isMobilePayment = isMobileMoneyOrder(order)
     const isPendingMobilePayment = (order.paymentStatus === "pending_mobile" || order.paymentStatus === "pending") && isMobilePayment
     const canValidatePayment =
@@ -1429,49 +1439,10 @@ function POSPageContent() {
       return
     }
 
-    setProcessing(true)
+    startOrderAction(order.id)
     try {
-      if (posCanonicalMode === "canonical") {
-        if (order.__legacyReadOnly) {
-          throw new Error("Cette commande historique est en lecture seule.")
-        }
-        await confirmCanonicalPayment(order, isMobilePayment ? "mobile" : "cash")
-        toast({ title: isMobilePayment ? "Paiement mobile vérifié" : "Paiement espèces encaissé" })
-        return
-      }
-      const beforeOrder = isMobilePayment
-        ? await validateMobilePaymentTransaction({
-            db,
-            restaurantId,
-            orderId: order.id,
-            cashSessionId: activeCashSession?.id,
-            amount: getOrderComputedTotal(order),
-            staff: {
-              userId: user.uid,
-              staffId: staffSnapshot.staffId,
-              staffName: staffSnapshot.staffName,
-            },
-            printedClient: !order.printedClient,
-          })
-        : await processOrderPaymentTransaction({
-            db,
-            restaurantId,
-            orderId: order.id,
-            method: "cash",
-            paymentMethod: "cash",
-            cashSessionId: activeCashSession?.id,
-            amount: getOrderComputedTotal(order),
-            staff: {
-              userId: user.uid,
-              staffId: staffSnapshot.staffId,
-              staffName: staffSnapshot.staffName,
-            },
-            printedClient: !order.printedClient,
-          })
-
-      await releaseOrderTableIfNeeded(db, restaurantId, beforeOrder)
-      const totalMethod = isMobilePayment ? "mobile" : "cash"
-      await updateActiveCashSessionTotals(totalMethod, getOrderComputedTotal(order))
+      await confirmCanonicalPayment(order, isMobilePayment ? "mobile" : "cash")
+      await releaseOrderTableIfNeeded(db, restaurantId, order)
       queuePrint(
         {
           ...order,
@@ -1508,12 +1479,12 @@ function POSPageContent() {
         description: error.message || "La validation du paiement a echoue.",
       })
     } finally {
-      setProcessing(false)
+      finishOrderAction(order.id)
     }
   }
 
   const validateTableSessionPayment = async (session: any) => {
-    if (!db || !restaurantId || !user || processing) return
+    if (!db || !restaurantId || !user || pendingOrderActionIdsRef.current.has(session.id)) return
 
     if (!activeCashSession?.id) {
       toast({
@@ -1534,88 +1505,28 @@ function POSPageContent() {
       return
     }
 
-    setProcessing(true)
+    startOrderAction(session.id)
     setCollectingOrderId(session.id)
     try {
-      const ordersRef = collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS)
-      const [tableSessionOrdersSnap, legacySessionOrdersSnap] = await Promise.all([
-        getDocs(query(ordersRef, where("tableSessionId", "==", session.id))),
-        getDocs(query(ordersRef, where("sessionId", "==", session.id))),
-      ])
-      const orderDocs = new Map<string, (typeof tableSessionOrdersSnap.docs)[number]>()
-
-      tableSessionOrdersSnap.docs.forEach((orderDoc) => orderDocs.set(orderDoc.id, orderDoc))
-      legacySessionOrdersSnap.docs.forEach((orderDoc) => orderDocs.set(orderDoc.id, orderDoc))
-
-      const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TABLE_SESSIONS, session.id)
       const method = session.paymentRequest?.method === "mobile" ? "mobile" : "cash"
-      const paymentType = method === "mobile" ? "mobile_money" : "cash"
-      const paymentProvider = method === "mobile" ? normalizePaymentProvider(session.paymentRequest?.provider || "mobile_money") : null
-      const ledger = new PaymentLedgerService(db)
-
-      for (const orderDoc of Array.from(orderDocs.values())) {
-        const currentOrder = { id: orderDoc.id, ...orderDoc.data() } as any
-        const amount = getOrderComputedTotal(currentOrder)
-
-        if (posCanonicalMode === "canonical") {
-          await confirmCanonicalPayment(
-            currentOrder,
-            method,
-            amount
-          )
-        } else {
-          await ledger.createPayment({
+      const provider = method === "mobile"
+        ? String(session.paymentRequest?.provider || "").trim() || null
+        : null
+      await confirmTableSessionPayment({
+        user,
+        restaurantId,
+        tableSessionId: session.id,
+        cashSessionId: activeCashSession.id,
+        method: method === "mobile" ? "mobile_money" : "cash",
+        provider,
+        idempotencyKey: posCommandIdempotencyKey([
+          "table-session-payment",
           restaurantId,
-          orderId: orderDoc.id,
-          sessionId: activeCashSession.id,
-          cashierId: user.uid,
-          source: "qr_table",
-          type: paymentType,
-          provider: paymentProvider,
-          amount,
-          status: "confirmed",
-          idempotencyKey: buildPaymentIdempotencyKey([
-            "table-session-payment",
-            restaurantId,
-            session.id,
-            orderDoc.id,
-            paymentType,
-            paymentProvider,
-          ]),
-          orderUpdate: {
-            paymentStatus: "paid",
-            paymentMethod: paymentType,
-            paymentType,
-            paymentProvider,
-            cashSessionId: activeCashSession.id,
-            paidAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          },
-          })
-        }
-      }
-
-      const batch = writeBatch(db)
-      batch.update(sessionRef, {
-        "paymentRequest.status": "validated",
-        "paymentRequest.handledAt": serverTimestamp(),
-        "paymentRequest.handledBy": user.uid,
-        status: "closed",
-        closedAt: serverTimestamp(),
-        lastActivityAt: serverTimestamp(),
+          session.id,
+          method,
+          provider,
+        ]),
       })
-
-      if (session.tableId) {
-        const tableRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TABLES, session.tableId)
-        batch.update(tableRef, {
-          status: "free",
-          currentSessionId: null,
-          updatedAt: serverTimestamp(),
-          lastActivityAt: serverTimestamp(),
-        })
-      }
-
-      await batch.commit()
       toast({ title: "Paiement valide" })
     } catch (error: any) {
       console.error(error)
@@ -1625,13 +1536,13 @@ function POSPageContent() {
         description: error.message || "Validation impossible.",
       })
     } finally {
-      setProcessing(false)
+      finishOrderAction(session.id)
       setCollectingOrderId(null)
     }
   }
 
   const markOrderItemServed = async (order: any, orderItemId: string) => {
-    if (!db || !restaurantId || !user || processing) return
+    if (!db || !restaurantId || !user || pendingOrderActionIdsRef.current.has(order.id)) return
     const selectedItem = (order.items ?? []).find(
       (item: any, index: number) =>
         String(item.id ?? item.orderItemId ?? `${item.productId ?? "item"}-${index}`) === orderItemId
@@ -1653,7 +1564,7 @@ function POSPageContent() {
       quantity: selectedItem?.quantity,
       currentServedQuantity: selectedItem?.servedQuantity ?? 0,
     })
-    setProcessing(true)
+    startOrderAction(order.id)
     try {
       if (posCanonicalMode === "canonical") {
         const activeQuantity =
@@ -1756,7 +1667,85 @@ function POSPageContent() {
         description: error?.message || "La ligne n’a pas pu être marquée comme servie.",
       })
     } finally {
-      setProcessing(false)
+      finishOrderAction(order.id)
+    }
+  }
+
+  const handOffOrderItems = async (order: any) => {
+    if (!restaurantId || !user || !activeCashSession?.id || pendingOrderActionIdsRef.current.has(order.id)) return
+    const activeItems = (order.items ?? []).filter(
+      (item: any) => !isServedOrderItem(item) && item.status !== "cancelled"
+    )
+    startOrderAction(order.id)
+    try {
+      await executePosCommand({
+        user,
+        restaurantId,
+        orderId: order.id,
+        command: "HAND_OFF_ORDER_ITEMS",
+        payload: {
+          expectedItems: activeItems.map((item: any, index: number) => ({
+            orderItemId: String(
+              item.id ?? item.orderItemId ?? `${item.productId ?? "item"}-${index}`
+            ),
+            expectedVersion: Number(item.version ?? 1),
+          })),
+          cashSessionId: activeCashSession.id,
+          idempotencyKey: posCommandIdempotencyKey([
+            "pos-hand-off",
+            order.id,
+            ...activeItems.flatMap((item: any) => [item.id ?? item.orderItemId, item.version ?? 1]),
+          ]),
+        },
+      })
+      toast({
+        title: normalizeOrderType(order.orderType || order.serviceMode || order.type) === "delivery"
+          ? "Commande remise au livreur"
+          : "Commande remise au client",
+      })
+      setSelectedOrderDetailId((currentOrderId) =>
+        currentOrderId === order.id ? null : currentOrderId
+      )
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Remise impossible",
+        description: error?.message || "La commande n’a pas pu être remise.",
+      })
+    } finally {
+      finishOrderAction(order.id)
+    }
+  }
+
+  const serveAllOrderItems = async (order: any) => {
+    if (!restaurantId || !user || pendingOrderActionIdsRef.current.has(order.id)) return
+    const activeItems = (order.items ?? []).filter(
+      (item: any) => !isServedOrderItem(item) && item.status !== "cancelled"
+    )
+    startOrderAction(order.id)
+    try {
+      await executePosCommand({
+        user,
+        restaurantId,
+        orderId: order.id,
+        command: "SERVE_ORDER_ITEMS",
+        payload: {
+          expectedItems: activeItems.map((item: any, index: number) => ({
+            orderItemId: String(item.id ?? item.orderItemId ?? `${item.productId ?? "item"}-${index}`),
+            expectedVersion: Number(item.version ?? 1),
+          })),
+          idempotencyKey: posCommandIdempotencyKey([
+            "pos-serve-all", order.id,
+            ...activeItems.flatMap((item: any) => [item.id ?? item.orderItemId, item.version ?? 1]),
+          ]),
+        },
+      })
+      toast({ title: "Commande entièrement servie" })
+      setSelectedOrderDetailId((currentOrderId) => currentOrderId === order.id ? null : currentOrderId)
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Service impossible", description: error?.message || "La commande n’a pas pu être servie." })
+    } finally {
+      finishOrderAction(order.id)
     }
   }
 
@@ -1838,16 +1827,61 @@ function POSPageContent() {
   const openPaymentDialog = () => {
     if (processing || cart.length === 0) return
     setPaymentFlowError(null)
-    setPaymentFlowSuccess(false)
+    setMobileCartOpen(false)
     setPaymentDialogOpen(true)
+  }
+
+  const openOrderPaymentDialog = (order: any) => {
+    if (processing || !order?.id) return
+    setCollectingOrderId(order.id)
+    setSelectedPaymentMode(null)
+    setSelectedMobileMethodCode(null)
+    setCashReceivedInput("")
+    setPaymentFlowError(null)
+    setPaymentDialogOpen(true)
+  }
+
+  const handleCartCheckout = async () => {
+    if (orderType === "dine-in") {
+      const succeeded = await handleCheckout()
+      if (succeeded) setMobileCartOpen(false)
+      return
+    }
+    openPaymentDialog()
   }
 
   const submitPayment = async () => {
     if (processing) return
     setPaymentFlowError(null)
+    if (collectingOrder) {
+      if (!selectedPaymentMode) {
+        setPaymentFlowError("Sélectionnez Espèces ou Mobile Money.")
+        return
+      }
+      const amountDue = getCanonicalPaymentAmount(collectingOrder)
+      if (selectedPaymentMode === "cash" && cashReceivedAmount < amountDue) {
+        setPaymentFlowError("Le montant reçu doit couvrir le total à payer.")
+        return
+      }
+      if (selectedPaymentMode === "mobile" && !selectedMobileMethodCode) {
+        setPaymentFlowError("Sélectionnez le moyen Mobile Money utilisé.")
+        return
+      }
+      const succeeded = await handleCollectOrder(collectingOrder, selectedPaymentMode)
+      if (succeeded) {
+        setPaymentDialogOpen(false)
+        setCollectingOrderId(null)
+        setSelectedOrderDetailId((currentOrderId) =>
+          currentOrderId === collectingOrder.id ? null : currentOrderId
+        )
+      } else {
+        setPaymentFlowError("Impossible de confirmer cet encaissement.")
+      }
+      return
+    }
     const succeeded = await handleCheckoutSelectedPayment()
     if (succeeded) {
-      setPaymentFlowSuccess(true)
+      setPaymentDialogOpen(false)
     } else {
       setPaymentFlowError("Impossible de finaliser la transaction. Vérifiez les informations puis réessayez.")
     }
@@ -1878,7 +1912,7 @@ function POSPageContent() {
       restaurantName={restaurant?.name}
       restaurantLogoUrl={restaurant?.logoUrl}
       activeTab={activeTab}
-      unpaidServedCount={unpaidServedCount}
+      readyOrderCount={readyOrderCount}
       isCashSessionOpen={Boolean(activeCashSession)}
       totalAmount={sessionPaidTotal}
       userName={staffSnapshot.staffName}
@@ -1890,15 +1924,15 @@ function POSPageContent() {
       center={
         activeTab === "cashier" && activeCashSession ? (
           <PosCatalog
-            className="h-[calc(100%-5.5rem)] md:h-full lg:h-auto lg:self-start lg:overflow-visible"
-            contentClassName="lg:h-auto lg:flex-none lg:overflow-y-visible lg:overscroll-auto lg:p-2.5"
+            className="h-full rounded-none border-x-0 border-b-0 md:rounded-[var(--radius-dashboard-widget)] md:border lg:h-auto lg:self-start lg:overflow-visible"
+            contentClassName="pb-24 md:pb-3 lg:h-auto lg:flex-none lg:overflow-y-visible lg:overscroll-auto lg:p-2.5"
             categories={<CategorySidebar categories={safeCategories} selectedCategoryId={selectedCategoryId} onSelectCategory={setSelectedCategoryId} />}
             footer={totalPages > 1 ? (
               <div className="flex items-center justify-center gap-2 bg-[var(--pos-catalog)] sm:gap-3">
                 <Button variant="outline" size="sm" className="min-h-11 gap-1 rounded-full px-3 text-xs font-black" disabled={safeCurrentPage === 0} onClick={() => setCurrentPage((page) => page - 1)}>
                   <ChevronLeft className="h-4 w-4" />Préc.
                 </Button>
-                <span className="min-w-20 text-center text-xs font-black text-muted-foreground sm:min-w-24">Page {safeCurrentPage + 1} / {totalPages}</span>
+                <span className="min-w-24 text-center text-xs font-black text-muted-foreground sm:min-w-32">Page {safeCurrentPage + 1} / {totalPages}<span className="block font-medium">{filteredProducts.length} produits accessibles</span></span>
                 <Button variant="outline" size="sm" className="min-h-11 gap-1 rounded-full px-3 text-xs font-black" disabled={safeCurrentPage === totalPages - 1} onClick={() => setCurrentPage((page) => page + 1)}>
                   Suiv.<ChevronRight className="h-4 w-4" />
                 </Button>
@@ -1907,6 +1941,7 @@ function POSPageContent() {
           >
 
             <div className="min-h-0">
+              <PosSearchField className="mb-2 md:hidden" label="Rechercher un produit" placeholder="Nom ou référence" value={productSearch} onChange={setProductSearch} onClear={() => setProductSearch("")} resultCount={filteredProducts.length} />
               <ProductGrid
                 products={paginatedProducts}
                 categories={safeCategories}
@@ -1970,7 +2005,7 @@ function POSPageContent() {
             }}
             onHold={handleHoldCart}
             onDiscount={handleApplyDiscount}
-            onCheckout={openPaymentDialog}
+            onCheckout={handleCartCheckout}
           /></div>
           <div aria-label="Résumé de session" className="grid shrink-0 grid-cols-3 gap-2">
             <POSFooterCard icon={<Clock3 />} label="Début" value={formatSessionDateTime(activeCashSession.openedAt)} />
@@ -2004,7 +2039,7 @@ function POSPageContent() {
               onStatusChange={setMobileOrderStatus}
               onSelectOrder={setSelectedOrderDetailId}
             />
-            <div className="hidden h-full min-h-0 grid-cols-1 gap-5 overflow-y-auto p-4 md:grid xl:grid-cols-5 xl:overflow-hidden">
+            <div className="hidden h-full min-h-0 grid-cols-1 gap-5 overflow-y-auto p-4 xl:grid xl:grid-cols-5 xl:overflow-hidden">
               {posColumns.map((column) => {
                 const columnOrders = posOrders[column.id] ?? []
                 const isServedColumn = column.id === ORDER_OPERATION_STATUS.SERVED
@@ -2163,7 +2198,7 @@ function POSPageContent() {
                               ) : null}
                               <Button
                                 className="mt-2 h-9 w-full rounded-full bg-primary text-[10px] font-black hover:bg-primary/90"
-                                disabled={processing || !canVerifyPayment || !paymentSession}
+                                disabled={pendingOrderActionIds.has(group.id) || !canVerifyPayment || !paymentSession}
                                 onClick={(event) => {
                                   event.stopPropagation()
                                   if (paymentSession) validateTableSessionPayment(paymentSession)
@@ -2186,14 +2221,22 @@ function POSPageContent() {
                         const isMobilePayment = isMobileMoneyOrder(order) || paymentSession?.paymentRequest?.method === "mobile"
                         const mobilePaymentNeedsProof = isMobilePayment && !paymentProofSms
                         const isPendingMobilePayment = (order.paymentStatus === "pending_mobile" || order.paymentStatus === "pending") && isMobilePayment
+                        const normalizedType = normalizeOrderType(order.orderType || order.type)
+                        const currentOrderStatus = getPOSOperationStatus(order)
+                        const isPosDineInOrder = order.source === "pos" && normalizedType === "dine_in"
+                        const isPaymentStageAllowed =
+                          !isPosDineInOrder || currentOrderStatus === ORDER_OPERATION_STATUS.SERVED
                         const isPaymentVisible =
+                          isPaymentStageAllowed && (
                           (order.__canonicalPos && order.paymentStatus === "unpaid") ||
                           hasSessionPaymentRequest ||
                           order.paymentStatus === "pending_verification" ||
                           isPendingMobilePayment ||
                           order.paymentStatus === "pending_cash" ||
                           isPaid
+                          )
                         const canVerifyPayment =
+                          isPaymentStageAllowed &&
                           !mobilePaymentNeedsProof &&
                           (
                             (order.__canonicalPos && order.paymentStatus === "unpaid") ||
@@ -2215,8 +2258,6 @@ function POSPageContent() {
                             : isPaid
                               ? "paye"
                               : "non initie"
-                        const normalizedType = normalizeOrderType(order.orderType || order.type)
-                        const currentOrderStatus = getPOSOperationStatus(order)
                         const tableLabel = formatTableDisplayName({
                           name: tables.find((table) => table.id === order.tableId)?.name || order.tableNumber || order.table,
                           id: order.tableId,
@@ -2224,15 +2265,8 @@ function POSPageContent() {
                         const orderItems = Array.isArray(order.items) ? order.items : []
                         const previewItems = orderItems.slice(0, 3)
                         const hiddenItemsCount = Math.max(0, orderItems.length - previewItems.length)
-                        const oneLineProducts = previewItems
-                          .map((item: any) => `${item.quantity}x ${item.name || item.nameSnapshot}`)
-                          .join(" · ")
-
                         const orderMetaLabel = getPOSOrderMetaLabel(normalizedType, tableLabel)
                         const orderDateLabel = formatPOSOrderDateTime(order.createdAt)
-                        const productLines = previewItems.map(
-                          (item: any) => `${Number(item.quantity ?? 1)}x ${item.name || item.nameSnapshot || "Article"}`
-                        )
 
                         return (
                           <div
@@ -2268,23 +2302,30 @@ function POSPageContent() {
                               </p>
                             </div>
 
-                            {isCompletedColumn ? (
-                              <div className="mt-3 space-y-1 text-xs font-semibold leading-4 text-foreground">
-                                {productLines.length > 0 ? (
-                                  productLines.map((line: string) => (
-                                    <p key={line} className="line-clamp-1">
-                                      {line}
+                            <div className="mt-3 space-y-1.5">
+                              {previewItems.length > 0 ? previewItems.map((item: any, itemIndex: number) => {
+                                const itemName = item.name || item.nameSnapshot || "Article"
+                                return (
+                                  <div key={item.id || item.orderItemId || `${item.productId}-${itemIndex}`} className="flex min-w-0 items-center gap-2">
+                                    <div className="size-8 shrink-0 overflow-hidden rounded-md bg-muted">
+                                      {item.imageUrl ? (
+                                        <img
+                                          src={getOptimizedImage(item.imageUrl, 64)}
+                                          alt={itemName}
+                                          loading="lazy"
+                                          className="size-full object-cover"
+                                        />
+                                      ) : (
+                                        <Utensils aria-hidden="true" className="m-2 size-4 text-muted-foreground" />
+                                      )}
+                                    </div>
+                                    <p className={cn("min-w-0 flex-1 line-clamp-1 font-semibold", isCompletedColumn ? "text-xs text-foreground" : "text-[11px] text-muted-foreground")}>
+                                      {Number(item.quantity ?? 1)}x {itemName}
                                     </p>
-                                  ))
-                                ) : (
-                                  <p className="text-muted-foreground">Aucun produit</p>
-                                )}
-                              </div>
-                            ) : (
-                              <p className="mt-3 line-clamp-2 text-[11px] font-semibold leading-4 text-muted-foreground">
-                                {oneLineProducts || "Aucun produit"}
-                              </p>
-                            )}
+                                  </div>
+                                )
+                              }) : <p className="text-xs text-muted-foreground">Aucun produit</p>}
+                            </div>
                             <div className="mt-3 flex items-center justify-between gap-2">
                               <span className="text-[9px] font-bold text-muted-foreground">
                                 {hiddenItemsCount > 0 ? `+ ${hiddenItemsCount} article(s)` : `${orderItems.length} article(s)`}
@@ -2347,10 +2388,14 @@ function POSPageContent() {
                                 {isPaymentVisible ? (
                                   <Button
                                     className="mt-2 h-8 w-full rounded-full bg-primary text-[9px] font-black hover:bg-primary/90"
-                                    disabled={processing || !canVerifyPayment}
+                                    disabled={pendingOrderActionIds.has(order.id) || !canVerifyPayment}
                                     onClick={(event) => {
                                       event.stopPropagation()
-                                      paymentSession ? validateTableSessionPayment(paymentSession) : markOrderPaid(order)
+                                      isPosDineInOrder
+                                        ? openOrderPaymentDialog(order)
+                                        : paymentSession
+                                          ? validateTableSessionPayment(paymentSession)
+                                          : markOrderPaid(order)
                                     }}
                                   >
                                     {isMobilePayment ? "Valider paiement" : "Encaisser (cash)"}
@@ -2422,7 +2467,7 @@ function POSPageContent() {
           title="Ticket en cours"
           description={`${cart.length} article${cart.length > 1 ? "s" : ""} · ${total.toLocaleString("fr-FR")} FCFA`}
           closeLabel="Fermer le ticket"
-          className="max-h-[92dvh] w-full max-w-none md:hidden"
+          className="h-[100dvh] max-h-[100dvh] w-full max-w-none rounded-none border-0 md:hidden"
           contentClassName="overflow-hidden p-0"
         >
           <CartPanel
@@ -2466,7 +2511,7 @@ function POSPageContent() {
             }}
             onHold={handleHoldCart}
             onDiscount={handleApplyDiscount}
-            onCheckout={openPaymentDialog}
+            onCheckout={handleCartCheckout}
           />
         </PublicSheet>
       </>
@@ -2477,11 +2522,11 @@ function POSPageContent() {
       onOpenChange={(open) => {
         setPaymentDialogOpen(open)
         if (!open) {
+          setCollectingOrderId(null)
           setPaymentFlowError(null)
-          setPaymentFlowSuccess(false)
         }
       }}
-      total={total}
+      total={collectingOrder ? getCanonicalPaymentAmount(collectingOrder) : total}
       paymentMode={selectedPaymentMode}
       onPaymentModeChange={handlePaymentModeChange}
       mobilePaymentMethods={mobilePaymentMethods}
@@ -2490,17 +2535,19 @@ function POSPageContent() {
       cashReceivedInput={cashReceivedInput}
       cashReceivedAmount={cashReceivedAmount}
       onCashReceivedChange={setCashReceivedInput}
-      processing={processing}
-      success={paymentFlowSuccess}
+      processing={Boolean(
+        processing ||
+        (collectingOrder && pendingOrderActionIds.has(collectingOrder.id))
+      )}
       error={paymentFlowError}
       canSubmit={
         Boolean(activeCashSession) &&
-        cart.length > 0 &&
+        Boolean(collectingOrder || cart.length > 0) &&
         Boolean(selectedPaymentMode) &&
         !(selectedPaymentMode === "cash" && cashReceivedInput.trim().length === 0) &&
-        !(selectedPaymentMode === "cash" && cashReceivedAmount < total) &&
+        !(selectedPaymentMode === "cash" && cashReceivedAmount < (collectingOrder ? getCanonicalPaymentAmount(collectingOrder) : total)) &&
         !(selectedPaymentMode === "mobile" && !selectedMobileMethodCode) &&
-        !(orderType === "dine-in" && !tableNumber)
+        Boolean(collectingOrder || orderType !== "dine-in" || tableNumber)
       }
       onSubmit={submitPayment}
     />
@@ -2511,13 +2558,22 @@ function POSPageContent() {
       paymentMethods={mobilePaymentMethods}
       tables={tables}
       tableLabelPrefix={tableLabelPrefix}
-      processing={processing}
+      processing={Boolean(
+        selectedOrderDetail && pendingOrderActionIds.has(selectedOrderDetail.id)
+      )}
       onClose={() => setSelectedOrderDetailId(null)}
       onPrint={() => {
         if (selectedOrderDetail) queuePrint(selectedOrderDetail, "client")
       }}
       onValidatePayment={() => {
         if (!selectedOrderDetail) return
+        const isPosDineInOrder =
+          selectedOrderDetail.source === "pos" &&
+          normalizeOrderType(selectedOrderDetail.orderType || selectedOrderDetail.type) === "dine_in"
+        if (isPosDineInOrder) {
+          openOrderPaymentDialog(selectedOrderDetail)
+          return
+        }
         selectedOrderPaymentSession
           ? validateTableSessionPayment(selectedOrderPaymentSession)
           : markOrderPaid(selectedOrderDetail)
@@ -2525,9 +2581,15 @@ function POSPageContent() {
       onServeItem={(orderItemId) => {
         if (selectedOrderDetail) markOrderItemServed(selectedOrderDetail, orderItemId)
       }}
+      onServeAll={() => {
+        if (selectedOrderDetail) serveAllOrderItems(selectedOrderDetail)
+      }}
+      onHandOff={() => {
+        if (selectedOrderDetail) handOffOrderItems(selectedOrderDetail)
+      }}
     />
 
-    <PosSessionClosingDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} title="Clôture de caisse" description="Vérifiez le résumé système, saisissez les montants comptés, puis confirmez la fermeture." summary={<div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><CloseAmount label="Espèces attendues" value={closeSessionDiff.systemCash}/><CloseAmount label="Mobile Money" value={closeSessionDiff.systemMobile}/><CloseAmount label="Total session" value={closeSessionDiff.systemTotal} strong/></div>} expectedCash={<div><Label htmlFor="declared-cash">Espèces comptées</Label><Input autoFocus id="declared-cash" inputMode="numeric" type="number" min={0} value={declaredCashInput} onChange={(event) => setDeclaredCashInput(event.target.value)} className="mt-1 min-h-12 text-right text-xl font-bold tabular-nums" aria-invalid={closeSessionDiff.cash !== 0}/></div>} declaredCash={<div><Label htmlFor="declared-mobile">Mobile Money compté</Label><Input id="declared-mobile" inputMode="numeric" type="number" min={0} value={declaredMobileInput} onChange={(event) => setDeclaredMobileInput(event.target.value)} className="mt-1 min-h-12 text-right text-xl font-bold tabular-nums" aria-invalid={closeSessionDiff.mobile !== 0}/></div>} variance={<div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><VarianceCard label="Écart espèces" expected={closeSessionDiff.systemCash} received={declaredCashAmount} variance={closeSessionDiff.cash}/><VarianceCard label="Écart Mobile Money" expected={closeSessionDiff.systemMobile} received={declaredMobileAmount} variance={closeSessionDiff.mobile}/><VarianceCard label="Écart total" expected={closeSessionDiff.systemTotal} received={closeSessionDiff.declaredTotal} variance={closeSessionDiff.total}/></div>} footer={<><Button variant="outline" className="min-h-12" disabled={processing} onClick={() => setCloseDialogOpen(false)}>Annuler</Button><Button className="min-h-12" disabled={processing} onClick={closeMyCashSession}>{processing ? <Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none"/> : null}Confirmer clôture</Button></>} />
+    <PosSessionClosingDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} title="Clôture de caisse" description="Comptez uniquement les espèces physiques. Le Mobile Money est issu du registre des paiements." summary={<div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><CloseAmount label="Fond initial" value={closeSessionDiff.openingBalance}/><CloseAmount label="Espèces attendues (fond inclus)" value={closeSessionDiff.systemCash}/><CloseAmount label="Mobile Money enregistré" value={closeSessionDiff.systemMobile}/><CloseAmount label="Total théorique" value={closeSessionDiff.systemTotal} strong/></div>} expectedCash={<div><Label htmlFor="declared-cash">Espèces physiques comptées</Label><Input autoFocus id="declared-cash" inputMode="numeric" type="number" min={0} value={declaredCashInput} onChange={(event) => setDeclaredCashInput(event.target.value)} className="mt-1 min-h-12 text-right text-xl font-bold tabular-nums" aria-invalid={closeSessionDiff.cash !== 0}/></div>} declaredCash={<div><Label htmlFor="retained-float">Fond conservé en caisse</Label><Input id="retained-float" inputMode="numeric" type="number" min={0} value={retainedFloatInput} onChange={(event) => setRetainedFloatInput(event.target.value)} className="mt-1 min-h-12 text-right text-xl font-bold tabular-nums"/></div>} variance={<div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><VarianceCard label="Écart espèces" expected={closeSessionDiff.systemCash} received={declaredCashAmount} variance={closeSessionDiff.cash}/><CloseAmount label="Versement attendu" value={closeSessionDiff.expectedHandover} strong/></div>} footer={<><Button variant="outline" className="min-h-12" disabled={processing} onClick={() => setCloseDialogOpen(false)}>Annuler</Button><Button className="min-h-12" disabled={processing || retainedFloatAmount > declaredCashAmount} onClick={closeMyCashSession}>{processing ? <Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none"/> : null}Confirmer clôture</Button></>} />
     </>
   )
 }
@@ -2592,9 +2654,9 @@ function POSMobileOrders({
   const activeUi = getPOSColumnUi(activeStatus)
 
   return (
-    <section aria-label="Commandes du point de vente" className="flex h-full min-h-0 flex-col md:hidden">
+    <section aria-label="Commandes du point de vente" className="flex h-full min-h-0 flex-col xl:hidden">
       <div className="shrink-0 border-b border-[var(--pos-divider)] bg-[var(--pos-canvas)] px-3 pb-2 pt-1">
-        <div role="tablist" aria-label="Statut des commandes" className="flex gap-2 overflow-x-auto pb-1">
+        <div role="tablist" aria-label="Statut des commandes" className="grid grid-cols-2 gap-2 md:grid-cols-4">
           {columns.map((column) => {
             const selected = activeStatus === column.id
             const count = ordersByStatus[column.id]?.length ?? 0
@@ -2610,13 +2672,13 @@ function POSMobileOrders({
                 aria-controls="pos-mobile-orders-panel"
                 onClick={() => onStatusChange(column.id)}
                 className={cn(
-                  "dashboard-focus-visible flex min-h-11 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-semibold",
+                  "dashboard-focus-visible flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold",
                   selected
                     ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-[var(--action-primary-fg)]"
                     : "border-[var(--pos-border)] bg-[var(--pos-panel)] text-[var(--dashboard-title)]"
                 )}
               >
-                <span>{label}</span>
+                <span className="whitespace-normal leading-tight">{label}</span>
                 <span
                   aria-label={`${count} commande${count > 1 ? "s" : ""}`}
                   className={cn(
@@ -2719,6 +2781,8 @@ function CashierOrderDetailDialog({
   onPrint,
   onValidatePayment,
   onServeItem,
+  onServeAll,
+  onHandOff,
 }: {
   order: any | null
   paymentSession: any | null
@@ -2730,6 +2794,8 @@ function CashierOrderDetailDialog({
   onPrint: () => void
   onValidatePayment: () => void
   onServeItem: (orderItemId: string) => void
+  onServeAll: () => void
+  onHandOff: () => void
 }) {
   if (!order) return null
 
@@ -2738,12 +2804,24 @@ function CashierOrderDetailDialog({
   const normalizedType = normalizeOrderType(order.orderType || order.type)
   const paymentRequestStatus = paymentSession?.paymentRequest?.status
   const isPaid = isOrderPaid(order) || paymentRequestStatus === "validated"
+  const requiresGroupedHandOff = ["delivery", "takeaway", "pickup"].includes(normalizedType)
+  const activeItems = items.filter((item: any) => !isServedOrderItem(item) && item.status !== "cancelled")
+  const allPreparedItemsReady = activeItems.every((item: any) => {
+    const mode = getEffectivePreparationMode(item)
+    return mode === "direct" || item.status === "ready"
+  })
+  const canHandOff = requiresGroupedHandOff && isPaid && activeItems.length > 0 && allPreparedItemsReady
+  const canServeAll = normalizedType === "dine_in" && activeItems.length > 0 && activeItems.every(canServePosOrderItem)
   const isMobilePayment = isMobileMoneyOrder(order) || paymentSession?.paymentRequest?.method === "mobile"
   const paymentProofSms = getPaymentProofSms(paymentSession, [order])
   const paymentProofSubmittedAt = getPaymentProofSubmittedAt(paymentSession, [order])
   const paymentMethodLabel = getConfiguredPaymentMethodLabel(order, paymentSession, paymentMethods)
   const mobilePaymentNeedsProof = isMobilePayment && !paymentProofSms
+  const isPosDineInOrder = order.source === "pos" && normalizedType === "dine_in"
+  const isPaymentStageAllowed =
+    !isPosDineInOrder || getPOSOperationStatus(order) === ORDER_OPERATION_STATUS.SERVED
   const canValidatePayment =
+    isPaymentStageAllowed &&
     !isPaid &&
     !mobilePaymentNeedsProof &&
     (
@@ -2766,8 +2844,8 @@ function CashierOrderDetailDialog({
     <Dialog open={Boolean(order)} onOpenChange={(open) => {
       if (!open) onClose()
     }}>
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-hidden p-0">
-        <DialogHeader className="border-b px-5 py-4">
+      <DialogContent className="max-h-[82vh] max-w-2xl overflow-hidden p-0">
+        <DialogHeader className="border-b px-4 py-3">
           <div className="flex items-start justify-between gap-4">
             <div>
               <DialogTitle>{getOrderDisplayId(order)}</DialogTitle>
@@ -2787,7 +2865,7 @@ function CashierOrderDetailDialog({
           </div>
         </DialogHeader>
 
-        <div className="max-h-[64vh] overflow-y-auto px-5 py-4">
+        <div className="max-h-[55vh] overflow-y-auto px-4 py-3">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <DetailMeta label="Type" value={getCashierOrderTypeLabel(order)} />
             <DetailMeta label="Paiement" value={formatCashierPaymentStatus(order, paymentSession)} />
@@ -2799,6 +2877,15 @@ function CashierOrderDetailDialog({
             <div className="mt-3 rounded-lg border bg-muted/30 p-3 text-sm">
               {phone ? <p><span className="font-black">Téléphone:</span> {phone}</p> : null}
               {deliveryAddress ? <p className="mt-1"><span className="font-black">Adresse:</span> {deliveryAddress}</p> : null}
+            </div>
+          ) : null}
+
+          {order.notes || order.customerNote || order.customerNotes ? (
+            <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+              <p className="font-black">Observation client</p>
+              <p className="mt-1 whitespace-pre-wrap break-words font-semibold">
+                {order.notes || order.customerNote || order.customerNotes}
+              </p>
             </div>
           ) : null}
 
@@ -2817,7 +2904,7 @@ function CashierOrderDetailDialog({
             </div>
           ) : null}
 
-          <div className="mt-5 space-y-5">
+          <div className="mt-4 space-y-4">
             {groupedItems.map((group) => (
               <section key={group.mode} className="space-y-2">
                 <div className="flex items-center justify-between border-b pb-2">
@@ -2836,10 +2923,22 @@ function CashierOrderDetailDialog({
                     const served = isServedOrderItem(item)
                     return (
                       <div key={item.id || `${item.productId}-${index}`} className="rounded-lg border bg-card p-3">
-                        <div className="grid grid-cols-[auto_1fr_auto] gap-3">
+                        <div className="grid grid-cols-[auto_auto_1fr_auto] gap-3">
                           <span className="flex h-8 min-w-8 items-center justify-center rounded-md bg-primary/10 px-2 text-sm font-black text-primary">
                             {quantity}x
                           </span>
+                          <div className="size-10 overflow-hidden rounded-md bg-muted">
+                            {item.imageUrl ? (
+                              <img
+                                src={getOptimizedImage(item.imageUrl, 80)}
+                                alt={item.name || item.nameSnapshot || "Article"}
+                                loading="lazy"
+                                className="size-full object-cover"
+                              />
+                            ) : (
+                              <Utensils aria-hidden="true" className="m-3 size-4 text-muted-foreground" />
+                            )}
+                          </div>
                           <div className="min-w-0">
                             <p className="break-words text-sm font-black">
                               {item.name || item.nameSnapshot || "Article"}
@@ -2854,6 +2953,12 @@ function CashierOrderDetailDialog({
                                 ))}
                               </ul>
                             ) : null}
+                            {item.instructions || item.note || item.notes ? (
+                              <p className="mt-2 break-words rounded-md bg-amber-50 px-2 py-1.5 text-xs font-semibold text-amber-900">
+                                <span className="font-black">Instruction : </span>
+                                {item.instructions || item.note || item.notes}
+                              </p>
+                            ) : null}
                           </div>
                           <div className="text-right">
                             <p className="text-xs font-bold text-muted-foreground">
@@ -2864,7 +2969,7 @@ function CashierOrderDetailDialog({
                             </p>
                           </div>
                         </div>
-                        {canServePosOrderItem(item) || served ? (
+                        {!requiresGroupedHandOff && (canServePosOrderItem(item) || served) ? (
                           <div className="mt-3 flex justify-end border-t pt-3">
                             <Button
                               type="button"
@@ -2883,12 +2988,44 @@ function CashierOrderDetailDialog({
               </section>
             ))}
           </div>
+          {requiresGroupedHandOff ? (
+            <div className="mt-5 rounded-lg border bg-muted/30 p-4">
+              {!isPaid ? (
+                <p className="text-sm font-black text-amber-700">
+                  En attente de validation du paiement
+                </p>
+              ) : !allPreparedItemsReady ? (
+                <p className="text-sm font-black text-amber-700">
+                  En attente de la fin des préparations Cuisine et Bar
+                </p>
+              ) : (
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={processing || !canHandOff}
+                  onClick={onHandOff}
+                >
+                  {normalizedType === "delivery"
+                    ? "Tout remettre au livreur"
+                    : "Tout remettre au client"}
+                </Button>
+              )}
+            </div>
+          ) : null}
+          {normalizedType === "dine_in" && activeItems.length > 0 ? (
+            <div className="mt-4 rounded-lg border bg-muted/30 p-3">
+              <Button type="button" className="w-full" disabled={processing || !canServeAll} onClick={onServeAll}>
+                Tout marquer comme servi
+              </Button>
+              {!canServeAll ? <p className="mt-2 text-xs font-semibold text-muted-foreground">Toutes les préparations doivent être prêtes.</p> : null}
+            </div>
+          ) : null}
         </div>
 
-        <DialogFooter className="border-t px-5 py-4">
+        <DialogFooter className="border-t px-4 py-3">
           <Button variant="outline" onClick={onClose}>Fermer</Button>
           <Button variant="outline" onClick={onPrint}>Réimprimer ticket</Button>
-          {!isPaid ? (
+          {!isPaid && isPaymentStageAllowed ? (
             <Button disabled={processing || !canValidatePayment} onClick={onValidatePayment}>
               {isMobilePayment ? "Valider paiement" : "Encaisser"}
             </Button>
@@ -3113,12 +3250,20 @@ function calculateSessionTotals(orders: any[], sessionId: string) {
 }
 
 function isMobileMoneyOrder(order: any) {
+  const paymentMethod = String(order.paymentMethod || "").toLowerCase()
+  const paymentType = String(order.paymentType || "").toLowerCase()
+  const paymentMethodCode = String(order.paymentMethodCode || "").toLowerCase()
+  const paymentProvider = String(order.paymentProvider || order.paymentRequest?.provider || "").toLowerCase()
   return (
-    order.paymentMethod === "mobile_money" ||
-    order.paymentType === "mobile" ||
-    order.paymentType === "mobile_money" ||
+    order.paymentRequest?.method === "mobile" ||
+    paymentMethod === "mobile" ||
+    paymentMethod === "mobile_money" ||
+    paymentType === "mobile" ||
+    paymentType === "mobile_money" ||
+    Boolean(paymentMethodCode && paymentMethodCode !== "cash") ||
+    Boolean(paymentProvider && paymentProvider !== "cash") ||
     order.paymentIntentStatus === "submitted" ||
-    Boolean(order.paymentMethod && order.paymentMethod !== "cash")
+    Boolean(paymentMethod && paymentMethod !== "cash")
   )
 }
 
@@ -3263,9 +3408,10 @@ function usePOSProductsPerPage() {
         setProductsPerPage(10)
       } else if (width >= 1024) {
         setProductsPerPage(8)
+      } else if (width >= 768) {
+        setProductsPerPage(3 * POS_PRODUCT_ROWS_PER_PAGE)
       } else {
-        const columns = width >= 768 ? 3 : 2
-        setProductsPerPage(columns * POS_PRODUCT_ROWS_PER_PAGE)
+        setProductsPerPage(10)
       }
     }
 
@@ -3315,22 +3461,6 @@ function getPOSOperationStatus(order: any) {
   }
 
   return orderStatusFromKitchenStatus(order?.kitchenStatus ?? order?.status)
-}
-
-function isPOSCollectionCandidate(order: any) {
-  if (isOrderPaid(order)) return false
-
-  const status = getPOSOperationStatus(order)
-  return (
-    status === ORDER_OPERATION_STATUS.PENDING ||
-    status === ORDER_OPERATION_STATUS.IN_PREPARATION ||
-    status === ORDER_OPERATION_STATUS.READY ||
-    status === ORDER_OPERATION_STATUS.SERVED ||
-    status === ORDER_OPERATION_STATUS.PICKED_UP ||
-    order.paymentStatus === "pending_cash" ||
-    order.paymentStatus === "pending_mobile" ||
-    order.paymentStatus === "pending_verification"
-  )
 }
 
 export function getOrderComputedTotal(order: any) {

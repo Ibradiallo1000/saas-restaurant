@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { collection, query, where } from "firebase/firestore"
 import { ReportsLoadingState } from "@/components/reports-ui"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
@@ -19,7 +20,7 @@ import { buildManagerReportsViewModel, type ManagerTreasuryMovementReport } from
 
 type MovementDirectionFilter = "all" | "in" | "out" | "transfer"
 
-export default function ManagerTreasuryPage() {
+export function ManagerTreasuryPageContent() {
   const db = useFirestore()
   const { restaurantId } = useRestaurant()
   const { filter, type } = useTimeFilter()
@@ -117,6 +118,12 @@ export default function ManagerTreasuryPage() {
   }
 
   return <ManagerReportsView model={viewModel} errors={[accountsError && "comptes", movementsError && "mouvements", sessionsError && "sessions", paymentsError && "paiements"].filter(Boolean) as string[]} directionFilter={directionFilter} accountFilter={accountFilter} sourceFilter={sourceFilter} accountOptions={safeAccounts.map((account) => ({ id: account.id, label: account.name }))} sourceOptions={sourceOptions.map((source) => ({ id: source, label: formatSource(source) }))} onDirectionFilterChange={(value) => setDirectionFilter(value as MovementDirectionFilter)} onAccountFilterChange={setAccountFilter} onSourceFilterChange={setSourceFilter} />
+}
+
+export default function LegacyManagerTreasuryPage() {
+  const router = useRouter()
+  React.useEffect(() => { router.replace("/manager/tresorerie") }, [router])
+  return <ReportsLoadingState label="Redirection vers la trésorerie" />
 }
 
 function normalizeAccounts(accounts: TreasuryAccount[], fallbackTotals: Record<string, number> = {}) {

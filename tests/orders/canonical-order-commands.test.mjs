@@ -4,9 +4,13 @@ import { describe, it } from "node:test"
 import {
   cancelOrderItemQuantity,
   confirmOrderPayment,
+  handOffOrderItems,
   markOrderItemPreparing,
   markOrderItemReady,
+  markOrderItemsPreparing,
+  markOrderItemsReady,
   markOrderItemServed,
+  serveOrderItems,
 } from "../../src/server/orders/commands/service.ts"
 
 const RESTAURANT_ID = "restaurant-test"
@@ -18,6 +22,8 @@ class MemoryCommandStore {
     this.order = {
       id: ORDER_ID,
       restaurantId: RESTAURANT_ID,
+      serviceMode: "dine_in",
+      orderType: "dine_in",
       paymentStatus: "unpaid",
       paymentVersion: 1,
       totalAmount: 1500,
@@ -38,6 +44,10 @@ class MemoryCommandStore {
       version: 1,
       ...overrides.item,
     }
+    this.items = overrides.items
+      ? structuredClone(overrides.items)
+      : [this.item]
+    this.item = this.items[0]
     this.stock = overrides.stock ?? 20
     this.quantityPerSale = overrides.quantityPerSale ?? 1
     this.proofs = new Map()
@@ -63,19 +73,23 @@ class MemoryCommandStore {
     }
 
     const orderBefore = structuredClone(this.order)
-    const itemBefore = structuredClone(this.item)
+    const itemsBefore = structuredClone(this.items)
     const stockBefore = this.stock
     const operationsBefore = this.operations.length
     const auditsBefore = this.audits.length
     try {
       const plan = transition({
         order: structuredClone(this.order),
-        item: "orderItemId" in input ? structuredClone(this.item) : null,
+        item: "orderItemId" in input
+          ? structuredClone(this.items.find((item) => item.id === input.orderItemId) ?? null)
+          : null,
+        items: structuredClone(this.items),
       })
-      if (plan.stock) {
+      const stocks = plan.stocks ?? (plan.stock ? [plan.stock] : [])
+      for (const stock of stocks) {
         if (this.failStock) throw coded("STOCK_DEDUCTION_FAILED")
         const servedDelta =
-          plan.stock.servedQuantityAfter - plan.stock.servedQuantityBefore
+          stock.servedQuantityAfter - stock.servedQuantityBefore
         const deduction = servedDelta * this.quantityPerSale
         if (this.stock >= deduction) {
           const previousQuantity = this.stock
@@ -91,10 +105,13 @@ class MemoryCommandStore {
         }
       }
       if (plan.itemUpdate) Object.assign(this.item, plan.itemUpdate)
+      for (const entry of plan.itemUpdates ?? []) {
+        Object.assign(this.items.find((item) => item.id === entry.orderItemId), entry.update)
+      }
       if (plan.orderUpdate) Object.assign(this.order, plan.orderUpdate)
       if (this.failBeforeCommit) throw new Error("transaction aborted")
 
-      const stockResult = plan.stock
+      const stockResult = stocks.length > 0
         ? {
             deductedQuantity: this.operations.at(-1)?.deductedQuantity ?? 0,
             previousQuantity: this.operations.at(-1)?.previousQuantity,
@@ -116,7 +133,8 @@ class MemoryCommandStore {
       return result
     } catch (error) {
       this.order = orderBefore
-      this.item = itemBefore
+      this.items = itemsBefore
+      this.item = this.items[0]
       this.stock = stockBefore
       this.operations.length = operationsBefore
       this.audits.length = auditsBefore
@@ -149,6 +167,81 @@ function coded(code) {
 }
 
 describe("transitions canoniques LOT 2", () => {
+  it("met à jour atomiquement plusieurs lignes Cuisine en une commande", async () => {
+    const items = [
+      canonicalItem("kitchen-1", "kitchen", "pending", 1),
+      canonicalItem("kitchen-2", "kitchen", "pending", 3),
+    ]
+    const store = new MemoryCommandStore({ items })
+    await markOrderItemsPreparing({ store }, {
+      restaurantId: RESTAURANT_ID,
+      orderId: ORDER_ID,
+      actor: actors.kitchen,
+      sourceChannel: "kitchen",
+      idempotencyKey: "kitchen-batch-preparing-0001",
+      expectedItems: items.map((item) => ({
+        orderItemId: item.id,
+        expectedVersion: item.version,
+      })),
+    })
+    assert.deepEqual(store.items.map((item) => item.status), ["preparing", "preparing"])
+    assert.deepEqual(store.items.map((item) => item.version), [2, 4])
+    assert.equal(store.audits.length, 1)
+
+    await markOrderItemsReady({ store }, {
+      restaurantId: RESTAURANT_ID,
+      orderId: ORDER_ID,
+      actor: actors.kitchen,
+      sourceChannel: "kitchen",
+      idempotencyKey: "kitchen-batch-ready-0001",
+      expectedItems: store.items.map((item) => ({
+        orderItemId: item.id,
+        expectedVersion: item.version,
+      })),
+    })
+    assert.deepEqual(store.items.map((item) => item.status), ["ready", "ready"])
+  })
+
+  it("annule toute la commande Cuisine groupée sur conflit ou ligne non Cuisine", async () => {
+    const items = [
+      canonicalItem("kitchen-1", "kitchen", "pending", 1),
+      canonicalItem("kitchen-2", "kitchen", "pending", 2),
+    ]
+    const input = {
+      restaurantId: RESTAURANT_ID,
+      orderId: ORDER_ID,
+      actor: actors.kitchen,
+      sourceChannel: "kitchen",
+      idempotencyKey: "kitchen-batch-conflict-0001",
+      expectedItems: [
+        { orderItemId: "kitchen-1", expectedVersion: 1 },
+        { orderItemId: "kitchen-2", expectedVersion: 1 },
+      ],
+    }
+    const conflict = new MemoryCommandStore({ items })
+    await assert.rejects(
+      () => markOrderItemsPreparing({ store: conflict }, input),
+      (error) => error.code === "CONCURRENT_MODIFICATION"
+    )
+    assert.deepEqual(conflict.items.map((item) => item.status), ["pending", "pending"])
+
+    const mixed = new MemoryCommandStore({
+      items: [items[0], canonicalItem("bar-1", "bar", "pending", 1)],
+    })
+    await assert.rejects(
+      () => markOrderItemsPreparing({ store: mixed }, {
+        ...input,
+        idempotencyKey: "kitchen-batch-forbidden-0001",
+        expectedItems: [
+          { orderItemId: "kitchen-1", expectedVersion: 1 },
+          { orderItemId: "bar-1", expectedVersion: 1 },
+        ],
+      }),
+      (error) => error.code === "FORBIDDEN_ACTOR"
+    )
+    assert.deepEqual(mixed.items.map((item) => item.status), ["pending", "pending"])
+  })
+
   it("applique pending → preparing puis preparing → ready", async () => {
     const store = new MemoryCommandStore()
     await markOrderItemPreparing({ store }, base(actors.kitchen))
@@ -176,6 +269,72 @@ describe("transitions canoniques LOT 2", () => {
     assert.equal(barStore.item.status, "ready")
   })
 
+  it("refuse la préparation et le passage direct à prêt d'une livraison non payée", async () => {
+    const delivery = {
+      order: { serviceMode: "delivery", orderType: "delivery", paymentStatus: "unpaid" },
+    }
+    await assert.rejects(
+      () => markOrderItemPreparing(
+        { store: new MemoryCommandStore(delivery) },
+        base(actors.kitchen)
+      ),
+      (error) =>
+        error.code === "PREPAYMENT_REQUIRED_BEFORE_PREPARATION" &&
+        error.message === "Le paiement doit être confirmé avant de traiter cette commande."
+    )
+    await assert.rejects(
+      () => markOrderItemReady(
+        { store: new MemoryCommandStore(delivery) },
+        base(actors.kitchen)
+      ),
+      (error) => error.code === "PREPAYMENT_REQUIRED_BEFORE_PREPARATION"
+    )
+  })
+
+  it("autorise la préparation d'une livraison payée", async () => {
+    const store = new MemoryCommandStore({
+      order: { serviceMode: "delivery", orderType: "delivery", paymentStatus: "paid" },
+    })
+    await markOrderItemPreparing({ store }, base(actors.kitchen))
+    await markOrderItemReady(
+      { store },
+      base(actors.kitchen, { expectedVersion: 2, idempotencyKey: "delivery-ready-0001" })
+    )
+    assert.equal(store.item.status, "ready")
+  })
+
+  it("applique la même règle à takeaway et pickup", async () => {
+    for (const serviceMode of ["takeaway", "pickup"]) {
+      await assert.rejects(
+        () => markOrderItemPreparing(
+          {
+            store: new MemoryCommandStore({
+              order: { serviceMode, orderType: serviceMode, paymentStatus: "unpaid" },
+            }),
+          },
+          base(actors.kitchen, { idempotencyKey: `${serviceMode}-blocked-0001` })
+        ),
+        (error) => error.code === "PREPAYMENT_REQUIRED_BEFORE_PREPARATION"
+      )
+      const paid = new MemoryCommandStore({
+        order: { serviceMode, orderType: serviceMode, paymentStatus: "paid" },
+      })
+      await markOrderItemPreparing(
+        { store: paid },
+        base(actors.kitchen, { idempotencyKey: `${serviceMode}-paid-0001` })
+      )
+      assert.equal(paid.item.status, "preparing")
+    }
+  })
+
+  it("conserve la préparation QR à table sans paiement préalable", async () => {
+    const store = new MemoryCommandStore({
+      order: { serviceMode: "dine_in", orderType: "dine_in", paymentStatus: "unpaid" },
+    })
+    await markOrderItemPreparing({ store }, base(actors.kitchen))
+    assert.equal(store.item.status, "preparing")
+  })
+
   it("interdit à la Cuisine de servir", async () => {
     const store = new MemoryCommandStore({ item: { status: "ready" } })
     await assert.rejects(
@@ -199,6 +358,173 @@ describe("transitions canoniques LOT 2", () => {
     assert.equal(store.item.servedQuantity, 3)
     assert.equal(store.stock, 17)
     assert.equal(result.stock.deductedQuantity, 3)
+  })
+
+  it("refuse tout service Bar ou direct avant prépaiement pour livraison, takeaway et pickup", async () => {
+    for (const serviceMode of ["delivery", "takeaway", "pickup"]) {
+      for (const preparationMode of ["bar", "direct"]) {
+        await assert.rejects(
+          () => markOrderItemServed(
+            {
+              store: new MemoryCommandStore({
+                order: { serviceMode, orderType: serviceMode, paymentStatus: "unpaid" },
+                item: {
+                  preparationMode,
+                  status: preparationMode === "direct" ? "pending" : "ready",
+                },
+              }),
+            },
+            base(actors.cashier, {
+              quantityToServe: 3,
+              idempotencyKey: `${serviceMode}-${preparationMode}-serve-blocked`,
+            })
+          ),
+          (error) =>
+            error.code === "PREPAYMENT_REQUIRED_BEFORE_PREPARATION" &&
+            error.message === "Le paiement doit être confirmé avant de traiter cette commande."
+        )
+      }
+    }
+  })
+
+  it("conserve le service progressif QR à table sans paiement", async () => {
+    for (const preparationMode of ["bar", "direct"]) {
+      const store = new MemoryCommandStore({
+        order: { serviceMode: "dine_in", orderType: "dine_in", paymentStatus: "unpaid" },
+        item: {
+          preparationMode,
+          status: preparationMode === "direct" ? "pending" : "ready",
+        },
+      })
+      await markOrderItemServed(
+        { store },
+        base(actors.cashier, {
+          quantityToServe: 3,
+          idempotencyKey: `dine-in-${preparationMode}-served`,
+        })
+      )
+      assert.equal(store.item.status, "served")
+    }
+  })
+
+  it("sert atomiquement toute une commande Sur place prête tout en conservant le service individuel", async () => {
+    const items = [
+      canonicalItem("kitchen-1", "kitchen", "ready", 1),
+      canonicalItem("bar-1", "bar", "ready", 2),
+      canonicalItem("direct-1", "direct", "pending", 1),
+    ]
+    const store = new MemoryCommandStore({
+      order: { serviceMode: "dine_in", orderType: "dine_in", paymentStatus: "unpaid" },
+      items,
+    })
+    await serveOrderItems({ store }, {
+      restaurantId: RESTAURANT_ID,
+      orderId: ORDER_ID,
+      actor: actors.cashier,
+      sourceChannel: "pos",
+      idempotencyKey: "serve-all-dine-in-0001",
+      expectedItems: items.map((item) => ({ orderItemId: item.id, expectedVersion: item.version })),
+    })
+    assert.deepEqual(store.items.map((item) => item.status), ["served", "served", "served"])
+  })
+
+  it("remet atomiquement une livraison payée lorsque Cuisine et Bar sont prêts", async () => {
+    const items = [
+      canonicalItem("kitchen-1", "kitchen", "ready", 1),
+      canonicalItem("bar-1", "bar", "ready", 2),
+      canonicalItem("direct-1", "direct", "pending", 3),
+    ]
+    const store = new MemoryCommandStore({
+      order: { serviceMode: "delivery", orderType: "delivery", paymentStatus: "paid" },
+      items,
+    })
+    await handOffOrderItems({ store }, handOffInput(items))
+    assert.deepEqual(store.items.map((item) => item.status), ["served", "served", "served"])
+    assert.deepEqual(store.items.map((item) => item.version), [2, 3, 4])
+    assert.equal(store.operations.length, 3)
+    assert.equal(store.order.completedCashSessionId, "cash-session-b")
+    assert.equal(store.order.handledCashSessionId, "cash-session-b")
+  })
+
+  it("refuse la remise groupée non payée ou avec une préparation non prête sans mutation", async () => {
+    const items = [
+      canonicalItem("kitchen-1", "kitchen", "ready", 1),
+      canonicalItem("bar-1", "bar", "ready", 1),
+      canonicalItem("direct-1", "direct", "pending", 1),
+    ]
+    for (const serviceMode of ["delivery", "takeaway", "pickup"]) {
+      const unpaid = new MemoryCommandStore({
+        order: { serviceMode, orderType: serviceMode, paymentStatus: "unpaid" },
+        items,
+      })
+      await assert.rejects(
+        () => handOffOrderItems({ store: unpaid }, handOffInput(items, `${serviceMode}-unpaid`)),
+        (error) => error.code === "PREPAYMENT_REQUIRED_BEFORE_PREPARATION"
+      )
+      assert.deepEqual(unpaid.items.map((item) => item.status), ["ready", "ready", "pending"])
+    }
+
+    const notReadyItems = [
+      canonicalItem("kitchen-1", "kitchen", "preparing", 1),
+      canonicalItem("bar-1", "bar", "ready", 1),
+    ]
+    const notReady = new MemoryCommandStore({
+      order: { serviceMode: "delivery", orderType: "delivery", paymentStatus: "paid" },
+      items: notReadyItems,
+    })
+    await assert.rejects(
+      () => handOffOrderItems({ store: notReady }, handOffInput(notReadyItems, "not-ready")),
+      (error) => error.code === "ORDER_NOT_READY_FOR_HANDOFF"
+    )
+    assert.deepEqual(notReady.items.map((item) => item.status), ["preparing", "ready"])
+  })
+
+  it("annule toute la remise groupée sur conflit de version ou erreur Stock", async () => {
+    const items = [
+      canonicalItem("kitchen-1", "kitchen", "ready", 1),
+      canonicalItem("direct-1", "direct", "pending", 1),
+    ]
+    const conflict = new MemoryCommandStore({
+      order: { serviceMode: "takeaway", orderType: "takeaway", paymentStatus: "paid" },
+      items,
+    })
+    const stale = handOffInput(items, "stale")
+    stale.expectedItems[1].expectedVersion = 9
+    await assert.rejects(
+      () => handOffOrderItems({ store: conflict }, stale),
+      (error) => error.code === "CONCURRENT_MODIFICATION"
+    )
+    assert.deepEqual(conflict.items.map((item) => item.status), ["ready", "pending"])
+
+    const stockFailure = new MemoryCommandStore({
+      order: { serviceMode: "pickup", orderType: "pickup", paymentStatus: "paid" },
+      items,
+    })
+    stockFailure.failStock = true
+    await assert.rejects(
+      () => handOffOrderItems({ store: stockFailure }, handOffInput(items, "stock-failure")),
+      (error) => error.code === "STOCK_DEDUCTION_FAILED"
+    )
+    assert.deepEqual(stockFailure.items.map((item) => item.status), ["ready", "pending"])
+    assert.equal(stockFailure.operations.length, 0)
+    assert.equal(stockFailure.order.completedCashSessionId, undefined)
+    assert.equal(stockFailure.order.handledCashSessionId, undefined)
+  })
+
+  it("n'impose aucune remise groupée aux commandes QR à table", async () => {
+    const items = [canonicalItem("direct-1", "direct", "pending", 1)]
+    await assert.rejects(
+      () => handOffOrderItems(
+        {
+          store: new MemoryCommandStore({
+            order: { serviceMode: "dine_in", orderType: "dine_in", paymentStatus: "unpaid" },
+            items,
+          }),
+        },
+        handOffInput(items, "dine-in-group")
+      ),
+      (error) => error.code === "INVALID_TRANSITION"
+    )
   })
 
   it("conserve ready pendant un service partiel", async () => {
@@ -257,7 +583,83 @@ describe("transitions canoniques LOT 2", () => {
   })
 })
 
+function canonicalItem(id, preparationMode, status, version) {
+  return {
+    id,
+    orderId: ORDER_ID,
+    restaurantId: RESTAURANT_ID,
+    productId: `product-${id}`,
+    preparationMode,
+    status,
+    quantity: 1,
+    servedQuantity: 0,
+    cancelledQuantity: 0,
+    version,
+  }
+}
+
+function handOffInput(items, suffix = "success") {
+  return {
+    restaurantId: RESTAURANT_ID,
+    orderId: ORDER_ID,
+    actor: actors.cashier,
+    sourceChannel: "pos",
+    cashSessionId: "cash-session-b",
+    idempotencyKey: `hand-off-${suffix}-0001`,
+    expectedItems: items.map((item) => ({
+      orderItemId: item.id,
+      expectedVersion: item.version,
+    })),
+  }
+}
+
 describe("annulation, paiement, idempotence et atomicité", () => {
+  const paymentInput = (overrides = {}) => ({
+    restaurantId: RESTAURANT_ID,
+    orderId: ORDER_ID,
+    actor: actors.cashier,
+    sourceChannel: "pos",
+    idempotencyKey: "pos-dine-in-payment-0001",
+    expectedPaymentVersion: 1,
+    expectedAmount: 1500,
+    receivedAmount: 1500,
+    method: "cash",
+    provider: null,
+    externalReference: null,
+    cashSessionId: "session-1",
+    ...overrides,
+  })
+
+  it("refuse l'encaissement anticipé d'une commande POS Sur place", async () => {
+    const store = new MemoryCommandStore({
+      order: { source: "pos", serviceMode: "dine_in", orderType: "dine_in" },
+    })
+    await assert.rejects(
+      () => confirmOrderPayment({ store }, paymentInput()),
+      (error) =>
+        error.code === "POS_DINE_IN_PAYMENT_REQUIRES_SERVED_ORDER" &&
+        error.status === 409
+    )
+    assert.equal(store.order.paymentStatus, "unpaid")
+  })
+
+  it("autorise l'encaissement POS Sur place lorsque toutes les lignes sont servies", async () => {
+    const store = new MemoryCommandStore({
+      order: { source: "pos", serviceMode: "dine_in", orderType: "dine_in" },
+      item: { status: "served", servedQuantity: 3 },
+    })
+    await confirmOrderPayment({ store }, paymentInput())
+    assert.equal(store.order.paymentStatus, "paid")
+  })
+
+  it("ne change pas le paiement QR à table", async () => {
+    const store = new MemoryCommandStore({
+      order: { source: "qr_table", serviceMode: "dine_in", orderType: "dine_in" },
+    })
+    await confirmOrderPayment({ store }, paymentInput({ idempotencyKey: "qr-payment-unchanged-0001" }))
+    assert.equal(store.order.paymentStatus, "paid")
+  })
+
   it("annule uniquement la quantité non servie sans restaurer le stock", async () => {
     const store = new MemoryCommandStore({
       item: { status: "ready", servedQuantity: 1 },
@@ -315,8 +717,36 @@ describe("annulation, paiement, idempotence et atomicité", () => {
     })
     assert.equal(result.version, 2)
     assert.equal(store.order.paymentStatus, "paid")
+    assert.equal(store.order.paymentCashSessionId, "session-1")
     assert.equal(store.item.status, "ready")
     assert.equal(store.stock, 20)
+  })
+
+  it("régularise une ancienne livraison déjà en préparation et trace l'anomalie", async () => {
+    const store = new MemoryCommandStore({
+      order: { serviceMode: "delivery", orderType: "delivery", paymentStatus: "unpaid" },
+      item: { status: "preparing" },
+    })
+    await confirmOrderPayment({ store }, {
+      restaurantId: RESTAURANT_ID,
+      orderId: ORDER_ID,
+      actor: actors.cashier,
+      sourceChannel: "pos",
+      idempotencyKey: "legacy-delivery-payment-0001",
+      expectedPaymentVersion: 1,
+      expectedAmount: 1500,
+      receivedAmount: 1500,
+      method: "mobile_money",
+      provider: "orange-money",
+      externalReference: null,
+      cashSessionId: "session-1",
+    })
+    assert.equal(store.order.paymentStatus, "paid")
+    assert.equal(store.item.status, "preparing")
+    assert.equal(
+      store.audits.at(-1).after.paymentConfirmedAfterPreparationStarted,
+      true
+    )
   })
 
   it("refuse paiement partiel, montant obsolète et double paiement", async () => {

@@ -120,6 +120,10 @@ export class TreasuryService {
     })
   }
 
+  /**
+   * @deprecated Compatibility-only session validation. New physical receipts
+   * must use the server-side REVIEW_HANDOVER command.
+   */
   async postCashSessionMovementToTreasury(input: TreasuryCashSessionInput): Promise<void> {
     validateCashSessionInput(input)
 

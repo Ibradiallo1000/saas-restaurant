@@ -85,6 +85,9 @@ export default function ManagerSuppliersPage() {
     if (!service || !restaurantId || !user || saving) return
     const amount = Number(paymentAmount || 0)
     if (!Number.isFinite(amount) || amount <= 0) return
+    const account = activeTreasuryAccounts.find((item) => item.id === paymentAccountId)
+    const remainingDebt = Math.max(0, Number(supplier.balance || 0) - amount)
+    if (!window.confirm(["Confirmer ce paiement fournisseur ?", `Fournisseur : ${supplier.name}`, `Montant : ${formatMoney(amount)} FCFA`, `Compte ou source : ${account?.name || getTreasuryAccountLabel(paymentAccountId)}`, `Dette avant paiement : ${formatMoney(supplier.balance || 0)} FCFA`, `Solde restant : ${formatMoney(remainingDebt)} FCFA`].join("\n"))) return
     setSaving(true)
     try {
       await service.paySupplier(restaurantId, {

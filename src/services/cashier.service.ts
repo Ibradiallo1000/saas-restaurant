@@ -35,6 +35,14 @@ export type CashSession = {
   mobileMoneyDifference?: number
   discrepancyAmount?: number
   discrepancyStatus?: "balanced" | "pending_review" | "validated" | "investigate"
+  closeVersion?: number
+  expectedPhysicalCash?: number
+  countedPhysicalCash?: number
+  cashCountDifference?: number
+  retainedFloat?: number
+  expectedHandover?: number
+  expectedMobileMoney?: number
+  netCashSales?: number
   closeSnapshot?: Record<string, any>
   totalCash: number
   totalMobile: number
@@ -84,6 +92,10 @@ export class CashierService {
     })
   }
 
+  /**
+   * @deprecated Compatibility-only client closure. Active POS screens use the
+   * transactional server-side CLOSE_SESSION V2 command.
+   */
   async closeShift(
     restaurantId: string,
     sessionId: string,
@@ -112,6 +124,10 @@ export class CashierService {
     })
   }
 
+  /**
+   * @deprecated Legacy validation path kept for historical compatibility.
+   * New manager validation must use TreasuryService.postCashSessionMovementToTreasury.
+   */
   async validateShift(restaurantId: string, sessionId: string, validatorId: string) {
     const sessionRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS, sessionId)
     const movementRef = doc(this.db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_MOVEMENTS, `session-${sessionId}`)

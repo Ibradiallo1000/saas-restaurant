@@ -1,13 +1,11 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { collection } from "firebase/firestore"
-import { ArrowLeft, AlertTriangle } from "lucide-react"
+import { AlertTriangle, PackageOpen } from "lucide-react"
 
-import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
-import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/design-system/components"
+import { Skeleton } from "@/components/ui/skeleton"
+import { BackLink, PageHeader, SectionNavigation } from "@/design-system/components"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useTenant } from "@/design-system/context/TenantProvider"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
@@ -18,6 +16,16 @@ import {
 import { useInventoryReferential } from "@/modules/stock/shared/use-inventory-referential"
 
 type DetailMode = "articles" | "alerts" | "movements" | "supplies" | "suppliers"
+
+const STOCK_NAVIGATION = [
+  { label: "Synthèse", href: "/owner/stock" },
+  { label: "Articles", href: "/owner/stock/articles", matchQuery: { key: "view" } },
+  { label: "Valeur", href: "/owner/stock/articles?view=value", matchQuery: { key: "view", value: "value" } },
+  { label: "Alertes", href: "/owner/stock/alerts" },
+  { label: "Mouvements", href: "/owner/stock/movements" },
+  { label: "Achats", href: "/owner/stock/supplies" },
+  { label: "Fournisseurs", href: "/owner/stock/suppliers" },
+]
 
 export function OwnerStockDetailScreen({
   mode,
@@ -59,7 +67,7 @@ export function OwnerStockDetailScreen({
     || (mode === "suppliers" && supplierResult.isLoading)
     || (mode === "supplies" && expenseResult.isLoading)
   ) {
-    return <AdminRouteSkeleton />
+    return <OwnerStockDetailSkeleton />
   }
 
   const quantities = new Map(
@@ -96,16 +104,13 @@ export function OwnerStockDetailScreen({
   const errors = error || supplierResult.error || expenseResult.error
 
   return (
-    <main className="space-y-6 pb-24 md:pb-8">
+    <main className="space-y-5 pb-24 md:space-y-6 md:pb-8">
       <PageHeader
         title={titleFor(mode, valueBreakdown)}
-        subtitle="Consultation en lecture seule des données du stock."
-        action={
-          <Button asChild variant="outline">
-            <Link href="/owner/stock"><ArrowLeft className="mr-2 h-4 w-4" />Retour au stock</Link>
-          </Button>
-        }
+        density="compact"
+        back={<BackLink href="/owner/stock" label="Stock" />}
       />
+      <SectionNavigation parentHref="/owner/stock" parentLabel="Stock" items={STOCK_NAVIGATION} showBack={false} />
 
       {errors ? (
         <Card className="border-destructive">
@@ -283,7 +288,11 @@ function Info({ label, value }: { label: string; value: string }) {
 }
 
 function Empty({ text }: { text: string }) {
-  return <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">{text}</CardContent></Card>
+  return <Card><CardContent className="flex min-h-20 items-center justify-center gap-2 p-3 text-center text-sm text-muted-foreground"><PackageOpen className="size-4" aria-hidden="true" />{text}</CardContent></Card>
+}
+
+function OwnerStockDetailSkeleton() {
+  return <main className="space-y-5 pb-24" aria-busy="true" aria-label="Chargement du stock"><div className="space-y-2"><Skeleton className="h-11 w-24" /><Skeleton className="h-7 w-48" /><Skeleton className="h-11 w-full" /></div><div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-4">{Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}</div></main>
 }
 
 function stockHealth(quantity: number, low: number, out: number): "OUT" | "LOW" | "OK" {

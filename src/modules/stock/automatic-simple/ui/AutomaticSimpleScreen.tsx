@@ -87,7 +87,7 @@ export function AutomaticSimpleScreen() {
 
   React.useEffect(() => { if (enabled) void load() }, [enabled, load])
   React.useEffect(() => {
-    if (!loading && restaurantId && !enabled) router.replace("/manager/inventory")
+    if (!loading && restaurantId && !enabled) router.replace("/manager/stock")
   }, [enabled, loading, restaurantId, router])
 
   if (loading || busy && associations.length === 0 && !error) return <AdminRouteSkeleton />

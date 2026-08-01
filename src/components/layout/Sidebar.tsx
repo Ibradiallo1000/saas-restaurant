@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   LogOut,
   Monitor,
+  ReceiptText,
   Store,
   Table2,
   Users,
@@ -110,7 +111,10 @@ export function Sidebar() {
     }
 
     if (restaurantRole === ROLES.CASHIER) {
-      return [{ label: "Caisse", items: [{ name: "Caisse POS", href: "/pos", icon: Monitor }] }]
+      return [{ label: "Caisse", items: [
+        { name: "Caisse POS", href: "/pos", icon: Monitor },
+        { name: "Mes sessions", href: "/pos/sessions", icon: ReceiptText },
+      ] }]
     }
 
     if (restaurantRole === ROLES.KITCHEN) {

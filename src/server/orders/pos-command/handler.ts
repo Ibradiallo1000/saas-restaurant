@@ -4,7 +4,9 @@ import { OrderAggregateError } from "../aggregate/errors.ts"
 import {
   cancelOrderItemQuantity,
   confirmOrderPayment,
+  handOffOrderItems,
   markOrderItemServed,
+  serveOrderItems,
   OrderCommandError,
 } from "../commands/index.ts"
 import type {
@@ -15,6 +17,8 @@ import type {
 
 export const POS_COMMANDS = [
   "MARK_ORDER_ITEM_SERVED",
+  "SERVE_ORDER_ITEMS",
+  "HAND_OFF_ORDER_ITEMS",
   "CANCEL_ORDER_ITEM_QUANTITY",
   "CONFIRM_ORDER_PAYMENT",
 ] as const
@@ -59,6 +63,17 @@ export async function handlePosCommandRequest(
         orderItemId: requiredString(body.orderItemId, "orderItemId"),
         expectedVersion: positiveInteger(body.expectedVersion, "expectedVersion"),
         quantityToServe: positiveInteger(body.quantityToServe, "quantityToServe"),
+      })
+    } else if (body.command === "SERVE_ORDER_ITEMS") {
+      result = await serveOrderItems({ store: dependencies.store }, {
+        ...base,
+        expectedItems: expectedItems(body.expectedItems),
+      })
+    } else if (body.command === "HAND_OFF_ORDER_ITEMS") {
+      result = await handOffOrderItems({ store: dependencies.store }, {
+        ...base,
+        expectedItems: expectedItems(body.expectedItems),
+        cashSessionId: requiredString(body.cashSessionId, "cashSessionId"),
       })
     } else if (body.command === "CANCEL_ORDER_ITEM_QUANTITY") {
       result = await cancelOrderItemQuantity({ store: dependencies.store }, {
@@ -158,6 +173,17 @@ function requiredString(value: unknown, field: string) {
 
 function nullableString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function expectedItems(value: unknown) {
+  if (!Array.isArray(value)) invalid("expectedItems")
+  return value.map((item) => {
+    if (!isRecord(item)) invalid("expectedItems")
+    return {
+      orderItemId: requiredString(item.orderItemId, "expectedItems.orderItemId"),
+      expectedVersion: positiveInteger(item.expectedVersion, "expectedItems.expectedVersion"),
+    }
+  })
 }
 
 function positiveInteger(value: unknown, field: string) {

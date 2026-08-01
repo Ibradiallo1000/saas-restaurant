@@ -113,7 +113,7 @@ export function ArticleReferentialScreen({
 
   React.useEffect(() => {
     if (!loading && restaurantId && !enabled) {
-      router.replace("/manager/inventory")
+      router.replace("/manager/stock")
     }
   }, [enabled, loading, restaurantId, router])
 

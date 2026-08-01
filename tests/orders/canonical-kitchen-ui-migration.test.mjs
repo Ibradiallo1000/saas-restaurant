@@ -15,6 +15,7 @@ const boardSource = read("src/modules/kitchen/KitchenBoard.tsx")
 const cardSource = read("src/modules/kitchen/KitchenOrderCard.tsx")
 const clientSource = read("src/app/(dashboard)/kitchen/components/KitchenClient.tsx")
 const viewModelSource = read("src/modules/kitchen/kitchen-view-model.tsx")
+const kitchenItemSource = read("src/components/kitchen-ui/kitchen-item.tsx")
 const originalFetch = globalThis.fetch
 
 afterEach(() => {
@@ -104,6 +105,32 @@ describe("migration complète de la Cuisine canonique", () => {
     )
   })
 
+  it("propage le message de paiement préalable retourné par le serveur", async () => {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      ok: false,
+      error: {
+        code: "PREPAYMENT_REQUIRED_BEFORE_PREPARATION",
+        message: "Le paiement doit être confirmé avant de traiter cette commande.",
+        retryable: false,
+      },
+    }), { status: 409 })
+    await assert.rejects(
+      () => executeKitchenItemTransition({
+        user: { getIdToken: async () => "token" },
+        restaurantId: "restaurant-a",
+        orderId: "delivery-a",
+        orderItemId: "line-a",
+        expectedVersion: 1,
+        targetStatus: "preparing",
+      }),
+      (error) =>
+        error instanceof KitchenCommandClientError &&
+        error.code === "PREPAYMENT_REQUIRED_BEFORE_PREPARATION" &&
+        error.message === "Le paiement doit être confirmé avant de traiter cette commande."
+    )
+    assert.match(cardSource, /error instanceof Error[\s\S]*error\.message/)
+  })
+
   it("met à jour indépendamment toutes les lignes Cuisine d’un groupe", async () => {
     const calls = []
     await executeKitchenItemsTransition({
@@ -121,6 +148,35 @@ describe("migration complète de la Cuisine canonique", () => {
       ["line-a", 1],
       ["line-b", 3],
     ])
+  })
+
+  it("utilise une seule requête HTTP pour une action Cuisine groupée", async () => {
+    const originalFetch = globalThis.fetch
+    const calls = []
+    globalThis.fetch = async (_url, init) => {
+      calls.push(JSON.parse(init.body))
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    }
+    try {
+      await executeKitchenItemsTransition({
+        user: { getIdToken: async () => "token" },
+        restaurantId: "restaurant-a",
+        orderId: "order-a",
+        targetStatus: "preparing",
+        items: [
+          { orderItemId: "line-a", expectedVersion: 1 },
+          { orderItemId: "line-b", expectedVersion: 3 },
+        ],
+      })
+      assert.equal(calls.length, 1)
+      assert.equal(calls[0].command, "MARK_ORDER_ITEMS_PREPARING")
+      assert.equal(calls[0].expectedItems.length, 2)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   it("refuse une action sans ligne Cuisine active", async () => {
@@ -156,14 +212,123 @@ describe("migration complète de la Cuisine canonique", () => {
     assert.match(clientSource, /<LegacyKitchenPageContent/)
   })
 
+  it("ne démarre pas le provider temps réel global sur la route Cuisine", () => {
+    const providerSource = read("src/modules/restaurant-live/RestaurantLiveDataProvider.tsx")
+    assert.match(
+      providerSource,
+      /const enabled = isClient && isOperationalRoute\(pathname\) && !isKitchenRoute/
+    )
+  })
+
   it("conserve le son de nouvelle commande dans le pipeline KitchenBoard", () => {
     assert.match(boardSource, /playNewOrderNotificationSound\(\)/)
     assert.match(boardSource, /entrySoundOrderIdsRef/)
   })
 
-  it("limite l’écran canonique à trois colonnes opérationnelles", () => {
-    assert.match(boardSource, /xl:grid-cols-3/)
+  it("conserve trois colonnes dès tablette et trois boutons de navigation sur mobile", () => {
+    assert.match(boardSource, /grid-cols-3[\s\S]*md:grid/)
+    assert.match(boardSource, /role="tablist"/)
+    assert.match(boardSource, /label: "Nouvelles"/)
+    assert.match(boardSource, /label: "Préparation"/)
+    assert.match(boardSource, /label: "Prêtes"/)
+    assert.match(boardSource, /bg-\[var\(--brand-primary\)\]/)
+    assert.match(boardSource, /md:hidden/)
+    assert.match(boardSource, /mobileColumn/)
     assert.doesNotMatch(boardSource, /title:\s*"Servies"/)
+    assert.doesNotMatch(boardSource, /label:\s*"Visibles"/)
+    assert.doesNotMatch(boardSource, /RefreshCw|Actualiser la Cuisine/)
+    assert.doesNotMatch(boardSource, /MetricGroup|Indicateurs de production Cuisine/)
+  })
+
+  it("projette le vrai paiement, le téléphone et l'adresse de livraison", () => {
+    const [order] = adaptCanonicalGroupsToKitchenBoard([
+      {
+        ...group([item("delivery-line", "pending")]),
+        orderType: "delivery",
+        serviceMode: "delivery",
+        paymentStatus: "unpaid",
+        customerPhone: "74746520",
+        deliveryAddress: "Sirakoro",
+      },
+    ])
+    assert.equal(order.paymentStatus, "unpaid")
+    assert.equal(order.serviceMode, "delivery")
+    assert.equal(order.customer.phone, "74746520")
+    assert.equal(order.deliveryAddress, "Sirakoro")
+    assert.doesNotMatch(
+      read("src/modules/kitchen/canonical-read/kitchen-board-adapter.ts"),
+      /paymentStatus:\s*"verified"/
+    )
+  })
+
+  it("désactive Commencer avant paiement et se réactive avec la projection paid", () => {
+    assert.match(cardSource, /model\.isPaymentLocked/)
+    assert.match(cardSource, /En attente de validation du paiement/)
+    assert.match(cardSource, /disabled:\s*isUpdating \|\| model\.isPaymentLocked/)
+    assert.match(viewModelSource, /!isOrderPaid\(order\)/)
+    const reader = read("src/modules/kitchen/canonical-read/firestore-reader.ts")
+    assert.match(reader, /syncParentSubscriptions/)
+    assert.match(reader, /where\(documentId\(\), "in", ids\)/)
+    assert.match(reader, /parentUnsubscribes/)
+    assert.doesNotMatch(reader, /where\("kitchenStatus", "in"/)
+  })
+
+  it("affiche téléphone et adresse sans identité Firebase technique", () => {
+    assert.match(viewModelSource, /Tél\. : \$\{phone\}/)
+    assert.match(viewModelSource, /Adresse : \$\{address\}/)
+    assert.doesNotMatch(viewModelSource, /uid|providerId|isAnonymous|Client anonyme/)
+  })
+
+  it("affiche les images produit et le vrai libellé de table en Cuisine", () => {
+    const enrichedItem = {
+      ...item("pictured-line", "pending"),
+      productImageUrl: "https://cdn.example.test/pizza.webp",
+      tableId: "9lkVsfYMPOYztahvOOkU",
+      tableNumber: "Table 9",
+    }
+    const [order] = adaptCanonicalGroupsToKitchenBoard([{
+      ...group([enrichedItem]),
+      tableId: "9lkVsfYMPOYztahvOOkU",
+      tableNumber: "Table 9",
+    }])
+    assert.equal(order.items[0].imageUrl, "https://cdn.example.test/pizza.webp")
+    assert.equal(order.table, "Table 9")
+    assert.match(viewModelSource, /\^table\/i/)
+    assert.doesNotMatch(viewModelSource, /\^table\\b\/i/)
+    assert.match(viewModelSource, /imageUrl: item\.imageUrl \?\? null/)
+    assert.match(kitchenItemSource, /loading="lazy"/)
+    assert.match(read("src/modules/kitchen/canonical-read/firestore-reader.ts"), /collection\(db, "restaurants", restaurantId, "tables"\)/)
+    assert.match(read("src/modules/kitchen/canonical-read/firestore-reader.ts"), /collection\(db, "restaurants", restaurantId, "products"\)/)
+    assert.match(read("src/modules/kitchen/canonical-read/firestore-reader.ts"), /storedTableLabel !== tableId/)
+  })
+
+  it("affiche l'observation générale sur la carte et l'instruction sous sa ligne", () => {
+    const [order] = adaptCanonicalGroupsToKitchenBoard([
+      {
+        ...group([{ ...item("noted-line", "pending"), customerNote: "sans oignon" }]),
+        orderNote: "Ajouter un peu de piment 🌶️ <script>alert(1)</script>",
+      },
+    ])
+    assert.equal(order.notes, "Ajouter un peu de piment 🌶️ <script>alert(1)</script>")
+    assert.equal(order.items[0].instructions, "sans oignon")
+    assert.match(cardSource, /Observation client/)
+    assert.match(kitchenItemSource, /Instruction :/)
+    assert.doesNotMatch(cardSource + kitchenItemSource, /dangerouslySetInnerHTML/)
+  })
+
+  it("une commande sans note ne réserve aucun bloc vide", () => {
+    const [order] = adaptCanonicalGroupsToKitchenBoard([group([item("plain-line", "pending")])])
+    assert.equal(order.notes, null)
+    assert.equal(order.items[0].instructions, null)
+    assert.match(cardSource, /model\.note \?/)
+    assert.match(kitchenItemSource, /note \?/)
+  })
+
+  it("contraint le viewport et confie le scroll à chaque colonne", () => {
+    const boardPrimitive = read("src/components/kitchen-ui/kitchen-board.tsx")
+    assert.match(boardSource, /<KitchenPage[\s\S]*fullScreen/)
+    assert.match(boardSource, /overflow-hidden md:grid/)
+    assert.match(boardPrimitive, /flex-1 overflow-y-auto/)
   })
 })
 
@@ -174,6 +339,7 @@ function item(orderItemId, status) {
     orderItemId,
     productId: `product-${orderItemId}`,
     productName: "Pizza",
+    productImageUrl: null,
     quantity: 1,
     activeQuantity: 1,
     cancelledQuantity: 0,
@@ -185,9 +351,15 @@ function item(orderItemId, status) {
     supplements: [],
     customerNote: null,
     orderType: "table",
+    serviceMode: "dine_in",
+    paymentStatus: "unpaid",
+    tableId: "table-4",
     tableNumber: "4",
     orderNumber: "CMD-001",
     customerName: null,
+    customerPhone: null,
+    deliveryAddress: null,
+    orderNote: null,
     createdAt: 1000,
     updatedAt: 1000,
     elapsedTime: 0,
@@ -201,9 +373,15 @@ function group(items) {
     orderId: "order-a",
     restaurantId: "restaurant-a",
     orderType: "table",
+    serviceMode: "dine_in",
+    paymentStatus: "unpaid",
+    tableId: "table-4",
     tableNumber: "4",
     orderNumber: "CMD-001",
     customerName: null,
+    customerPhone: null,
+    deliveryAddress: null,
+    orderNote: null,
     createdAt: 1000,
     isMixed: false,
     legacyState: "canonical",
@@ -214,4 +392,3 @@ function group(items) {
 function read(relativePath) {
   return readFileSync(new URL(`../../${relativePath}`, import.meta.url), "utf8")
 }
-

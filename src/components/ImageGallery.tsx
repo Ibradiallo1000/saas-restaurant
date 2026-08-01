@@ -33,6 +33,7 @@ export default function ImageGallery({ restaurantId }: Props) {
 
   const [editingImage, setEditingImage] = useState<ImageType | null>(null)
   const [newName, setNewName] = useState("")
+  const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
 
   // 🔁 LOAD
   const loadImages = async () => {
@@ -86,20 +87,22 @@ export default function ImageGallery({ restaurantId }: Props) {
 
   // 🗑 DELETE
   const handleDelete = async (img: ImageType) => {
-    if (!confirm("Supprimer cette image ?")) return
+    if (deletingImageId) return
+    if (!confirm(`Retirer « ${img.name || "cette image"} » de la médiathèque ?\nLe fichier externe ne sera pas supprimé : seule sa référence dans le restaurant sera retirée.`)) return
 
+    setDeletingImageId(img.id)
     try {
       await deleteDoc(
         doc(db, "restaurants", restaurantId, "images", img.id)
       )
 
-      // ⚠️ BONUS: supprimer aussi Cloudinary (à faire côté backend)
-      // await fetch("/api/delete-image", { method: "POST", body: JSON.stringify({ publicId: img.publicId }) })
-
       loadImages()
+      alert("Image retirée de la médiathèque. Le fichier externe n'a pas été supprimé.")
     } catch (err) {
       console.error(err)
       alert("Erreur suppression")
+    } finally {
+      setDeletingImageId(null)
     }
   }
 

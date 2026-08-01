@@ -1,13 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { Check, PauseCircle, Percent, Search, Trash2, Utensils, ShoppingBag } from "lucide-react"
+import { Check, ImageIcon, PauseCircle, Percent, Search, Trash2, Utensils, ShoppingBag } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PosCart, PosCartLine, PosCheckoutAction, PosEmptyState, PosTotals } from "@/components/pos-ui"
 import { groupCartLinesByBundle } from "@/lib/linked-option-groups"
 import { cn } from "@/lib/utils"
 import { formatTableDisplayName } from "@/lib/table-display"
+import { getOptimizedImage } from "@/lib/image"
 
 export type PosPaymentMode = "cash" | "mobile"
 type CartPanelProps = { cart: any[]; subtotal: number; discountAmount: number; total: number; processing: boolean; canCheckout: boolean; orderType: "dine-in" | "takeaway"; tableNumber: string | null; tableLabelPrefix?: string; tables: any[]; mobileSheet?: boolean; sessionInfo?: React.ReactNode; onOrderTypeChange: (type: "dine-in" | "takeaway") => void; onTableSelect: (tableId: string) => void; onIncrease: (item: any) => void; onDecrease: (itemId: string) => void; onRemove: (itemId: string) => void; onClear: () => void; onHold: () => void; onDiscount: () => void; onCheckout: () => void }
@@ -31,7 +32,13 @@ export default function CartPanel(props: CartPanelProps) {
       <ActionButton icon={<Percent/>} label="Remise" onClick={onDiscount} disabled={!cart.length || processing}/>
       <ActionButton icon={<Trash2/>} label="Vider" onClick={onClear} disabled={!cart.length || processing}/>
     </div>
-    <PosCheckoutAction label="Choisir le paiement" amount={formatMoney(total)} disabled={!canCheckout} loading={processing} onSelect={onCheckout}/>
+    <PosCheckoutAction
+      label={orderType === "dine-in" ? "Envoyer la commande" : "Choisir le paiement"}
+      amount={formatMoney(total)}
+      disabled={!canCheckout}
+      loading={processing}
+      onSelect={onCheckout}
+    />
   </div>
 
   return <PosCart title="Ticket en cours" itemCount={`${cart.length} article${cart.length > 1 ? "s" : ""}`} hideHeader={mobileSheet} className={mobileSheet ? "rounded-none border-0 shadow-none" : undefined} totals={totals} actions={actions} emptyState={<PosEmptyState title="Votre ticket est vide" description="Sélectionnez des produits pour commencer la commande." />} loading={processing}>
@@ -42,7 +49,7 @@ export default function CartPanel(props: CartPanelProps) {
       const nested = Boolean(group.bundleId && !item.isBundleMain)
       const options = !nested && item.selectedOptions?.length ? item.selectedOptions.map((option: any) => `${option.optionName}: ${option.choiceName}`).join(" · ") : nested ? item.linkedGroupTitle : undefined
       const controlsEnabled = index === 0 || !group.bundleId
-      return <PosCartLine key={item.id} className={nested ? "ml-3 border-dashed" : undefined} name={nested ? `+ ${item.name}` : item.name} description={getPreparationModeLabel(getCartPreparationMode(item))} options={options} quantity={item.quantity} unitPrice={formatMoney(unitPrice)} lineTotal={formatMoney(lineTotal)} onIncrease={controlsEnabled ? () => onIncrease(item) : undefined} onDecrease={controlsEnabled ? () => onDecrease(item.id) : undefined} onRemove={controlsEnabled ? () => onRemove(item.id) : undefined}/>
+      return <PosCartLine key={item.id} className={nested ? "ml-3 border-dashed" : undefined} image={item.imageUrl ? <img src={getOptimizedImage(item.imageUrl, 112)} alt="" className="h-full w-full object-cover" /> : <span className="flex h-full w-full items-center justify-center text-muted-foreground"><ImageIcon className="size-5" aria-hidden="true" /></span>} name={nested ? `+ ${item.name}` : item.name} description={getPreparationModeLabel(getCartPreparationMode(item))} options={options} quantity={item.quantity} unitPrice={formatMoney(unitPrice)} lineTotal={formatMoney(lineTotal)} onIncrease={controlsEnabled ? () => onIncrease(item) : undefined} onDecrease={controlsEnabled ? () => onDecrease(item.id) : undefined} onRemove={controlsEnabled ? () => onRemove(item.id) : undefined}/>
     })}</div>)}</div> : <PosEmptyState title="Votre ticket est vide" description="Sélectionnez des produits pour commencer la commande." />}
     {sessionInfo ? <details className="mt-3 rounded-[var(--radius-dashboard-button)] border border-[var(--pos-border)] bg-[var(--pos-panel)] p-3"><summary className="dashboard-focus-visible cursor-pointer text-sm font-semibold">Informations de session</summary><div className="mt-3">{sessionInfo}</div></details> : null}
   </PosCart>

@@ -41,6 +41,7 @@ export interface KitchenItemPresentation {
   id: string
   quantity: React.ReactNode
   name: React.ReactNode
+  imageUrl?: string | null
   options?: React.ReactNode
   note?: React.ReactNode
   destination?: React.ReactNode
@@ -78,4 +79,3 @@ export const KITCHEN_REQUIRED_TEST_WIDTHS = [320, 360, 390, 430, 768, 1024, 1280
 export const KITCHEN_COLUMN_WIDTHS = { minimum: 280, comfortable: 360, maximum: 440 } as const
 export const KITCHEN_TOUCH_TARGETS = { minimum: 44, tactile: 48, wallDisplay: 52 } as const
 export const KITCHEN_MOTION = { focus: 120, state: 200, cardEntry: 200, overlay: 250, fullScreen: 250 } as const
-

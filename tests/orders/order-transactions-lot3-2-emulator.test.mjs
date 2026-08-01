@@ -124,6 +124,7 @@ async function seed(label, options = {}) {
     await root.collection("cashSessions").doc(value.sessionId).set({
       restaurantId: value.restaurantId,
       status: "open",
+      cashierId: "cashier-1",
     })
   }
   return { ...value, root, orderRef, rows }

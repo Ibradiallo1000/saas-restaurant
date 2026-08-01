@@ -9,7 +9,9 @@ import {
   query,
   where,
   type Firestore,
+  type DocumentData,
   type Query,
+  type QuerySnapshot,
   type Unsubscribe,
 } from "firebase/firestore"
 
@@ -62,11 +64,13 @@ export function subscribeCanonicalKitchenRead(input: {
 }): Unsubscribe {
   let active = true
   let generation = 0
+  let latestKitchenSnapshot: QuerySnapshot<DocumentData> | null = null
+  let parentUnsubscribes: Unsubscribe[] = []
   const kitchenQuery = createCanonicalKitchenItemsQuery(input.db, input.restaurantId)
 
-  const unsubscribe = onSnapshot(
-    kitchenQuery,
-    async (snapshot) => {
+  const refresh = async () => {
+      const snapshot = latestKitchenSnapshot
+      if (!snapshot) return
       const currentGeneration = ++generation
       try {
         const unique = new Map<string, RawCanonicalKitchenItem>()
@@ -84,11 +88,14 @@ export function subscribeCanonicalKitchenRead(input: {
               .filter(Boolean)
           ),
         ]
-        const parentContexts = await loadParentContexts(
-          input.db,
-          input.restaurantId,
-          orderIds
-        )
+        const [parentContexts, productImages] = await Promise.all([
+          loadParentContexts(input.db, input.restaurantId, orderIds),
+          loadProductImages(
+            input.db,
+            input.restaurantId,
+            [...new Set(rawItems.map((item) => stringValue(item.data.productId)).filter(Boolean))]
+          ),
+        ])
         if (!active || currentGeneration !== generation) return
 
         let invalidDocumentCount = 0
@@ -99,7 +106,12 @@ export function subscribeCanonicalKitchenRead(input: {
             invalidDocumentCount += 1
             return []
           }
-          const view = toKitchenOrderItemView(rawItem, parent)
+          const view = toKitchenOrderItemView(
+            rawItem,
+            parent,
+            Date.now(),
+            productImages.get(stringValue(rawItem.data.productId)) ?? null
+          )
           if (!view) {
             invalidDocumentCount += 1
             return []
@@ -133,16 +145,46 @@ export function subscribeCanonicalKitchenRead(input: {
           input.onError(asError(error))
         }
       }
+  }
+
+  const syncParentSubscriptions = (snapshot: QuerySnapshot<DocumentData>) => {
+    parentUnsubscribes.forEach((unsubscribe) => unsubscribe())
+    parentUnsubscribes = []
+    const orderIds = [...new Set(
+      snapshot.docs.map((item) => stringValue(item.data().orderId)).filter(Boolean)
+    )]
+    for (const ids of chunks(orderIds, 30)) {
+      if (!ids.length) continue
+      parentUnsubscribes.push(onSnapshot(
+        query(
+          collection(input.db, "restaurants", input.restaurantId, "orders"),
+          where(documentId(), "in", ids)
+        ),
+        () => void refresh(),
+        (error) => {
+          if (active) input.onError(asError(error))
+        }
+      ))
+    }
+  }
+
+  const unsubscribeItems = onSnapshot(
+    kitchenQuery,
+    (snapshot) => {
+      latestKitchenSnapshot = snapshot
+      syncParentSubscriptions(snapshot)
+      void refresh()
     },
     (error) => {
       if (active) input.onError(asError(error))
     }
   )
-
   return () => {
     active = false
     generation += 1
-    unsubscribe()
+    unsubscribeItems()
+    parentUnsubscribes.forEach((unsubscribe) => unsubscribe())
+    parentUnsubscribes = []
   }
 }
 
@@ -163,15 +205,29 @@ async function loadParentContexts(
     snapshot.docs.forEach((documentSnapshot) => {
       const data = documentSnapshot.data()
       const embeddedItems = Array.isArray(data.items) ? data.items : null
+      const tableId = nullableString(data.tableId)
+      const storedTableLabel = nullableString(data.table ?? data.tableName ?? data.tableNumber)
       contexts.set(documentSnapshot.id, {
         restaurantId,
         orderId: documentSnapshot.id,
         orderType: stringValue(data.orderType ?? data.type) || "unknown",
-        tableNumber: nullableString(data.tableNumber ?? data.tableName ?? data.tableId ?? data.table),
+        serviceMode: stringValue(data.serviceMode ?? data.orderType ?? data.type) || "unknown",
+        paymentStatus: stringValue(data.paymentStatus) || "unpaid",
+        tableId,
+        tableNumber: storedTableLabel && storedTableLabel !== tableId
+          ? storedTableLabel
+          : null,
         orderNumber:
           stringValue(data.displayId ?? data.orderNumber ?? data.reference) ||
           documentSnapshot.id,
         customerName: nullableString(data.customerName ?? data.customer?.name),
+        customerPhone: nullableString(
+          data.customer?.phone ?? data.customerPhone ?? data.phoneNumber
+        ),
+        deliveryAddress: deliveryAddressValue(data.deliveryAddress ?? data.delivery?.address),
+        orderNote: nullableString(
+          data.notes ?? data.customerNote ?? data.customerNotes ?? data.kitchenNote
+        ),
         createdAt: timestampMs(data.createdAt),
         canonicalItemCount: integerOr(data.canonicalItemCount, 0),
         canonicalProjectionCount: embeddedItems?.length ?? null,
@@ -183,7 +239,49 @@ async function loadParentContexts(
       })
     })
   }
+  const unresolvedTableIds = [...new Set(
+    [...contexts.values()]
+      .filter((context) => !context.tableNumber && context.tableId)
+      .map((context) => context.tableId as string)
+  )]
+  for (const ids of chunks(unresolvedTableIds, 30)) {
+    const snapshot = await getDocs(query(
+      collection(db, "restaurants", restaurantId, "tables"),
+      where(documentId(), "in", ids)
+    ))
+    const labels = new Map(snapshot.docs.map((table) => [
+      table.id,
+      nullableString(table.data().name ?? table.data().label ?? table.data().number),
+    ]))
+    contexts.forEach((context, orderId) => {
+      if (!context.tableNumber && context.tableId && labels.get(context.tableId)) {
+        contexts.set(orderId, { ...context, tableNumber: labels.get(context.tableId) ?? null })
+      }
+    })
+  }
   return contexts
+}
+
+async function loadProductImages(
+  db: Firestore,
+  restaurantId: string,
+  productIds: readonly string[]
+) {
+  const images = new Map<string, string>()
+  for (const ids of chunks(productIds, 30)) {
+    if (ids.length === 0) continue
+    const snapshot = await getDocs(query(
+      collection(db, "restaurants", restaurantId, "products"),
+      where(documentId(), "in", ids)
+    ))
+    snapshot.docs.forEach((product) => {
+      const imageUrl = nullableString(
+        product.data().imageUrl ?? product.data().image ?? product.data().photoUrl
+      )
+      if (imageUrl) images.set(product.id, imageUrl)
+    })
+  }
+  return images
 }
 
 function chunks<T>(values: readonly T[], size: number) {
@@ -201,6 +299,13 @@ function stringValue(value: unknown) {
 function nullableString(value: unknown) {
   const normalized = stringValue(value)
   return normalized || null
+}
+
+function deliveryAddressValue(value: unknown) {
+  if (typeof value === "string") return value.trim() || null
+  return value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : null
 }
 
 function integerOr(value: unknown, fallback: number) {

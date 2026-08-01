@@ -1,12 +1,13 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { semanticBeforeAccentClasses, semanticSurfaceClasses, type DashboardSemanticVariant } from "./semantic-variants"
 
-type SurfaceProps = React.HTMLAttributes<HTMLElement> & { as?: "div" | "article" | "section" | "aside" }
+type SurfaceProps = React.HTMLAttributes<HTMLElement> & { as?: "div" | "article" | "section" | "aside"; variant?: DashboardSemanticVariant; density?: "compact" | "dense" | "default" }
 
 export const DashboardPanel = React.forwardRef<HTMLElement, SurfaceProps>(({ as: Component = "div", className, ...props }, ref) => <Component ref={ref as React.Ref<never>} className={cn("rounded-[var(--radius-dashboard-card)] border border-[var(--dashboard-border)] bg-[var(--dashboard-surface)] p-4 shadow-[var(--shadow-dashboard-surface)]", className)} {...props} />)
 DashboardPanel.displayName = "DashboardPanel"
 
-export const DashboardWidget = React.forwardRef<HTMLElement, SurfaceProps>(({ as: Component = "article", className, ...props }, ref) => <Component ref={ref as React.Ref<never>} className={cn("overflow-hidden rounded-[var(--radius-dashboard-widget)] border border-[var(--dashboard-border)] bg-[var(--dashboard-surface)] shadow-[var(--shadow-dashboard-surface)]", className)} {...props} />)
+export const DashboardWidget = React.forwardRef<HTMLElement, SurfaceProps>(({ as: Component = "article", className, density = "dense", variant = "neutral", ...props }, ref) => <Component ref={ref as React.Ref<never>} className={cn("relative overflow-hidden rounded-[var(--radius-dashboard-widget)] border shadow-[var(--shadow-dashboard-surface)] before:absolute before:inset-x-0 before:top-0 before:h-0.5", semanticSurfaceClasses[variant], semanticBeforeAccentClasses[variant], density === "compact" && "[&_[data-widget-content]]:p-2.5", density === "dense" && "[&_[data-widget-content]]:p-3", className)} data-density={density} data-variant={variant} {...props} />)
 DashboardWidget.displayName = "DashboardWidget"
 
 export interface DashboardWidgetHeaderProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "title"> { title: React.ReactNode; description?: React.ReactNode; action?: React.ReactNode; headingAs?: "h2" | "h3" }

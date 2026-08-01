@@ -4,9 +4,11 @@ export type NavigationRole = "owner" | "manager" | "cuisine" | "caisse"
 
 export type NavigationItemId =
   | "analytics"
+  | "activite"
   | "commandes"
   | "caisse"
   | "cuisine"
+  | "finances"
   | "plus"
   | "profil"
   | "parametres"
@@ -17,6 +19,9 @@ export type NavigationItemId =
   | "tables"
   | "images"
   | "inventaire"
+  | "fournisseurs"
+  | "horaires"
+  | "stock"
   | "deconnexion"
 
 export const roleConfig: Record<
@@ -27,22 +32,12 @@ export const roleConfig: Record<
   }
 > = {
   owner: {
-    bottomNav: ["analytics", "commandes", "caisse", "cuisine", "plus"],
-    drawer: [
-      "profil",
-      "parametres",
-      "tresorerie",
-      "depenses",
-      "avis",
-      "menu",
-      "tables",
-      "images",
-      "deconnexion",
-    ],
+    bottomNav: ["analytics", "activite", "finances", "stock", "plus"],
+    drawer: ["menu", "tables", "images", "parametres", "profil", "deconnexion"],
   },
   manager: {
-    bottomNav: ["analytics", "commandes", "caisse", "plus"],
-    drawer: ["profil", "menu", "tables", "images", "inventaire", "tresorerie", "depenses", "deconnexion"],
+    bottomNav: ["analytics", "commandes", "caisse", "stock", "plus"],
+    drawer: ["tables", "depenses", "tresorerie", "fournisseurs", "horaires", "menu", "images", "profil", "deconnexion"],
   },
   cuisine: {
     bottomNav: ["cuisine"],

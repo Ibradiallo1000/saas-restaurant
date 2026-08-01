@@ -45,3 +45,16 @@ test("la preuve App Check locale est strictement limitée aux émulateurs demo",
   assert.match(publicApiClient, /projectId\.startsWith\("demo-"\)/)
   assert.match(publicApiClient, /proof\.length\s*<\s*32/)
 })
+
+test("le debug provider App Check est limité au navigateur local hors production", () => {
+  assert.match(publicApiClient, /process\.env\.NODE_ENV === "production"/)
+  assert.match(publicApiClient, /typeof window === "undefined"/)
+  assert.match(publicApiClient, /window\.location\.hostname/)
+  assert.match(publicApiClient, /hostname === "localhost"/)
+  assert.match(publicApiClient, /hostname === "127\.0\.0\.1"/)
+  assert.match(publicApiClient, /self\.FIREBASE_APPCHECK_DEBUG_TOKEN = true/)
+  assert.doesNotMatch(
+    publicApiClient,
+    /FIREBASE_APPCHECK_DEBUG_TOKEN\s*=\s*["'][^"']+["']/
+  )
+})

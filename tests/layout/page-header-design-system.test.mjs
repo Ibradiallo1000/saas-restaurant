@@ -10,12 +10,15 @@ const source = (relativePath) =>
 test("PageHeader porte le standard visuel unique et responsive", () => {
   const header = source("src/design-system/components/PageHeader.tsx")
 
-  assert.match(header, /text-3xl font-black uppercase/)
-  assert.match(header, /text-primary/)
-  assert.match(header, /h-8 w-8/)
+  assert.match(header, /text-xl font-bold/)
+  assert.match(header, /min-\[390px\]:text-2xl md:text-\[1\.75rem\]/)
+  assert.doesNotMatch(header, /font-black uppercase leading-none/)
+  assert.match(header, /h-6 w-6/)
   assert.match(header, /sm:flex-row sm:items-start sm:justify-between/)
   assert.match(header, /action/)
   assert.match(header, /subtitle/)
+  assert.match(header, /breadcrumb/)
+  assert.match(header, /density/)
   assert.match(header, /resolvePageIcon/)
 })
 

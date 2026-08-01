@@ -17,9 +17,12 @@ test("les cartes Owner ouvrent leurs détails sans route Manager", () => {
   ]) {
     assert.match(page, new RegExp(route.replaceAll("?", "\\?")))
   }
-  assert.match(page, /focus-visible:ring-2/)
-  assert.match(page, /group-hover:border-primary/)
-  assert.match(page, /ChevronRight/)
+  assert.match(page, /NavigationTile/)
+  assert.match(page, /ResponsiveTileGrid/)
+  const sharedTile = source("src/design-system/components/NavigationPrimitives.tsx")
+  assert.match(sharedTile, /focus-visible:ring-2/)
+  assert.match(sharedTile, /group-hover:border-primary/)
+  assert.match(sharedTile, /ChevronRight/)
   assert.doesNotMatch(page, /DailyStockScreen|\/manager\/stock/)
 })
 

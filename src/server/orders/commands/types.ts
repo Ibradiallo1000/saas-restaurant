@@ -1,7 +1,11 @@
 export const ORDER_COMMAND_NAMES = [
   "MarkOrderItemPreparing",
   "MarkOrderItemReady",
+  "MarkOrderItemsPreparing",
+  "MarkOrderItemsReady",
   "MarkOrderItemServed",
+  "ServeOrderItems",
+  "HandOffOrderItems",
   "CancelOrderItemQuantity",
   "ConfirmOrderPayment",
 ] as const
@@ -34,8 +38,18 @@ export interface ItemCommandBase extends OrderCommandBase {
 export interface MarkOrderItemPreparingInput extends ItemCommandBase {}
 export interface MarkOrderItemReadyInput extends ItemCommandBase {}
 
+export interface MarkOrderItemsTransitionInput extends OrderCommandBase {
+  expectedItems: Array<{ orderItemId: string; expectedVersion: number }>
+}
+export interface ServeOrderItemsInput extends MarkOrderItemsTransitionInput {}
+
 export interface MarkOrderItemServedInput extends ItemCommandBase {
   quantityToServe: number
+}
+
+export interface HandOffOrderItemsInput extends OrderCommandBase {
+  expectedItems: Array<{ orderItemId: string; expectedVersion: number }>
+  cashSessionId: string
 }
 
 export interface CancelOrderItemQuantityInput extends ItemCommandBase {
@@ -56,14 +70,24 @@ export interface ConfirmOrderPaymentInput extends OrderCommandBase {
 export type AnyOrderCommandInput =
   | MarkOrderItemPreparingInput
   | MarkOrderItemReadyInput
+  | MarkOrderItemsTransitionInput
   | MarkOrderItemServedInput
+  | ServeOrderItemsInput
+  | HandOffOrderItemsInput
   | CancelOrderItemQuantityInput
   | ConfirmOrderPaymentInput
 
 export interface OrderSnapshot {
   id: string
   restaurantId: string
+  serviceMode: string
+  orderType: string
+  source: string
   paymentStatus: string
+  cashSessionId: string | null
+  paymentCashSessionId: string | null
+  handledCashSessionId: string | null
+  completedCashSessionId: string | null
   paymentVersion: number
   totalAmount: number
   total: number
@@ -106,6 +130,7 @@ export interface CommandMutationPlan {
   commandName: OrderCommandName
   orderUpdate: Record<string, unknown> | null
   itemUpdate: Record<string, unknown> | null
+  itemUpdates?: Array<{ orderItemId: string; update: Record<string, unknown> }>
   paymentLedger: {
     amount: number
     receivedAmount: number
@@ -116,6 +141,7 @@ export interface CommandMutationPlan {
     cashSessionId: string
   } | null
   stock: StockDeductionPlan | null
+  stocks?: StockDeductionPlan[]
   before: Record<string, unknown>
   after: Record<string, unknown>
   result: Record<string, unknown>

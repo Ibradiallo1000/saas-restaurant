@@ -29,7 +29,7 @@ test("la carte utilisateur contient l'action de déconnexion sans texte redondan
 })
 
 test("le Dashboard aligne son filtre avec son titre principal", () => {
-  assert.match(dashboard, /title="Tableau de bord"/)
+  assert.match(dashboard, /title="Vue d’ensemble"/)
   assert.match(
     dashboard,
     /actions=\{[\s\S]*<ManagerPeriodFilter \/>/

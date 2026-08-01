@@ -33,7 +33,7 @@ function ProductGrid({
   }
 
   return (
-    <PosProductGrid layout="twoColumns" className="content-start gap-3 md:grid-cols-3 lg:grid-cols-4 lg:gap-2 min-[1180px]:grid-cols-5 min-[1440px]:grid-cols-6">
+    <PosProductGrid layout="twoColumns" className="content-start gap-2 md:grid-cols-3 md:gap-3 lg:grid-cols-4 lg:gap-2 min-[1180px]:grid-cols-5 min-[1440px]:grid-cols-6">
       {products.map((product: any) => {
         const stock = getPosStockPresentation(stockByProduct.get(product.id))
         return (
@@ -44,11 +44,11 @@ function ProductGrid({
             imageAlt={product.name}
             price={formatPrice(product)}
             availability={stock.availability}
-            availabilityLabel={stock.label}
+            availabilityLabel={stock.availability === "unknown" ? <span className="hidden md:inline">{stock.label}</span> : stock.label}
             disabled={stock.disabled}
             actionLabel="Ajouter"
             onSelect={() => onProductClick(product)}
-            className="lg:min-h-0 lg:p-2 [&>div:first-child]:lg:mb-1.5 [&>div:first-child]:lg:aspect-[16/9] [&>span:last-child]:lg:mt-1.5 [&>span:last-child]:lg:min-h-10 [&>span:last-child]:lg:text-[13px]"
+            className="min-h-[8.75rem] p-2 [&>div:first-child]:mb-1.5 [&>div:first-child]:aspect-[16/10] [&>span:last-child]:mt-1.5 [&>span:last-child]:min-h-11 [&>span:last-child]:text-xs md:min-h-[11rem] md:p-3 md:[&>div:first-child]:mb-3 md:[&>div:first-child]:aspect-[4/3] md:[&>span:last-child]:mt-3 md:[&>span:last-child]:text-sm lg:min-h-0 lg:p-2 lg:[&>div:first-child]:mb-1.5 lg:[&>div:first-child]:aspect-[16/9] lg:[&>span:last-child]:mt-1.5 lg:[&>span:last-child]:min-h-10 lg:[&>span:last-child]:text-[13px]"
           />
         )
       })}

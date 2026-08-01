@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { addDoc, collection, doc, limit, orderBy, query, updateDoc, serverTimestamp, where } from "firebase/firestore"
+import { collection, limit, orderBy, query, where } from "firebase/firestore"
 import {
   Activity,
   AlertTriangle,
@@ -29,7 +29,6 @@ import {
   DashboardHeader,
   DashboardLoadingState,
   DashboardPage,
-  DashboardPanel,
   DashboardSection,
   DashboardStat,
   DashboardToolbar,
@@ -42,14 +41,29 @@ import {
 } from "@/components/dashboard-ui"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
-import { useTenant } from "@/design-system/context/TenantProvider"
-import { getDateRange, getPreviousDateRange, useTimeFilter, type TimeFilterType } from "@/contexts/time-filter-context"
+import { useTimeFilter, type TimeFilterType } from "@/contexts/time-filter-context"
 import { COLLECTION_NAMES } from "@/lib/constants"
 import { isConfirmedFinancePayment } from "@/lib/finance/financial-summary"
 import { getOrderStatus } from "@/lib/order-lifecycle"
-import { cn } from "@/lib/utils"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
 import { useInventoryReferential } from "@/modules/stock/shared/use-inventory-referential"
+import {
+  buildOwnerVariation,
+  calculateOwnerAverageOrder,
+  getConfirmedPaymentOrderIds,
+  getConfirmedPaymentDate,
+  getOwnerBusinessDateKey,
+  getOwnerPeriodRanges,
+  isConfirmedPaymentInRange,
+  isOwnerAcquiredOrder,
+  resolveOwnerRevenue,
+  resolveOwnerTreasuryBalance,
+  type OwnerMetricQuality,
+} from "@/modules/owner-dashboard/owner-dashboard-metrics"
+import {
+  OwnerDashboardSkeleton,
+  OwnerDataQualityBadge,
+} from "@/modules/owner-dashboard/owner-dashboard-ui"
 
 import type { Order } from "@/types/index"
 
@@ -102,6 +116,7 @@ type Variation = {
   absolute: number
   percent: number | null
   trend: "up" | "stable" | "down" | "none"
+  quality: OwnerMetricQuality
 }
 
 type ProductStat = {
@@ -123,12 +138,14 @@ export default function OwnerPage() {
 
 function OwnerPageContent() {
   const db = useFirestore()
-  const { restaurantId, loading } = useRestaurant()
-  const { user, role } = useTenant()
+  const { restaurantId, restaurant, loading } = useRestaurant()
   const {
+    activeOrders: liveOrders,
     cashMovements,
     cashSessions,
+    cashSessionRequests,
     isLoadingSessions,
+    pendingCashValidationCount,
     payments,
   } = useRestaurantLiveData()
 
@@ -136,19 +153,45 @@ function OwnerPageContent() {
   const searchParams = useSearchParams()
   const periodMode = timeFilter.type
   const filter = timeFilter.filter
-  const queryRange = React.useMemo(() => getDateRange(filter), [filter])
-  const ordersQuery = useMemoFirebase(() => {
+  const period = React.useMemo(() => buildPeriodContext(filter, restaurant?.timezone), [filter, restaurant?.timezone])
+  const currentOrdersQuery = useMemoFirebase(() => {
     if (!db || !restaurantId) return null
     return query(
       collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS),
-      where("createdAt", ">=", queryRange.startDate),
-      where("createdAt", "<=", queryRange.endDate),
+      where("createdAt", ">=", period.current.start),
+      where("createdAt", "<=", period.current.end),
       orderBy("createdAt", "desc"),
-      limit(500)
+      limit(501)
     )
-  }, [db, queryRange.endDate, queryRange.startDate, restaurantId])
-  const { data: periodOrders, isLoading: isLoadingOrders } = useCollection<Order>(ordersQuery)
-  const orders = React.useMemo(() => (periodOrders || []) as Order[], [periodOrders])
+  }, [db, period.current.end, period.current.start, restaurantId])
+  const previousOrdersQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS),
+      where("createdAt", ">=", period.previous.start),
+      where("createdAt", "<=", period.previous.end),
+      orderBy("createdAt", "desc"),
+      limit(501)
+    )
+  }, [db, period.previous.end, period.previous.start, restaurantId])
+  const currentOrdersResult = useCollection<Order>(currentOrdersQuery)
+  const previousOrdersResult = useCollection<Order>(previousOrdersQuery)
+  const currentOrdersPartial = (currentOrdersResult.data?.length || 0) > 500
+  const previousOrdersPartial = (previousOrdersResult.data?.length || 0) > 500
+  const currentOrders = React.useMemo(() => (currentOrdersResult.data || []).slice(0, 500) as Order[], [currentOrdersResult.data])
+  const previousOrders = React.useMemo(() => (previousOrdersResult.data || []).slice(0, 500) as Order[], [previousOrdersResult.data])
+  const isLoadingOrders = currentOrdersResult.isLoading || previousOrdersResult.isLoading
+
+  const treasuryAccountsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TREASURY_ACCOUNTS)
+  }, [db, restaurantId])
+  const inventoryAlertsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "inventoryAlerts")
+  }, [db, restaurantId])
+  const { data: treasuryAccounts } = useCollection<any>(treasuryAccountsQuery)
+  const { data: inventoryAlerts } = useCollection<OwnerInventoryAlert>(inventoryAlertsQuery)
   const inventoryHref = React.useMemo(
     () => getHrefWithCurrentQuery("/owner/stock", searchParams),
     [searchParams]
@@ -173,68 +216,81 @@ function OwnerPageContent() {
     })) as OwnerInventoryItem[]
   }, [stockBalances, stockCosts, stockItems])
 
-  const period = React.useMemo(
-    () => buildPeriodContext(filter),
-    [filter]
-  )
-
   const business = React.useMemo(
     () =>
       buildBusinessDashboardData({
-        orders,
+        currentOrders,
+        previousOrders,
+        currentOrdersPartial,
+        previousOrdersPartial,
+        liveOrders,
         payments,
         cashMovements,
         cashSessions,
-        inventoryAlerts: [],
+        treasuryAccounts: treasuryAccounts || [],
+        inventoryAlerts: inventoryAlerts || [],
         inventoryItems: inventoryItems || [],
         inventoryLogs: inventoryLogs || [],
         period,
       }),
-    [cashMovements, cashSessions, inventoryItems, inventoryLogs, orders, payments, period]
+    [cashMovements, cashSessions, currentOrders, currentOrdersPartial, inventoryAlerts, inventoryItems, inventoryLogs, liveOrders, payments, period, previousOrders, previousOrdersPartial, treasuryAccounts]
   )
 
   const isLiveLoading = isLoadingOrders || isLoadingSessions
-  const isOrdersPartial = orders.length >= 500
+  const isOrdersPartial = currentOrdersPartial || previousOrdersPartial
+  const hasOrdersError = Boolean(currentOrdersResult.error || previousOrdersResult.error)
 
   if (loading) {
-    return <DashboardLoadingState className="min-h-[60vh]" label="Chargement du tableau de bord" />
+    return <OwnerDashboardSkeleton />
   }
 
   if (!restaurantId) {
-    return <DashboardErrorState className="min-h-[60vh]" title="Compte non lié à un restaurant" description="Votre compte utilisateur ne contient pas de restaurantId." />
+    return <DashboardErrorState className="min-h-[40vh]" title="Aucun restaurant associé" description="Aucun restaurant n’est associé à votre compte. Contactez un administrateur pour associer un restaurant." />
   }
 
   return (
     <DashboardPage className="px-0 py-0 pb-14 md:pb-6">
       <DashboardHeader
-        title="Tableau de bord"
-        subtitle="Pilotez la performance, la trésorerie et les risques du restaurant."
-        meta={<>Période sélectionnée : <span className="font-semibold text-[var(--dashboard-subtitle)]">{period.label}</span>{isOrdersPartial ? " · Données commandes potentiellement partielles" : ""}</>}
-        actions={<DashboardToolbar className="border-0 bg-transparent p-0 shadow-none"><DashboardFilters><GlobalTimeFilterBar compact /></DashboardFilters></DashboardToolbar>}
+        className="gap-2"
+        title="Vue d’ensemble"
+        subtitle="Suivez les ventes, les caisses et les alertes."
+        meta={<span className="text-xs">{restaurant?.name ? `${restaurant.name} · ` : ""}{period.label}</span>}
+        actions={<DashboardToolbar className="max-w-full overflow-x-auto border-0 bg-transparent p-0 shadow-none"><DashboardFilters className="flex-nowrap"><GlobalTimeFilterBar compact /></DashboardFilters></DashboardToolbar>}
       />
 
-      <OwnerDecisionOverview business={business} periodMode={periodMode} searchParams={searchParams} />
-
-      {isOrdersPartial ? <DashboardAlert tone="warning" title="Données potentiellement partielles" description="La période a atteint la limite actuelle de 500 commandes. Les indicateurs restent calculés avec les mêmes données, mais peuvent ne pas couvrir toute la période." /> : null}
-      {!business.hasPeriodData && !isLoadingOrders ? <DashboardEmptyState title="Aucune donnée pour cette période" description="Choisissez une autre période pour consulter l’activité disponible." /> : null}
+      <OwnerAlertsSection
+        alerts={business.alerts}
+        pendingRequests={cashSessionRequests.length}
+        pendingValidations={pendingCashValidationCount}
+        partial={isOrdersPartial}
+        searchParams={searchParams}
+      />
+      {hasOrdersError ? <DashboardAlert tone="negative" title="Impossible de charger les commandes." description="Les autres informations disponibles restent affichées." /> : null}
+      {!business.hasPeriodData && !isLoadingOrders ? <DashboardEmptyState className="min-h-24" title="Aucune commande sur cette période." description="Aucun encaissement confirmé sur cette période." /> : null}
 
       <OwnerPrimaryMetrics business={business} periodLabel={period.label} searchParams={searchParams} loading={isLoadingOrders} partial={isOrdersPartial} />
 
-      <DashboardSection title="Évolution" description={`Tendance du chiffre d’affaires et des commandes · ${period.label}`}>
-        {isLoadingOrders ? <DashboardLoadingState label="Chargement des tendances" /> : <div className="grid gap-[var(--dashboard-grid-gap)] 2xl:grid-cols-2"><OwnerTrendChart title={periodMode === "month" || periodMode === "custom" ? "Chiffre d’affaires sur la période" : "Chiffre d’affaires sur 7 jours"} points={business.trend} valueKey="revenue" partial={isOrdersPartial} /><OwnerTrendChart title={periodMode === "month" || periodMode === "custom" ? "Commandes sur la période" : "Commandes sur 7 jours"} points={business.trend} valueKey="orders" partial={isOrdersPartial} /></div>}
-      </DashboardSection>
-
-      <div className="grid gap-[var(--dashboard-section-gap)] 2xl:grid-cols-2">
-        <OwnerTreasuryWidget treasury={business.treasury} periodLabel={period.label} searchParams={searchParams} />
-        <OwnerInventoryWidget inventory={business.inventory} inventoryHref={inventoryHref} />
-      </div>
-
-      <OwnerAnalysisSection analysis={business.analysis} insights={business.insights} />
       <OwnerLiveSection live={business.live} loading={isLiveLoading} searchParams={searchParams} />
 
-      <DashboardSection title="Demandes de caisse" description="Actions secondaires nécessitant une validation Owner.">
-        <OwnerCashSessionRequests restaurantId={restaurantId} user={user} role={role} />
+      <DashboardSection surface variant="finance" title="Situation de la caisse" description="Sessions et validations qui nécessitent votre attention.">
+        <div className="grid gap-4 md:grid-cols-2">
+          <OwnerCashSituation treasury={business.treasury} pendingValidations={pendingCashValidationCount} searchParams={searchParams} />
+          <OwnerCashSessionRequests searchParams={searchParams} />
+        </div>
       </DashboardSection>
+
+      <DashboardSection surface variant="success" title="Finances et stock">
+        <div className="grid gap-[var(--dashboard-section-gap)] md:grid-cols-2">
+        <OwnerTreasuryWidget treasury={business.treasury} revenue={business.current.revenue} periodLabel={period.label} searchParams={searchParams} />
+        <OwnerInventoryWidget inventory={business.inventory} inventoryHref={inventoryHref} />
+        </div>
+      </DashboardSection>
+
+      <DashboardSection surface variant="activity" title="Situation de la période" description={`Évolution du chiffre d’affaires et des commandes · ${period.label}`}>
+        {isLoadingOrders ? <DashboardLoadingState className="min-h-48" label="Chargement des tendances" /> : <div className="grid gap-[var(--dashboard-grid-gap)] lg:grid-cols-2"><OwnerTrendChart title={periodMode === "month" || periodMode === "custom" ? "Chiffre d’affaires sur la période" : "Chiffre d’affaires sur 7 jours"} points={business.trend} valueKey="revenue" partial={isOrdersPartial} /><OwnerTrendChart title={periodMode === "month" || periodMode === "custom" ? "Commandes sur la période" : "Commandes sur 7 jours"} points={business.trend} valueKey="orders" partial={isOrdersPartial} /></div>}
+      </DashboardSection>
+
+      <OwnerAnalysisSection analysis={business.analysis} insights={business.insights} status={business.status} summary={business.summary} periodMode={periodMode} />
     </DashboardPage>
   )
 }
@@ -242,33 +298,82 @@ function OwnerPageContent() {
 type OwnerBusinessDashboard = ReturnType<typeof buildBusinessDashboardData>
 type QueryParams = { toString(): string } | null
 
-function OwnerDecisionOverview({ business, periodMode, searchParams }: { business: OwnerBusinessDashboard; periodMode: PeriodMode; searchParams: QueryParams }) {
-  const criticalAlerts = business.alerts.slice(0, 3)
-  const statusTone = business.status.tone === "good" ? "positive" : business.status.tone === "bad" ? "negative" : "warning"
-  return <DashboardPanel className="grid gap-4 xl:grid-cols-[minmax(240px,0.8fr)_minmax(0,1.5fr)]">
-    <div className="space-y-3">
-      <div><p className="text-xs font-semibold uppercase tracking-wide text-[var(--dashboard-label)]">Tendance commerciale</p><p className={cn("mt-1 text-2xl font-bold", statusTone === "positive" && "text-[var(--data-positive)]", statusTone === "negative" && "text-[var(--data-negative)]", statusTone === "warning" && "text-[var(--data-warning)]")}>{business.status.label}</p><p className="mt-1 text-sm text-[var(--dashboard-muted)]">Lecture de la performance et des alertes disponibles, sans score artificiel.</p></div>
-      <dl className="grid grid-cols-2 gap-3"><DashboardStat label="Tendance CA" value={getTrendLabel(business.variation.revenue.trend)} tone={statusTone} /><DashboardStat label="Alertes prioritaires" value={business.alerts.length} tone={business.alerts.length > 0 ? "negative" : "positive"} /></dl>
-      {business.summary.length > 0 ? <div><h2 className="text-sm font-semibold text-[var(--dashboard-title)]">Résumé {getPeriodSummaryLabel(periodMode)}</h2><ul className="mt-2 space-y-1.5 text-sm text-[var(--dashboard-subtitle)]">{business.summary.map((line) => <li key={line}>{line}</li>)}</ul></div> : null}
-    </div>
-    <div><h2 className="mb-2 text-sm font-semibold text-[var(--dashboard-title)]">Attention requise</h2>{criticalAlerts.length === 0 ? <DashboardAlert title="Aucune intervention immédiate" description="Aucune alerte prioritaire n’est détectée avec les données disponibles." tone="neutral" icon={<Activity />} /> : <DashboardAlertList>{criticalAlerts.map((alert) => <DashboardAlert key={`${alert.title}-${alert.href}`} title={alert.title} description={alert.description} tone={alert.severity === "high" ? "negative" : "warning"} announce={alert.severity === "high"} icon={<AlertTriangle />} action={<Button asChild size="sm" variant="outline"><Link href={getHrefWithCurrentQuery(alert.href, searchParams)}>Consulter</Link></Button>} />)}</DashboardAlertList>}</div>
-  </DashboardPanel>
+function OwnerAlertsSection({
+  alerts,
+  pendingRequests,
+  pendingValidations,
+  partial,
+  searchParams,
+}: {
+  alerts: OwnerBusinessDashboard["alerts"]
+  pendingRequests: number
+  pendingValidations: number
+  partial: boolean
+  searchParams: QueryParams
+}) {
+  const cashAlerts = [
+    pendingRequests > 0
+      ? { title: `${pendingRequests} demande(s) de caisse en attente`, description: "Une ouverture de caisse doit être examinée.", href: "/owner/caisse", severity: "high" as const }
+      : null,
+    pendingValidations > 0
+      ? { title: `${pendingValidations} clôture(s) à valider`, description: "Une session clôturée attend votre validation.", href: "/owner/caisse", severity: "high" as const }
+      : null,
+  ].filter((alert): alert is NonNullable<typeof alert> => Boolean(alert))
+  const importantAlerts = [...cashAlerts, ...alerts].slice(0, 5)
+
+  return (
+    <DashboardSection title="Alertes importantes" aria-label="Alertes importantes">
+      {importantAlerts.length === 0 && !partial ? (
+        <p className="flex min-h-11 items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 text-sm text-[var(--dashboard-subtitle)]">
+          <Activity className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
+          Aucune alerte importante actuellement.
+        </p>
+      ) : (
+        <DashboardAlertList className="lg:grid-cols-2">
+          {partial ? (
+            <DashboardAlert
+              className="flex-wrap sm:flex-nowrap"
+              tone="warning"
+              title="Certaines commandes ne sont pas incluses."
+              description="Les comparaisons concernées sont indiquées comme partielles."
+              icon={<AlertTriangle />}
+            />
+          ) : null}
+          {importantAlerts.map((alert) => (
+            <DashboardAlert
+              className="flex-wrap sm:flex-nowrap"
+              key={`${alert.title}-${alert.href}`}
+              title={alert.title}
+              description={alert.description}
+              tone={alert.severity === "high" ? "negative" : "warning"}
+              announce={alert.severity === "high"}
+              icon={<AlertTriangle />}
+              action={<Button asChild className="min-h-11 shrink-0" size="sm" variant="outline"><Link href={getHrefWithCurrentQuery(alert.href, searchParams)}>Voir</Link></Button>}
+            />
+          ))}
+        </DashboardAlertList>
+      )}
+    </DashboardSection>
+  )
 }
 
 function OwnerPrimaryMetrics({ business, loading, partial, periodLabel, searchParams }: { business: OwnerBusinessDashboard; loading: boolean; partial: boolean; periodLabel: string; searchParams: QueryParams }) {
-  if (loading) return <DashboardSection title="Indicateurs principaux"><DashboardLoadingState label="Chargement des indicateurs" /></DashboardSection>
+  if (loading) return <DashboardSection title="Indicateurs principaux"><div className="grid grid-cols-2 gap-2 md:gap-4 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-32 animate-pulse rounded-xl bg-muted motion-reduce:animate-none" />)}</div></DashboardSection>
   const items = [
-    { href: "/owner", label: "Chiffre d’affaires", value: formatMoney(business.current.revenue), unit: "FCFA", variation: business.variation.revenue, description: "CA encaissé ou confirmé sur la période.", icon: <TrendingUp /> },
-    { href: "/owner", label: "Commandes", value: business.current.orders.toLocaleString("fr-FR"), unit: undefined, variation: business.variation.orders, description: "Commandes acquises sur la période.", icon: <ReceiptText /> },
-    { href: "/owner", label: "Panier moyen", value: formatMoney(business.current.averageOrder), unit: "FCFA", variation: business.variation.averageOrder, description: "Montant moyen par commande acquise.", icon: <BarChart3 /> },
-    { href: "/owner/tresorerie", label: "Trésorerie validée", value: formatMoney(business.treasury.balance), unit: "FCFA", variation: null, description: "Dépôts clôturés moins sorties.", icon: <Wallet /> },
+    { variant: "success" as const, href: null, label: "Chiffre d’affaires encaissé", value: formatMoney(business.current.revenue), unit: "FCFA", variation: business.variation.revenue, quality: business.current.revenueQuality, icon: <TrendingUp /> },
+    { variant: "activity" as const, href: null, label: "Commandes", value: business.current.orders.toLocaleString("fr-FR"), unit: undefined, variation: business.variation.orders, quality: business.current.ordersQuality, icon: <ReceiptText /> },
+    { variant: "info" as const, href: null, label: "Panier moyen", value: formatMoney(business.current.averageOrder), unit: "FCFA", variation: business.variation.averageOrder, quality: business.variation.averageOrder.quality, icon: <BarChart3 /> },
+    { variant: "finance" as const, href: "/owner/tresorerie", label: "Solde de trésorerie", value: formatMoney(business.treasury.balance), unit: "FCFA", variation: null, quality: business.treasury.balanceQuality, icon: <Wallet /> },
   ]
-  return <DashboardSection title="Indicateurs principaux" description={`${periodLabel}${partial ? " · données commandes potentiellement partielles" : ""}`}><MetricGroup>{items.map((item) => <Link key={item.label} href={getHrefWithCurrentQuery(item.href, searchParams)} className="rounded-[var(--radius-dashboard-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2"><MetricCard className="h-full" interactive label={item.label} value={item.value} unit={item.unit} description={item.description} icon={item.icon} delta={item.variation ? <OwnerMetricDelta variation={item.variation} /> : <span className="text-xs text-[var(--dashboard-muted)]">Solde validé actuel</span>} /></Link>)}</MetricGroup></DashboardSection>
+  return <DashboardSection title="Indicateurs principaux" description={periodLabel}><MetricGroup className="grid-cols-2 gap-2 md:gap-4 xl:grid-cols-4">{items.map((item) => {
+    const card = <MetricCard variant={item.variant} density="compact" className="h-full min-w-0" interactive={Boolean(item.href)} label={item.label} value={item.value} unit={item.unit} description={<OwnerDataQualityBadge quality={item.quality} />} icon={item.icon} delta={item.variation ? <OwnerMetricDelta variation={item.variation} /> : <span className="text-xs text-[var(--dashboard-muted)]">Solde actuel</span>} />
+    return item.href ? <Link key={item.label} href={getHrefWithCurrentQuery(item.href, searchParams)} aria-label={`Voir ${item.label.toLowerCase()}`} className="min-w-0 rounded-[var(--radius-dashboard-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2">{card}</Link> : <React.Fragment key={item.label}>{card}</React.Fragment>
+  })}</MetricGroup>{partial ? <p className="mt-2 text-xs text-[var(--dashboard-muted)]">Certaines commandes ne sont pas incluses.</p> : null}</DashboardSection>
 }
 
 function OwnerMetricDelta({ variation }: { variation: Variation }) {
-  if (variation.trend === "none" || variation.percent === null) return <MetricDelta value="Comparaison indisponible" context="période précédente" />
-  return <MetricDelta direction={variation.trend === "up" ? "up" : variation.trend === "down" ? "down" : "flat"} tone={variation.trend === "up" ? "positive" : variation.trend === "down" ? "negative" : "neutral"} value={`${variation.absolute > 0 ? "+" : ""}${formatMoney(variation.absolute)} (${variation.percent.toFixed(1)} %)`} context="par rapport à la période précédente" />
+  if (variation.trend === "none" || variation.percent === null) return <MetricDelta value="Comparaison indisponible" context={<span className="hidden sm:inline">période précédente</span>} />
+  return <MetricDelta direction={variation.trend === "up" ? "up" : variation.trend === "down" ? "down" : "flat"} tone={variation.trend === "up" ? "positive" : variation.trend === "down" ? "negative" : "neutral"} value={`${variation.absolute > 0 ? "+" : ""}${formatMoney(variation.absolute)} (${variation.percent.toFixed(1)} %)`} context={<span className="hidden sm:inline">par rapport à la période précédente</span>} />
 }
 
 function OwnerTrendChart({ title, points, valueKey, partial }: { title: string; points: Array<{ date: string; label: string; revenue: number; orders: number }>; valueKey: "revenue" | "orders"; partial: boolean }) {
@@ -276,22 +381,27 @@ function OwnerTrendChart({ title, points, valueKey, partial }: { title: string; 
   const maxValue = Math.max(1, ...points.map((point) => point[valueKey]))
   const summary = validPoints.length < 2 ? "Données insuffisantes pour dégager une évolution." : `${validPoints.length} jours présentent une valeur non nulle. Valeur maximale : ${valueKey === "revenue" ? `${formatMoney(maxValue)} FCFA` : maxValue}.`
   const table = <table className="w-full text-left text-sm"><caption className="sr-only">Données de {title}</caption><thead><tr><th scope="col" className="py-2">Jour</th><th scope="col" className="py-2 text-right">Valeur</th></tr></thead><tbody>{points.map((point) => <tr key={point.date} className="border-t border-[var(--dashboard-divider)]"><th scope="row" className="py-2 font-medium">{point.label}</th><td className="py-2 text-right tabular-nums">{valueKey === "revenue" ? `${formatMoney(point.revenue)} FCFA` : point.orders}</td></tr>)}</tbody></table>
-  return <DashboardChartCard title={title} description={partial ? "Valeurs potentiellement partielles : limite de 500 commandes atteinte." : "Comparaison quotidienne avec les données disponibles."}><DashboardChart label={title} description={summary} table={table}>{validPoints.length < 2 ? <DashboardEmptyState className="min-h-48" title="Évolution indisponible" description="Le graphique apparaîtra après plusieurs jours d’activité." /> : <div className="space-y-3">{points.map((point) => <DashboardTrend key={point.date} label={point.label} current={point[valueKey]} max={maxValue} value={valueKey === "revenue" ? `${formatMoney(point.revenue)} F` : point.orders} tone={valueKey === "revenue" ? "info" : "neutral"} />)}</div>}</DashboardChart></DashboardChartCard>
+  return <DashboardChartCard variant={valueKey === "revenue" ? "success" : "activity"} title={title} description={partial ? "Certaines commandes ne sont pas incluses." : "Comparaison quotidienne avec les données disponibles."}><DashboardChart className="min-h-0" label={title} description={summary} table={table}>{validPoints.length < 2 ? <DashboardEmptyState className="min-h-32 sm:min-h-48" title="Évolution indisponible" description="Le graphique apparaîtra après plusieurs jours d’activité." /> : <div className="space-y-3">{points.map((point, index) => <DashboardTrend className={index < points.length - 7 ? "hidden md:grid" : undefined} key={point.date} label={point.label} current={point[valueKey]} max={maxValue} value={valueKey === "revenue" ? `${formatMoney(point.revenue)} F` : point.orders} tone={valueKey === "revenue" ? "info" : "neutral"} />)}</div>}</DashboardChart></DashboardChartCard>
 }
 
-function OwnerTreasuryWidget({ treasury, periodLabel, searchParams }: { treasury: OwnerBusinessDashboard["treasury"]; periodLabel: string; searchParams: QueryParams }) {
-  return <DashboardWidget><DashboardWidgetHeader title="Trésorerie" description={`Solde, mouvements et sessions · ${periodLabel}`} action={<Button asChild size="sm" variant="outline"><Link href={getHrefWithCurrentQuery("/owner/tresorerie", searchParams)}>Voir la trésorerie</Link></Button>} /><div className="grid gap-4 p-4 sm:grid-cols-2"><DashboardStat label="Solde validé" value={`${formatMoney(treasury.balance)} FCFA`} tone={treasury.balance < 0 ? "negative" : "neutral"} /><DashboardStat label="Dépenses" value={`${formatMoney(treasury.expenses)} FCFA`} /><DashboardStat label="Transferts" value={`${formatMoney(treasury.transfers)} FCFA`} /><DashboardStat label="Sessions ouvertes" value={treasury.openSessions} tone={treasury.openSessions > 0 ? "warning" : "neutral"} /><p className="sm:col-span-2 text-xs text-[var(--dashboard-muted)]">Ventes des sessions ouvertes : <span className="font-semibold tabular-nums text-[var(--dashboard-subtitle)]">{formatMoney(treasury.openSessionSales)} FCFA</span> non clôturés.</p>{treasury.anomalies.length > 0 ? <DashboardAlert className="sm:col-span-2" tone="warning" title="Mouvement à vérifier" description={treasury.anomalies[0]?.label} action={<Button asChild size="sm" variant="outline"><Link href={getHrefWithCurrentQuery("/manager/caisse", searchParams)}>Consulter</Link></Button>} /> : null}</div></DashboardWidget>
+function OwnerCashSituation({ treasury, pendingValidations, searchParams }: { treasury: OwnerBusinessDashboard["treasury"]; pendingValidations: number; searchParams: QueryParams }) {
+  return <DashboardWidget variant="finance"><DashboardWidgetHeader title="Caisses" action={<Button asChild className="min-h-11" size="sm" variant="outline"><Link href={getHrefWithCurrentQuery("/owner/caisse", searchParams)}>Voir les caisses</Link></Button>} /><dl className="grid grid-cols-2 gap-3 p-4"><DashboardStat label="Sessions ouvertes" value={treasury.openSessions} tone={treasury.openSessions > 0 ? "warning" : "neutral"} /><DashboardStat label="Validations en attente" value={pendingValidations} tone={pendingValidations > 0 ? "warning" : "neutral"} /><DashboardStat className="col-span-2" label="Ventes des sessions ouvertes" value={`${formatMoney(treasury.openSessionSales)} FCFA`} /></dl></DashboardWidget>
+}
+
+function OwnerTreasuryWidget({ treasury, revenue, periodLabel, searchParams }: { treasury: OwnerBusinessDashboard["treasury"]; revenue: number; periodLabel: string; searchParams: QueryParams }) {
+  return <DashboardWidget variant="success"><DashboardWidgetHeader title="Finances" description={periodLabel} action={<Button asChild className="min-h-11" size="sm" variant="outline"><Link href={getHrefWithCurrentQuery("/owner/finances", searchParams)}>Voir les finances</Link></Button>} /><dl className="grid grid-cols-2 gap-3 p-4"><DashboardStat label="Encaissements confirmés" value={`${formatMoney(revenue)} FCFA`} /><DashboardStat label="Sorties de trésorerie" value={`${formatMoney(treasury.expenses)} FCFA`} /><DashboardStat label="Solde disponible" value={`${formatMoney(treasury.balance)} FCFA`} tone={treasury.balance < 0 ? "negative" : "neutral"} /><DashboardStat label="Transferts" value={`${formatMoney(treasury.transfers)} FCFA`} /><div className="col-span-2"><OwnerDataQualityBadge quality={treasury.balanceQuality} /></div>{treasury.anomalies.length > 0 ? <DashboardAlert className="col-span-2" tone="warning" title="Mouvement à vérifier" description={treasury.anomalies[0]?.label} action={<Button asChild className="min-h-11" size="sm" variant="outline"><Link href={getHrefWithCurrentQuery("/owner/caisse", searchParams)}>Voir</Link></Button>} /> : null}</dl></DashboardWidget>
 }
 
 function OwnerInventoryWidget({ inventory, inventoryHref }: { inventory: OwnerBusinessDashboard["inventory"]; inventoryHref: string }) {
   const dataIsEstimated = inventory.alerts.some((alert) => alert.type === "missing_cost")
-  return <DashboardWidget><DashboardWidgetHeader title="Stock et impact business" description="Valeurs estimées à partir des stocks et coûts renseignés." action={<Button asChild size="sm" variant="outline"><Link href={inventoryHref}>Voir l’inventaire</Link></Button>} /><div className="grid gap-4 p-4 sm:grid-cols-2"><DashboardStat label="Valeur estimée du stock" value={`${formatMoney(inventory.stockValue)} FCFA`} /><DashboardStat label="Coût consommé" value={`${formatMoney(inventory.consumedCost)} FCFA`} /><DashboardStat label="Pertes estimées" value={`${formatMoney(inventory.estimatedLosses)} FCFA`} tone={inventory.estimatedLosses > 0 ? "warning" : "neutral"} /><DashboardStat label="Produits critiques" value={inventory.criticalProducts} tone={inventory.criticalProducts > 0 ? "negative" : "positive"} />{dataIsEstimated ? <DashboardAlert className="sm:col-span-2" tone="warning" title="Coûts incomplets" description="Certaines estimations dépendent de coûts qui ne sont pas encore renseignés." /> : null}</div></DashboardWidget>
+  return <DashboardWidget variant="stock"><DashboardWidgetHeader title="Stock" action={<Button asChild className="min-h-11" size="sm" variant="outline"><Link href={inventoryHref}>Voir le stock</Link></Button>} /><dl className="grid grid-cols-2 gap-3 p-4"><DashboardStat className="col-span-2" label="Articles critiques" value={inventory.criticalProducts} tone={inventory.criticalProducts > 0 ? "negative" : "positive"} /><DashboardStat label="Valeur estimée" value={`${formatMoney(inventory.stockValue)} FCFA`} /><DashboardStat label="Pertes estimées" value={`${formatMoney(inventory.estimatedLosses)} FCFA`} tone={inventory.estimatedLosses > 0 ? "warning" : "neutral"} /><DashboardStat className="col-span-2" label="Coût consommé" value={`${formatMoney(inventory.consumedCost)} FCFA`} />{dataIsEstimated ? <DashboardAlert className="col-span-2" tone="warning" title="Coûts incomplets" description="Certaines estimations utilisent uniquement les coûts renseignés." /> : null}</dl></DashboardWidget>
 }
 
-function OwnerAnalysisSection({ analysis, insights }: { analysis: OwnerBusinessDashboard["analysis"]; insights: string[] }) {
+function OwnerAnalysisSection({ analysis, insights, status, summary, periodMode }: { analysis: OwnerBusinessDashboard["analysis"]; insights: string[]; status: BusinessStatus; summary: string[]; periodMode: PeriodMode }) {
   const hasAnalysis = analysis.topProducts.length > 0 || analysis.bestDays.length > 0 || insights.length > 0
-  if (!hasAnalysis) return null
-  return <DashboardSection title="Analyse business" description="Les produits, jours et signaux qui expliquent la période."><div className="grid gap-[var(--dashboard-grid-gap)] xl:grid-cols-3">{analysis.topProducts.length > 0 ? <OwnerRankedWidget title="Produits les plus vendus" items={analysis.topProducts.map((item) => ({ key: item.name, label: item.name, value: `${item.count} vendu(s)` }))} /> : null}{analysis.bestDays.length > 0 ? <OwnerRankedWidget title="Jours les plus performants" items={analysis.bestDays.map((item) => ({ key: item.day, label: item.day, value: `${formatMoney(item.revenue)} FCFA` }))} /> : null}{insights.length > 0 ? <DashboardWidget><DashboardWidgetHeader title="Insights disponibles" /><ul className="space-y-2 p-4 text-sm text-[var(--dashboard-subtitle)]">{insights.map((insight) => <li key={insight} className="border-b border-[var(--dashboard-divider)] pb-2 last:border-0 last:pb-0">{insight}</li>)}</ul></DashboardWidget> : null}</div></DashboardSection>
+  if (!hasAnalysis && summary.length === 0) return null
+  const statusTone = status.tone === "good" ? "positive" : status.tone === "bad" ? "negative" : "warning"
+  return <DashboardSection title="Analyse de l’activité" description="Informations secondaires de la période."><details className="group rounded-[var(--radius-dashboard-card)] border border-[var(--dashboard-border)] bg-[var(--dashboard-surface)] open:p-3 [&:not([open])>div]:hidden md:border-0 md:bg-transparent md:open:p-0 md:[&:not([open])>div]:grid"><summary className="flex min-h-11 cursor-pointer items-center font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] md:hidden">Voir plus d’analyses</summary><div className="grid gap-[var(--dashboard-grid-gap)] pt-3 md:grid-cols-2 md:pt-0 xl:grid-cols-3"><DashboardWidget><DashboardWidgetHeader title="Résumé de la période" /><div className="space-y-3 p-4"><DashboardStat label="Situation" value={status.label} tone={statusTone} /><p className="text-xs text-[var(--dashboard-muted)]">Résumé {getPeriodSummaryLabel(periodMode)}</p><ul className="space-y-1.5 text-sm text-[var(--dashboard-subtitle)]">{summary.map((line) => <li key={line}>{line}</li>)}</ul></div></DashboardWidget>{analysis.topProducts.length > 0 ? <OwnerRankedWidget title="Produits les plus vendus" items={analysis.topProducts.map((item) => ({ key: item.name, label: item.name, value: `${item.count} vendu(s)` }))} /> : null}{analysis.bestDays.length > 0 ? <OwnerRankedWidget title="Jours les plus performants" items={analysis.bestDays.map((item) => ({ key: item.day, label: item.day, value: `${formatMoney(item.revenue)} FCFA` }))} /> : null}{insights.length > 0 ? <DashboardWidget><DashboardWidgetHeader title="Points à retenir" /><ul className="space-y-2 p-4 text-sm text-[var(--dashboard-subtitle)]">{insights.map((insight) => <li key={insight} className="border-b border-[var(--dashboard-divider)] pb-2 last:border-0 last:pb-0">{insight}</li>)}</ul></DashboardWidget> : null}</div></details></DashboardSection>
 }
 
 function OwnerRankedWidget({ title, items }: { title: string; items: Array<{ key: string; label: string; value: string }> }) {
@@ -299,7 +409,7 @@ function OwnerRankedWidget({ title, items }: { title: string; items: Array<{ key
 }
 
 function OwnerLiveSection({ live, loading, searchParams }: { live: OwnerBusinessDashboard["live"]; loading: boolean; searchParams: QueryParams }) {
-  return <DashboardSection title="Maintenant" description="Activité opérationnelle immédiate dans les données actuellement chargées." action={<span className="inline-flex min-h-10 items-center rounded-[var(--radius-dashboard-button)] border border-[var(--dashboard-border)] px-3 text-xs font-semibold text-[var(--dashboard-muted)]">{loading ? "Synchronisation…" : "En direct"}</span>}>{loading ? <DashboardLoadingState compact label="Synchronisation de l’activité en direct" /> : <div className="grid gap-[var(--dashboard-grid-gap)] sm:grid-cols-2 xl:grid-cols-4"><Link href={getHrefWithCurrentQuery("/manager/commandes", searchParams)} className="rounded-[var(--radius-dashboard-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><MetricCard interactive className="h-full" label="Commandes actives" value={live.activeOrders} description={getLiveActivityMessage(live.activeOrders)} icon={<Eye />} /></Link><Link href={getHrefWithCurrentQuery("/kitchen", searchParams)} className="rounded-[var(--radius-dashboard-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><MetricCard interactive className="h-full" label="Cuisine active" value={live.kitchenActive} description="Commandes à préparer ou servir." icon={<Activity />} /></Link><Link href={getHrefWithCurrentQuery("/manager/commandes?status=late", searchParams)} className="rounded-[var(--radius-dashboard-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><MetricCard interactive className="h-full" label="Retards" value={live.anomalies.length} description="Commandes en retard." icon={<AlertTriangle />} /></Link><MetricCard label="Valeur active" value={formatMoney(live.liveRevenue)} unit="FCFA" description="Valeur des commandes actives." icon={<Banknote />} /></div>}</DashboardSection>
+  return <DashboardSection title="Activité en direct" action={<span className="inline-flex min-h-11 items-center rounded-[var(--radius-dashboard-button)] border border-[var(--dashboard-border)] px-3 text-xs font-semibold text-[var(--dashboard-muted)]">{loading ? "Synchronisation…" : "En direct"}</span>}>{loading ? <DashboardLoadingState compact label="Synchronisation de l’activité en direct" /> : <div className="grid grid-cols-2 gap-2 md:gap-4 xl:grid-cols-4"><Link href={getHrefWithCurrentQuery("/owner/commandes", searchParams)} className="min-w-0 rounded-[var(--radius-dashboard-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><MetricCard density="compact" interactive className="h-full" label="Commandes actives" value={live.activeOrders} description={getLiveActivityMessage(live.activeOrders)} icon={<Eye />} /></Link><MetricCard density="compact" className="h-full" label="Cuisine active" value={live.kitchenActive} description="À préparer ou servir." icon={<Activity />} /><Link href={getHrefWithCurrentQuery("/owner/commandes?status=late", searchParams)} className="min-w-0 rounded-[var(--radius-dashboard-card)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><MetricCard density="compact" interactive className="h-full" label="Commandes en retard" value={live.anomalies.length} description="Action prioritaire." icon={<AlertTriangle />} /></Link><MetricCard density="compact" label="Montant en cours" value={formatMoney(live.liveRevenue)} unit="FCFA" description="Commandes actives." icon={<Banknote />} /></div>}</DashboardSection>
 }
 
 function getHrefWithCurrentQuery(href: string, searchParams: { toString(): string } | null) {
@@ -308,151 +418,104 @@ function getHrefWithCurrentQuery(href: string, searchParams: { toString(): strin
   return href.includes("?") ? `${href}&${queryString}` : `${href}?${queryString}`
 }
 
-function OwnerCashSessionRequests({
-  restaurantId,
-  user,
-  role,
-}: {
-  restaurantId: string
-  user: any
-  role: string | null | undefined
-}) {
-  const db = useFirestore()
-  const { cashSessionRequests, cashSessions } = useRestaurantLiveData()
+function OwnerCashSessionRequests({ searchParams }: { searchParams: QueryParams }) {
+  const { cashSessionRequests } = useRestaurantLiveData()
   const pendingRequests = cashSessionRequests
 
-  const approve = async (request: any) => {
-    if (!db || !user) return
-    const existingSession = cashSessions.find((session: any) => session.cashierId === request.cashierId)
-    const sessionId = !existingSession
-      ? (
-          await addDoc(collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS), {
-            restaurantId,
-            cashierId: request.cashierId,
-            userId: request.userId || request.cashierId,
-            staffId: request.staffId || request.cashierId,
-            staffName: request.staffName || request.cashierName || request.cashierId,
-            staffPhone: request.staffPhone || null,
-            status: "open",
-            openedAt: serverTimestamp(),
-            closedAt: null,
-            openingBalance: 0,
-            closingBalance: null,
-            totalCash: 0,
-            totalMobile: 0,
-            totalOrders: 0,
-            validatedByManager: false,
-            approvedBy: user.uid,
-            approvedRole: role === "owner" ? "owner" : "manager",
-            requestId: request.id,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-        ).id
-      : existingSession.id
-
-    await updateDoc(doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "cashSessionRequests", request.id), {
-      status: "approved",
-      approvedAt: serverTimestamp(),
-      approvedBy: user.uid,
-      approvedRole: role === "owner" ? "owner" : "manager",
-      sessionId,
-      updatedAt: serverTimestamp(),
-    })
-  }
-
-  const reject = async (request: any) => {
-    if (!db || !user) return
-    await updateDoc(doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "cashSessionRequests", request.id), {
-      status: "rejected",
-      rejectedAt: serverTimestamp(),
-      rejectedBy: user.uid,
-      updatedAt: serverTimestamp(),
-    })
-  }
-
   if (pendingRequests.length === 0) {
-    return <DashboardEmptyState className="min-h-32" title="Aucune demande en attente" description="Les nouvelles demandes d’ouverture de caisse apparaîtront ici." />
+    return <DashboardEmptyState className="min-h-24" title="Aucune demande en attente" description="Les nouvelles demandes d’ouverture de caisse apparaîtront ici." />
   }
 
   return (
-    <DashboardWidget>
+    <DashboardWidget variant="finance">
       <DashboardWidgetHeader title="Demandes en attente" description={`${pendingRequests.length} demande(s) à traiter`} />
       <div className="space-y-2 p-4">
-        {pendingRequests.map((request: any) => (
-          <div key={request.id} className="flex flex-col gap-3 rounded-[var(--radius-dashboard-button)] border border-[var(--dashboard-border)] bg-[var(--dashboard-section)] p-3 sm:flex-row sm:items-center sm:justify-between">
+        {pendingRequests.slice(0, 3).map((request: any) => (
+          <div key={request.id} className="rounded-[var(--radius-dashboard-button)] border border-[var(--dashboard-border)] bg-[var(--dashboard-section)] p-3">
             <div>
               <p className="text-sm font-semibold text-[var(--dashboard-title)]">{request.cashierName || request.cashierId}</p>
               <p className="text-xs text-[var(--dashboard-muted)]">Ouverture de caisse</p>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Button className="min-h-10" size="sm" onClick={() => approve(request)}>Valider</Button>
-              <Button className="min-h-10" size="sm" variant="outline" onClick={() => reject(request)}>Refuser</Button>
-            </div>
           </div>
         ))}
+        <Button asChild className="min-h-11 w-full" size="sm" variant="outline"><Link href={getHrefWithCurrentQuery("/owner/caisse", searchParams)}>Examiner les demandes</Link></Button>
       </div>
     </DashboardWidget>
   )
 }
 
 function buildBusinessDashboardData({
-  orders,
+  currentOrders: rawCurrentOrders,
+  previousOrders: rawPreviousOrders,
+  currentOrdersPartial,
+  previousOrdersPartial,
+  liveOrders,
   payments,
   cashMovements,
   cashSessions,
+  treasuryAccounts,
   inventoryAlerts,
   inventoryItems,
   inventoryLogs,
   period,
 }: {
-  orders: Order[]
+  currentOrders: Order[]
+  previousOrders: Order[]
+  currentOrdersPartial: boolean
+  previousOrdersPartial: boolean
+  liveOrders: Order[]
   payments: any[]
   cashMovements: any[]
   cashSessions: any[]
+  treasuryAccounts: any[]
   inventoryAlerts: OwnerInventoryAlert[]
   inventoryItems: OwnerInventoryItem[]
   inventoryLogs: OwnerInventoryLog[]
   period: ReturnType<typeof buildPeriodContext>
 }) {
-  const currentPayments = payments.filter((payment) => isConfirmedPaymentInRange(payment, period.current))
-  const previousPayments = payments.filter((payment) => isConfirmedPaymentInRange(payment, period.previous))
   const confirmedPaymentOrderIds = getConfirmedPaymentOrderIds(payments)
-  const acquiredOrders = orders.filter((order) => isOwnerAcquiredOrder(order, confirmedPaymentOrderIds))
-  const currentOrders = acquiredOrders.filter((order) => isDateInRange(toDate(order.createdAt), period.current))
-  const previousOrders = acquiredOrders.filter((order) => isDateInRange(toDate(order.createdAt), period.previous))
+  const currentOrders = rawCurrentOrders.filter((order) => isOwnerAcquiredOrder(order, confirmedPaymentOrderIds))
+  const previousOrders = rawPreviousOrders.filter((order) => isOwnerAcquiredOrder(order, confirmedPaymentOrderIds))
   const currentMovements = cashMovements.filter((movement) => isDateInRange(toDate(movement.createdAt), period.current))
-
-  const currentRevenue = sumBy(currentPayments, (payment) => getAmount(payment.amount))
-  const previousRevenue = sumBy(previousPayments, (payment) => getAmount(payment.amount))
-  const currentOrderRevenueFallback = sumBy(currentOrders, (order) => getAmount((order as any).total ?? (order as any).totalAmount))
-  const previousOrderRevenueFallback = sumBy(previousOrders, (order) => getAmount((order as any).total ?? (order as any).totalAmount))
-  const revenue = currentRevenue || currentOrderRevenueFallback
-  const previousRevenueValue = previousRevenue || previousOrderRevenueFallback
-  const averageOrder = currentOrders.length > 0 ? Math.round(revenue / currentOrders.length) : 0
-  const previousAverageOrder = previousOrders.length > 0 ? Math.round(previousRevenueValue / previousOrders.length) : 0
+  const revenueResolution = resolveOwnerRevenue({
+    payments,
+    currentOrders,
+    previousOrders,
+    currentRange: period.current,
+    previousRange: period.previous,
+    currentOrdersPartial,
+    previousOrdersPartial,
+    timeZone: period.timeZone,
+  })
+  const revenue = revenueResolution.current
+  const previousRevenueValue = revenueResolution.previous
+  const averageOrder = calculateOwnerAverageOrder(revenue, currentOrders.length)
+  const previousAverageOrder = calculateOwnerAverageOrder(previousRevenueValue, previousOrders.length)
 
   const inventory = buildOwnerInventoryOverview(inventoryAlerts, inventoryItems, inventoryLogs, period.current)
-  const live = computeLiveOverview(acquiredOrders)
-  const treasury = buildTreasuryOverview(payments, cashMovements, cashSessions, currentMovements)
-  const trend = buildTrendPoints(acquiredOrders, payments, period.current)
+  const live = computeLiveOverview(liveOrders)
+  const treasury = buildTreasuryOverview(payments, cashMovements, cashSessions, currentMovements, treasuryAccounts)
+  const trend = buildTrendPoints(currentOrders, payments, period.current, period.timeZone)
   const analysis = buildAnalysisOverview(currentOrders)
   const variation = {
-    orders: buildVariation(currentOrders.length, previousOrders.length),
-    revenue: buildVariation(revenue, previousRevenueValue),
-    averageOrder: buildVariation(averageOrder, previousAverageOrder),
+    orders: buildOwnerVariation(currentOrders.length, previousOrders.length, currentOrdersPartial || previousOrdersPartial ? "partial" : "complete"),
+    revenue: buildOwnerVariation(revenue, previousRevenueValue, revenueResolution.quality),
+    averageOrder: buildOwnerVariation(averageOrder, previousAverageOrder, currentOrdersPartial || previousOrdersPartial ? "partial" : revenueResolution.quality),
   }
   const alerts = buildActionAlerts({ variation, inventory, live, treasury, analysis })
   const insights = buildInsights({ variation, analysis, inventory, trend })
   const status = buildBusinessStatus({ variation, alerts, live, currentOrders: currentOrders.length })
   const summary = buildDecisionSummary({ variation, inventory, live, currentOrders: currentOrders.length })
-  const hasPeriodData = currentOrders.length > 0 || currentPayments.length > 0 || currentMovements.length > 0 || inventoryLogs.length > 0
+  const hasPeriodData = currentOrders.length > 0 || revenueResolution.currentPaymentCount > 0 || currentMovements.length > 0 || inventoryLogs.length > 0
 
   return {
     current: {
       orders: currentOrders.length,
       revenue,
       averageOrder,
+      revenueQuality: revenueResolution.quality,
+      revenueSource: revenueResolution.source,
+      ordersQuality: currentOrdersPartial ? "partial" as const : "complete" as const,
     },
     variation,
     trend,
@@ -468,8 +531,9 @@ function buildBusinessDashboardData({
   }
 }
 
-function buildTreasuryOverview(payments: any[], cashMovements: any[], cashSessions: any[], currentMovements: any[]) {
-  const balance = buildValidatedTreasuryBalance(cashMovements)
+function buildTreasuryOverview(payments: any[], cashMovements: any[], cashSessions: any[], currentMovements: any[], treasuryAccounts: any[]) {
+  const treasuryResolution = resolveOwnerTreasuryBalance(treasuryAccounts, currentMovements)
+  const balance = treasuryResolution.balance
   const expenses = sumBy(currentMovements.filter((movement) => movement.type === "expense"), (movement) => getAmount(movement.amount))
   const transfers = sumBy(currentMovements.filter((movement) => movement.type === "transfer"), (movement) => getAmount(movement.amount))
   const openSessionIds = new Set(
@@ -485,6 +549,8 @@ function buildTreasuryOverview(payments: any[], cashMovements: any[], cashSessio
 
   return {
     balance,
+    balanceQuality: treasuryResolution.quality,
+    balanceSource: treasuryResolution.source,
     expenses,
     transfers,
     openSessions: openSessionIds.size,
@@ -565,7 +631,7 @@ function computeLiveOverview(orders: Order[]) {
     const status = getOrderStatus(order)
     if (activeStatuses.has(status)) {
       activeOrders += 1
-      liveRevenue += Number((order as any).total || 0)
+      liveRevenue += Number((order as any).total ?? (order as any).totalAmount ?? 0)
     }
   })
 
@@ -578,17 +644,24 @@ function computeLiveOverview(orders: Order[]) {
   return { activeOrders, anomalies, kitchenActive, liveRevenue, statusCounts: stats }
 }
 
-function buildTrendPoints(orders: Order[], payments: any[], range: DateRange) {
-  const days = enumerateDays(range)
-  const points = days.map((day) => {
-    const dayRange = { start: startOfDay(day), end: endOfDay(day) }
-    const dayOrders = orders.filter((order) => isDateInRange(toDate(order.createdAt), dayRange))
-    const dayPayments = payments.filter((payment) => isConfirmedPaymentInRange(payment, dayRange))
+function buildTrendPoints(orders: Order[], payments: any[], range: DateRange, timeZone: string) {
+  const days = enumerateBusinessDateKeys(range, timeZone)
+  const points = days.map((dateKey) => {
+    const dayOrders = orders.filter((order) => {
+      const date = toDate(order.createdAt)
+      return Boolean(date && getOwnerBusinessDateKey(date, timeZone) === dateKey)
+    })
+    const dayPayments = payments.filter((payment) => {
+      if (!isConfirmedPayment(payment)) return false
+      if (typeof payment.businessDate === "string") return payment.businessDate.slice(0, 10) === dateKey
+      const date = getConfirmedPaymentDate(payment)
+      return Boolean(date && getOwnerBusinessDateKey(date, timeZone) === dateKey)
+    })
     const revenue = sumBy(dayPayments, (payment) => getAmount(payment.amount)) ||
       sumBy(dayOrders, (order) => getAmount((order as any).total ?? (order as any).totalAmount))
     return {
-      date: getInputDateValue(day),
-      label: day.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }),
+      date: dateKey,
+      label: new Date(`${dateKey}T12:00:00Z`).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", timeZone: "UTC" }),
       orders: dayOrders.length,
       revenue,
     }
@@ -650,7 +723,7 @@ function buildActionAlerts({
     alerts.push({
       title: "Stock critique",
       description: `${inventory.criticalProducts} produit(s) peuvent impacter les ventes.`,
-      href: "/manager/inventory",
+      href: "/owner/stock/alerts",
       severity: "high",
     })
   }
@@ -658,7 +731,7 @@ function buildActionAlerts({
     alerts.push({
       title: "Pertes inventaire",
       description: `${formatMoney(inventory.estimatedLosses)} FCFA d’écart estimé.`,
-      href: "/manager/inventory",
+      href: "/owner/stock/alerts",
       severity: "medium",
     })
   }
@@ -666,7 +739,7 @@ function buildActionAlerts({
     alerts.push({
       title: "Retards cuisine",
       description: `${live.anomalies.length} commande(s) en retard.`,
-      href: "/manager/commandes?status=late",
+      href: "/owner/commandes?status=late",
       severity: "high",
     })
   }
@@ -674,7 +747,7 @@ function buildActionAlerts({
     alerts.push({
       title: "Trésorerie à vérifier",
       description: treasury.anomalies[0]?.label || "Anomalie de caisse détectée.",
-      href: "/manager/caisse",
+      href: "/owner/caisse",
       severity: "medium",
     })
   }
@@ -790,16 +863,6 @@ function buildDecisionSummary({
   return lines.slice(0, 4)
 }
 
-function buildVariation(current: number, previous: number): Variation {
-  const absolute = Math.round(current - previous)
-  if (!Number.isFinite(previous) || previous <= 0) {
-    return { absolute, percent: null, trend: "none" }
-  }
-  const percent = (absolute / previous) * 100
-  const trend = Math.abs(percent) < 3 ? "stable" : percent > 0 ? "up" : "down"
-  return { absolute, percent, trend }
-}
-
 function getVariationInterpretation(variation: Variation) {
   if (variation.percent === null) {
     return { label: "Analyse disponible après comparaison", className: "text-muted-foreground" }
@@ -826,27 +889,29 @@ function getPeriodSummaryLabel(mode: PeriodMode) {
   return "de la période"
 }
 
-function buildPeriodContext(filter: ReturnType<typeof useTimeFilter>["filter"]) {
-  const currentRange = getDateRange(filter)
-  const previousRange = getPreviousDateRange(filter)
-  const current = { start: currentRange.startDate, end: currentRange.endDate }
-  const previous = { start: previousRange.startDate, end: previousRange.endDate }
+function buildPeriodContext(filter: ReturnType<typeof useTimeFilter>["filter"], timeZone?: string | null) {
+  const ranges = getOwnerPeriodRanges(filter, timeZone)
+  const current = ranges.current
+  const previous = ranges.previous
 
   return {
     mode: filter.type,
+    timeZone: ranges.timeZone,
     current,
     previous,
     label: `${formatShortDate(current.start)} → ${formatShortDate(current.end)}`,
   }
 }
 
-function enumerateDays(range: DateRange) {
-  const days: Date[] = []
-  const cursor = startOfDay(range.start)
+function enumerateBusinessDateKeys(range: DateRange, timeZone: string) {
+  const days: string[] = []
+  const startKey = getOwnerBusinessDateKey(new Date(range.start.getTime() + 3_600_000), timeZone)
+  const endKey = getOwnerBusinessDateKey(new Date(range.end.getTime() - 3_600_000), timeZone)
+  const cursor = new Date(`${startKey}T12:00:00Z`)
   const maxDays = 60
-  while (cursor <= range.end && days.length < maxDays) {
-    days.push(new Date(cursor))
-    cursor.setDate(cursor.getDate() + 1)
+  while (cursor.toISOString().slice(0, 10) <= endKey && days.length < maxDays) {
+    days.push(cursor.toISOString().slice(0, 10))
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
   }
   return days
 }
@@ -880,26 +945,10 @@ function toDate(value: any): Date | null {
   return null
 }
 
-function startOfDay(date: Date) {
-  const next = new Date(date)
-  next.setHours(0, 0, 0, 0)
-  return next
-}
-
-function endOfDay(date: Date) {
-  const next = new Date(date)
-  next.setHours(23, 59, 59, 999)
-  return next
-}
-
 function parseInputDate(value: string) {
   if (!value) return null
   const date = new Date(`${value}T00:00:00`)
   return Number.isNaN(date.getTime()) ? null : date
-}
-
-function getInputDateValue(date: Date) {
-  return date.toISOString().slice(0, 10)
 }
 
 function formatShortDate(date: Date) {
@@ -921,28 +970,6 @@ function sumBy<T>(items: T[], selector: (item: T) => number) {
   return items.reduce((total, item) => total + selector(item), 0)
 }
 
-function buildValidatedTreasuryBalance(movements: any[]) {
-  return movements.reduce((balance, movement) => {
-    const amount = getAmount(movement.amount)
-    if (!amount) return balance
-
-    const direction = getTreasuryMovementDirection(movement)
-    if (direction === "in") return balance + amount
-    if (direction === "out") return balance - amount
-    return balance
-  }, 0)
-}
-
-function getTreasuryMovementDirection(movement: any): "in" | "out" | "transfer" {
-  if (movement.direction === "in" || movement.direction === "out" || movement.direction === "transfer") {
-    return movement.direction
-  }
-  if (movement.type === "deposit") return "in"
-  if (movement.type === "expense" || movement.type === "withdrawal") return "out"
-  if (movement.type === "transfer") return "transfer"
-  return "out"
-}
-
 function buildTreasuryAnomalies(balance: number) {
   if (balance >= 0) return []
   return [{
@@ -950,67 +977,6 @@ function buildTreasuryAnomalies(balance: number) {
     amount: Math.abs(balance),
     label: `Solde trésorerie négatif: ${formatMoney(Math.abs(balance))} FCFA à vérifier`,
   }]
-}
-
-function getConfirmedPaymentOrderIds(payments: any[]) {
-  const orderIds = new Set<string>()
-  for (const payment of payments) {
-    if (!isConfirmedPayment(payment)) continue
-    for (const orderId of getPaymentOrderIds(payment)) {
-      orderIds.add(orderId)
-    }
-  }
-  return orderIds
-}
-
-function getPaymentOrderIds(payment: any) {
-  const candidates = [
-    payment.orderId,
-    payment.order?.id,
-    payment.orderRef,
-    payment.orderReference,
-  ]
-  if (Array.isArray(payment.orderIds)) candidates.push(...payment.orderIds)
-  if (Array.isArray(payment.orders)) {
-    candidates.push(...payment.orders.map((order: any) => typeof order === "string" ? order : order?.id))
-  }
-  return candidates.map((value) => String(value || "").trim()).filter(Boolean)
-}
-
-function isOwnerAcquiredOrder(order: Order, confirmedPaymentOrderIds: Set<string>) {
-  const orderId = String((order as any).id || "").trim()
-  if (orderId && confirmedPaymentOrderIds.has(orderId)) return true
-
-  const paymentStatus = String((order as any).paymentStatus || "").toLowerCase()
-  if (["paid", "validated", "verified", "paye"].includes(paymentStatus)) return true
-  if (["pending", "pending_mobile", "pending_cash", "unpaid", "failed", "non_paye", "pending_verification", "partial"].includes(paymentStatus)) {
-    return false
-  }
-
-  return Boolean(
-    toDate((order as any).paymentValidatedAt) ||
-    toDate((order as any).paidAt) ||
-    toDate((order as any).paymentPaidAt) ||
-    toDate((order as any).payment?.validatedAt) ||
-    toDate((order as any).payment?.paidAt) ||
-    toDate((order as any).timestamps?.paidAt)
-  )
-}
-
-function isConfirmedPaymentInRange(payment: any, range: DateRange) {
-  if (!isConfirmedPayment(payment)) return false
-  return isDateInRange(getConfirmedPaymentDate(payment), range)
-}
-
-function getConfirmedPaymentDate(payment: any) {
-  const businessDate = typeof payment.businessDate === "string" ? parseInputDate(payment.businessDate.slice(0, 10)) : null
-  return (
-    businessDate ||
-    toDate(payment.confirmedAt) ||
-    toDate(payment.paymentValidatedAt) ||
-    toDate(payment.paidAt) ||
-    toDate(payment.createdAt)
-  )
 }
 
 function isConfirmedPayment(payment: any) {
@@ -1034,13 +1000,6 @@ function isKitchenServedStatus(status: string | null | undefined) {
 function getOrderAgeMinutes(order: Order) {
   const createdAt = toDate(order.createdAt)?.getTime() ?? Date.now()
   return Math.max(0, Math.floor((Date.now() - createdAt) / 60000))
-}
-
-function getTrendLabel(trend: Variation["trend"]) {
-  if (trend === "up") return "En croissance"
-  if (trend === "down") return "En baisse"
-  if (trend === "stable") return "Stable"
-  return "À comparer"
 }
 
 function capitalize(value: string) {

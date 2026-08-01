@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation"
 import { CheckCircle } from "lucide-react"
 
 import { PublicButton, PublicCheckoutModal, PublicPrice, PublicSurface } from "@/components/public-ui"
-import { useFirebaseApp, useUser } from "@/firebase"
+import { useAuth, useFirebaseApp, useUser } from "@/firebase"
 import { type RestaurantTableRecord } from "@/services/table-session.service"
 import { useCart } from "../cart/CartContext"
 import { rememberTrackedOrder } from "../orderTrackingStorage"
+import { ensurePublicFirebaseUser } from "../public-auth"
 import {
   clearPublicIdempotencyKey,
   comparePublicOrderProjections,
@@ -33,6 +34,7 @@ export default function CheckoutQRModal({
   activeOrderId?: string | null
 }) {
   const app = useFirebaseApp()
+  const auth = useAuth()
   const { user } = useUser()
   const router = useRouter()
   const { items, total, clear } = useCart()
@@ -65,12 +67,20 @@ export default function CheckoutQRModal({
     try {
       const qrMode = resolveQrCanonicalMode(restaurantId)
       if (qrCanonicalEnabled(qrMode)) {
-        if (!user?.isAnonymous) {
-          throw new Error("La session client a expiré. Rechargez la page puis réessayez.")
+        let orderUser = user
+        if (!orderUser) {
+          try {
+            orderUser = await ensurePublicFirebaseUser(auth)
+          } catch {
+            throw new Error("Impossible d’ouvrir une session client sécurisée. Réessayez dans quelques instants.")
+          }
+        }
+        if (!orderUser) {
+          throw new Error("La session client sécurisée est en cours d’initialisation. Réessayez dans quelques instants.")
         }
         const tableSession = await createCanonicalTableSession({
           app,
-          user,
+          user: orderUser,
           restaurantId,
           tableId: tableContext.id,
         })
@@ -78,7 +88,7 @@ export default function CheckoutQRModal({
         const idempotencyKey = stablePublicIdempotencyKey(requestScope)
         const response = await createCanonicalQrOrder({
           app,
-          user,
+          user: orderUser,
           restaurantId,
           idempotencyKey,
           body: {
@@ -94,7 +104,12 @@ export default function CheckoutQRModal({
                 optionName: String(option.optionName ?? option.groupName ?? option.name ?? ""),
                 choiceName: String(option.choiceName ?? option.name ?? option.value ?? ""),
               })),
-              instructions: null,
+              instructions:
+                item.instructions?.trim() ||
+                item.note?.trim() ||
+                item.notes?.trim() ||
+                item.specialInstructions?.trim() ||
+                null,
             })),
             tableContext: {
               tableId: tableContext.id,

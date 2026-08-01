@@ -140,6 +140,7 @@ before(async () => {
     root.collection("cashSessions").doc(cashSessionId).set({
       restaurantId,
       status: "open",
+      cashierId: cashierUser.uid,
       openedBy: cashierUser.uid,
     }),
     db.collection("users").doc(kitchenUser.uid).set({

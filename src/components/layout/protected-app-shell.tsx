@@ -54,6 +54,7 @@ function ProtectedAppShellContent({ children, mode }: ProtectedAppShellProps) {
   const tenant = useTenant()
   const restaurant = useRestaurant()
   const [loginRedirectReady, setLoginRedirectReady] = React.useState(false)
+  const [ownerSidebarOpen, setOwnerSidebarOpen] = React.useState(true)
   const isLoading = tenant.loading || restaurant.loading
   const requiresPlatformRole = mode === "platform"
   const hasPlatformAccess = !requiresPlatformRole || tenant.isSuperAdmin
@@ -109,12 +110,26 @@ function ProtectedAppShellContent({ children, mode }: ProtectedAppShellProps) {
     if (!isAllowedForRole) router.replace(roleHomePath)
   }, [isAllowedForRole, isLoading, mode, roleHomePath, router, shouldRedirectToLogin])
 
+  React.useEffect(() => {
+    if (tenant.role !== ROLES.OWNER) return
+
+    const desktopQuery = window.matchMedia("(min-width: 1024px)")
+    const adaptOwnerSidebar = () => setOwnerSidebarOpen(desktopQuery.matches)
+    adaptOwnerSidebar()
+    desktopQuery.addEventListener("change", adaptOwnerSidebar)
+    return () => desktopQuery.removeEventListener("change", adaptOwnerSidebar)
+  }, [tenant.role])
+
   const shouldShowPageLoader = isRedirectingForRole && !isLoading && !shouldRedirectToLogin
 
   return (
     <SidebarProvider
       defaultOpen
-      style={{ "--sidebar-width-icon": "10rem" } as React.CSSProperties}
+      open={tenant.role === ROLES.OWNER ? ownerSidebarOpen : undefined}
+      onOpenChange={tenant.role === ROLES.OWNER ? setOwnerSidebarOpen : undefined}
+      style={{
+        "--sidebar-width-icon": tenant.role === ROLES.OWNER ? "4.25rem" : "10rem",
+      } as React.CSSProperties}
     >
       <div className={containerClassName}>
         {isFullscreenRoute ? null : isLoading || shouldRedirectToLogin ? <SidebarSkeleton /> : <AppSidebar />}

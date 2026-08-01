@@ -1,6 +1,7 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
+import { semanticHoverClasses, semanticIconClasses, semanticSurfaceClasses, type DashboardSemanticVariant } from "./semantic-variants"
 
 const toneClasses = { positive: "text-[var(--data-positive)]", negative: "text-[var(--data-negative)]", neutral: "text-[var(--data-neutral)]", warning: "text-[var(--data-warning)]", info: "text-[var(--data-info)]" } as const
 export type DashboardDataTone = keyof typeof toneClasses
@@ -17,9 +18,10 @@ export const MetricDelta = React.forwardRef<HTMLSpanElement, MetricDeltaProps>((
 })
 MetricDelta.displayName = "MetricDelta"
 
-const metricCardVariants = cva("rounded-[var(--radius-dashboard-card)] border border-[var(--metric-border)] bg-[var(--metric-background)] p-4 shadow-[var(--shadow-dashboard-surface)] transition-[background-color,border-color,box-shadow] [transition-duration:var(--motion-dashboard-hover)] motion-reduce:transition-none", { variants: { emphasis: { default: "", strong: "border-[var(--dashboard-border)] shadow-[var(--shadow-dashboard-floating)]", subtle: "bg-[var(--dashboard-section)] shadow-none" }, interactive: { true: "hover:bg-[var(--metric-hover)] focus-within:ring-2 focus-within:ring-[var(--focus-ring)] focus-within:ring-offset-2" } }, defaultVariants: { emphasis: "default", interactive: false } })
+const metricCardVariants = cva("h-full rounded-[var(--radius-dashboard-card)] border border-[var(--metric-border)] bg-[var(--metric-background)] shadow-[var(--shadow-dashboard-surface)] transition-[background-color,border-color,box-shadow] [transition-duration:var(--motion-dashboard-hover)] motion-reduce:transition-none", { variants: { emphasis: { default: "", strong: "border-[var(--dashboard-border)] shadow-[var(--shadow-dashboard-floating)]", subtle: "bg-[var(--dashboard-section)] shadow-none" }, interactive: { true: "hover:bg-[var(--metric-hover)] focus-within:ring-2 focus-within:ring-[var(--focus-ring)] focus-within:ring-offset-2" }, density: { compact: "p-2.5", dense: "p-3", default: "p-4", comfortable: "p-5" } }, defaultVariants: { emphasis: "default", interactive: false, density: "dense" } })
 
 export interface MetricCardProps extends Omit<React.HTMLAttributes<HTMLElement>, "title">, VariantProps<typeof metricCardVariants> {
+  variant?: DashboardSemanticVariant
   label: React.ReactNode
   value: React.ReactNode
   unit?: React.ReactNode
@@ -29,15 +31,16 @@ export interface MetricCardProps extends Omit<React.HTMLAttributes<HTMLElement>,
   action?: React.ReactNode
   as?: "article" | "div"
 }
-export const MetricCard = React.forwardRef<HTMLElement, MetricCardProps>(({ action, as: Component = "article", className, delta, description, emphasis, icon, interactive, label, unit, value, ...props }, ref) => (
-  <Component ref={ref as React.Ref<never>} className={cn(metricCardVariants({ emphasis, interactive }), className)} {...props}>
-    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[length:var(--text-dashboard-label)] font-semibold uppercase leading-[var(--leading-dashboard-label)] tracking-wide text-[var(--dashboard-label)]">{label}</p><div className="mt-2 flex min-w-0 flex-wrap items-baseline gap-1.5"><span className="break-words text-[length:var(--text-dashboard-metric)] font-bold leading-[var(--leading-dashboard-metric)] tracking-tight text-[var(--dashboard-value)] tabular-nums">{value}</span>{unit ? <span className="text-sm font-medium text-[var(--dashboard-muted)]">{unit}</span> : null}</div></div>{icon ? <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-dashboard-button)] bg-[var(--dashboard-section)] text-[var(--data-info)] [&_svg]:size-5">{icon}</span> : null}</div>
+export const MetricCard = React.forwardRef<HTMLElement, MetricCardProps>(({ action, as: Component = "article", className, delta, density, description, emphasis, icon, interactive, label, unit, value, variant = "neutral", ...props }, ref) => (
+  <Component ref={ref as React.Ref<never>} className={cn(metricCardVariants({ emphasis, interactive, density }), semanticSurfaceClasses[variant], interactive && semanticHoverClasses[variant], className)} data-variant={variant} {...props}>
+    <div className="flex items-start justify-between gap-2 sm:gap-3"><div className="min-w-0"><p className="text-[length:var(--text-dashboard-label)] font-semibold uppercase leading-[var(--leading-dashboard-label)] tracking-wide text-[var(--dashboard-label)]">{label}</p><div className="mt-2 flex min-w-0 flex-wrap items-baseline gap-1"><span className={cn("break-words font-bold leading-[var(--leading-dashboard-metric)] tracking-tight text-[var(--dashboard-value)] tabular-nums", density === "compact" ? "text-base min-[360px]:text-lg min-[390px]:text-xl sm:text-[length:var(--text-dashboard-metric)]" : "text-[length:var(--text-dashboard-metric)]")}>{value}</span>{unit ? <span className="text-xs font-medium text-[var(--dashboard-muted)] sm:text-sm">{unit}</span> : null}</div></div>{icon ? <span aria-hidden="true" className={cn("flex shrink-0 items-center justify-center rounded-full [&_svg]:size-4 sm:[&_svg]:size-5", semanticIconClasses[variant], density === "compact" ? "size-8 sm:size-9" : "size-10")}>{icon}</span> : null}</div>
     {delta ? <div className="mt-2">{delta}</div> : null}{description ? <p className="mt-2 text-[length:var(--text-dashboard-caption)] leading-[var(--leading-dashboard-caption)] text-[var(--dashboard-muted)]">{description}</p> : null}{action ? <div className="mt-3">{action}</div> : null}
   </Component>
 ))
 MetricCard.displayName = "MetricCard"
 
-export const MetricGroup = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(({ className, ...props }, ref) => <div ref={ref} className={cn("grid grid-cols-1 gap-[var(--dashboard-grid-gap)] sm:grid-cols-2 xl:grid-cols-4", className)} {...props} />)
+export interface MetricGroupProps extends React.HTMLAttributes<HTMLDivElement> { density?: "compact" | "dense" | "default"; maxColumns?: 4 | 5 | 6 }
+export const MetricGroup = React.forwardRef<HTMLDivElement, MetricGroupProps>(({ className, density = "dense", maxColumns = 6, ...props }, ref) => <div ref={ref} className={cn("grid grid-cols-2", density === "compact" ? "gap-2" : density === "dense" ? "gap-2.5" : "gap-3 md:gap-4", "md:grid-cols-3 lg:grid-cols-4", maxColumns >= 5 && "xl:grid-cols-5", maxColumns === 6 && "2xl:grid-cols-6", className)} {...props} />)
 MetricGroup.displayName = "MetricGroup"
 
 export interface DashboardStatProps extends React.HTMLAttributes<HTMLDivElement> { label: React.ReactNode; value: React.ReactNode; tone?: DashboardDataTone }

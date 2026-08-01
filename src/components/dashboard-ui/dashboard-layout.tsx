@@ -1,6 +1,7 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { PageHeader } from "@/design-system/components"
+import { semanticAccentClasses, semanticSurfaceClasses, type DashboardSemanticVariant } from "./semantic-variants"
 
 type ElementTag = "div" | "main" | "section" | "header" | "aside" | "nav"
 
@@ -57,15 +58,19 @@ export interface DashboardSectionProps extends Omit<React.HTMLAttributes<HTMLEle
   action?: React.ReactNode
   headingAs?: "h2" | "h3"
   surface?: boolean
+  density?: "compact" | "dense" | "default"
+  variant?: DashboardSemanticVariant
 }
 
 export const DashboardSection = React.forwardRef<HTMLElement, DashboardSectionProps>(
-  ({ action, children, className, description, headingAs: Heading = "h2", surface = false, title, ...props }, ref) => (
-    <section ref={ref} className={cn("space-y-3", surface && "rounded-[var(--radius-dashboard-card)] border border-[var(--dashboard-border)] bg-[var(--dashboard-surface)] p-4 shadow-[var(--shadow-dashboard-surface)]", className)} {...props}>
+  ({ action, children, className, density = "dense", description, headingAs: Heading = "h2", surface = true, title, variant, ...props }, ref) => {
+    const resolvedVariant = variant ?? resolveDashboardSectionVariant(title)
+    return (
+    <section ref={ref} data-variant={surface ? resolvedVariant : undefined} className={cn(density === "compact" ? "space-y-1.5" : density === "dense" ? "space-y-2" : "space-y-3", surface && "rounded-[var(--radius-dashboard-card)] border shadow-[var(--shadow-dashboard-surface)]", surface && semanticSurfaceClasses[resolvedVariant], surface && (density === "compact" ? "p-2.5" : density === "dense" ? "p-3" : "p-4"), className)} {...props}>
       {title || description || action ? (
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            {title ? <Heading className="text-[length:var(--text-dashboard-section-title)] font-semibold leading-[var(--leading-dashboard-section-title)] text-[var(--dashboard-title)]">{title}</Heading> : null}
+            {title ? <Heading className="flex items-center gap-2 text-[length:var(--text-dashboard-section-title)] font-semibold leading-[var(--leading-dashboard-section-title)] text-[var(--dashboard-title)]">{surface ? <span aria-hidden="true" className={cn("size-2 rounded-full", semanticAccentClasses[resolvedVariant])} /> : null}{title}</Heading> : null}
             {description ? <p className="mt-0.5 text-[length:var(--text-dashboard-description)] leading-[var(--leading-dashboard-description)] text-[var(--dashboard-muted)]">{description}</p> : null}
           </div>
           {action}
@@ -73,9 +78,21 @@ export const DashboardSection = React.forwardRef<HTMLElement, DashboardSectionPr
       ) : null}
       {children}
     </section>
-  )
+  )}
 )
 DashboardSection.displayName = "DashboardSection"
+
+function resolveDashboardSectionVariant(title: React.ReactNode): DashboardSemanticVariant {
+  const label = typeof title === "string" ? title.toLocaleLowerCase("fr") : ""
+  if (label.includes("alerte") || label.includes("retard") || label.includes("anomalie")) return "danger"
+  if (label.includes("caisse") || label.includes("paiement")) return "finance"
+  if (label.includes("stock") || label.includes("approvisionnement")) return "stock"
+  if (label.includes("finance") || label.includes("trésor") || label.includes("conforme")) return "success"
+  if (label.includes("table") || label.includes("opérationnel")) return "info"
+  if (label.includes("analyse") || label.includes("secondaire") || label.includes("contexte")) return "neutral"
+  if (label.includes("activité") || label.includes("commande") || label.includes("période")) return "activity"
+  return "neutral"
+}
 
 export const DashboardToolbar = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => <div ref={ref} role="toolbar" className={cn("flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-dashboard-widget)] border border-[var(--dashboard-border)] bg-[var(--dashboard-surface)] p-3", className)} {...props} />

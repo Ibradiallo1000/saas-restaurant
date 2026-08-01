@@ -73,17 +73,46 @@ export async function executeKitchenItemsTransition(input: {
       false
     )
   }
-  const execute = input.execute ?? executeKitchenItemTransition
-  return Promise.all(input.items.map((item) =>
-    execute({
-      user: input.user,
-      restaurantId: input.restaurantId,
-      orderId: input.orderId,
-      orderItemId: item.orderItemId,
-      expectedVersion: item.expectedVersion,
-      targetStatus: input.targetStatus,
-    })
-  ))
+  if (input.execute) {
+    return Promise.all(input.items.map((item) =>
+      input.execute!({
+        user: input.user,
+        restaurantId: input.restaurantId,
+        orderId: input.orderId,
+        orderItemId: item.orderItemId,
+        expectedVersion: item.expectedVersion,
+        targetStatus: input.targetStatus,
+      })
+    ))
+  }
+  const idToken = await input.user.getIdToken()
+  const command = input.targetStatus === "preparing"
+    ? "MARK_ORDER_ITEMS_PREPARING"
+    : "MARK_ORDER_ITEMS_READY"
+  const response = await fetch(
+    `/api/restaurants/${encodeURIComponent(input.restaurantId)}/orders/${encodeURIComponent(input.orderId)}/commands`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${idToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        command,
+        expectedItems: input.items,
+        idempotencyKey: createIdempotencyKey(),
+      }),
+    }
+  )
+  const payload = await response.json().catch(() => null)
+  if (!response.ok || !payload?.ok) {
+    throw new KitchenCommandClientError(
+      String(payload?.error?.code ?? "KITCHEN_COMMAND_FAILED"),
+      String(payload?.error?.message ?? "Impossible de mettre à jour cette commande."),
+      Boolean(payload?.error?.retryable)
+    )
+  }
+  return payload
 }
 
 function createIdempotencyKey() {

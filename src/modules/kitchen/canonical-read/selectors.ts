@@ -36,7 +36,8 @@ export function classifyKitchenOrderReadState(input: {
 export function toKitchenOrderItemView(
   raw: RawCanonicalKitchenItem,
   parent: KitchenParentContext,
-  now = Date.now()
+  now = Date.now(),
+  productImageUrl: string | null = null
 ): KitchenOrderItemView | null {
   const data = raw.data
   if (
@@ -78,6 +79,7 @@ export function toKitchenOrderItemView(
     orderItemId: raw.id,
     productId: stringValue(data.productId),
     productName: stringValue(data.nameSnapshot ?? data.name),
+    productImageUrl,
     quantity,
     activeQuantity,
     cancelledQuantity,
@@ -89,9 +91,15 @@ export function toKitchenOrderItemView(
     supplements: arrayValue(data.supplements),
     customerNote: nullableString(data.customerNote ?? data.instructions),
     orderType: parent.orderType,
+    serviceMode: parent.serviceMode,
+    paymentStatus: parent.paymentStatus,
+    tableId: parent.tableId,
     tableNumber: parent.tableNumber,
     orderNumber: parent.orderNumber,
     customerName: parent.customerName,
+    customerPhone: parent.customerPhone,
+    deliveryAddress: parent.deliveryAddress,
+    orderNote: parent.orderNote,
     createdAt,
     updatedAt,
     elapsedTime: Math.max(0, now - createdAt),
@@ -122,9 +130,15 @@ export function groupKitchenItems(
       orderId,
       restaurantId: first.restaurantId,
       orderType: first.orderType,
+      serviceMode: first.serviceMode,
+      paymentStatus: first.paymentStatus,
+      tableId: first.tableId,
       tableNumber: first.tableNumber,
       orderNumber: first.orderNumber,
       customerName: first.customerName,
+      customerPhone: first.customerPhone,
+      deliveryAddress: first.deliveryAddress,
+      orderNote: first.orderNote,
       createdAt: first.createdAt,
       isMixed: Boolean(modes && modes.size > 1),
       legacyState: sortedItems.some((item) => item.legacyState === "canonical_inconsistent")

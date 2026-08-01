@@ -13,4 +13,5 @@ export { DashboardStat, DashboardTrend, MetricCard, MetricDelta, MetricGroup, ty
 export { DashboardPanel, DashboardQuickAction, DashboardWidget, DashboardWidgetFooter, DashboardWidgetHeader, type DashboardQuickActionProps, type DashboardWidgetHeaderProps } from "./dashboard-widget"
 export { DashboardAlert, DashboardAlertList, DashboardEmptyState, DashboardErrorState, DashboardLoadingState, type DashboardAlertProps, type DashboardAlertTone, type DashboardLoadingStateProps } from "./dashboard-feedback"
 export { DashboardChart, DashboardChartCard, type DashboardChartCardProps, type DashboardChartProps } from "./dashboard-chart"
+export { ComparisonChart, DistributionChart, TrendChart, type DashboardChartPoint } from "./dashboard-data-charts"
 export { DashboardTableContainer, type DashboardTableContainerProps } from "./dashboard-table-container"

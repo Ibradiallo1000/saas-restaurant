@@ -45,7 +45,13 @@ function KitchenOrderCardComponent({ isNew = false, nowMs, onUpdateStatus, order
       toast({ title: "Statut mis à jour", description: `${model.reference} → ${actionLabels[nextStatus] || nextStatus}` })
     } catch (error) {
       console.error(error)
-      toast({ title: "Mise à jour refusée", description: "Impossible de synchroniser la commande avec la cuisine.", variant: "destructive" })
+      toast({
+        title: "Mise à jour refusée",
+        description: error instanceof Error
+          ? error.message
+          : "Impossible de synchroniser la commande avec la cuisine.",
+        variant: "destructive",
+      })
     } finally {
       setIsUpdating(false)
     }
@@ -53,14 +59,22 @@ function KitchenOrderCardComponent({ isNew = false, nowMs, onUpdateStatus, order
 
   const notes = (
     <>
-      {model.note ? <KitchenNote label="Note client" content={model.note} variant="attention" /> : null}
+      {model.note ? <KitchenNote label="Observation client" content={model.note} variant="attention" /> : null}
       {model.isRecentActivity ? <KitchenNote label="Activité récente" content={model.isNewOrder ? "Nouvelle commande" : "Article ajouté à la commande"} variant="neutral" /> : null}
     </>
   )
 
   const actions = nextStatus ? (
     <KitchenActionBar
-      primary={{ id: nextStatus, label: actionLabels[nextStatus] || nextStatus, onSelect: handleAction, loading: isUpdating, disabled: isUpdating }}
+      primary={{
+        id: nextStatus,
+        label: model.isPaymentLocked
+          ? "En attente de validation du paiement"
+          : actionLabels[nextStatus] || nextStatus,
+        onSelect: handleAction,
+        loading: isUpdating,
+        disabled: isUpdating || model.isPaymentLocked,
+      }}
       density="comfortable"
     />
   ) : undefined
@@ -100,7 +114,7 @@ function KitchenOrderCardComponent({ isNew = false, nowMs, onUpdateStatus, order
             </div>
             <div>
               <h3 className="mb-2 text-sm font-bold">Produits Cuisine</h3>
-              <div className="space-y-2">{model.items.map((item) => <div key={item.id} className="rounded-[var(--radius-dashboard-button)] border border-[var(--kitchen-border)] bg-[var(--kitchen-card-muted)] p-3"><div className="flex gap-3"><span className="text-lg font-black tabular-nums">{item.quantity}×</span><div className="min-w-0"><p className="break-words font-bold">{item.name}</p>{item.options ? <p className="mt-1 break-words text-sm text-[var(--dashboard-subtitle)]">{item.options}</p> : null}{item.note ? <KitchenNote className="mt-2" label="Note article" content={item.note} variant="attention" /> : null}</div></div></div>)}</div>
+              <div className="space-y-2">{model.items.map((item) => <div key={item.id} className="rounded-[var(--radius-dashboard-button)] border border-[var(--kitchen-border)] bg-[var(--kitchen-card-muted)] p-3"><div className="flex gap-3"><span className="text-lg font-black tabular-nums">{item.quantity}×</span><div className="size-12 shrink-0 overflow-hidden rounded-[var(--radius-dashboard-input)] bg-[var(--kitchen-card)]">{item.imageUrl ? <img src={item.imageUrl} alt="" loading="lazy" className="size-full object-cover" /> : null}</div><div className="min-w-0"><p className="break-words font-bold">{item.name}</p>{item.options ? <p className="mt-1 break-words text-sm text-[var(--dashboard-subtitle)]">{item.options}</p> : null}{item.note ? <KitchenNote className="mt-2" label="Note article" content={item.note} variant="attention" /> : null}</div></div></div>)}</div>
             </div>
             {notes}
           </div>

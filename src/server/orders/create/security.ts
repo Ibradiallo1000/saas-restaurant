@@ -24,9 +24,6 @@ export async function resolveOrderPrincipal(input: {
   assertPublicOrderSecurityConfigured(input.restaurantId)
   await requireAppCheck(input.request)
   const token = await requireIdToken(input.request)
-  if (token.firebase?.sign_in_provider !== "anonymous") {
-    throw new CanonicalOrderError("UNAUTHENTICATED", "Une session publique valide est obligatoire.")
-  }
   if (command.channel === "qr_table") {
     verifyTableCapability({
       token: command.tableContext?.capability ?? null,

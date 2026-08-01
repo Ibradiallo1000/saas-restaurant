@@ -2,7 +2,9 @@ import { OrderCommandError } from "./errors.ts"
 import type {
   AnyOrderCommandInput,
   ConfirmOrderPaymentInput,
+  HandOffOrderItemsInput,
   ItemCommandBase,
+  MarkOrderItemsTransitionInput,
   OrderCommandBase,
 } from "./types.ts"
 
@@ -43,6 +45,40 @@ export function validateItemBase(input: ItemCommandBase) {
 export function validatePositiveQuantity(value: number) {
   if (!Number.isInteger(value) || value <= 0) {
     throw new OrderCommandError("INVALID_QUANTITY", "La quantité doit être un entier positif.")
+  }
+}
+
+export function validateHandOff(input: HandOffOrderItemsInput) {
+  validateBase(input)
+  if (!SAFE_ID.test(input.cashSessionId)) {
+    throw new OrderCommandError("INVALID_COMMAND", "La session de caisse est invalide.")
+  }
+  if (!Array.isArray(input.expectedItems) || input.expectedItems.length === 0 || input.expectedItems.length > 100) {
+    throw new OrderCommandError("INVALID_COMMAND", "La liste des lignes à remettre est invalide.")
+  }
+  for (const item of input.expectedItems) {
+    if (!SAFE_ID.test(item?.orderItemId ?? "") || !Number.isInteger(item?.expectedVersion) || item.expectedVersion < 1) {
+      throw new OrderCommandError("INVALID_COMMAND", "Une version de ligne est invalide.")
+    }
+  }
+}
+
+export function validateItemsTransition(input: MarkOrderItemsTransitionInput) {
+  validateBase(input)
+  if (!Array.isArray(input.expectedItems) || input.expectedItems.length === 0 || input.expectedItems.length > 100) {
+    throw new OrderCommandError("INVALID_COMMAND", "La liste des lignes Cuisine est invalide.")
+  }
+  const ids = new Set<string>()
+  for (const item of input.expectedItems) {
+    if (
+      !SAFE_ID.test(item?.orderItemId ?? "") ||
+      !Number.isInteger(item?.expectedVersion) ||
+      item.expectedVersion < 1 ||
+      ids.has(item.orderItemId)
+    ) {
+      throw new OrderCommandError("INVALID_COMMAND", "Une ligne Cuisine ou sa version est invalide.")
+    }
+    ids.add(item.orderItemId)
   }
 }
 

@@ -48,9 +48,30 @@ export default function OperationalMobileHeader() {
     router.push("/login")
   }, [auth, router])
 
+  if (role === ROLES.OWNER) {
+    return (
+      <header className="fixed left-0 right-0 top-0 z-40 flex min-h-14 items-center justify-between gap-3 border-b bg-background/95 px-3 pt-[env(safe-area-inset-top)] backdrop-blur md:hidden">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {restaurant?.logoUrl ? (
+            <img
+              src={getOptimizedImage(restaurant.logoUrl, 96)}
+              alt=""
+              className="h-8 w-8 shrink-0 rounded-md object-cover"
+            />
+          ) : null}
+          <div className="min-w-0 py-1">
+            <p className="truncate text-sm font-black leading-tight">{getOwnerPageTitle(pathname)}</p>
+            <p className="truncate text-[10px] font-medium text-muted-foreground">{restaurantName}</p>
+          </div>
+        </div>
+        <ThemeToggle />
+      </header>
+    )
+  }
+
   return (
     <header className="fixed left-0 right-0 top-0 z-40 flex h-14 items-center justify-between border-b bg-background/95 px-3 pt-[env(safe-area-inset-top)] backdrop-blur md:hidden">
-      <Sheet>
+      {role !== ROLES.MANAGER ? <Sheet>
         <SheetTrigger asChild>
           <button
             type="button"
@@ -105,9 +126,9 @@ export default function OperationalMobileHeader() {
             </button>
           </div>
         </SheetContent>
-      </Sheet>
+      </Sheet> : null}
 
-      <div className="mx-3 flex min-w-0 flex-1 items-center justify-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center justify-start gap-2">
         {restaurant?.logoUrl ? (
           <img
             src={getOptimizedImage(restaurant.logoUrl, 96)}
@@ -116,7 +137,7 @@ export default function OperationalMobileHeader() {
           />
         ) : null}
         <span className="truncate text-sm font-black uppercase tracking-tight">
-          {isInventory ? "Inventaire" : restaurantName}
+          {isInventory ? "Stock" : restaurantName}
         </span>
       </div>
 
@@ -141,6 +162,25 @@ export default function OperationalMobileHeader() {
     </header>
   )
 }
+
+function getOwnerPageTitle(pathname: string) {
+  if (pathname === "/owner") return "Vue d’ensemble"
+  if (pathname.startsWith("/owner/activite")) return "Activité"
+  if (pathname.startsWith("/owner/commandes")) return "Commandes"
+  if (pathname.startsWith("/owner/avis")) return "Avis clients"
+  if (pathname.startsWith("/owner/finances")) return "Finances"
+  if (pathname.startsWith("/owner/caisse")) return "Caisse"
+  if (pathname.startsWith("/owner/tresorerie")) return "Trésorerie"
+  if (pathname.startsWith("/owner/depenses")) return "Dépenses"
+  if (pathname.startsWith("/owner/stock")) return "Stock"
+  if (pathname.startsWith("/menu")) return "Menu"
+  if (pathname.startsWith("/tables")) return "Tables et QR codes"
+  if (pathname.startsWith("/images")) return "Médias"
+  if (pathname.startsWith("/settings")) return "Paramètres"
+  return restaurantNameFallback
+}
+
+const restaurantNameFallback = "Restaurant"
 
 function isLateKitchenOrder(order: any) {
   const status = order?.kitchenStatus ?? order?.status

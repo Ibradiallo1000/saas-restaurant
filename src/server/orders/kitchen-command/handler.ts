@@ -4,6 +4,8 @@ import { OrderAggregateError } from "../aggregate/errors.ts"
 import {
   markOrderItemPreparing,
   markOrderItemReady,
+  markOrderItemsPreparing,
+  markOrderItemsReady,
   OrderCommandError,
 } from "../commands/index.ts"
 import type {
@@ -15,15 +17,18 @@ import type {
 export const KITCHEN_COMMANDS = [
   "MARK_ORDER_ITEM_PREPARING",
   "MARK_ORDER_ITEM_READY",
+  "MARK_ORDER_ITEMS_PREPARING",
+  "MARK_ORDER_ITEMS_READY",
 ] as const
 
 export type KitchenCommand = (typeof KITCHEN_COMMANDS)[number]
 
 interface KitchenCommandRequest {
   command: KitchenCommand
-  orderItemId: string
+  orderItemId?: string
+  expectedItems?: Array<{ orderItemId: string; expectedVersion: number }>
   idempotencyKey: string
-  expectedVersion: number
+  expectedVersion?: number
 }
 
 interface StaffPrincipal {
@@ -57,24 +62,34 @@ export async function handleKitchenCommandRequest(
       role: "kitchen",
       restaurantId: params.restaurantId,
     }
-    const input = {
+    const base = {
       restaurantId: params.restaurantId,
       orderId: params.orderId,
-      orderItemId: body.orderItemId,
       idempotencyKey: body.idempotencyKey,
-      expectedVersion: body.expectedVersion,
       actor,
       sourceChannel: "kitchen" as const,
     }
-    const result = body.command === "MARK_ORDER_ITEM_PREPARING"
-      ? await markOrderItemPreparing({ store: dependencies.store }, input)
-      : await markOrderItemReady({ store: dependencies.store }, input)
+    const result = body.command === "MARK_ORDER_ITEMS_PREPARING"
+      ? await markOrderItemsPreparing({ store: dependencies.store }, { ...base, expectedItems: body.expectedItems! })
+      : body.command === "MARK_ORDER_ITEMS_READY"
+        ? await markOrderItemsReady({ store: dependencies.store }, { ...base, expectedItems: body.expectedItems! })
+        : body.command === "MARK_ORDER_ITEM_PREPARING"
+          ? await markOrderItemPreparing({ store: dependencies.store }, {
+              ...base,
+              orderItemId: body.orderItemId!,
+              expectedVersion: body.expectedVersion!,
+            })
+          : await markOrderItemReady({ store: dependencies.store }, {
+              ...base,
+              orderItemId: body.orderItemId!,
+              expectedVersion: body.expectedVersion!,
+            })
 
     dependencies.log.info("KITCHEN_ORDER_COMMAND_COMMITTED", {
       requestId,
       restaurantId: params.restaurantId,
       orderId: params.orderId,
-      orderItemId: body.orderItemId,
+      orderItemId: body.orderItemId ?? null,
       command: body.command,
       replayed: result.replayed,
       durationMs: Date.now() - startedAt,
@@ -180,7 +195,7 @@ function parseKitchenCommandRequest(value: unknown): KitchenCommandRequest {
   if (!isRecord(value)) {
     throw new KitchenBoundaryError("INVALID_PAYLOAD", "Le payload est invalide.", 400)
   }
-  const allowed = new Set(["command", "orderItemId", "idempotencyKey", "expectedVersion"])
+  const allowed = new Set(["command", "orderItemId", "expectedItems", "idempotencyKey", "expectedVersion"])
   if (Object.keys(value).some((key) => !allowed.has(key))) {
     throw new KitchenBoundaryError(
       "INVALID_PAYLOAD",
@@ -191,9 +206,6 @@ function parseKitchenCommandRequest(value: unknown): KitchenCommandRequest {
   if (typeof value.command !== "string" || !KITCHEN_COMMANDS.includes(value.command as KitchenCommand)) {
     throw new KitchenBoundaryError("FORBIDDEN_COMMAND", "Cette commande est interdite depuis Cuisine.", 403)
   }
-  if (typeof value.orderItemId !== "string" || !value.orderItemId.trim()) {
-    throw new KitchenBoundaryError("INVALID_PAYLOAD", "orderItemId est obligatoire.", 400)
-  }
   if (
     typeof value.idempotencyKey !== "string" ||
     value.idempotencyKey.trim().length < 8 ||
@@ -201,14 +213,38 @@ function parseKitchenCommandRequest(value: unknown): KitchenCommandRequest {
   ) {
     throw new KitchenBoundaryError("INVALID_PAYLOAD", "idempotencyKey est invalide.", 400)
   }
-  if (!Number.isInteger(value.expectedVersion) || Number(value.expectedVersion) < 1) {
-    throw new KitchenBoundaryError("INVALID_PAYLOAD", "expectedVersion est invalide.", 400)
+  const isBatch = value.command === "MARK_ORDER_ITEMS_PREPARING" || value.command === "MARK_ORDER_ITEMS_READY"
+  let expectedItems: Array<{ orderItemId: string; expectedVersion: number }> | undefined
+  if (isBatch) {
+    if (!Array.isArray(value.expectedItems) || value.expectedItems.length === 0 || value.expectedItems.length > 100) {
+      throw new KitchenBoundaryError("INVALID_PAYLOAD", "expectedItems est invalide.", 400)
+    }
+    expectedItems = value.expectedItems.map((item) => {
+      if (
+        !isRecord(item) ||
+        typeof item.orderItemId !== "string" ||
+        !item.orderItemId.trim() ||
+        !Number.isInteger(item.expectedVersion) ||
+        Number(item.expectedVersion) < 1
+      ) {
+        throw new KitchenBoundaryError("INVALID_PAYLOAD", "Une ligne Cuisine est invalide.", 400)
+      }
+      return { orderItemId: item.orderItemId.trim(), expectedVersion: Number(item.expectedVersion) }
+    })
+  } else {
+    if (typeof value.orderItemId !== "string" || !value.orderItemId.trim()) {
+      throw new KitchenBoundaryError("INVALID_PAYLOAD", "orderItemId est obligatoire.", 400)
+    }
+    if (!Number.isInteger(value.expectedVersion) || Number(value.expectedVersion) < 1) {
+      throw new KitchenBoundaryError("INVALID_PAYLOAD", "expectedVersion est invalide.", 400)
+    }
   }
   return {
     command: value.command as KitchenCommand,
-    orderItemId: value.orderItemId.trim(),
+    orderItemId: isBatch ? undefined : String(value.orderItemId).trim(),
+    expectedItems,
     idempotencyKey: value.idempotencyKey.trim(),
-    expectedVersion: Number(value.expectedVersion),
+    expectedVersion: isBatch ? undefined : Number(value.expectedVersion),
   }
 }
 

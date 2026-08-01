@@ -15,7 +15,7 @@ import {
   sanitizeCashInput,
 } from "@/components/pos/cash-payment-utils"
 import { getOptimizedImage } from "@/lib/image"
-import { PosMobileMoneyPayment, PosPaymentDialog, PosPaymentFailureState, PosPaymentMethodChoice, PosPaymentProcessingState, PosPaymentSuccessState } from "@/components/pos-ui"
+import { PosMobileMoneyPayment, PosPaymentDialog, PosPaymentFailureState, PosPaymentMethodChoice, PosPaymentProcessingState } from "@/components/pos-ui"
 import type { PosPaymentMode } from "./CartPanel"
 
 type POSPaymentFlowProps = {
@@ -31,13 +31,12 @@ type POSPaymentFlowProps = {
   cashReceivedAmount: number
   onCashReceivedChange: (value: string) => void
   processing: boolean
-  success: boolean
   error: string | null
   canSubmit: boolean
   onSubmit: () => void
 }
 
-export default function POSPaymentFlow({ open, onOpenChange, total, paymentMode, onPaymentModeChange, mobilePaymentMethods, selectedMobileMethodCode, onMobileMethodChange, cashReceivedInput, cashReceivedAmount, onCashReceivedChange, processing, success, error, canSubmit, onSubmit }: POSPaymentFlowProps) {
+export default function POSPaymentFlow({ open, onOpenChange, total, paymentMode, onPaymentModeChange, mobilePaymentMethods, selectedMobileMethodCode, onMobileMethodChange, cashReceivedInput, cashReceivedAmount, onCashReceivedChange, processing, error, canSubmit, onSubmit }: POSPaymentFlowProps) {
   const formatMoney = (value: number) => `${value.toLocaleString("fr-FR")} FCFA`
   const cashInputRef = React.useRef<HTMLInputElement>(null)
   const difference = cashReceivedAmount - total
@@ -53,17 +52,17 @@ export default function POSPaymentFlow({ open, onOpenChange, total, paymentMode,
   React.useEffect(() => {
     if (!open) return
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Enter" && canSubmit && !processing && !success) {
+      if (event.key === "Enter" && canSubmit && !processing) {
         event.preventDefault()
         onSubmit()
       }
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [canSubmit, onSubmit, open, processing, success])
+  }, [canSubmit, onSubmit, open, processing])
 
-  return <PosPaymentDialog open={open} onOpenChange={(next) => { if (!processing) onOpenChange(next) }} initialFocusRef={paymentMode === "cash" ? cashInputRef : undefined} compact className="w-[calc(100%-1rem)] max-w-3xl gap-2 p-3 sm:p-4" title="Encaissement" description="Sélectionnez le moyen de paiement puis confirmez la transaction." total={formatMoney(total)} footer={success ? <Button type="button" className="min-h-12 w-full" onClick={() => onOpenChange(false)}>Fermer</Button> : <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button type="button" variant="outline" className="min-h-12" disabled={processing} onClick={() => onOpenChange(false)}>Annuler</Button><Button type="button" className="min-h-12" disabled={!canSubmit || processing} aria-busy={processing || undefined} onClick={onSubmit}>{processing ? <><Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none" />Transaction en cours…</> : "Confirmer l'encaissement"}</Button></div>}>
-    {success ? <PosPaymentSuccessState title="Vente validée" description="La commande et son paiement ont été enregistrés. L'impression a été déclenchée selon le flux existant." /> : <div className="space-y-3">
+  return <PosPaymentDialog open={open} onOpenChange={(next) => { if (!processing) onOpenChange(next) }} initialFocusRef={paymentMode === "cash" ? cashInputRef : undefined} compact className="h-[100dvh] max-h-[100dvh] w-full max-w-none gap-2 rounded-none p-3 md:h-auto md:max-h-[calc(100dvh-var(--safe-top,0px)-var(--safe-bottom,0px)-1rem)] md:w-[calc(100%-1rem)] md:max-w-3xl md:rounded-[var(--radius-dashboard-overlay)] md:p-4" title="Encaissement" description="Sélectionnez le moyen de paiement puis confirmez la transaction." total={formatMoney(total)} footer={<div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button type="button" variant="outline" className="min-h-12" disabled={processing} onClick={() => onOpenChange(false)}>Annuler</Button><Button type="button" className="min-h-12" disabled={!canSubmit || processing} aria-busy={processing || undefined} onClick={onSubmit}>{processing ? <><Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none" />Transaction en cours…</> : "Confirmer l'encaissement"}</Button></div>}>
+    <div className="space-y-3">
       <div role="radiogroup" aria-label="Moyen de paiement" className="grid gap-2 sm:grid-cols-2">
         <PosPaymentMethodChoice compact method="cash" label="Espèces" description="Saisir le montant reçu" selected={paymentMode === "cash"} disabled={processing} onSelect={() => onPaymentModeChange("cash")} icon={<Banknote/>}/>
         <PosPaymentMethodChoice compact method="mobileMoney" label="Mobile Money" description="Choisir un opérateur configuré" selected={paymentMode === "mobile"} disabled={processing} onSelect={() => onPaymentModeChange("mobile")} icon={<Smartphone/>}/>
@@ -110,6 +109,6 @@ export default function POSPaymentFlow({ open, onOpenChange, total, paymentMode,
       {paymentMode === "mobile" ? mobilePaymentMethods.length ? <PosMobileMoneyPayment providers={providers} selectedProvider={selectedMobileMethodCode} onProviderChange={onMobileMethodChange} disabled={processing} loading={processing} instructions="La sélection de l'opérateur ne constitue pas à elle seule une confirmation de paiement."/> : <PosPaymentFailureState title="Mobile Money indisponible" description="Aucun moyen Mobile Money n'est configuré pour ce restaurant."/> : null}
       {processing ? <PosPaymentProcessingState title="Transaction en cours" description="Création de la commande et enregistrement du paiement. Ne fermez pas cette fenêtre."/> : null}
       {error ? <PosPaymentFailureState title="Transaction non finalisée" description={`${error} Le panier et les choix sont conservés.`}/> : null}
-    </div>}
+    </div>
   </PosPaymentDialog>
 }

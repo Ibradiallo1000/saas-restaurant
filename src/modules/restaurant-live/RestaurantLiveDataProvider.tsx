@@ -49,8 +49,12 @@ const RestaurantLiveDataContext = React.createContext<RestaurantLiveDataContextT
 export function RestaurantLiveDataProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? ""
   const [isClient, setIsClient] = React.useState(false)
-  const enabled = isClient && isOperationalRoute(pathname)
   const isKitchenRoute = pathname.startsWith("/kitchen")
+  const isPosRoute = pathname.startsWith("/pos")
+  // Cuisine owns a dedicated canonical/legacy reader. Starting the global
+  // operational provider here duplicates order listeners and also subscribes
+  // to tables, cash sessions, payments and movements that Cuisine never reads.
+  const enabled = isClient && isOperationalRoute(pathname) && !isKitchenRoute
   const db = useFirestore()
   const { restaurantId } = useRestaurant()
   const todayStart = React.useMemo(() => startOfToday(), [])
@@ -346,9 +350,9 @@ export function RestaurantLiveDataProvider({ children }: { children: React.React
   const { data: payments } = useCollection<any>(paymentsQuery)
 
   const cashMovementsQuery = useMemoFirebase(() => {
-    if (!enabled || !db || !restaurantId) return null
+    if (!enabled || isPosRoute || !db || !restaurantId) return null
     return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_MOVEMENTS)
-  }, [db, enabled, restaurantId])
+  }, [db, enabled, isPosRoute, restaurantId])
   const { data: cashMovements } = useCollection<any>(cashMovementsQuery)
 
   const pendingCashSessionRequests = React.useMemo(() => {

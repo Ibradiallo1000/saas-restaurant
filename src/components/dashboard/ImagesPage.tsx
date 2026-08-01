@@ -34,8 +34,8 @@ export default function ImagesPage() {
     <div className="space-y-8 pb-20 animate-in fade-in duration-500 dark:bg-[#0F172A]">
       <PageHeader
         icon={ImageIcon}
-        title="Bibliotheque d'images"
-        subtitle="Centralisez les photos utilisees dans vos menus, cartes et offres."
+        title="Médiathèque"
+        subtitle="Centralisez les photos utilisées dans vos menus, cartes et offres. La suppression retire actuellement la référence du restaurant, pas le fichier externe."
       />
 
       <section className="grid gap-6 lg:grid-cols-[360px_1fr]">

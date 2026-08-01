@@ -11,6 +11,10 @@ import {
   markOrderItemReady,
   markOrderItemServed,
 } from "../../src/server/orders/commands/index.ts"
+import {
+  FinancialLedgerError,
+  FirestorePaymentLedger,
+} from "../../src/server/finance/firestore-payment-ledger.ts"
 
 const enabled = Boolean(process.env.FIRESTORE_EMULATOR_HOST)
 const projectId = "oordera-order-commands-lot2"
@@ -201,7 +205,11 @@ test("parcours POS complet : création, Cuisine, service, Stock puis paiement co
       preparationMode: "kitchen",
       stockArticleId: "article-coca",
     }),
-    cashSession.set({ restaurantId: targetRestaurantId, status: "open" }),
+    cashSession.set({
+      restaurantId: targetRestaurantId,
+      status: "open",
+      cashierId: "cashier-e2e",
+    }),
     root.collection("stockItemsV2").doc("article-coca").set({
       restaurantId: targetRestaurantId,
       status: "active",
@@ -325,6 +333,7 @@ test("parcours inverse mixte : paiement, Cuisine, Bar et direct restent indépen
     root.collection("cashSessions").doc("cash-session").set({
       restaurantId: targetRestaurantId,
       status: "open",
+      cashierId: "cashier-mixed",
     }),
     orderRef.set({
       restaurantId: targetRestaurantId,
@@ -419,4 +428,366 @@ test("parcours inverse mixte : paiement, Cuisine, Bar et direct restent indépen
   assert.equal(parent.orderStatus, "completed")
   assert.equal(parent.paymentStatus, "paid")
   assert.equal((await root.collection("stockOperationsV2").get()).size, 0)
+})
+
+test("ledger serveur : idempotence concurrente et cache exact", {
+  skip: !enabled,
+}, async () => {
+  const suffix = Date.now().toString()
+  const targetRestaurantId = `restaurant-finance-idempotent-${suffix}`
+  const root = db.collection("restaurants").doc(targetRestaurantId)
+  await root.collection("cashSessions").doc("session").set({
+    restaurantId: targetRestaurantId,
+    status: "open",
+    cashierId: "cashier-finance",
+  })
+  const ledger = new FirestorePaymentLedger(db)
+  const input = {
+    restaurantId: targetRestaurantId,
+    paymentId: "payment-stable",
+    orderId: "order-stable",
+    sessionId: "session",
+    cashierId: "cashier-finance",
+    source: "pos",
+    type: "cash",
+    provider: null,
+    amount: 1500,
+    receivedAmount: 2000,
+    changeDue: 500,
+    externalReference: null,
+    idempotencyKey: "stable-key",
+  }
+  const results = await Promise.all([
+    db.runTransaction((transaction) =>
+      ledger.createConfirmedPaymentInTransaction(transaction, input)
+    ),
+    db.runTransaction((transaction) =>
+      ledger.createConfirmedPaymentInTransaction(transaction, input)
+    ),
+  ])
+  assert.equal(results.filter((result) => result.replayed).length, 1)
+  assert.equal((await root.collection("payments").get()).size, 1)
+  const session = (await root.collection("cashSessions").doc("session").get()).data()
+  assert.equal(session.totalCash, 1500)
+  assert.equal(session.totalConfirmed, 1500)
+  assert.equal(session.totalPayments, 1)
+})
+
+test("ledger serveur : un rejeu répare un cache de caisse divergent", {
+  skip: !enabled,
+}, async () => {
+  const targetRestaurantId = `restaurant-finance-replay-repair-${Date.now()}`
+  const root = db.collection("restaurants").doc(targetRestaurantId)
+  await root.collection("cashSessions").doc("session").set({
+    restaurantId: targetRestaurantId,
+    status: "open",
+    cashierId: "cashier-finance",
+    totalCash: 0,
+    totalConfirmed: 0,
+  })
+  await root.collection("payments").doc("payment-stable").set({
+    restaurantId: targetRestaurantId,
+    orderId: "order-stable",
+    sessionId: "session",
+    cashierId: "cashier-finance",
+    source: "delivery",
+    type: "cash",
+    provider: null,
+    amount: 10_000,
+    status: "confirmed",
+    entryType: "payment",
+    idempotencyKey: "stable-key",
+  })
+  const result = await db.runTransaction((transaction) =>
+    new FirestorePaymentLedger(db).createConfirmedPaymentInTransaction(transaction, {
+      restaurantId: targetRestaurantId,
+      paymentId: "payment-stable",
+      orderId: "order-stable",
+      sessionId: "session",
+      cashierId: "cashier-finance",
+      source: "delivery",
+      type: "cash",
+      provider: null,
+      amount: 10_000,
+      receivedAmount: 10_000,
+      changeDue: 0,
+      externalReference: null,
+      idempotencyKey: "stable-key",
+    })
+  )
+  assert.equal(result.replayed, true)
+  const session = (await root.collection("cashSessions").doc("session").get()).data()
+  assert.equal(session.totalCash, 10_000)
+  assert.equal(session.totalConfirmed, 10_000)
+  assert.equal(session.totalOrders, 1)
+})
+
+test("ledger serveur : un paiement existant d'une autre session est un conflit", {
+  skip: !enabled,
+}, async () => {
+  const targetRestaurantId = `restaurant-finance-session-conflict-${Date.now()}`
+  const root = db.collection("restaurants").doc(targetRestaurantId)
+  await Promise.all([
+    root.collection("cashSessions").doc("current").set({
+      restaurantId: targetRestaurantId,
+      status: "open",
+      cashierId: "cashier-finance",
+    }),
+    root.collection("payments").doc("payment-stable").set({
+      restaurantId: targetRestaurantId,
+      orderId: "order-stable",
+      sessionId: "old-session",
+      cashierId: "cashier-finance",
+      source: "delivery",
+      type: "cash",
+      amount: 10_000,
+      status: "confirmed",
+      idempotencyKey: "stable-key",
+    }),
+  ])
+  await assert.rejects(
+    db.runTransaction((transaction) =>
+      new FirestorePaymentLedger(db).createConfirmedPaymentInTransaction(transaction, {
+        restaurantId: targetRestaurantId,
+        paymentId: "payment-stable",
+        orderId: "order-stable",
+        sessionId: "current",
+        cashierId: "cashier-finance",
+        source: "delivery",
+        type: "cash",
+        provider: null,
+        amount: 10_000,
+        receivedAmount: 10_000,
+        changeDue: 0,
+        externalReference: null,
+        idempotencyKey: "stable-key",
+      })
+    ),
+    (error) =>
+      error instanceof FinancialLedgerError &&
+      error.code === "PAYMENT_IDEMPOTENCY_CONFLICT"
+  )
+  assert.equal((await root.collection("cashSessions").doc("current").get()).data().totalCash, undefined)
+})
+
+test("ledger serveur : session d'un autre caissier refusée", {
+  skip: !enabled,
+}, async () => {
+  const suffix = Date.now().toString()
+  const targetRestaurantId = `restaurant-finance-owner-${suffix}`
+  const root = db.collection("restaurants").doc(targetRestaurantId)
+  await root.collection("cashSessions").doc("session").set({
+    restaurantId: targetRestaurantId,
+    status: "open",
+    cashierId: "cashier-owner",
+  })
+  const ledger = new FirestorePaymentLedger(db)
+  await assert.rejects(
+    db.runTransaction((transaction) =>
+      ledger.createConfirmedPaymentInTransaction(transaction, {
+        restaurantId: targetRestaurantId,
+        paymentId: "payment-owner",
+        orderId: "order-owner",
+        sessionId: "session",
+        cashierId: "cashier-other",
+        source: "delivery",
+        type: "mobile_money",
+        provider: "orange_money",
+        amount: 2000,
+        receivedAmount: 2000,
+        changeDue: 0,
+        externalReference: null,
+        idempotencyKey: "owner-key",
+      })
+    ),
+    (error) =>
+      error instanceof FinancialLedgerError &&
+      error.code === "CASH_SESSION_OWNERSHIP_MISMATCH"
+  )
+  assert.equal((await root.collection("payments").get()).size, 0)
+})
+
+test("ledger serveur : remboursements cash et Mobile Money ne doublent pas le crédit", {
+  skip: !enabled,
+}, async () => {
+  const suffix = Date.now().toString()
+  const targetRestaurantId = `restaurant-finance-refund-${suffix}`
+  const root = db.collection("restaurants").doc(targetRestaurantId)
+  await root.collection("cashSessions").doc("session").set({
+    restaurantId: targetRestaurantId,
+    status: "open",
+    cashierId: "cashier-refund",
+  })
+  const ledger = new FirestorePaymentLedger(db)
+  for (const [paymentId, orderId, type, provider, amount] of [
+    ["cash-payment", "cash-order", "cash", null, 3000],
+    ["mobile-payment", "mobile-order", "mobile_money", "moov_money", 5000],
+  ]) {
+    await db.runTransaction((transaction) =>
+      ledger.createConfirmedPaymentInTransaction(transaction, {
+        restaurantId: targetRestaurantId,
+        paymentId,
+        orderId,
+        sessionId: "session",
+        cashierId: "cashier-refund",
+        source: type === "cash" ? "delivery" : "qr_table",
+        type,
+        provider,
+        amount,
+        receivedAmount: amount,
+        changeDue: 0,
+        externalReference: null,
+        idempotencyKey: `${paymentId}-key`,
+      })
+    )
+  }
+  const firstRefund = await ledger.refundPayment({
+    restaurantId: targetRestaurantId,
+    paymentId: "cash-payment",
+    cashierId: "cashier-refund",
+    amount: 1000,
+    reason: "Retour client",
+    idempotencyKey: "cash-refund-key",
+  })
+  const replay = await ledger.refundPayment({
+    restaurantId: targetRestaurantId,
+    paymentId: "cash-payment",
+    cashierId: "cashier-refund",
+    amount: 1000,
+    reason: "Retour client",
+    idempotencyKey: "cash-refund-key",
+  })
+  await ledger.refundPayment({
+    restaurantId: targetRestaurantId,
+    paymentId: "mobile-payment",
+    cashierId: "cashier-refund",
+    amount: 5000,
+    reason: "Paiement annulé",
+    idempotencyKey: "mobile-refund-key",
+  })
+  assert.equal(firstRefund.replayed, false)
+  assert.equal(replay.replayed, true)
+  const session = (await root.collection("cashSessions").doc("session").get()).data()
+  assert.equal(session.totalCash, 2000)
+  assert.equal(session.totalMobileMoney, 0)
+  assert.equal(session.totalConfirmed, 2000)
+  assert.equal(session.totalRefunded, 6000)
+  assert.equal((await root.collection("payments").get()).size, 4)
+})
+
+test("ledger serveur : annulation avant confirmation, remboursement requis après", {
+  skip: !enabled,
+}, async () => {
+  const suffix = Date.now().toString()
+  const targetRestaurantId = `restaurant-finance-void-${suffix}`
+  const root = db.collection("restaurants").doc(targetRestaurantId)
+  await root.collection("cashSessions").doc("session").set({
+    restaurantId: targetRestaurantId,
+    status: "open",
+    cashierId: "cashier-void",
+  })
+  await root.collection("payments").doc("pending").set({
+    orderId: "order-pending",
+    sessionId: "session",
+    cashierId: "cashier-void",
+    source: "legacy",
+    type: "cash",
+    provider: null,
+    amount: 1000,
+    status: "pending",
+    entryType: "payment",
+    idempotencyKey: "pending-key",
+  })
+  const ledger = new FirestorePaymentLedger(db)
+  await ledger.voidPayment({
+    restaurantId: targetRestaurantId,
+    paymentId: "pending",
+    cashierId: "cashier-void",
+    reason: "Commande annulée",
+  })
+  assert.equal((await root.collection("payments").doc("pending").get()).data().status, "voided")
+  await db.runTransaction((transaction) =>
+    ledger.createConfirmedPaymentInTransaction(transaction, {
+      restaurantId: targetRestaurantId,
+      paymentId: "confirmed",
+      orderId: "order-confirmed",
+      sessionId: "session",
+      cashierId: "cashier-void",
+      source: "legacy",
+      type: "cash",
+      provider: null,
+      amount: 1000,
+      receivedAmount: 1000,
+      changeDue: 0,
+      externalReference: null,
+      idempotencyKey: "confirmed-key",
+    })
+  )
+  await assert.rejects(
+    ledger.voidPayment({
+      restaurantId: targetRestaurantId,
+      paymentId: "confirmed",
+      cashierId: "cashier-void",
+      reason: "Trop tard",
+    }),
+    (error) =>
+      error instanceof FinancialLedgerError &&
+      error.code === "REFUND_REQUIRED_AFTER_CONFIRMATION"
+  )
+})
+
+test("ledger serveur : réconciliation dry-run puis réparation idempotente", {
+  skip: !enabled,
+}, async () => {
+  const suffix = Date.now().toString()
+  const targetRestaurantId = `restaurant-finance-reconcile-${suffix}`
+  const root = db.collection("restaurants").doc(targetRestaurantId)
+  await Promise.all([
+    root.collection("cashSessions").doc("session").set({
+      restaurantId: targetRestaurantId,
+      status: "open",
+      cashierId: "cashier-reconcile",
+      totalCash: 9999,
+      totalConfirmed: 9999,
+    }),
+    root.collection("payments").doc("historical").set({
+      orderId: "historical-order",
+      sessionId: "session",
+      cashierId: "cashier-reconcile",
+      source: "pos",
+      type: "cash",
+      provider: null,
+      amount: 1200,
+      status: "confirmed",
+      idempotencyKey: "historical-key",
+    }),
+  ])
+  const ledger = new FirestorePaymentLedger(db)
+  const dryRun = await ledger.reconcileSession({
+    restaurantId: targetRestaurantId,
+    sessionId: "session",
+    actorId: "manager",
+  })
+  assert.equal(dryRun.ok, false)
+  assert.equal(dryRun.repaired, false)
+  assert.equal((await root.collection("cashSessions").doc("session").get()).data().totalCash, 9999)
+
+  const repaired = await ledger.reconcileSession({
+    restaurantId: targetRestaurantId,
+    sessionId: "session",
+    actorId: "manager",
+    repair: true,
+  })
+  assert.equal(repaired.repaired, true)
+  const second = await ledger.reconcileSession({
+    restaurantId: targetRestaurantId,
+    sessionId: "session",
+    actorId: "manager",
+    repair: true,
+  })
+  assert.equal(second.ok, true)
+  assert.equal(second.repaired, false)
+  const session = (await root.collection("cashSessions").doc("session").get()).data()
+  assert.equal(session.totalCash, 1200)
+  assert.equal(session.totalConfirmed, 1200)
 })

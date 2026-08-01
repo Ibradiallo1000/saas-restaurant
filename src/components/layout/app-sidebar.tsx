@@ -3,6 +3,7 @@
 import * as React from "react"
 import {
   Building2,
+  AlertTriangle,
   Banknote,
   BookOpen,
   ChefHat,
@@ -17,6 +18,7 @@ import {
   LogOut,
   Monitor,
   PackageSearch,
+  PackagePlus,
   ReceiptText,
   Settings,
   ShieldAlert,
@@ -24,6 +26,7 @@ import {
   Store,
   Table2,
   Tags,
+  Truck,
   Users,
   Users2,
   Wallet,
@@ -54,6 +57,10 @@ import { getOptimizedImage } from "@/lib/image"
 import { ROLES } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import { OrdersBadge } from "@/components/orders-badge"
+import {
+  OWNER_SIDEBAR_SECTIONS,
+  type OwnerNavigationIcon,
+} from "@/config/owner-navigation"
 
 type NavItem = {
   name: string
@@ -72,7 +79,7 @@ const AppSidebarComponent = () => {
   const searchParams = useSearchParams()
   const currentPathname = pathname ?? ""
   const auth = useAuth()
-  const { isMobile, setOpenMobile, state, toggleSidebar } = useSidebar()
+  const { setOpenMobile, state, toggleSidebar } = useSidebar()
   const { restaurant } = useRestaurant()
   const { settings: platformSettings, isLoading: isPlatformLoading } = usePlatform()
   const { user, profile, role, isSuperAdmin, restaurantId } = useTenant()
@@ -113,19 +120,14 @@ const AppSidebarComponent = () => {
     const items: NavItem[] = []
 
     if (role === ROLES.OWNER) {
-      items.push({ name: "Dashboard", href: "/owner", icon: LayoutDashboard })
-      items.push({ name: "Commandes", href: "/owner/commandes", icon: ListOrdered })
-      items.push({ name: "Caisse", href: "/owner/caisse", icon: Wallet })
-      items.push({ name: "Dépenses", href: "/owner/depenses", icon: ReceiptText })
-      items.push({ name: "Stock", href: "/owner/stock", icon: PackageSearch })
-      items.push({ name: "Trésorerie", href: "/owner/tresorerie", icon: Banknote })
-      items.push({ name: "Voix du client", href: "/owner/avis", icon: Star })
-      if (isMobile) return [{ label: "Terrain", items }]
-      items.push({ name: "Menu", href: "/menu", icon: Store })
-      items.push({ name: "Tables", href: "/tables", icon: Table2 })
-      items.push({ name: "Images", href: "/images", icon: ImageIcon })
-      items.push({ name: "Configuration", href: "/settings", icon: Settings })
-      return [{ label: "Restaurant", items }]
+      return OWNER_SIDEBAR_SECTIONS.map((section) => ({
+        label: section.label,
+        items: section.items.map((item) => ({
+          name: item.label,
+          href: item.href,
+          icon: ownerIconMap[item.icon],
+        })),
+      }))
     }
 
     if (role === ROLES.MANAGER) {
@@ -141,6 +143,7 @@ const AppSidebarComponent = () => {
 
     if (role === ROLES.CASHIER) {
       items.push({ name: "Caisse (POS)", href: "/pos", icon: Monitor })
+      items.push({ name: "Mes sessions", href: "/pos/sessions", icon: ReceiptText })
     }
 
     if (role === ROLES.KITCHEN) {
@@ -148,7 +151,7 @@ const AppSidebarComponent = () => {
     }
 
     return [{ label: `Espace ${role}`, items }]
-  }, [isMobile, isPlatformContext, isSuperAdmin, restaurantId, role])
+  }, [isPlatformContext, isSuperAdmin, restaurantId, role])
 
   const navItems = React.useMemo(
     () => navSections.flatMap((section) => section.items),
@@ -205,9 +208,9 @@ const AppSidebarComponent = () => {
             <button
               type="button"
               onClick={toggleSidebar}
-              title={isCollapsed ? "Ouvrir la sidebar" : "Reduire la sidebar"}
-              aria-label={isCollapsed ? "Ouvrir la sidebar" : "Reduire la sidebar"}
-              className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              title={isCollapsed ? "Ouvrir la sidebar" : "Réduire la sidebar"}
+              aria-label={isCollapsed ? "Ouvrir la sidebar" : "Réduire la sidebar"}
+              className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
             </button>
@@ -238,8 +241,9 @@ const AppSidebarComponent = () => {
                           router.push(getSidebarTargetHref(item.href, searchParams))
                         }}
                         title={isCollapsed ? item.name : undefined}
+                        aria-label={isCollapsed ? item.name : undefined}
                         className={cn(
-                          "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors",
+                          "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                           isCollapsed && "justify-center px-0",
                           isActive
                             ? "bg-primary text-white [&>svg]:text-white"
@@ -351,4 +355,24 @@ function ButtonLink({ href, children }: { href: string; children: React.ReactNod
 
 function isSidebarItemActive(item: NavItem, activeHref: string | null) {
   return activeHref === item.href
+}
+
+const ownerIconMap: Record<OwnerNavigationIcon, React.ComponentType<{ className?: string }>> = {
+  activity: ListOrdered,
+  articles: PackageSearch,
+  cash: Wallet,
+  dashboard: LayoutDashboard,
+  expenses: ReceiptText,
+  images: ImageIcon,
+  menu: Store,
+  movements: GitBranch,
+  orders: ListOrdered,
+  reviews: Star,
+  settings: Settings,
+  stock: PackageSearch,
+  "stock-alerts": AlertTriangle,
+  suppliers: Truck,
+  supplies: PackagePlus,
+  tables: Table2,
+  treasury: Banknote,
 }

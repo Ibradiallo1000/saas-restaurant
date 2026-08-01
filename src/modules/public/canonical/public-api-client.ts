@@ -2,6 +2,10 @@ import type { FirebaseApp } from "firebase/app"
 import { getToken, initializeAppCheck, ReCaptchaV3Provider, type AppCheck } from "firebase/app-check"
 import type { User } from "firebase/auth"
 
+declare global {
+  var FIREBASE_APPCHECK_DEBUG_TOKEN: boolean | string | undefined
+}
+
 export class PublicOrderApiError extends Error {
   readonly code: string
   readonly retryable: boolean
@@ -153,9 +157,9 @@ export function getRememberedQrCapability(orderId: string) {
 }
 
 async function publicHeaders(app: FirebaseApp, user: User) {
-  const authorization = `Bearer ${await user.getIdToken()}`
   const localProof = localAppCheckProof(app)
   if (localProof) {
+    const authorization = `Bearer ${await user.getIdToken()}`
     return {
       authorization,
       "x-firebase-appcheck": localProof,
@@ -170,16 +174,23 @@ async function publicHeaders(app: FirebaseApp, user: User) {
   }
   let appCheck = appCheckInstances.get(app)
   if (!appCheck) {
+    enableLocalAppCheckDebugToken()
     appCheck = initializeAppCheck(app, {
       provider: new ReCaptchaV3Provider(siteKey),
       isTokenAutoRefreshEnabled: true,
     })
     appCheckInstances.set(app, appCheck)
   }
-  const token = await getToken(appCheck, false)
+  // Firebase Auth and App Check are independent proofs. Preparing both at the
+  // same time removes one network round-trip from every public action while
+  // preserving the exact same server-side verification.
+  const [idToken, appCheckToken] = await Promise.all([
+    user.getIdToken(),
+    getToken(appCheck, false),
+  ])
   return {
-    authorization,
-    "x-firebase-appcheck": token.token,
+    authorization: `Bearer ${idToken}`,
+    "x-firebase-appcheck": appCheckToken.token,
   }
 }
 
@@ -201,6 +212,25 @@ function localAppCheckProof(app: FirebaseApp) {
     )
   }
   return proof
+}
+
+function enableLocalAppCheckDebugToken() {
+  if (
+    process.env.NODE_ENV === "production" ||
+    typeof window === "undefined" ||
+    !isLocalHostname(window.location.hostname)
+  ) {
+    return
+  }
+
+  self.FIREBASE_APPCHECK_DEBUG_TOKEN = true
+  console.info(
+    "[APP_CHECK][DEBUG] Mode local activé. Firebase affiche le token de debug dans cette console ; enregistrez-le dans Firebase Console > App Check > Gérer les jetons de débogage."
+  )
+}
+
+function isLocalHostname(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
 }
 
 async function parseResponse(response: Response, fallback: string) {

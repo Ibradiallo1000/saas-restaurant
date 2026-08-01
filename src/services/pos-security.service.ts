@@ -168,19 +168,25 @@ export async function processOrderPaymentTransaction({
       updatedAt: serverTimestamp(),
     }
 
-    await paymentLedger.createPaymentInTransaction(transaction, {
-      restaurantId,
-      orderId,
-      sessionId: cashSessionId,
-      cashierId: staff.userId,
-      source: paymentSource,
-      type: paymentType,
-      provider: paymentProvider,
-      amount,
-      status: isConfirmedPayment ? "confirmed" : "pending",
-      idempotencyKey,
-      orderUpdate: after,
-    })
+    if (isConfirmedPayment) {
+      await paymentLedger.createPaymentInTransaction(transaction, {
+        restaurantId,
+        orderId,
+        sessionId: cashSessionId,
+        cashierId: staff.userId,
+        source: paymentSource,
+        type: paymentType,
+        provider: paymentProvider,
+        amount,
+        status: "confirmed",
+        idempotencyKey,
+        orderUpdate: after,
+      })
+    } else {
+      // Une demande Mobile Money n'est pas encore un encaissement. Seule sa
+      // confirmation par la frontière serveur créera l'entrée `payments`.
+      transaction.update(orderRef, after)
+    }
     if (tableRef) {
       transaction.update(tableRef, {
         status: "free",
@@ -232,6 +238,10 @@ export async function processOrderPaymentTransaction({
   return result
 }
 
+/**
+ * @deprecated Confirmed payments must use the server-side ConfirmOrderPayment command.
+ * Kept temporarily for compatibility with external legacy callers.
+ */
 export async function validateMobilePaymentTransaction({
   db,
   restaurantId,
@@ -372,6 +382,9 @@ export async function validateMobilePaymentTransaction({
   return result
 }
 
+/**
+ * @deprecated Refunds must use FirestorePaymentLedger.refundPayment on the server.
+ */
 export async function refundOrderTransaction({
   db,
   restaurantId,

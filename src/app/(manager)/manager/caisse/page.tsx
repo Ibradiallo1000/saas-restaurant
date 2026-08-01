@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
-import { addDoc, collection, doc, getDocs, query, runTransaction, serverTimestamp, where, writeBatch } from "firebase/firestore"
+import { CashHandoverReviewPanel } from "./CashHandoverReviewPanel"
+import { addDoc, collection, doc, getDocs, query, serverTimestamp, where, writeBatch } from "firebase/firestore"
 import { AlertTriangle, Banknote, CheckCircle2, Clock, CreditCard, Plus, ReceiptText, Wallet } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -10,7 +11,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { AdminRouteSkeleton } from "@/components/performance/route-skeletons"
-import { DashboardHeader } from "@/components/dashboard-ui"
+import { DashboardEmptyState, DashboardHeader, MetricCard } from "@/components/dashboard-ui"
 import { ManagerPeriodFilter } from "@/components/layout/manager-period-filter"
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
@@ -22,12 +23,11 @@ import { isConfirmedFinancePayment } from "@/lib/finance/financial-summary"
 import { isOrderPaid, isOrderServed } from "@/lib/order-lifecycle"
 import { cn } from "@/lib/utils"
 import { useRestaurantLiveData } from "@/modules/restaurant-live/RestaurantLiveDataProvider"
-import { TreasuryService } from "@/services/treasury.service"
 import {
-  buildPaymentIdempotencyKey,
-  normalizePaymentProvider,
-  PaymentLedgerService,
-} from "@/services/payment-ledger.service"
+  confirmTableSessionPayment,
+  posCommandIdempotencyKey,
+} from "@/modules/pos/canonical"
+import { approveCashOpeningRequest } from "@/modules/cash/approve-cash-opening-request"
 
 export default function ManagerCaissePage() {
   const db = useFirestore()
@@ -122,7 +122,7 @@ export default function ManagerCaissePage() {
   
 
   const validateTableSessionPayment = async (session: any) => {
-    if (!db || !restaurantId || !user) return
+    if (!db || !restaurantId || !user || processingOrderId) return
     if (!currentUserCashSession?.id) {
       toast({
         title: "Caisse fermée",
@@ -132,80 +132,42 @@ export default function ManagerCaissePage() {
       return
     }
 
+    const methodLabel = session.paymentRequest?.method === "mobile"
+      ? String(session.paymentRequest?.provider || "Mobile Money")
+      : "Espèces"
+    const tableLabel = session.tableName || session.tableNumber || session.tableId || session.id
+    const customerLabel = session.customerName || session.createdByName || "Client de la table"
+    if (!window.confirm([
+      "Confirmer le paiement de cette table ?",
+      `Table : ${tableLabel}`,
+      `Utilisateur : ${customerLabel}`,
+      `Montant : ${Number(session.payableAmount || 0).toLocaleString("fr-FR")} FCFA`,
+      `Moyen de paiement : ${methodLabel}`,
+    ].join("\n"))) return
+
     setProcessingOrderId(session.id)
     try {
-      const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "tableSessions", session.id)
-      const ordersRef = collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.ORDERS)
-      const [tableSessionOrdersSnap, legacySessionOrdersSnap] = await Promise.all([
-        getDocs(query(ordersRef, where("tableSessionId", "==", session.id))),
-        getDocs(query(ordersRef, where("sessionId", "==", session.id))),
-      ])
-      const orderDocs = new Map<string, (typeof tableSessionOrdersSnap.docs)[number]>()
-
-      tableSessionOrdersSnap.docs.forEach((orderDoc) => orderDocs.set(orderDoc.id, orderDoc))
-      legacySessionOrdersSnap.docs.forEach((orderDoc) => orderDocs.set(orderDoc.id, orderDoc))
-
       const method = session.paymentRequest?.method === "mobile" ? "mobile" : "cash"
       const paymentType = method === "mobile" ? "mobile_money" : "cash"
-      const paymentProvider = method === "mobile" ? normalizePaymentProvider(session.paymentRequest?.provider || "mobile_money") : null
-      const ledger = new PaymentLedgerService(db)
-
-      for (const orderDoc of Array.from(orderDocs.values())) {
-        const currentOrder = { id: orderDoc.id, ...orderDoc.data() } as any
-        const amount = getOrderComputedTotal(currentOrder)
-
-        await ledger.createPayment({
+      const paymentProvider =
+        method === "mobile"
+          ? String(session.paymentRequest?.provider || "mobile_money")
+          : null
+      await confirmTableSessionPayment({
+        user,
+        restaurantId,
+        tableSessionId: session.id,
+        cashSessionId: currentUserCashSession.id,
+        method: paymentType,
+        provider: paymentProvider,
+        idempotencyKey: posCommandIdempotencyKey([
+          "table-session-payment",
           restaurantId,
-          orderId: orderDoc.id,
-          sessionId: currentUserCashSession.id,
-          cashierId: user.uid,
-          source: "qr_table",
-          type: paymentType,
-          provider: paymentProvider,
-          amount,
-          status: "confirmed",
-          idempotencyKey: buildPaymentIdempotencyKey([
-            "table-session-payment",
-            restaurantId,
-            session.id,
-            orderDoc.id,
-            paymentType,
-            paymentProvider,
-          ]),
-          orderUpdate: {
-            paymentStatus: "paid",
-            paymentMethod: paymentType,
-            paymentType,
-            paymentProvider,
-            cashSessionId: currentUserCashSession.id,
-            sessionActive: false,
-            paidAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          },
-        })
-      }
-
-      const batch = writeBatch(db)
-      batch.update(sessionRef, {
-        "paymentRequest.status": "validated",
-        "paymentRequest.handledAt": serverTimestamp(),
-        "paymentRequest.handledBy": user.uid,
-        status: "closed",
-        totalAmount: Number(session.payableAmount ?? session.totalAmount ?? 0),
-        closedAt: serverTimestamp(),
-        lastActivityAt: serverTimestamp(),
+          session.id,
+          paymentType,
+          paymentProvider,
+        ]),
       })
-      if (session.tableId) {
-        const tableRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "tables", session.tableId)
-        batch.update(tableRef, {
-          status: "free",
-          currentSessionId: null,
-          updatedAt: serverTimestamp(),
-          lastActivityAt: serverTimestamp(),
-        })
-      }
-
-      await batch.commit()
       toast({ title: "Paiement validé" })
     } catch (e) {
       console.error(e)
@@ -215,15 +177,12 @@ export default function ManagerCaissePage() {
     }
   }
 
-  const treasuryService = React.useMemo(() => (db ? new TreasuryService(db) : null), [db])
   const [processingOrderId, setProcessingOrderId] = React.useState<string | null>(null)
-  const [validatingSessionId, setValidatingSessionId] = React.useState<string | null>(null)
   const [activatingRequestId, setActivatingRequestId] = React.useState<string | null>(null)
   const [expenseAmount, setExpenseAmount] = React.useState("")
   const [expenseReason, setExpenseReason] = React.useState("")
   const [expenseCategory, setExpenseCategory] = React.useState("")
   const [creatingExpense, setCreatingExpense] = React.useState(false)
-  const [discrepancyReasons, setDiscrepancyReasons] = React.useState<Record<string, string>>({})
 
   const canValidateCash = role === "manager" || role === "owner"
   const currentUserCashSession = cashSessions.find((session: any) => {
@@ -299,7 +258,7 @@ export default function ManagerCaissePage() {
     if (isPaymentsFilter && paymentsRef.current) {
       paymentsRef.current.scrollIntoView({ behavior: "smooth", block: "start" })
     }
-  }, [isPaymentsFilter])
+  }, [isPaymentsFilter, pendingPaymentSessions.length])
 
   const scrollToExpenseForm = React.useCallback(() => {
     expenseFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -312,87 +271,25 @@ export default function ManagerCaissePage() {
   const activateOpeningRequest = async (request: any) => {
     if (!db || !restaurantId || !user || !canValidateCash || activatingRequestId) return
 
+    const cashierLabel = request.staffName || request.cashierName || request.userName || request.userEmail || request.userId || "Caissier"
+    if (!window.confirm([
+      "Approuver cette ouverture de caisse ?",
+      `Caisse : ${request.cashRegisterName || request.cashRegisterId || "Caisse principale"}`,
+      `Utilisateur : ${cashierLabel}`,
+      `Fond initial : ${Number(request.openingBalance || request.initialAmount || 0).toLocaleString("fr-FR")} FCFA`,
+    ].join("\n"))) return
+
     setActivatingRequestId(request.id)
     try {
-      const cashierId = request.cashierId || request.userId || request.staffId
-      if (!cashierId) return
-
-      const staffId = request.staffId || cashierId
-      const sessionId = request.sessionId || request.id
-      const sessionPayload = {
+      await approveCashOpeningRequest({
+        db,
         restaurantId,
-        cashierId,
-        userId: cashierId,
-        staffId,
-        staffName: request.staffName || request.cashierName || "Caissier",
-        cashierName: request.cashierName || request.staffName || "Caissier",
-        staffPhone: request.staffPhone || null,
-        status: "open",
-        openedAt: serverTimestamp(),
-        closedAt: null,
-        openingBalance: Number(request.openingBalance || 0),
-        closingBalance: null,
-        totalCash: 0,
-        totalMobile: 0,
-        totalOrders: 0,
-        validatedByManager: false,
-        approvedBy: user.uid,
-        approvedRole: role || "manager",
-        approvedAt: serverTimestamp(),
-        createdAt: request.createdAt || serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }
-
-      await runTransaction(db, async (transaction) => {
-        if (request.source === "session") {
-          const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS, request.id)
-          transaction.update(sessionRef, {
-            ...sessionPayload,
-            activatedFrom: "cashSession",
-          })
-          return
-        }
-
-        const requestRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, "cashSessionRequests", request.id)
-        const sessionRef = doc(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.CASH_SESSIONS, sessionId)
-        transaction.set(sessionRef, {
-          ...sessionPayload,
-          requestId: request.id,
-          activatedFrom: "cashSessionRequest",
-        })
-        transaction.update(requestRef, {
-          status: "approved",
-          sessionId,
-          approvedBy: user.uid,
-          approvedAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
+        request,
+        approverId: user.uid,
+        approverRole: role || "manager",
       })
     } finally {
       setActivatingRequestId(null)
-    }
-  }
-
-  const validateSession = async (session: SessionValidationRow, flag?: "discrepancy") => {
-    if (!treasuryService || !restaurantId || !user || !canValidateCash) return
-
-    setValidatingSessionId(session.id)
-    try {
-      await treasuryService.postCashSessionMovementToTreasury({
-        restaurantId,
-        sessionId: session.id,
-        managerId: user.uid,
-        managerRole: role || "manager",
-        calculatedTotal: session.calculatedTotal,
-        calculatedCash: session.calculatedCash,
-        calculatedMobile: session.calculatedMobile,
-        totalOrders: session.totalOrders,
-        difference: session.difference,
-        validationFlag: flag ?? null,
-        discrepancyReason: discrepancyReasons[session.id]?.trim() || null,
-      })
-    } finally {
-      setValidatingSessionId(null)
     }
   }
 
@@ -521,10 +418,10 @@ export default function ManagerCaissePage() {
               </div>
               <div>
                 <h2 className="text-sm font-black uppercase text-amber-700 dark:text-amber-200">
-                  Caisse POS à valider
+                  Sessions clôturées à régulariser
                 </h2>
                 <p className="text-xs font-semibold text-amber-900/80 dark:text-amber-100/80">
-                  {pendingSessions.length} session{pendingSessions.length > 1 ? "s" : ""} clôturée{pendingSessions.length > 1 ? "s" : ""} attend{pendingSessions.length > 1 ? "ent" : ""} une validation manager.
+                  {pendingSessions.length} session{pendingSessions.length > 1 ? "s" : ""} clôturée{pendingSessions.length > 1 ? "s" : ""} attend{pendingSessions.length > 1 ? "ent" : ""} une remise ou une validation manager.
                 </p>
               </div>
             </div>
@@ -536,9 +433,9 @@ export default function ManagerCaissePage() {
       ) : null}
 
       {pendingPaymentSessions.length > 0 && (
-        <section className="space-y-2">
+        <section ref={paymentsRef} className="scroll-mt-24 space-y-2" tabIndex={-1} aria-labelledby="pending-table-payments-title">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-black uppercase tracking-tight text-amber-600">
+            <h2 id="pending-table-payments-title" className="text-sm font-black uppercase tracking-tight text-amber-600">
               Demandes de paiement table
             </h2>
             <span className="rounded-full bg-amber-600 px-2.5 py-0.5 text-[10px] font-black text-white">
@@ -591,34 +488,10 @@ export default function ManagerCaissePage() {
         </div>
       </section>
 
-      <section ref={validationRef} className="rounded-xl border bg-card p-3 shadow-sm">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-black uppercase tracking-tight">Validation des caisses</h2>
-          <span className="rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-black text-muted-foreground">
-            {pendingSessions.length} en attente
-          </span>
-        </div>
-
-        {pendingSessions.length === 0 ? (
-          <EmptyFinanceState label="Aucune caisse en attente de validation" compact />
-        ) : (
-          <div className="grid gap-3 xl:grid-cols-2">
-            {pendingSessions.map((session) => (
-              <SessionValidationCard
-                key={session.id}
-                session={session}
-                canValidate={canValidateCash}
-                processing={validatingSessionId === session.id}
-                discrepancyReason={discrepancyReasons[session.id] || ""}
-                onDiscrepancyReasonChange={(value) => {
-                  setDiscrepancyReasons((current) => ({ ...current, [session.id]: value }))
-                }}
-                onValidate={() => validateSession(session)}
-                onDiscrepancy={() => validateSession(session, "discrepancy")}
-              />
-            ))}
-          </div>
-        )}
+      <section ref={validationRef}>
+        {restaurantId && user ? (
+          <CashHandoverReviewPanel restaurantId={restaurantId} user={user} cashSessions={cashSessions} />
+        ) : null}
       </section>
 
       <div className="fixed bottom-20 right-4 z-40 flex flex-col gap-3 md:hidden">
@@ -914,29 +787,12 @@ function KpiCard({
   value: number
   danger?: boolean
 }) {
-  return (
-    <Card className="rounded-xl">
-      <CardContent className="flex min-h-24 flex-col justify-between p-3">
-        <Icon className={cn("h-4 w-4", danger ? "text-amber-600" : "text-primary")} />
-        <p className="mt-2 text-[10px] font-black uppercase text-muted-foreground">{label}</p>
-        <p className={cn("mt-0.5 text-lg font-black leading-tight sm:text-xl", danger ? "text-amber-600" : "text-foreground")}>
-          {value.toLocaleString()} FCFA
-        </p>
-      </CardContent>
-    </Card>
-  )
+  const variant = danger ? "danger" : label.includes("encaisser") || label.includes("Caisse") ? "finance" : "neutral"
+  return <MetricCard variant={variant} label={label} value={value.toLocaleString("fr-FR")} unit="FCFA" icon={<Icon />} emphasis={danger ? "strong" : "default"} />
 }
 
 function EmptyFinanceState({ label, compact = false }: { label: string; compact?: boolean }) {
-  return (
-    <div className={cn(
-      "flex items-center justify-center gap-2 rounded-xl border border-dashed bg-muted/20 text-center text-sm font-semibold text-muted-foreground",
-      compact ? "min-h-16 p-3" : "p-8"
-    )}>
-      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-      <span>{label}</span>
-    </div>
-  )
+  return <DashboardEmptyState className={compact ? "min-h-16 p-3" : undefined} title={label} icon={<CheckCircle2 />} />
 }
 
 function buildSessionValidationRow(session: any, depositAlreadyExists = false): SessionValidationRow {

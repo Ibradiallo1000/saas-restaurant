@@ -138,13 +138,24 @@ async function loadAuthorities(input: {
 
   let tableSession: TableSessionAuthority | null = null
   if (input.input.request.tableContext) {
-    const sessionSnapshot = await input.transaction.get(
-      input.restaurantRef
-        .collection("tableSessions")
-        .doc(input.input.request.tableContext.tableSessionId)
-    )
+    const [sessionSnapshot, tableSnapshot] = await Promise.all([
+      input.transaction.get(
+        input.restaurantRef
+          .collection("tableSessions")
+          .doc(input.input.request.tableContext.tableSessionId)
+      ),
+      input.transaction.get(
+        input.restaurantRef
+          .collection("tables")
+          .doc(input.input.request.tableContext.tableId)
+      ),
+    ])
     if (sessionSnapshot.exists) {
-      tableSession = toTableSessionAuthority(sessionSnapshot.id, sessionSnapshot.data() ?? {})
+      tableSession = toTableSessionAuthority(
+        sessionSnapshot.id,
+        sessionSnapshot.data() ?? {},
+        tableSnapshot.data() ?? {}
+      )
     }
   }
 
@@ -285,10 +296,15 @@ function toCategoryAuthority(id: string, data: DocumentData): CategoryAuthority 
   }
 }
 
-function toTableSessionAuthority(id: string, data: DocumentData): TableSessionAuthority {
+function toTableSessionAuthority(
+  id: string,
+  data: DocumentData,
+  tableData: DocumentData
+): TableSessionAuthority {
   return {
     id,
     tableId: stringOr(data.tableId, ""),
+    tableName: nullableString(tableData.name ?? tableData.label ?? tableData.number),
     zoneId: nullableString(data.zoneId),
     active: data.status === "active" && data.closedAt == null,
   }

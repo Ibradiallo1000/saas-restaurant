@@ -28,13 +28,16 @@ import { cn } from "@/lib/utils"
 
 export interface PageHeaderProps
   extends Omit<React.HTMLAttributes<HTMLElement>, "title"> {
-  icon?: LucideIcon
+  icon?: LucideIcon | null
   title: React.ReactNode
   subtitle?: React.ReactNode
   action?: React.ReactNode
+  back?: React.ReactNode
+  breadcrumb?: React.ReactNode
   eyebrow?: React.ReactNode
   meta?: React.ReactNode
   headingAs?: "h1" | "h2"
+  density?: "compact" | "dense" | "default" | "comfortable"
 }
 
 export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
@@ -44,37 +47,43 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
       title,
       subtitle,
       action,
+      back,
+      breadcrumb,
       eyebrow,
       meta,
       headingAs: Heading = "h1",
+      density = "dense",
       className,
       ...props
     },
     ref
   ) => {
-    const Icon = icon ?? resolvePageIcon(title)
+    const Icon = icon === undefined ? resolvePageIcon(title) : icon
 
     return (
       <header
         ref={ref}
         className={cn(
-          "flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between",
+          "flex flex-col sm:flex-row sm:items-start sm:justify-between",
+          density === "compact" ? "gap-1.5" : density === "dense" ? "gap-2" : density === "comfortable" ? "gap-5" : "gap-3",
           className
         )}
         {...props}
       >
-        <div className="flex min-w-0 items-start gap-3">
-          <Icon
-            className="mt-0.5 h-8 w-8 shrink-0 text-primary"
+        <div className="flex min-w-0 items-start gap-2.5 sm:gap-3">
+          {Icon ? <Icon
+            className="mt-0.5 h-6 w-6 shrink-0 text-primary sm:h-7 sm:w-7"
             aria-hidden="true"
-          />
+          /> : null}
           <div className="min-w-0">
+            {back ? <div className="mb-1">{back}</div> : null}
+            {breadcrumb ? <nav className="mb-1 text-xs text-muted-foreground" aria-label="Fil d’Ariane">{breadcrumb}</nav> : null}
             {eyebrow ? (
               <div className="mb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">
                 {eyebrow}
               </div>
             ) : null}
-            <Heading className="text-3xl font-black uppercase leading-none tracking-tight text-primary">
+            <Heading className="text-xl font-bold leading-tight tracking-tight text-foreground min-[390px]:text-2xl md:text-[1.75rem]">
               {title}
             </Heading>
             {subtitle ? (

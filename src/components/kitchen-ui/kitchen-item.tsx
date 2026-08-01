@@ -31,13 +31,16 @@ KitchenNote.displayName = "KitchenNote"
 
 export interface KitchenItemProps extends Omit<React.HTMLAttributes<HTMLLIElement>, "children" | "id">, KitchenItemPresentation {}
 
-export const KitchenItem = React.forwardRef<HTMLLIElement, KitchenItemProps>(({ className, completed = false, destination, linked = false, name, note, options, quantity, ...props }, ref) => (
-  <li ref={ref} className={cn("grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-[var(--kitchen-divider)] py-3 last:border-b-0", completed && "text-[var(--dashboard-muted)]", className)} {...props}>
+export const KitchenItem = React.forwardRef<HTMLLIElement, KitchenItemProps>(({ className, completed = false, destination, imageUrl, linked = false, name, note, options, quantity, ...props }, ref) => (
+  <li ref={ref} className={cn("grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-[var(--kitchen-divider)] py-3 last:border-b-0", completed && "text-[var(--dashboard-muted)]", className)} {...props}>
     <span className="min-w-10 text-right text-[length:var(--text-kitchen-item-quantity)] font-black leading-[var(--leading-kitchen-item-quantity)] tabular-nums" aria-label={`Quantité ${String(quantity)}`}>{quantity}<span aria-hidden="true">×</span></span>
+    <div className="size-11 shrink-0 overflow-hidden rounded-[var(--radius-dashboard-input)] bg-[var(--kitchen-card-muted)]">
+      {imageUrl ? <img src={imageUrl} alt="" loading="lazy" className="size-full object-cover" /> : null}
+    </div>
     <div className="min-w-0">
       <div className={cn("break-words text-[length:var(--text-kitchen-item-name)] font-bold leading-[var(--leading-kitchen-item-name)]", completed && "line-through")}>{name}</div>
       {options ? <div className="mt-1 break-words text-[length:var(--text-kitchen-option)] leading-[var(--leading-kitchen-option)] text-[var(--dashboard-subtitle)]">{options}</div> : null}
-      {note ? <div className="mt-2 break-words rounded-md bg-[var(--kitchen-priority-warning-bg)] px-2 py-1.5 text-[length:var(--text-kitchen-note)] font-semibold leading-[var(--leading-kitchen-note)] text-[var(--kitchen-priority-warning-fg)]"><span className="sr-only">Note : </span>{note}</div> : null}
+      {note ? <div className="mt-2 break-words rounded-md bg-[var(--kitchen-priority-warning-bg)] px-2 py-1.5 text-[length:var(--text-kitchen-note)] font-semibold leading-[var(--leading-kitchen-note)] text-[var(--kitchen-priority-warning-fg)]"><span className="font-bold">Instruction : </span>{note}</div> : null}
       {destination || linked ? <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-[var(--dashboard-muted)]">{destination ? <span>{destination}</span> : null}{linked ? <span>Article lié</span> : null}</div> : null}
       {completed ? <span className="sr-only">Article terminé</span> : null}
     </div>

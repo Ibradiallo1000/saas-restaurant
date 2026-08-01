@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { collection, doc, limit, query, where } from "firebase/firestore"
-import { signInAnonymously } from "firebase/auth"
 import { useRouter } from "next/navigation"
 import { ChefHat, ClipboardList, Coffee, Search, ShoppingBag, Utensils } from "lucide-react"
 
@@ -31,6 +30,7 @@ import { productNeedsConfigurator } from "@/lib/linked-option-groups"
 import { buildMarketplaceIntentKey, claimMarketplaceIntent, MARKETPLACE_NAVIGATION_SOURCE, resolveMarketplaceProduct } from "@/lib/marketplace-offer-navigation"
 import { getLatestTrackedOrder } from "./orderTrackingStorage"
 import { useCart } from "./cart/CartContext"
+import { ensurePublicFirebaseUser } from "./public-auth"
 import {
   type ActiveTableSession,
   type RestaurantTableRecord,
@@ -99,11 +99,28 @@ function PublicPageContent({
   }, [])
 
   React.useEffect(() => {
-    if (user) return
-    void signInAnonymously(auth).catch((authError) => {
-      console.error("[QR][ANONYMOUS_AUTH_ERROR]", authError)
-      setTableSessionError("Impossible d’ouvrir une session client sécurisée.")
+    console.info("[PUBLIC_AUTH][BOOTSTRAP_STATE]", {
+      hasUser: Boolean(user),
+      uid: user?.uid ?? null,
+      isAnonymous: user?.isAnonymous ?? null,
+      providerId: user?.providerId ?? null,
+      providerData: user?.providerData.map((provider) => provider.providerId) ?? [],
     })
+    if (auth.currentUser) return
+    console.info("[PUBLIC_AUTH][SIGN_IN_ANONYMOUSLY_CALLED]")
+    void ensurePublicFirebaseUser(auth)
+      .then((firebaseUser) => {
+        console.info("[PUBLIC_AUTH][SIGN_IN_ANONYMOUSLY_SUCCESS]", {
+          uid: firebaseUser.uid,
+          isAnonymous: firebaseUser.isAnonymous,
+          providerId: firebaseUser.providerId,
+          providerData: firebaseUser.providerData.map((provider) => provider.providerId),
+        })
+      })
+      .catch((authError) => {
+        console.error("[PUBLIC_AUTH][SIGN_IN_ANONYMOUSLY_ERROR]", authError)
+        setTableSessionError("Impossible d’ouvrir une session client sécurisée.")
+      })
   }, [auth, user])
 
   React.useEffect(() => {

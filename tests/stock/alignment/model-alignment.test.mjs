@@ -87,5 +87,5 @@ test("manager navigation exposes one transparent inventory entry and Owner uses 
   assert.match(ownerStock, /\/owner\/stock\/articles/)
   assert.match(ownerStock, /\/owner\/stock\/movements/)
   assert.doesNotMatch(ownerStock, /DailyStockScreen|\/manager\/stock/)
-  assert.match(ownerStock, /Dette fournisseurs/)
+  assert.match(ownerStock, /Dettes fournisseurs/)
 })
