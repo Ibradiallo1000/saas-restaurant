@@ -4,6 +4,7 @@ import type {
   Firestore,
   Transaction,
 } from "firebase-admin/firestore"
+import { Timestamp } from "firebase-admin/firestore"
 
 import { CanonicalOrderError } from "./errors.ts"
 import { ORDER_CREATION_POLICIES } from "./policies.ts"
@@ -23,9 +24,16 @@ import type {
   RestaurantAuthority,
   TableSessionAuthority,
 } from "./types.ts"
+import {
+  resolveEffectiveProductAvailability,
+  resolvePortionControl,
+} from "../../../lib/product-availability.ts"
+import { writeHistory } from "../../availability/availability-service.ts"
 
 export class FirestoreAtomicOrderCreationStore implements AtomicOrderCreationPort {
-  constructor(private readonly db: Firestore) {}
+  private readonly db: Firestore
+
+  constructor(db: Firestore) { this.db = db }
 
   async create(
     input: AtomicCreateInput,
@@ -64,6 +72,7 @@ export class FirestoreAtomicOrderCreationStore implements AtomicOrderCreationPor
         now.getTime() + ORDER_CREATION_POLICIES.idempotencyRetentionDays * 24 * 60 * 60 * 1000
       )
 
+      reservePortions(transaction, restaurantRef, plan, authorities, input.principal.uid, now)
       transaction.create(orderRef, plan.parent)
       plan.items.forEach((item, index) => {
         transaction.create(orderItemRefs[index], item)
@@ -254,16 +263,70 @@ function toRestaurantAuthority(id: string, data: DocumentData): RestaurantAuthor
 }
 
 function toProductAuthority(id: string, data: DocumentData): ProductAuthority {
+  const availability = resolveEffectiveProductAvailability(data)
+  const portionControl = resolvePortionControl(data)
   return {
     id,
     name: stringOr(data.name, id),
     price: moneyFrom(data),
-    active: data.isActive !== false && data.available !== false && data.status !== "inactive",
+    active: availability.administrativelyActive,
+    operationalAvailabilityState: availability.operationalState,
     categoryId: nullableString(data.categoryId),
     preparationMode: preparationModeOrNull(data.preparationMode),
     options: Array.isArray(data.options) ? data.options.map(toProductOptionAuthority) : [],
     reviewsEnabled: data.reviewsEnabled === true,
+    portionControl,
   }
+}
+
+function reservePortions(
+  transaction: Transaction,
+  restaurantRef: DocumentReference,
+  plan: ReturnType<Parameters<AtomicOrderCreationPort["create"]>[1]>,
+  authorities: OrderCreationAuthorities,
+  actorId: string,
+  now: Date
+) {
+  const requested = new Map<string, number>()
+  plan.items.forEach((item) => requested.set(item.productId, (requested.get(item.productId) ?? 0) + item.quantity))
+  requested.forEach((quantity, productId) => {
+    const product = authorities.products.get(productId)
+    if (!product?.portionControl?.enabled) return
+    const available = product.portionControl.available
+    if (available === null || available < quantity) {
+      throw new CanonicalOrderError("PRODUCT_UNAVAILABLE", `${product.name} n'a plus assez de portions disponibles.`)
+    }
+    const remaining = available - quantity
+    const productRef = restaurantRef.collection("products").doc(productId)
+    const update: Record<string, unknown> = {
+      "portionControl.available": remaining,
+      "portionControl.updatedAt": Timestamp.fromDate(now),
+      "portionControl.updatedBy": actorId,
+    }
+    if (remaining === 0) {
+      update.operationalAvailability = {
+        state: "SOLD_OUT",
+        reason: "Portions épuisées",
+        scope: "MANUAL",
+        serviceId: null,
+        updatedAt: Timestamp.fromDate(now),
+        updatedBy: actorId,
+      }
+      writeHistory(transaction, restaurantRef.firestore, restaurantRef.id, {
+        productId,
+        productName: product.name,
+        preparationMode: product.preparationMode ?? "kitchen",
+        oldState: "AVAILABLE",
+        newState: "SOLD_OUT",
+        reason: "Portions épuisées",
+        actor: { uid: actorId, role: "system", origin: "SYSTEM" },
+        serviceId: null,
+        occurredAt: Timestamp.fromDate(now),
+        origin: "SYSTEM",
+      })
+    }
+    transaction.update(productRef, update)
+  })
 }
 
 function toProductOptionAuthority(data: unknown): ProductOptionAuthority {

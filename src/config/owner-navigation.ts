@@ -40,6 +40,7 @@ export const OWNER_SIDEBAR_SECTIONS: OwnerNavigationSection[] = [
       { id: "orders", label: "Commandes", href: "/owner/commandes", icon: "orders" },
       { id: "cash", label: "Caisse", href: "/owner/caisse", icon: "cash" },
       { id: "reviews", label: "Avis clients", href: "/owner/avis", icon: "reviews" },
+      { id: "availability", label: "Disponibilités", href: "/owner/availability", icon: "menu" },
     ],
   },
   {
@@ -85,7 +86,7 @@ export const OWNER_MORE_SECTIONS: OwnerNavigationSection[] = [
   },
 ]
 
-const OWNER_ACTIVITY_PATHS = ["/owner/activite", "/owner/commandes", "/owner/avis"]
+const OWNER_ACTIVITY_PATHS = ["/owner/activite", "/owner/commandes", "/owner/avis", "/owner/availability"]
 const OWNER_FINANCE_PATHS = [
   "/owner/finances",
   "/owner/caisse",

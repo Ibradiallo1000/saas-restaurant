@@ -45,6 +45,7 @@ import {
 import type { RestaurantOrder } from "@/modules/restaurant/types"
 import { playNewOrderNotificationSound } from "@/services/notification-sound.service"
 import { isKitchenItem, orderHasKitchenItems } from "@/utils/preparation-logic"
+import { KitchenAvailabilityPanel } from "@/modules/kitchen/KitchenAvailabilityPanel"
 
 type KitchenBoardProps = {
   orders: RestaurantOrder[]
@@ -101,6 +102,7 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
   const [mobileColumn, setMobileColumn] = React.useState<KitchenColumnStatus>(
     ORDER_OPERATION_STATUS.PENDING
   )
+  const [workspaceTab, setWorkspaceTab] = React.useState<"orders" | "availability">("orders")
   React.useEffect(() => {
     const interval = window.setInterval(() => setNowMs(Date.now()), 30_000)
     return () => window.clearInterval(interval)
@@ -330,6 +332,11 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
       }
     >
       <div className="-mt-[var(--kitchen-gutter-y)] flex h-[calc(100%+var(--kitchen-gutter-y))] min-h-0 flex-col gap-2 md:mt-0 md:h-full md:gap-[var(--pos-layout-gap)]">
+        <div className="grid shrink-0 grid-cols-2 gap-2 py-2" role="tablist" aria-label="Espace Cuisine">
+          <button type="button" role="tab" aria-selected={workspaceTab === "orders"} onClick={() => setWorkspaceTab("orders")} className={workspaceTab === "orders" ? "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-bold text-white" : "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--order-surface-muted)] px-4 text-sm font-bold"}>Commandes</button>
+          <button type="button" role="tab" aria-selected={workspaceTab === "availability"} onClick={() => setWorkspaceTab("availability")} className={workspaceTab === "availability" ? "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-bold text-white" : "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--order-surface-muted)] px-4 text-sm font-bold"}>Disponibilités</button>
+        </div>
+        {workspaceTab === "availability" ? <div className="min-h-0 flex-1 overflow-hidden"><KitchenAvailabilityPanel restaurantId={restaurantId} orders={orders} /></div> : <>
         <div className="grid shrink-0 grid-cols-3 gap-2 py-2 md:hidden" role="tablist" aria-label="Colonnes Cuisine">
           {mobileTabs.map((tab) => {
             const activeTab = mobileColumn === tab.id
@@ -399,6 +406,7 @@ export function KitchenBoard({ orders, restaurantId }: KitchenBoardProps) {
             )
           })()}
         </div>
+        </>}
       </div>
     </KitchenPage>
   )

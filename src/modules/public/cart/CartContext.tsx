@@ -5,6 +5,19 @@ import * as React from "react"
 import type { CartItem, CartSelection, SelectedCartOption } from "@/modules/restaurant/types"
 import { getCartLinesForBundleRemoval } from "@/lib/linked-option-groups"
 import { readRestaurantCart, writeRestaurantCart } from "./cart-storage"
+import {
+  productUnavailableMessage,
+  resolveEffectiveProductAvailability,
+  type OperationalAvailabilityState,
+} from "@/lib/product-availability"
+
+export type UnavailableCartItem = {
+  id: string
+  productId: string
+  name: string
+  state: OperationalAvailabilityState
+  message: string
+}
 
 type AddCartItemInput = {
   id: string
@@ -38,6 +51,9 @@ type CartContextType = {
   totalItems: number
   restaurantId: string | null
   setRestaurantScope: (restaurantId: string) => void
+  syncCatalogAvailability: (products: any[]) => void
+  unavailableItems: UnavailableCartItem[]
+  hasUnavailableItems: boolean
 }
 
 const CartContext = React.createContext<CartContextType | null>(null)
@@ -52,6 +68,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = React.useState<CartItem[]>([])
   const [restaurantId, setRestaurantId] = React.useState<string | null>(null)
   const itemsRef = React.useRef(items)
+  const [catalogProducts, setCatalogProducts] = React.useState<any[]>([])
+  const [catalogAvailabilityReady, setCatalogAvailabilityReady] = React.useState(false)
   itemsRef.current = items
 
   const setRestaurantScope = React.useCallback((nextRestaurantId: string) => {
@@ -122,6 +140,32 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   )
 
   const count = items.reduce((sum, item) => sum + item.quantity, 0)
+  const unavailableItems = React.useMemo(() => {
+    const byId = new Map(catalogProducts.map((product) => [product.id, product]))
+    return items.flatMap((item) => {
+      const product = byId.get(item.productId)
+      if (!product) return catalogAvailabilityReady ? [{
+        id: item.id,
+        productId: item.productId,
+        name: item.name,
+        state: "PAUSED" as const,
+        message: `${item.name} n'est plus disponible.`,
+      }] : []
+      const availability = resolveEffectiveProductAvailability(product)
+      if (availability.orderable) return []
+      return [{
+        id: item.id,
+        productId: item.productId,
+        name: item.name,
+        state: availability.operationalState,
+        message: productUnavailableMessage(item.name, availability.operationalState),
+      }]
+    })
+  }, [catalogAvailabilityReady, catalogProducts, items])
+  const syncCatalogAvailability = React.useCallback((products: any[]) => {
+    setCatalogProducts(Array.isArray(products) ? products : [])
+    setCatalogAvailabilityReady(true)
+  }, [])
 
   return (
     <CartContext.Provider
@@ -139,6 +183,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         totalItems: count,
         restaurantId,
         setRestaurantScope,
+        syncCatalogAvailability,
+        unavailableItems,
+        hasUnavailableItems: unavailableItems.length > 0,
       }}
     >
       {children}

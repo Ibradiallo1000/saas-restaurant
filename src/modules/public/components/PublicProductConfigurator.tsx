@@ -20,6 +20,7 @@ import {
 } from "@/lib/order-pricing"
 import type { SelectedCartOption } from "@/modules/restaurant/types"
 import { useCart } from "../cart/CartContext"
+import { productUnavailableMessage, resolveEffectiveProductAvailability } from "@/lib/product-availability"
 
 type PublicProductConfiguratorProps = {
   product: any
@@ -35,6 +36,7 @@ export default function PublicProductConfigurator({
   onAdded,
 }: PublicProductConfiguratorProps) {
   const { addItem } = useCart()
+  const availability = resolveEffectiveProductAvailability(product)
   const [embeddedSelections, setEmbeddedSelections] = React.useState<Record<string, SelectedCartOption>>(
     () => getDefaultConfigSelections(product)
   )
@@ -112,6 +114,19 @@ export default function PublicProductConfigurator({
   }
 
   const handleAdd = () => {
+    if (!availability.orderable) {
+      setValidationError(productUnavailableMessage(product.name, availability.operationalState))
+      return
+    }
+    const unavailableLinkedProduct = catalogProducts.find((catalogProduct) =>
+      linkedSelections.some((selection) => selection.productId === catalogProduct.id) &&
+      !resolveEffectiveProductAvailability(catalogProduct).orderable
+    )
+    if (unavailableLinkedProduct) {
+      const linkedAvailability = resolveEffectiveProductAvailability(unavailableLinkedProduct)
+      setValidationError(productUnavailableMessage(unavailableLinkedProduct.name, linkedAvailability.operationalState))
+      return
+    }
     const error = validateConfiguratorSelections(product, embeddedSelections, linkedSelections)
     if (error) {
       setValidationError(error)

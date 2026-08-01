@@ -31,6 +31,7 @@ export interface PublicProductCardProps
   onAction: (event: React.MouseEvent<HTMLButtonElement>) => void
   disabled?: boolean
   loading?: boolean
+  availabilityLabel?: string | null
   imageFallback?: React.ReactNode
 }
 
@@ -53,6 +54,7 @@ const PublicProductCard = React.forwardRef<HTMLElement, PublicProductCardProps>(
       onAction,
       disabled = false,
       loading = false,
+      availabilityLabel,
       imageFallback,
       className,
       ...props
@@ -146,6 +148,11 @@ const PublicProductCard = React.forwardRef<HTMLElement, PublicProductCardProps>(
               )}
               <span className="truncate">{reviewLabel}</span>
             </div>
+          ) : null}
+          {availabilityLabel ? (
+            <span className="mt-1 w-fit rounded-full bg-[var(--order-status-cancelled-bg)] px-2 py-0.5 text-[10px] font-public-bold text-[var(--order-status-cancelled-fg)]">
+              {availabilityLabel}
+            </span>
           ) : null}
 
           <div className="mt-auto grid min-w-0 grid-cols-[minmax(0,1fr)_92px] items-end gap-2 pt-1 sm:grid-cols-[minmax(0,1fr)_104px]">

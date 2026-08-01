@@ -7,6 +7,7 @@ import {
   getPosStockPresentation,
   type PosStockAvailability,
 } from "@/modules/stock/pos-stock-availability"
+import { resolveEffectiveProductAvailability } from "@/lib/product-availability"
 
 type ProductGridProps = {
   products: any[]
@@ -36,6 +37,15 @@ function ProductGrid({
     <PosProductGrid layout="twoColumns" className="content-start gap-2 md:grid-cols-3 md:gap-3 lg:grid-cols-4 lg:gap-2 min-[1180px]:grid-cols-5 min-[1440px]:grid-cols-6">
       {products.map((product: any) => {
         const stock = getPosStockPresentation(stockByProduct.get(product.id))
+        const operational = resolveEffectiveProductAvailability(product)
+        const operationalLabel = operational.operationalState === "SOLD_OUT"
+          ? "Épuisé"
+          : operational.operationalState === "PAUSED"
+            ? "Indisponible actuellement"
+            : null
+        const display = operationalLabel
+          ? { availability: "unavailable" as const, label: product.operationalAvailability?.reason ? `${operationalLabel} · ${product.operationalAvailability.reason}` : operationalLabel, disabled: true }
+          : stock
         return (
           <PosProductCard
             key={product.id}
@@ -43,9 +53,9 @@ function ProductGrid({
             imageUrl={product.imageUrl ? getOptimizedImage(product.imageUrl, 260) : null}
             imageAlt={product.name}
             price={formatPrice(product)}
-            availability={stock.availability}
-            availabilityLabel={stock.availability === "unknown" ? <span className="hidden md:inline">{stock.label}</span> : stock.label}
-            disabled={stock.disabled}
+            availability={display.availability}
+            availabilityLabel={display.availability === "unknown" ? <span className="hidden md:inline">{display.label}</span> : display.label}
+            disabled={display.disabled}
             actionLabel="Ajouter"
             onSelect={() => onProductClick(product)}
             className="min-h-[8.75rem] p-2 [&>div:first-child]:mb-1.5 [&>div:first-child]:aspect-[16/10] [&>span:last-child]:mt-1.5 [&>span:last-child]:min-h-11 [&>span:last-child]:text-xs md:min-h-[11rem] md:p-3 md:[&>div:first-child]:mb-3 md:[&>div:first-child]:aspect-[4/3] md:[&>span:last-child]:mt-3 md:[&>span:last-child]:text-sm lg:min-h-0 lg:p-2 lg:[&>div:first-child]:mb-1.5 lg:[&>div:first-child]:aspect-[16/9] lg:[&>span:last-child]:mt-1.5 lg:[&>span:last-child]:min-h-10 lg:[&>span:last-child]:text-[13px]"

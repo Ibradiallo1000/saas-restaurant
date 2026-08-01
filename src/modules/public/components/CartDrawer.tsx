@@ -18,7 +18,7 @@ export default function CartDrawer({
   tableContext,
   activeOrderId,
 }: any) {
-  const { items, total, updateQty, removeItem } = useCart()
+  const { items, total, updateQty, removeItem, unavailableItems, hasUnavailableItems } = useCart()
   const [checkoutOpen, setCheckoutOpen] = React.useState(false)
 
   return (
@@ -33,6 +33,11 @@ export default function CartDrawer({
         contentClassName="space-y-3"
         footer={items.length > 0 ? (
           <div className="space-y-4">
+            {hasUnavailableItems ? (
+              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+                {unavailableItems.map((item) => <p key={item.id}>{item.message} Retirez-le du panier pour continuer.</p>)}
+              </div>
+            ) : null}
             <div className="flex items-end justify-between gap-4">
               <span className="text-xs font-public-bold uppercase tracking-wide text-[var(--text-secondary)]">
                 Total à payer
@@ -48,6 +53,7 @@ export default function CartDrawer({
               type="button"
               size="action"
               fullWidth
+              disabled={hasUnavailableItems}
               onClick={() => setCheckoutOpen(true)}
             >
               Continuer

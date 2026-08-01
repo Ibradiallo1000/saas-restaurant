@@ -6,6 +6,7 @@ import { PublicProductCard } from "@/components/public-ui"
 import { productNeedsConfigurator } from "@/lib/linked-option-groups"
 import { getOptimizedImage } from "@/lib/image"
 import { useCart } from "../cart/CartContext"
+import { resolveEffectiveProductAvailability } from "@/lib/product-availability"
 
 export default function DishCard({
   product,
@@ -29,6 +30,12 @@ export default function DishCard({
   }, [])
 
   const hasOptions = productNeedsConfigurator(product)
+  const availability = resolveEffectiveProductAvailability(product)
+  const availabilityLabel = availability.operationalState === "SOLD_OUT"
+    ? "Épuisé"
+    : availability.operationalState === "PAUSED"
+      ? "Indisponible actuellement"
+      : null
 
   const price = React.useMemo(() => {
     if (product?.basePrice > 0) return product.basePrice
@@ -59,6 +66,7 @@ export default function DishCard({
   }, [product.reviewsEnabled, ratingSummary])
 
   const handleQuickAdd = () => {
+    if (!availability.orderable) return
     if (hasOptions) {
       onOpenDetails()
       return
@@ -99,7 +107,9 @@ export default function DishCard({
       price={priceLabel}
       ratingSummary={publicRatingSummary}
       actionLabel={added ? "✓ Ajouté" : hasOptions ? "Choisir" : "Ajouter"}
-      actionState={added ? "added" : "default"}
+      actionState={!availability.orderable ? "disabled" : added ? "added" : "default"}
+      availabilityLabel={availabilityLabel}
+      disabled={!availability.orderable}
       onOpen={onOpenDetails}
       onAction={handleQuickAdd}
     />

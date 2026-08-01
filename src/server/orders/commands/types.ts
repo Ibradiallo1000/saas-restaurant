@@ -110,6 +110,7 @@ export interface OrderItemSnapshot {
   quantity: number
   servedQuantity: number
   cancelledQuantity: number
+  portionReserved: boolean
   version: number
 }
 

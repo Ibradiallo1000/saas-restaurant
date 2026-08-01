@@ -344,6 +344,42 @@ describe("création canonique", () => {
       /Choix inconnu/
     )
   })
+
+  it("refuse SOLD_OUT et PAUSED avec un message adapté", async () => {
+    for (const [state, message] of [["SOLD_OUT", /épuisé/], ["PAUSED", /temporairement indisponible/]]) {
+      await assert.rejects(
+        () => create(new MemoryAtomicStore(authorities({
+          products: new Map([["coca", product({ operationalAvailabilityState: state })]]),
+        }))),
+        (error) => error?.code === "PRODUCT_UNAVAILABLE" && message.test(error.message)
+      )
+    }
+  })
+
+  it("refuse une catégorie désactivée", async () => {
+    await assert.rejects(
+      () => create(new MemoryAtomicStore(authorities({
+        categories: new Map([["drinks", {
+          id: "drinks", name: "Boissons", active: false, preparationMode: "direct",
+        }]]),
+      }))),
+      (error) => error?.code === "PRODUCT_UNAVAILABLE"
+    )
+  })
+
+  it("refuse à la confirmation un produit épuisé après ajout sans modifier les commandes existantes", async () => {
+    const source = authorities()
+    const store = new MemoryAtomicStore(source)
+    const first = await create(store)
+    const existing = structuredClone(store.orders.get(first.orderId))
+
+    source.products.get("coca").operationalAvailabilityState = "SOLD_OUT"
+    await assert.rejects(
+      () => create(store, request({ clientRequestId: "request-2" }), STAFF, "idem_abcdefghijklmnop"),
+      (error) => error?.code === "PRODUCT_UNAVAILABLE"
+    )
+    assert.deepEqual(store.orders.get(first.orderId), existing)
+  })
 })
 
 describe("idempotence et atomicité", () => {

@@ -11,6 +11,7 @@ export const PREPARATION_MODES = ["kitchen", "bar", "direct"] as const
 export type CreateOrderChannel = (typeof CREATE_ORDER_CHANNELS)[number]
 export type CreateOrderServiceMode = (typeof CREATE_ORDER_SERVICE_MODES)[number]
 export type PreparationMode = (typeof PREPARATION_MODES)[number]
+export type OperationalAvailabilityState = "AVAILABLE" | "SOLD_OUT" | "PAUSED"
 
 export interface CreateOrderOptionInput {
   optionName: string
@@ -66,10 +67,12 @@ export interface ProductAuthority {
   name: string
   price: number
   active: boolean
+  operationalAvailabilityState?: OperationalAvailabilityState
   categoryId: string | null
   preparationMode: PreparationMode | null
   options: ProductOptionAuthority[]
   reviewsEnabled: boolean
+  portionControl?: { enabled: boolean; available: number | null }
 }
 
 export interface CategoryAuthority {
@@ -130,6 +133,7 @@ export interface CanonicalOrderItem {
   preparationMode: PreparationMode
   status: "pending" | "ready"
   reviewsEnabled: boolean
+  portionReserved: boolean
   schemaVersion: 1
   createdAt: Date
   updatedAt: Date

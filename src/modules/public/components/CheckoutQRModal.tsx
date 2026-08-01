@@ -37,7 +37,7 @@ export default function CheckoutQRModal({
   const auth = useAuth()
   const { user } = useUser()
   const router = useRouter()
-  const { items, total, clear } = useCart()
+  const { items, total, clear, unavailableItems, hasUnavailableItems } = useCart()
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState("")
   const [customerNote, setCustomerNote] = React.useState("")
@@ -48,6 +48,10 @@ export default function CheckoutQRModal({
   }, [open])
 
   const handleSubmit = async () => {
+    if (hasUnavailableItems) {
+      setError(unavailableItems[0]?.message || "Un produit du panier n’est plus disponible.")
+      return
+    }
     if (loading || submittingRef.current) return
 
     if (items.length === 0) {

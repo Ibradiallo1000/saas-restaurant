@@ -1,3 +1,5 @@
+import { resolveProductPreparationMode as resolveSharedPreparationMode } from '@/lib/product-availability';
+
 export type PreparationMode = 'kitchen' | 'direct' | 'bar';
 
 export type PreparationModeConfig = {
@@ -17,18 +19,7 @@ export const PREPARATION_MODES: PreparationModeConfig[] = [
  * Détermine le mode par défaut selon le nom de la catégorie (compatibilité produits existants).
  */
 export const getDefaultPreparationMode = (categoryName: string = ''): PreparationMode => {
-  const name = categoryName.toLowerCase();
-
-  if (name.includes('boisson') || name.includes('eau') || name.includes('soda')) return 'direct';
-
-  if (name.includes('jus') || name.includes('cocktail') || name.includes('café') || name.includes('cafe') || name.includes('thé') || name.includes('the') || name.includes('bar')) {
-    return 'bar';
-  }
-
-  const kitchenKeywords = ['africain', 'grillade', 'burger', 'pizza', 'chaud', 'cuisin', 'plat'];
-  if (kitchenKeywords.some((k) => name.includes(k))) return 'kitchen';
-
-  return 'kitchen';
+  return resolveSharedPreparationMode({ categoryName });
 };
 
 export type PreparationItem = {
@@ -44,11 +35,8 @@ export type PreparationItem = {
  * Résout le mode de préparation d'un produit (gestion ancien/nouveau format).
  */
 export const getEffectivePreparationMode = (item: PreparationItem): PreparationMode => {
-  if (item.preparationMode === 'kitchen' || item.preparationMode === 'direct' || item.preparationMode === 'bar') {
-    return item.preparationMode;
-  }
   if (item.destination === 'kitchen' || item.productionArea === 'kitchen') return 'kitchen';
-  return getDefaultPreparationMode(item.categoryName || '');
+  return resolveSharedPreparationMode(item);
 };
 
 export const isKitchenPreparationMode = (mode: PreparationMode): boolean => mode === 'kitchen';

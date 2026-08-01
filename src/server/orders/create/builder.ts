@@ -8,6 +8,10 @@ import type {
   OrderPrincipal,
   PreparationMode,
 } from "./types.ts"
+import {
+  productUnavailableMessage,
+  resolveProductPreparationMode as resolveSharedPreparationMode,
+} from "../../../lib/product-availability.ts"
 
 export function buildCanonicalOrder(input: {
   restaurantId: string
@@ -40,6 +44,13 @@ export function buildCanonicalOrder(input: {
     }
     if (!product.active) {
       throw new CanonicalOrderError("PRODUCT_UNAVAILABLE", `${product.name} n'est plus disponible.`)
+    }
+    const operationalAvailabilityState = product.operationalAvailabilityState ?? "AVAILABLE"
+    if (operationalAvailabilityState !== "AVAILABLE") {
+      throw new CanonicalOrderError(
+        "PRODUCT_UNAVAILABLE",
+        productUnavailableMessage(product.name, operationalAvailabilityState)
+      )
     }
     if (product.categoryId) {
       const category = input.authorities.categories.get(product.categoryId)
@@ -74,6 +85,7 @@ export function buildCanonicalOrder(input: {
       preparationMode,
       status,
       reviewsEnabled: product.reviewsEnabled,
+      portionReserved: product.portionControl?.enabled === true,
       schemaVersion: 1,
       createdAt: input.now,
       updatedAt: input.now,
@@ -168,17 +180,17 @@ function resolvePreparationMode(
   product: OrderCreationAuthorities["products"] extends Map<string, infer P> ? P : never,
   authorities: OrderCreationAuthorities
 ): PreparationMode {
-  if (product.preparationMode) return product.preparationMode
   const category = product.categoryId ? authorities.categories.get(product.categoryId) : null
-  if (category?.preparationMode) return category.preparationMode
-  if (!category) {
+  if (!product.preparationMode && !category) {
     throw new CanonicalOrderError(
       "INVALID_PREPARATION_MODE",
       `Le mode de préparation de ${product.name} est invalide.`
     )
   }
-  const name = category.name.toLocaleLowerCase("fr")
-  if (/(boisson|eau|soda)/.test(name)) return "direct"
-  if (/(jus|cocktail|café|cafe|thé|the|bar)/.test(name)) return "bar"
-  return "kitchen"
+  return resolveSharedPreparationMode(
+    product,
+    category
+      ? { preparationMode: category.preparationMode, categoryName: category.name }
+      : null
+  )
 }

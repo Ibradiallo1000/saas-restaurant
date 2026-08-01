@@ -11,6 +11,7 @@ import {
   PublicPrice,
 } from "@/components/public-ui"
 import { getOptimizedImage } from "@/lib/image"
+import { productUnavailableMessage, resolveEffectiveProductAvailability } from "@/lib/product-availability"
 
 type Choice = {
   name: string
@@ -48,6 +49,7 @@ export default function ProductModal({
   onClose: () => void
 }) {
   const defaultSize = getSizeChoices(product)[0] || null
+  const availability = resolveEffectiveProductAvailability(product)
   const [selectedSize, setSelectedSize] = React.useState(defaultSize?.name || "petite")
   const [selectedSupplements, setSelectedSupplements] = React.useState<Choice[]>([])
   const [quantity, setQuantity] = React.useState(1)
@@ -68,6 +70,7 @@ export default function ProductModal({
 
   function handleAddToCart() {
     if (!product) return
+    if (!availability.orderable) return
 
     if (getSizeChoices(product).length > 0 && !selectedSize) {
       setSizeError("Sélectionnez une taille")
@@ -131,8 +134,8 @@ export default function ProductModal({
       imageFallback={<Plus className="size-10" />}
       price={`${(getBasePrice(product) + getSelectedSizePrice(product, selectedSize)).toLocaleString()} FCFA`}
       footer={
-        <PublicButton type="button" size="action" fullWidth onClick={handleAddToCart}>
-          <span className="min-w-0 flex-1 truncate text-left">Ajouter à la commande</span>
+        <PublicButton type="button" size="action" fullWidth disabled={!availability.orderable} onClick={handleAddToCart}>
+          <span className="min-w-0 flex-1 truncate text-left">{availability.orderable ? "Ajouter à la commande" : productUnavailableMessage(product.name, availability.operationalState)}</span>
           <span className="shrink-0 whitespace-nowrap">{calculateTotalPrice().toLocaleString()} FCFA</span>
         </PublicButton>
       }

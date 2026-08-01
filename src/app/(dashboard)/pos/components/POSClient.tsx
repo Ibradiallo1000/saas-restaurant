@@ -35,7 +35,6 @@ import { Label } from "@/components/ui/label"
 import { PosCatalog, PosSearchField, PosSessionClosingDialog, PosVarianceDisplay } from "@/components/pos-ui"
 import { PublicSheet } from "@/components/public-ui"
 import { useToast } from "@/hooks/use-toast"
-import { OrderService } from "@/services/order.service"
 import {
   closeActiveTableSession,
   getOrCreateActiveTableSession,
@@ -91,6 +90,10 @@ import {
 } from "@/modules/pos/canonical"
 import { closeCashSessionV2 } from "@/modules/pos/canonical/cash-session-command-client"
 import type { SelectedCartOption } from "@/modules/restaurant/types"
+import {
+  productUnavailableMessage,
+  resolveEffectiveProductAvailability,
+} from "@/lib/product-availability"
 import {
   buildBundleCartLines,
   getActiveLinkedOptionGroups,
@@ -193,6 +196,24 @@ function POSPageContent() {
   } = useRestaurantLiveData()
   const { toast } = useToast()
   const safeProducts = React.useMemo(() => Array.isArray(products) ? products : [], [products])
+  const previousAvailabilityRef = React.useRef<Map<string, string> | null>(null)
+  React.useEffect(() => {
+    const next = new Map(safeProducts.map((product: any) => [product.id, resolveEffectiveProductAvailability(product).operationalState]))
+    const previous = previousAvailabilityRef.current
+    if (previous) {
+      safeProducts.forEach((product: any) => {
+        const state = next.get(product.id)
+        if (previous.get(product.id) === "AVAILABLE" && (state === "SOLD_OUT" || state === "PAUSED")) {
+          toast({
+            title: state === "SOLD_OUT" ? "Produit épuisé" : "Produit mis en pause",
+            description: `${product.name} ne peut plus être ajouté au ticket.`,
+            variant: "destructive",
+          })
+        }
+      })
+    }
+    previousAvailabilityRef.current = next
+  }, [safeProducts, toast])
   const safeCategories = React.useMemo(() => Array.isArray(categories) ? categories : [], [categories])
   const legacyActiveOrders = React.useMemo(() => Array.isArray(activeOrders) ? activeOrders : [], [activeOrders])
   const posCanonicalMode = resolvePosCanonicalMode(restaurantId ?? "")
@@ -577,6 +598,15 @@ function POSPageContent() {
 
   const addToCart = React.useCallback((product: any) => {
     if (!product?.id) return
+    const operationalAvailability = resolveEffectiveProductAvailability(product)
+    if (!operationalAvailability.orderable) {
+      toast({
+        variant: "destructive",
+        title: operationalAvailability.operationalState === "SOLD_OUT" ? "Produit épuisé" : "Produit indisponible",
+        description: productUnavailableMessage(product.name || "Ce produit", operationalAvailability.operationalState),
+      })
+      return
+    }
     if ((stockByProduct.get(product.id)?.quantity ?? 1) <= 0) {
       toast({
         variant: "destructive",
@@ -653,6 +683,19 @@ function POSPageContent() {
   }
 
   const subtotal = cart.reduce((acc, item) => acc + (getCartItemUnitPrice(item) * item.quantity), 0)
+  const unavailableCartItems = React.useMemo(() => {
+    const productById = new Map(safeProducts.map((product: any) => [product.id, product]))
+    return cart.flatMap((item: any) => {
+      const product = productById.get(item.productId ?? item.id)
+      if (!product) return [{ id: item.id, message: `${item.name} n'est plus disponible.` }]
+      const availability = resolveEffectiveProductAvailability(product)
+      return availability.orderable ? [] : [{
+        id: item.id,
+        message: productUnavailableMessage(item.name, availability.operationalState),
+      }]
+    })
+  }, [cart, safeProducts])
+  const hasUnavailableCartItems = unavailableCartItems.length > 0
   const discountAmount = Math.round(subtotal * discountRate)
   const total = Math.max(0, subtotal - discountAmount)
   const cashReceivedAmount = React.useMemo(() => normalizeMoneyInput(cashReceivedInput), [cashReceivedInput])
@@ -838,6 +881,18 @@ function POSPageContent() {
 
   const addConfiguredToCart = () => {
     if (!configProduct) return
+    const selectedProductIds = new Set([
+      configProduct.id,
+      ...configLinkedSelections.map((selection) => selection.productId),
+    ])
+    const unavailableSelection = safeProducts.find((product: any) =>
+      selectedProductIds.has(product.id) && !resolveEffectiveProductAvailability(product).orderable
+    )
+    if (unavailableSelection) {
+      const availability = resolveEffectiveProductAvailability(unavailableSelection)
+      setConfigValidationError(productUnavailableMessage(unavailableSelection.name, availability.operationalState))
+      return
+    }
 
     const validationError = validateConfiguratorSelections(
       configProduct,
@@ -923,6 +978,14 @@ function POSPageContent() {
 
   const handleCheckout = async (method?: "cash" | "mobile") => {
     if (!db || !restaurantId || !user || cart.length === 0 || processing || checkoutLockRef.current) return false
+    if (hasUnavailableCartItems) {
+      toast({
+        variant: "destructive",
+        title: "Ticket à corriger",
+        description: `${unavailableCartItems[0].message} Retirez ce produit avant de confirmer.`,
+      })
+      return false
+    }
 
     if (!activeCashSession) {
       toast({
@@ -945,7 +1008,6 @@ function POSPageContent() {
     checkoutLockRef.current = true
     setProcessing(true)
     
-    const orderService = new OrderService(db)
     try {
       const recalculatedItems = cart.map((item, index) => {
         const productId = item.productId ?? item.id
@@ -1039,8 +1101,10 @@ function POSPageContent() {
         user.uid,
         Date.now(),
       ])
-      const canonicalCreation = posCanonicalMode === "canonical"
-        ? await createCanonicalPosOrder({
+      // All POS presentation modes use the canonical write boundary. The legacy
+      // flag now affects reads/comparison only and can no longer restore the
+      // direct Firestore creation path.
+      const canonicalCreation = await createCanonicalPosOrder({
             user,
             restaurantId,
             idempotencyKey: canonicalCreateKey,
@@ -1072,8 +1136,7 @@ function POSPageContent() {
               notes: null,
             },
           })
-        : null
-      const orderId = canonicalCreation?.orderId ?? await orderService.createOrder(orderData)
+      const orderId = canonicalCreation.orderId
       const isDineInCreation = orderType === "dine-in"
       const printableOrder: PrintableOrder = {
         ...orderData,
@@ -1842,6 +1905,14 @@ function POSPageContent() {
   }
 
   const handleCartCheckout = async () => {
+    if (hasUnavailableCartItems) {
+      toast({
+        variant: "destructive",
+        title: "Ticket à corriger",
+        description: `${unavailableCartItems[0].message} Retirez ce produit avant de confirmer.`,
+      })
+      return
+    }
     if (orderType === "dine-in") {
       const succeeded = await handleCheckout()
       if (succeeded) setMobileCartOpen(false)
@@ -1978,9 +2049,11 @@ function POSPageContent() {
             discountAmount={discountAmount}
             total={total}
             processing={processing}
+            unavailableItems={unavailableCartItems}
             canCheckout={
               Boolean(activeCashSession) &&
               cart.length > 0 &&
+              !hasUnavailableCartItems &&
               !(orderType === "dine-in" && !tableNumber)
             }
             orderType={orderType}
@@ -2476,9 +2549,11 @@ function POSPageContent() {
             discountAmount={discountAmount}
             total={total}
             processing={processing}
+            unavailableItems={unavailableCartItems}
             canCheckout={
               Boolean(activeCashSession) &&
               cart.length > 0 &&
+              !hasUnavailableCartItems &&
               !(orderType === "dine-in" && !tableNumber)
             }
             orderType={orderType}

@@ -123,6 +123,87 @@ service cloud.firestore {
         );
     }
 
+    function isRestaurantKitchen(restaurantId) {
+      return isSignedIn()
+        && (
+          (
+            userExists()
+            && userDoc().data.restaurantId == restaurantId
+            && userDoc().data.role == "kitchen"
+          )
+          || (
+            isRestaurantStaff(restaurantId)
+            && get(/databases/$(database)/documents/restaurants/$(restaurantId)/staff/$(request.auth.uid)).data.role == "kitchen"
+          )
+        );
+    }
+
+    function hasValidOperationalAvailability(product) {
+      return !("operationalAvailability" in product)
+        || (
+          product.operationalAvailability is map
+          && product.operationalAvailability.keys().hasOnly([
+            "state",
+            "reason",
+            "updatedAt",
+            "updatedBy",
+            "scope",
+            "serviceId"
+          ])
+          && product.operationalAvailability.state in ["AVAILABLE", "SOLD_OUT", "PAUSED"]
+          && (!("reason" in product.operationalAvailability)
+            || product.operationalAvailability.reason == null
+            || product.operationalAvailability.reason is string)
+          && product.operationalAvailability.updatedAt is timestamp
+          && product.operationalAvailability.updatedBy is string
+          && (!("scope" in product.operationalAvailability)
+            || product.operationalAvailability.scope in ["MANUAL", "CURRENT_SERVICE"])
+          && (!("serviceId" in product.operationalAvailability)
+            || product.operationalAvailability.serviceId == null
+            || product.operationalAvailability.serviceId is string)
+        );
+    }
+
+    function hasValidPortionControl(product) {
+      return !("portionControl" in product)
+        || (
+          product.portionControl is map
+          && product.portionControl.keys().hasOnly(["enabled", "available", "updatedAt", "updatedBy"])
+          && product.portionControl.enabled is bool
+          && product.portionControl.available is int
+          && product.portionControl.available >= 0
+          && product.portionControl.updatedAt is timestamp
+          && product.portionControl.updatedBy is string
+        );
+    }
+
+    function isResolvedKitchenProduct(restaurantId, product) {
+      return ("preparationMode" in product && product.preparationMode == "kitchen")
+        || (
+          !("preparationMode" in product)
+          && product.categoryId is string
+          && exists(/databases/$(database)/documents/restaurants/$(restaurantId)/categories/$(product.categoryId))
+          && get(/databases/$(database)/documents/restaurants/$(restaurantId)/categories/$(product.categoryId)).data.preparationMode == "kitchen"
+        );
+    }
+
+    function isKitchenOperationalAvailabilityUpdate(restaurantId) {
+      return isRestaurantKitchen(restaurantId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["operationalAvailability"])
+        && hasValidOperationalAvailability(request.resource.data)
+        && request.resource.data.operationalAvailability.updatedAt == request.time
+        && request.resource.data.operationalAvailability.updatedBy == request.auth.uid
+        && isResolvedKitchenProduct(restaurantId, resource.data);
+    }
+
+    function hasValidOperationalAvailabilityAudit() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["operationalAvailability"])
+        || (
+          request.resource.data.operationalAvailability.updatedAt == request.time
+          && request.resource.data.operationalAvailability.updatedBy == request.auth.uid
+        );
+    }
+
     function isInventorySaleDecrement(restaurantId) {
       return canUseRestaurant(restaurantId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -1104,6 +1185,8 @@ service cloud.firestore {
       match /products/{productId} {
         allow get, list: if true;
         allow create: if canManageRestaurantMenu(restaurantId)
+          && hasValidOperationalAvailability(request.resource.data)
+          && hasValidPortionControl(request.resource.data)
           && request.resource.data.reviewsEnabled is bool
           && request.resource.data.reviewsPolicy in ["inherit", "enabled", "disabled"]
           && (!("stockArticleId" in request.resource.data)
@@ -1120,27 +1203,47 @@ service cloud.firestore {
               ))
           && (!("preparationMode" in request.resource.data)
               || request.resource.data.preparationMode in ["kitchen", "direct", "bar"]);
-        allow update: if canManageRestaurantMenu(restaurantId)
+        allow update: if (
+          canManageRestaurantMenu(restaurantId)
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["operationalAvailability", "portionControl"])
+          && hasValidOperationalAvailability(request.resource.data)
+          && hasValidPortionControl(request.resource.data)
+          && hasValidOperationalAvailabilityAudit()
           && (
-            (request.resource.data.reviewsEnabled is bool
-              && request.resource.data.reviewsPolicy in ["inherit", "enabled", "disabled"])
-            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["order", "updatedAt"])
-          )
-          && (!("stockArticleId" in request.resource.data)
-              || (
-                request.resource.data.stockArticleId is string
-                && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.stockArticleId)).data.status == "active"
-              ))
-          && (!("quantityPerSale" in request.resource.data)
-              || (
-                request.resource.data.quantityPerSale is number
-                && request.resource.data.quantityPerSale > 0
-                && request.resource.data.stockArticleId is string
-                && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.stockArticleId)).data.trackingMode == "AUTOMATIC_SIMPLE"
-              ))
-          && (!("preparationMode" in request.resource.data) 
-              || request.resource.data.preparationMode in ["kitchen", "direct", "bar"]);
+              (request.resource.data.reviewsEnabled is bool
+                && request.resource.data.reviewsPolicy in ["inherit", "enabled", "disabled"])
+              || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["order", "updatedAt"])
+            )
+            && (!("stockArticleId" in request.resource.data)
+                || (
+                  request.resource.data.stockArticleId is string
+                  && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.stockArticleId)).data.status == "active"
+                ))
+            && (!("quantityPerSale" in request.resource.data)
+                || (
+                  request.resource.data.quantityPerSale is number
+                  && request.resource.data.quantityPerSale > 0
+                  && request.resource.data.stockArticleId is string
+                  && get(/databases/$(database)/documents/restaurants/$(restaurantId)/stockItemsV2/$(request.resource.data.stockArticleId)).data.trackingMode == "AUTOMATIC_SIMPLE"
+                ))
+            && (!("preparationMode" in request.resource.data)
+                || request.resource.data.preparationMode in ["kitchen", "direct", "bar"])
+          );
         allow delete: if canManageRestaurantMenu(restaurantId);
+      }
+
+      match /availabilityServiceState/{documentId} {
+        allow read: if canUseRestaurant(restaurantId);
+        allow write: if false;
+      }
+
+      match /availabilityHistory/{historyId} {
+        allow read: if canManageRestaurantMenu(restaurantId)
+          || (
+            isRestaurantKitchen(restaurantId)
+            && resource.data.preparationMode == "kitchen"
+          );
+        allow write: if false;
       }
 
       match /menuItems/{menuItemId} {

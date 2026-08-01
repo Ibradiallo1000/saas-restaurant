@@ -50,6 +50,7 @@ const MANAGER_NAV_GROUPS = [
     { label: "Commandes", href: "/manager/commandes", icon: ClipboardList },
     { label: "Caisse", href: "/manager/caisse", icon: Wallet },
     { label: "Tables", href: "/manager/tables", icon: Table2 },
+    { label: "Disponibilités", href: "/manager/availability", icon: MenuSquare },
   ] },
   { label: "Finances", items: [
     { label: "Trésorerie", href: "/manager/tresorerie", icon: Banknote },

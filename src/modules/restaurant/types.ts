@@ -9,6 +9,7 @@ import type {
   OrderPaymentLifecycleStatus,
 } from "@/lib/order-lifecycle"
 import type { RestaurantOpeningHours } from "@/lib/restaurant-hours"
+import type { ProductOperationalAvailability, ProductPortionControl } from "@/lib/product-availability"
 
 export type Product = {
   id: string
@@ -20,6 +21,8 @@ export type Product = {
   reviewsPolicy?: ProductReviewsPolicy
   reviewsEnabled?: boolean
   isActive: boolean
+  operationalAvailability?: ProductOperationalAvailability
+  portionControl?: ProductPortionControl
   preparationMode?: "kitchen" | "direct" | "bar"
 }
 

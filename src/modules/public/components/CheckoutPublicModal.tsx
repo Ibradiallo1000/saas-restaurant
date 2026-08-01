@@ -82,7 +82,7 @@ export default function CheckoutPublicModal({
   const auth = useAuth()
   const { user } = useUser()
   const router = useRouter()
-  const { items, total, clear } = useCart()
+  const { items, total, clear, unavailableItems, hasUnavailableItems } = useCart()
 
   const [flow, setFlow] = React.useState<OrderFlowState>(DEFAULT_FLOW_STATE)
   const [loading, setLoading] = React.useState(false)
@@ -236,6 +236,10 @@ export default function CheckoutPublicModal({
   }
 
   const submitOrder = async () => {
+    if (hasUnavailableItems) {
+      setError(unavailableItems[0]?.message || "Un produit du panier n’est plus disponible.")
+      return
+    }
     const validation = validateCurrentStep(flow, items.length)
     if (validation) {
       setError(validation)

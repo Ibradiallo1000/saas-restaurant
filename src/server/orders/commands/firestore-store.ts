@@ -40,6 +40,8 @@ import type {
   PreparationMode,
 } from "./types.ts"
 import { commandHashPayload } from "./validation.ts"
+import { resolveOperationalAvailabilityState, resolvePortionControl } from "../../../lib/product-availability.ts"
+import { writeHistory } from "../../availability/availability-service.ts"
 
 interface StockApplication {
   warning?: string
@@ -142,6 +144,15 @@ export class FirestoreAtomicOrderCommandStore implements AtomicOrderCommandPort 
           items: effectiveItems,
         })
         const now = Timestamp.now()
+        const portionRestoration = await preparePortionRestoration(
+          transaction,
+          restaurantRef,
+          commandName,
+          input,
+          item,
+          plan,
+          now
+        )
         const stockPlans = plan.stocks ?? (plan.stock ? [plan.stock] : [])
         const stockApplications = stockPlans.length > 0
           ? await Promise.all(stockPlans.map((stockPlan) =>
@@ -187,6 +198,7 @@ export class FirestoreAtomicOrderCommandStore implements AtomicOrderCommandPort 
         for (const application of stockApplications.filter((entry) => !entry.balancePath)) {
           application.apply?.()
         }
+        portionRestoration?.apply()
         const stock = stockApplications.length > 0
           ? {
               deductedQuantity: stockApplications.reduce(
@@ -334,6 +346,68 @@ export class FirestoreAtomicOrderCommandStore implements AtomicOrderCommandPort 
       }
       throw error
     }
+  }
+}
+
+async function preparePortionRestoration(
+  transaction: Transaction,
+  restaurantRef: DocumentReference,
+  commandName: OrderCommandName,
+  input: AnyOrderCommandInput,
+  item: OrderItemSnapshot | null,
+  plan: CommandMutationPlan,
+  now: Timestamp
+): Promise<{ apply(): void } | null> {
+  if (commandName !== "CancelOrderItemQuantity" || !item?.portionReserved || !plan.itemUpdate) {
+    return null
+  }
+  const cancelledAfter = numberOr(plan.itemUpdate.cancelledQuantity, item.cancelledQuantity)
+  const quantity = cancelledAfter - item.cancelledQuantity
+  if (!Number.isInteger(quantity) || quantity <= 0) return null
+
+  const productRef = restaurantRef.collection("products").doc(item.productId)
+  const productSnapshot = await transaction.get(productRef)
+  if (!productSnapshot.exists) return null
+  const product = productSnapshot.data() ?? {}
+  const portions = resolvePortionControl(product)
+  if (!portions.enabled || portions.available === null) return null
+
+  const restoredAvailable = portions.available + quantity
+  const wasAutomaticallySoldOut =
+    resolveOperationalAvailabilityState(product) === "SOLD_OUT" &&
+    product.operationalAvailability?.reason === "Portions épuisées"
+
+  return {
+    apply() {
+      const update: Record<string, unknown> = {
+        "portionControl.available": restoredAvailable,
+        "portionControl.updatedAt": now,
+        "portionControl.updatedBy": input.actor.id,
+      }
+      if (wasAutomaticallySoldOut) {
+        update.operationalAvailability = {
+          state: "AVAILABLE",
+          reason: "Portions restaurées après annulation",
+          scope: "MANUAL",
+          serviceId: null,
+          updatedAt: now,
+          updatedBy: input.actor.id,
+        }
+        writeHistory(transaction, restaurantRef.firestore, restaurantRef.id, {
+          productId: item.productId,
+          productName: String(product.name || item.productId),
+          preparationMode: String(product.preparationMode || item.preparationMode),
+          oldState: "SOLD_OUT",
+          newState: "AVAILABLE",
+          reason: "Portions restaurées après annulation",
+          actor: { uid: input.actor.id, role: input.actor.role, origin: "SYSTEM" },
+          serviceId: null,
+          occurredAt: now,
+          origin: "SYSTEM",
+        })
+      }
+      transaction.update(productRef, update)
+    },
   }
 }
 
@@ -659,6 +733,7 @@ function toOrderItemSnapshot(id: string, data: DocumentData): OrderItemSnapshot 
     quantity: numberOr(data.quantity, 0),
     servedQuantity: numberOr(data.servedQuantity, data.status === "served" ? data.quantity : 0),
     cancelledQuantity: numberOr(data.cancelledQuantity, 0),
+    portionReserved: data.portionReserved === true,
     version: positiveVersion(data.version),
   }
 }

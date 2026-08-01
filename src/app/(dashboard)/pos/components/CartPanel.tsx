@@ -11,10 +11,10 @@ import { formatTableDisplayName } from "@/lib/table-display"
 import { getOptimizedImage } from "@/lib/image"
 
 export type PosPaymentMode = "cash" | "mobile"
-type CartPanelProps = { cart: any[]; subtotal: number; discountAmount: number; total: number; processing: boolean; canCheckout: boolean; orderType: "dine-in" | "takeaway"; tableNumber: string | null; tableLabelPrefix?: string; tables: any[]; mobileSheet?: boolean; sessionInfo?: React.ReactNode; onOrderTypeChange: (type: "dine-in" | "takeaway") => void; onTableSelect: (tableId: string) => void; onIncrease: (item: any) => void; onDecrease: (itemId: string) => void; onRemove: (itemId: string) => void; onClear: () => void; onHold: () => void; onDiscount: () => void; onCheckout: () => void }
+type CartPanelProps = { cart: any[]; subtotal: number; discountAmount: number; total: number; processing: boolean; canCheckout: boolean; unavailableItems?: Array<{ id: string; message: string }>; orderType: "dine-in" | "takeaway"; tableNumber: string | null; tableLabelPrefix?: string; tables: any[]; mobileSheet?: boolean; sessionInfo?: React.ReactNode; onOrderTypeChange: (type: "dine-in" | "takeaway") => void; onTableSelect: (tableId: string) => void; onIncrease: (item: any) => void; onDecrease: (itemId: string) => void; onRemove: (itemId: string) => void; onClear: () => void; onHold: () => void; onDiscount: () => void; onCheckout: () => void }
 
 export default function CartPanel(props: CartPanelProps) {
-  const { cart, subtotal, discountAmount, total, processing, canCheckout, orderType, tableNumber, tables, mobileSheet = false, sessionInfo, onOrderTypeChange, onTableSelect, onIncrease, onDecrease, onRemove, onClear, onHold, onDiscount, onCheckout } = props
+  const { cart, subtotal, discountAmount, total, processing, canCheckout, unavailableItems = [], orderType, tableNumber, tables, mobileSheet = false, sessionInfo, onOrderTypeChange, onTableSelect, onIncrease, onDecrease, onRemove, onClear, onHold, onDiscount, onCheckout } = props
   const formatMoney = (value: number) => `${value.toLocaleString("fr-FR")} FCFA`
 
   const controls = <div className="space-y-3">
@@ -27,6 +27,7 @@ export default function CartPanel(props: CartPanelProps) {
 
   const totals = <PosTotals subtotal={formatMoney(subtotal)} discount={`-${formatMoney(discountAmount)}`} total={total.toLocaleString("fr-FR")} currency="FCFA" />
   const actions = <div className="space-y-3">
+    {unavailableItems.length ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs font-semibold text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">{unavailableItems.map((item) => <p key={item.id}>{item.message} Retirez-le du ticket.</p>)}</div> : null}
     <div className="grid grid-cols-3 gap-2">
       <ActionButton icon={<PauseCircle/>} label="En attente" onClick={onHold} disabled={!cart.length || processing}/>
       <ActionButton icon={<Percent/>} label="Remise" onClick={onDiscount} disabled={!cart.length || processing}/>

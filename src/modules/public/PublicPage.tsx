@@ -5,7 +5,7 @@ import { collection, doc, limit, query, where } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import { ChefHat, ClipboardList, Coffee, Search, ShoppingBag, Utensils } from "lucide-react"
 
-import { useAuth, useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase, useUser } from "@/firebase"
+import { useAuth, useCollection, useCollectionOnce, useDocOnce, useFirestore, useMemoFirebase, useUser } from "@/firebase"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { getOptimizedImage } from "@/lib/image"
 import { sortMenuCategories } from "@/lib/menu-category-order"
@@ -63,7 +63,7 @@ function PublicPageContent({
   const auth = useAuth()
   const { user } = useUser()
   const router = useRouter()
-  const { addItem, count, items, restaurantId: cartRestaurantId, setRestaurantScope } = useCart()
+  const { addItem, count, items, restaurantId: cartRestaurantId, setRestaurantScope, syncCatalogAvailability } = useCart()
 
   const [clientReady, setClientReady] = React.useState(false)
   const [loadTimedOut, setLoadTimedOut] = React.useState(false)
@@ -217,7 +217,18 @@ function PublicPageContent({
     data: products,
     isLoading: isProductsLoading,
     error: productsError,
-  } = useCollectionOnce(productsQuery, PUBLIC_MENU_CACHE_TTL_MS)
+  } = useCollection(productsQuery)
+
+  React.useEffect(() => {
+    if (products !== null) syncCatalogAvailability(products || [])
+  }, [products, syncCatalogAvailability])
+
+  React.useEffect(() => {
+    if (!selectedProduct || products === null) return
+    const current = (products || []).find((product: any) => product.id === selectedProduct.id)
+    if (current && current !== selectedProduct) setSelectedProduct(current)
+    if (!current) setSelectedProduct(null)
+  }, [products, selectedProduct])
 
   React.useEffect(() => {
     if (!restaurantId) {
