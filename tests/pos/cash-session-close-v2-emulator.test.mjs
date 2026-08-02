@@ -6,6 +6,7 @@ import { getFirestore } from "firebase-admin/firestore"
 
 import { FirestoreCashSessionClose } from "../../src/server/finance/firestore-cash-session-close.ts"
 import { FirestoreCashHandover } from "../../src/server/finance/firestore-cash-handover.ts"
+import { FirestorePaymentLedger } from "../../src/server/finance/firestore-payment-ledger.ts"
 
 const enabled = Boolean(process.env.FIRESTORE_EMULATOR_HOST)
 let app
@@ -120,4 +121,92 @@ test("une session uniquement Mobile Money ne produit aucune remise physique et c
   assert.equal(movements.size, 1)
   assert.equal(movements.docs[0].data().accountId, "mobile_money")
   assert.equal(movements.docs[0].data().amount, 10_000)
+})
+
+test("un compte Mobile Money partage est credite au paiement et jamais recredite a la cloture", {
+  skip: !enabled,
+}, async () => {
+  const restaurantId = `shared-mobile-account-${Date.now()}`
+  const root = db.collection("restaurants").doc(restaurantId)
+  await root.collection("treasuryAccounts").doc("orange-shared").set({
+    id: "orange-shared",
+    name: "Orange Money principal",
+    kind: "mobile_money",
+    provider: "orange_money",
+    balance: 100_000,
+    currency: "FCFA",
+    active: true,
+  })
+  await db.collection("restaurantPaymentConfigs").add({
+    restaurantId,
+    methodCode: "orange_money",
+    variantId: "orange-ussd",
+    merchantNumber: "123456",
+    paymentAccountId: "orange-shared",
+    isActive: true,
+  })
+  await Promise.all([
+    root.collection("cashSessions").doc("session-a").set({
+      cashierId: "cashier-a", status: "open", openingBalance: 0,
+      posStationId: "station-a", posStationName: "Caisse A", posStationCode: "A",
+    }),
+    root.collection("cashSessions").doc("session-b").set({
+      cashierId: "cashier-b", status: "open", openingBalance: 0,
+      posStationId: "station-b", posStationName: "Caisse B", posStationCode: "B",
+    }),
+  ])
+  const ledger = new FirestorePaymentLedger(db)
+  await db.runTransaction((transaction) => ledger.createConfirmedPaymentInTransaction(transaction, {
+    restaurantId,
+    paymentId: "pay-a",
+    orderId: "order-a",
+    sessionId: "session-a",
+    cashierId: "cashier-a",
+    source: "pos",
+    type: "mobile_money",
+    provider: "orange_money",
+    amount: 10_000,
+    receivedAmount: 10_000,
+    changeDue: 0,
+    externalReference: null,
+    idempotencyKey: "payment-a",
+  }))
+  await db.runTransaction((transaction) => ledger.createConfirmedPaymentInTransaction(transaction, {
+    restaurantId,
+    paymentId: "pay-b",
+    orderId: "order-b",
+    sessionId: "session-b",
+    cashierId: "cashier-b",
+    source: "pos",
+    type: "mobile_money",
+    provider: "orange_money",
+    amount: 15_000,
+    receivedAmount: 15_000,
+    changeDue: 0,
+    externalReference: null,
+    idempotencyKey: "payment-b",
+  }))
+  assert.equal((await root.collection("treasuryAccounts").doc("orange-shared").get()).data().balance, 125_000)
+  await ledger.refundPayment({
+    restaurantId,
+    paymentId: "pay-b",
+    cashierId: "cashier-b",
+    amount: 5_000,
+    reason: "Remboursement partiel",
+    idempotencyKey: "refund-b",
+  })
+  assert.equal((await root.collection("treasuryAccounts").doc("orange-shared").get()).data().balance, 120_000)
+
+  await new FirestoreCashSessionClose(db).close({
+    restaurantId, sessionId: "session-a", cashierId: "cashier-a",
+    countedPhysicalCash: 0, retainedFloat: 0, idempotencyKey: "close-session-a",
+  })
+  await new FirestoreCashHandover(db).review({
+    restaurantId, handoverId: "session-session-a", managerId: "manager",
+    managerRole: "manager", decision: "validated", receivedAmount: 0,
+    note: "Controle compte partage", idempotencyKey: "review-session-a",
+  })
+  assert.equal((await root.collection("treasuryAccounts").doc("orange-shared").get()).data().balance, 120_000)
+  assert.equal((await root.collection("cashMovements").doc("payment-pay-a").get()).data().amount, 10_000)
+  assert.equal((await root.collection("cashMovements").doc("handover-session-session-a-mobile").get()).exists, false)
 })

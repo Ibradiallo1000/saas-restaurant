@@ -45,6 +45,10 @@ export class FirestoreCashHandover {
         )
       }
       const expectedAmount = normalizeHandoverAmount(session.expectedHandover, "expectedHandover")
+      const mobileMoneyPendingTreasuryPost = normalizeHandoverAmount(
+        session.mobileMoneyPendingTreasuryPost ?? session.expectedMobileMoney ?? session.totalMobileMoney ?? session.totalMobile ?? 0,
+        "mobileMoneyPendingTreasuryPost"
+      )
       const now = Timestamp.now()
       transaction.create(handoverRef, {
         restaurantId: input.restaurantId,
@@ -54,6 +58,9 @@ export class FirestoreCashHandover {
         posStationName: String(session.posStationName || "Caisse principale"),
         posStationCode: String(session.posStationCode || "DEFAULT"),
         expectedAmount,
+        expectedMobileMoney: normalizeHandoverAmount(session.expectedMobileMoney ?? session.totalMobileMoney ?? session.totalMobile ?? 0, "expectedMobileMoney"),
+        mobileMoneyPostedAtPayment: normalizeHandoverAmount(session.mobileMoneyPostedAtPayment ?? 0, "mobileMoneyPostedAtPayment"),
+        mobileMoneyPendingTreasuryPost,
         declaredAmount: expectedAmount,
         declarationDifference: 0,
         cashierNote: null,
@@ -108,6 +115,10 @@ export class FirestoreCashHandover {
         )
       }
       const expectedAmount = normalizeHandoverAmount(session.expectedHandover, "expectedHandover")
+      const mobileMoneyPendingTreasuryPost = normalizeHandoverAmount(
+        session.mobileMoneyPendingTreasuryPost ?? session.expectedMobileMoney ?? session.totalMobileMoney ?? session.totalMobile ?? 0,
+        "mobileMoneyPendingTreasuryPost"
+      )
       if (expectedAmount === 0) {
         throw new CashHandoverValidationError(
           "NO_PHYSICAL_HANDOVER_REQUIRED",
@@ -156,6 +167,9 @@ export class FirestoreCashHandover {
           posStationName: String(session.posStationName || "Caisse principale"),
           posStationCode: String(session.posStationCode || "DEFAULT"),
           expectedAmount,
+          expectedMobileMoney: normalizeHandoverAmount(session.expectedMobileMoney ?? session.totalMobileMoney ?? session.totalMobile ?? 0, "expectedMobileMoney"),
+          mobileMoneyPostedAtPayment: normalizeHandoverAmount(session.mobileMoneyPostedAtPayment ?? 0, "mobileMoneyPostedAtPayment"),
+          mobileMoneyPendingTreasuryPost,
           declaredAmount,
           declarationDifference: declaredAmount - expectedAmount,
           cashierNote: note,
@@ -294,8 +308,8 @@ export class FirestoreCashHandover {
       if (input.decision === "validated") {
         const declaredAmount = normalizeHandoverAmount(handover.declaredAmount, "declaredAmount")
         const mobileAmount = normalizeHandoverAmount(
-          session.expectedMobileMoney ?? session.totalMobileMoney ?? session.totalMobile ?? 0,
-          "expectedMobileMoney"
+          handover.mobileMoneyPendingTreasuryPost ?? session.mobileMoneyPendingTreasuryPost ?? session.expectedMobileMoney ?? session.totalMobileMoney ?? session.totalMobile ?? 0,
+          "mobileMoneyPendingTreasuryPost"
         )
         update.receivedAmount = receivedAmount
         update.receiptDifference = Number(receivedAmount) - declaredAmount

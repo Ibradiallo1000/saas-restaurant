@@ -33,6 +33,8 @@ after(async () => { if (environment) await environment.cleanup() })
 const stationPayload = () => ({
   name: "Caisse restaurant", code: "RESTO", isActive: true, catalogMode: "ALL",
   allowedCategoryIds: [], allowedProductIds: [], excludedProductIds: [], activeSessionId: null,
+  cashFloat: { amount: 0, updatedAt: serverTimestamp(), updatedBy: "manager" },
+  paymentBalances: { orange_money: 0, wave: 0, moov_money: 0, card: 0, bank_transfer: 0 },
   createdAt: serverTimestamp(), updatedAt: serverTimestamp(), createdBy: "manager", updatedBy: "manager",
 })
 
@@ -45,6 +47,40 @@ test("Owner et Manager gèrent les postes, le Caissier les consulte seulement", 
 
   const ownerDb = environment.authenticatedContext("owner").firestore()
   await assertSucceeds(updateDoc(doc(ownerDb, "restaurants", "restaurant-a", "posStations", "main"), { name: "Principale", updatedAt: serverTimestamp(), updatedBy: "owner" }))
+})
+
+test("Owner et Manager peuvent ajuster le fond du poste, pas le Caissier", { skip: !enabled }, async () => {
+  const managerDb = environment.authenticatedContext("manager").firestore()
+  const stationRef = doc(managerDb, "restaurants", "restaurant-a", "posStations", "main")
+  await assertSucceeds(setDoc(stationRef, stationPayload()))
+  await assertSucceeds(updateDoc(stationRef, {
+    cashFloat: { amount: 5_000, updatedAt: serverTimestamp(), updatedBy: "manager" },
+    updatedAt: serverTimestamp(),
+    updatedBy: "manager",
+  }))
+  const cashierDb = environment.authenticatedContext("cashier").firestore()
+  await assertFails(updateDoc(doc(cashierDb, "restaurants", "restaurant-a", "posStations", "main"), {
+    cashFloat: { amount: 0, updatedAt: serverTimestamp(), updatedBy: "cashier" },
+    updatedAt: serverTimestamp(),
+    updatedBy: "cashier",
+  }))
+})
+
+test("Owner et Manager peuvent ajuster les soldes moyens de paiement, pas le Caissier", { skip: !enabled }, async () => {
+  const managerDb = environment.authenticatedContext("manager").firestore()
+  const stationRef = doc(managerDb, "restaurants", "restaurant-a", "posStations", "main")
+  await assertSucceeds(setDoc(stationRef, stationPayload()))
+  await assertSucceeds(updateDoc(stationRef, {
+    paymentBalances: { orange_money: 1000, wave: 2000, moov_money: 0, card: 0, bank_transfer: 0 },
+    updatedAt: serverTimestamp(),
+    updatedBy: "manager",
+  }))
+  const cashierDb = environment.authenticatedContext("cashier").firestore()
+  await assertFails(updateDoc(doc(cashierDb, "restaurants", "restaurant-a", "posStations", "main"), {
+    paymentBalances: { orange_money: 0, wave: 0, moov_money: 0, card: 0, bank_transfer: 0 },
+    updatedAt: serverTimestamp(),
+    updatedBy: "cashier",
+  }))
 })
 
 test("Manager affecte un caissier sans pouvoir modifier son rôle", { skip: !enabled }, async () => {

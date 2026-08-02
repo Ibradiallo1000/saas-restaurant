@@ -1220,7 +1220,7 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly([
             "name", "code", "isActive", "catalogMode",
             "allowedCategoryIds", "allowedProductIds", "excludedProductIds",
-            "activeSessionId", "createdAt", "updatedAt", "createdBy", "updatedBy"
+            "activeSessionId", "cashFloat", "paymentBalances", "createdAt", "updatedAt", "createdBy", "updatedBy"
           ])
           && request.resource.data.name is string
           && request.resource.data.code is string
@@ -1230,6 +1230,12 @@ service cloud.firestore {
           && request.resource.data.allowedProductIds is list
           && request.resource.data.excludedProductIds is list
           && request.resource.data.activeSessionId == null
+          && request.resource.data.cashFloat is map
+          && request.resource.data.cashFloat.amount is number
+          && request.resource.data.cashFloat.amount >= 0
+          && request.resource.data.cashFloat.updatedAt is timestamp
+          && request.resource.data.cashFloat.updatedBy == request.auth.uid
+          && request.resource.data.paymentBalances is map
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.updatedBy == request.auth.uid
           && request.resource.data.createdAt is timestamp
@@ -1238,7 +1244,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             "name", "code", "isActive", "catalogMode",
             "allowedCategoryIds", "allowedProductIds", "excludedProductIds",
-            "updatedAt", "updatedBy"
+            "cashFloat", "paymentBalances", "updatedAt", "updatedBy"
           ])
           && request.resource.data.name is string
           && request.resource.data.code is string
@@ -1247,6 +1253,16 @@ service cloud.firestore {
           && request.resource.data.allowedCategoryIds is list
           && request.resource.data.allowedProductIds is list
           && request.resource.data.excludedProductIds is list
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["cashFloat"])
+            || (
+              request.resource.data.cashFloat is map
+              && request.resource.data.cashFloat.amount is number
+              && request.resource.data.cashFloat.amount >= 0
+              && request.resource.data.cashFloat.updatedAt is timestamp
+              && request.resource.data.cashFloat.updatedBy == request.auth.uid
+            ))
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["paymentBalances"])
+            || request.resource.data.paymentBalances is map)
           && request.resource.data.activeSessionId == resource.data.activeSessionId
           && (request.resource.data.isActive == true || resource.data.activeSessionId == null)
           && request.resource.data.updatedBy == request.auth.uid
@@ -2320,11 +2336,21 @@ service cloud.firestore {
         && request.resource.data.restaurantId is string
         && request.resource.data.methodCode is string
         && request.resource.data.merchantNumber is string
+        && (
+          !request.resource.data.keys().hasAny(["paymentAccountId"])
+          || request.resource.data.paymentAccountId == null
+          || request.resource.data.paymentAccountId is string
+        )
         && request.resource.data.isActive is bool;
       allow update: if canUseRestaurant(resource.data.restaurantId)
         && request.resource.data.restaurantId == resource.data.restaurantId
         && request.resource.data.methodCode is string
         && request.resource.data.merchantNumber is string
+        && (
+          !request.resource.data.keys().hasAny(["paymentAccountId"])
+          || request.resource.data.paymentAccountId == null
+          || request.resource.data.paymentAccountId is string
+        )
         && request.resource.data.isActive is bool;
       allow delete: if isSuperAdmin()
         || canUseRestaurant(resource.data.restaurantId);

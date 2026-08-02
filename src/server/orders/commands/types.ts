@@ -63,6 +63,7 @@ export interface ConfirmOrderPaymentInput extends OrderCommandBase {
   receivedAmount: number
   method: "cash" | "mobile_money"
   provider: string | null
+  paymentAccountId?: string | null
   externalReference: string | null
   cashSessionId: string
 }
@@ -139,6 +140,7 @@ export interface CommandMutationPlan {
     changeDue: number
     method: "cash" | "mobile_money"
     provider: string | null
+    paymentAccountId?: string | null
     externalReference: string | null
     cashSessionId: string
   } | null

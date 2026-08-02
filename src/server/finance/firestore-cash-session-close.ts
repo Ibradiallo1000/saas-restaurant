@@ -13,7 +13,12 @@ import {
   type FinancialLedgerEntry,
 } from "../../lib/finance/payment-ledger-domain.ts"
 import { FinancialLedgerError } from "./firestore-payment-ledger.ts"
-import { DEFAULT_POS_STATION_ID, resolveSessionPosStationId } from "../../lib/pos-stations.ts"
+import {
+  DEFAULT_POS_STATION_ID,
+  normalizePaymentProviderToBalanceKey,
+  resolvePaymentBalances,
+  resolveSessionPosStationId,
+} from "../../lib/pos-stations.ts"
 
 export class FirestoreCashSessionClose {
   private readonly db: Firestore
@@ -74,6 +79,15 @@ export class FirestoreCashSessionClose {
         retainedFloat: input.retainedFloat,
         aggregate,
       })
+      const openingPaymentBalances = resolvePaymentBalances(session.openingPaymentBalances)
+      const closingPaymentBalances = applyPaymentSessionTotals(openingPaymentBalances, aggregate.totalsByProvider)
+      const mobileMoneyPostedAtPayment = calculateMobileMoneyPostedAtPayment(
+        ledgerSnapshot.docs.map((snapshot) => ({
+          id: snapshot.id,
+          ...(snapshot.data() || {}),
+        })) as FinancialLedgerEntry[]
+      )
+      const mobileMoneyPendingTreasuryPost = Math.max(0, close.expectedMobileMoney - mobileMoneyPostedAtPayment)
       const now = Timestamp.now()
       const discrepancyStatus =
         close.cashCountDifference === 0 ? "balanced" : "pending_review"
@@ -111,6 +125,11 @@ export class FirestoreCashSessionClose {
         posStationId: String(session.posStationId || "DEFAULT"),
         posStationName: String(session.posStationName || "Caisse principale"),
         posStationCode: String(session.posStationCode || "DEFAULT"),
+        openingPaymentBalances,
+        sessionPaymentBalanceChanges: buildPaymentBalanceChanges(aggregate.totalsByProvider),
+        closingPaymentBalances,
+        mobileMoneyPostedAtPayment,
+        mobileMoneyPendingTreasuryPost,
       }
       const isMobileOnlySettlement =
         close.expectedHandover === 0 && close.expectedMobileMoney > 0
@@ -131,6 +150,8 @@ export class FirestoreCashSessionClose {
           workflowVersion: 1,
           physicalHandoverRequired: false,
           automaticCashlessSettlement: true,
+          mobileMoneyPostedAtPayment,
+          mobileMoneyPendingTreasuryPost,
           submittedAt: now,
           submittedBy: input.cashierId,
           createdAt: now,
@@ -148,6 +169,11 @@ export class FirestoreCashSessionClose {
         closeRequestHash: requestHash,
         ...close,
         expectedMobileMoney: close.expectedMobileMoney,
+        openingPaymentBalances,
+        sessionPaymentBalanceChanges: buildPaymentBalanceChanges(aggregate.totalsByProvider),
+        closingPaymentBalances,
+        mobileMoneyPostedAtPayment,
+        mobileMoneyPendingTreasuryPost,
         closingCash: close.countedPhysicalCash,
         closingMobileMoney: close.expectedMobileMoney,
         closingBalance: declaredTotal,
@@ -173,12 +199,29 @@ export class FirestoreCashSessionClose {
       const stationId = resolveSessionPosStationId(session)
       if (stationId === DEFAULT_POS_STATION_ID) {
         if (restaurantSnapshot.data()?.defaultPosStationActiveSessionId === input.sessionId) {
-          transaction.update(root, { defaultPosStationActiveSessionId: null, updatedAt: now })
+          transaction.update(root, {
+            defaultPosStationActiveSessionId: null,
+            defaultPosStationCashFloat: {
+              amount: close.retainedFloat,
+              updatedAt: now,
+              updatedBy: input.cashierId,
+            },
+            updatedAt: now,
+          })
         }
       } else {
         const stationSnapshot = stationsSnapshot.docs.find((entry) => entry.id === stationId)
         if (stationSnapshot?.data()?.activeSessionId === input.sessionId) {
-          transaction.update(stationSnapshot.ref, { activeSessionId: null, updatedAt: now, updatedBy: input.cashierId })
+          transaction.update(stationSnapshot.ref, {
+            activeSessionId: null,
+            cashFloat: {
+              amount: close.retainedFloat,
+              updatedAt: now,
+              updatedBy: input.cashierId,
+            },
+            updatedAt: now,
+            updatedBy: input.cashierId,
+          })
         }
       }
       return { replayed: false, close }
@@ -220,7 +263,42 @@ function readClose(session: DocumentData) {
     retainedFloat: Number(session.retainedFloat || 0),
     expectedHandover: Number(session.expectedHandover || 0),
     expectedMobileMoney: Number(session.expectedMobileMoney || 0),
+    openingPaymentBalances: resolvePaymentBalances(session.openingPaymentBalances),
+    sessionPaymentBalanceChanges: resolvePaymentBalances(session.sessionPaymentBalanceChanges),
+    closingPaymentBalances: resolvePaymentBalances(session.closingPaymentBalances),
   }
+}
+
+function buildPaymentBalanceChanges(totalsByProvider: Record<string, number> | undefined) {
+  const changes = resolvePaymentBalances(null)
+  for (const [provider, amount] of Object.entries(totalsByProvider || {})) {
+    const key = normalizePaymentProviderToBalanceKey(provider)
+    if (!key) continue
+    const value = Math.round(Number(amount || 0))
+    if (Number.isFinite(value)) changes[key] += value
+  }
+  return changes
+}
+
+function applyPaymentSessionTotals(
+  openingPaymentBalances: Record<string, number>,
+  totalsByProvider: Record<string, number> | undefined
+) {
+  const closing = resolvePaymentBalances(openingPaymentBalances)
+  const changes = buildPaymentBalanceChanges(totalsByProvider)
+  for (const [key, amount] of Object.entries(changes)) {
+    closing[key as keyof typeof closing] = Math.max(0, Number(closing[key as keyof typeof closing] || 0) + Number(amount || 0))
+  }
+  return closing
+}
+
+function calculateMobileMoneyPostedAtPayment(entries: FinancialLedgerEntry[]) {
+  return entries.reduce((total, entry) => {
+    if (entry.status !== "confirmed" || entry.type !== "mobile_money" || !entry.paymentAccountId) return total
+    const amount = Math.round(Number(entry.amount || 0))
+    if (!Number.isFinite(amount) || amount <= 0) return total
+    return total + (entry.entryType === "refund" ? -amount : amount)
+  }, 0)
 }
 
 export { CashSessionCloseValidationError }

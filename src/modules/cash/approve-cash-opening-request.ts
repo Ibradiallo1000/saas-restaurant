@@ -23,7 +23,6 @@ export async function approveCashOpeningRequest({
     cashierId,
     posStationId: request.posStationId || null,
     legacySessionId: request.source === "session" ? request.id : null,
-    openingBalance: Number(request.openingBalance || request.initialAmount || 0),
     deviceInstanceId: request.deviceInstanceId || null,
   })
   if (request.source !== "session" && request.id) {

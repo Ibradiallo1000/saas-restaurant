@@ -5,7 +5,7 @@ import type {
   Firestore,
   Transaction,
 } from "firebase-admin/firestore"
-import { Timestamp } from "firebase-admin/firestore"
+import { FieldValue, Timestamp } from "firebase-admin/firestore"
 
 import {
   aggregateFinancialEntries,
@@ -34,6 +34,7 @@ export interface ConfirmedPaymentWrite {
   source: FinancialPaymentSource
   type: FinancialPaymentMethod
   provider: string | null
+  paymentAccountId?: string | null
   amount: number
   receivedAmount: number
   changeDue: number
@@ -56,6 +57,7 @@ export class FirestorePaymentLedger {
     const sessionRef = root.collection("cashSessions").doc(input.sessionId)
     const paymentRef = root.collection("payments").doc(input.paymentId)
     const ledgerQuery = root.collection("payments").where("sessionId", "==", input.sessionId)
+    const accountResolution = await resolvePaymentAccount(transaction, this.db, root, input)
     const [sessionSnapshot, paymentSnapshot, ledgerSnapshot] = await Promise.all([
       transaction.get(sessionRef),
       transaction.get(paymentRef),
@@ -72,8 +74,12 @@ export class FirestorePaymentLedger {
         existing?.orderId === input.orderId &&
         Number(existing?.amount) === input.amount &&
         existing?.sessionId === input.sessionId &&
-        existing?.cashierId === input.cashierId &&
-        existing?.type === input.type
+            existing?.cashierId === input.cashierId &&
+            existing?.type === input.type &&
+            (
+              !existing?.paymentAccountId ||
+              String(existing?.paymentAccountId || "") === String(accountResolution.accountId || "")
+            )
       ) {
         const aggregate = aggregateFinancialEntries(ledgerSnapshot.docs.map(toEntry))
         const now = Timestamp.now()
@@ -105,6 +111,8 @@ export class FirestorePaymentLedger {
       source: input.source,
       type: input.type,
       provider: input.provider,
+      paymentAccountId: accountResolution.accountId,
+      paymentAccountName: accountResolution.accountName,
       amount: input.amount,
       status: "confirmed",
       entryType: "payment",
@@ -125,6 +133,17 @@ export class FirestorePaymentLedger {
     ])
 
     transaction.create(paymentRef, payment)
+    applyTreasuryAccountMovement(transaction, {
+      root,
+      account: accountResolution,
+      payment: { id: paymentRef.id, ...payment },
+      movementId: `payment-${paymentRef.id}`,
+      direction: "in",
+      amount: input.amount,
+      now,
+      actorId: input.cashierId,
+      label: "Encaissement confirmé",
+    })
     transaction.update(sessionRef, {
       ...financialCachePatch(aggregate),
       financialCacheVersion: 1,
@@ -164,6 +183,7 @@ export class FirestorePaymentLedger {
       const sessionRef = root.collection("cashSessions").doc(payment.sessionId)
       const orderRef = root.collection("orders").doc(payment.orderId)
       const ledgerQuery = root.collection("payments").where("sessionId", "==", payment.sessionId)
+      const accountResolution = await resolveRefundAccount(transaction, root, payment)
       const [sessionSnapshot, ledgerSnapshot, orderSnapshot] = await Promise.all([
         transaction.get(sessionRef),
         transaction.get(ledgerQuery),
@@ -222,6 +242,8 @@ export class FirestorePaymentLedger {
         source: payment.source,
         type: payment.type,
         provider: payment.provider ?? null,
+        paymentAccountId: accountResolution.accountId,
+        paymentAccountName: accountResolution.accountName,
         amount,
         status: "confirmed",
         entryType: "refund",
@@ -240,6 +262,17 @@ export class FirestorePaymentLedger {
       ])
 
       transaction.create(refundRef, refund)
+      applyTreasuryAccountMovement(transaction, {
+        root,
+        account: accountResolution,
+        payment: { id: refundRef.id, ...refund },
+        movementId: `refund-${refundRef.id}`,
+        direction: "out",
+        amount,
+        now,
+        actorId: input.cashierId,
+        label: "Remboursement confirmé",
+      })
       transaction.update(sessionRef, {
         ...financialCachePatch(aggregate),
         financialCacheVersion: 1,
@@ -400,6 +433,141 @@ function toEntry(snapshot: { id: string; data(): DocumentData | undefined }): Fi
     id: snapshot.id,
     ...(snapshot.data() || {}),
   } as unknown as FinancialLedgerEntry
+}
+
+type PaymentAccountResolution = {
+  accountId: string | null
+  accountName: string | null
+  accountRef: FirebaseFirestore.DocumentReference | null
+  accountData: DocumentData | null
+}
+
+async function resolvePaymentAccount(
+  transaction: Transaction,
+  db: Firestore,
+  root: FirebaseFirestore.DocumentReference,
+  input: ConfirmedPaymentWrite
+): Promise<PaymentAccountResolution> {
+  if (input.type === "cash") return emptyPaymentAccountResolution()
+
+  const provider = String(input.provider || "").trim()
+  const explicitAccountId = cleanSafeId(input.paymentAccountId)
+  let accountId = explicitAccountId
+
+  if (!accountId && provider) {
+    const configSnapshot = await transaction.get(
+      db.collection("restaurantPaymentConfigs")
+        .where("restaurantId", "==", input.restaurantId)
+        .where("methodCode", "==", provider)
+        .where("isActive", "==", true)
+        .limit(1)
+    )
+    const config = configSnapshot.docs[0]?.data()
+    accountId = cleanSafeId(config?.paymentAccountId)
+  }
+
+  if (!accountId) return emptyPaymentAccountResolution()
+  return readPaymentAccount(transaction, root, accountId)
+}
+
+async function resolveRefundAccount(
+  transaction: Transaction,
+  root: FirebaseFirestore.DocumentReference,
+  payment: FinancialLedgerEntry
+): Promise<PaymentAccountResolution> {
+  const accountId = cleanSafeId(payment.paymentAccountId)
+  if (!accountId) return emptyPaymentAccountResolution()
+  return readPaymentAccount(transaction, root, accountId)
+}
+
+async function readPaymentAccount(
+  transaction: Transaction,
+  root: FirebaseFirestore.DocumentReference,
+  accountId: string
+): Promise<PaymentAccountResolution> {
+  const accountRef = root.collection("treasuryAccounts").doc(accountId)
+  const accountSnapshot = await transaction.get(accountRef)
+  if (!accountSnapshot.exists) {
+    throw new FinancialLedgerError(
+      "PAYMENT_ACCOUNT_NOT_FOUND",
+      "Le compte financier rattaché au paiement est introuvable."
+    )
+  }
+  const accountData = accountSnapshot.data() || {}
+  if (accountData.active === false) {
+    throw new FinancialLedgerError(
+      "PAYMENT_ACCOUNT_INACTIVE",
+      "Le compte financier rattaché au paiement est inactif."
+    )
+  }
+  return {
+    accountId,
+    accountName: typeof accountData.name === "string" ? accountData.name : accountId,
+    accountRef,
+    accountData,
+  }
+}
+
+function applyTreasuryAccountMovement(
+  transaction: Transaction,
+  input: {
+    root: FirebaseFirestore.DocumentReference
+    account: PaymentAccountResolution
+    payment: FinancialLedgerEntry & Record<string, unknown>
+    movementId: string
+    direction: "in" | "out"
+    amount: number
+    now: Timestamp
+    actorId: string
+    label: string
+  }
+) {
+  if (!input.account.accountRef || !input.account.accountId) return
+  const signedAmount = input.direction === "in" ? input.amount : -input.amount
+  transaction.update(input.account.accountRef, {
+    balance: FieldValue.increment(signedAmount),
+    updatedAt: input.now,
+    updatedBy: input.actorId,
+  })
+  transaction.create(input.root.collection("cashMovements").doc(input.movementId), {
+    restaurantId: input.payment.restaurantId,
+    type: input.direction === "in" ? "deposit" : "expense",
+    source: input.payment.entryType === "refund" ? "payment_refund" : "payment",
+    direction: input.direction,
+    amount: input.amount,
+    accountId: input.account.accountId,
+    accountName: input.account.accountName,
+    paymentMethod: input.payment.type,
+    paymentProvider: input.payment.provider ?? input.account.accountId,
+    paymentId: input.payment.id,
+    parentPaymentId: input.payment.parentPaymentId ?? null,
+    orderId: input.payment.orderId,
+    sessionId: input.payment.sessionId,
+    sourceSessionId: input.payment.sessionId,
+    cashierId: input.payment.cashierId,
+    posStationId: input.payment.posStationId ?? "DEFAULT",
+    posStationName: input.payment.posStationName ?? "Caisse principale",
+    posStationCode: input.payment.posStationCode ?? "DEFAULT",
+    label: input.label,
+    createdBy: input.actorId,
+    createdAt: input.now,
+    occurredAt: input.now,
+  })
+}
+
+function emptyPaymentAccountResolution(): PaymentAccountResolution {
+  return {
+    accountId: null,
+    accountName: null,
+    accountRef: null,
+    accountData: null,
+  }
+}
+
+function cleanSafeId(value: unknown) {
+  if (typeof value !== "string") return null
+  const id = value.trim()
+  return /^[A-Za-z0-9_-]{1,160}$/.test(id) ? id : null
 }
 
 function stableEntryId(prefix: string, key: string) {

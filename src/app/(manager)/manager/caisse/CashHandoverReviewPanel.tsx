@@ -101,6 +101,9 @@ export function CashHandoverReviewPanel({
   const recoverAndValidate = async (session: any) => {
     const handoverId = `session-${session.id}`
     const expectedAmount = Number(session.expectedHandover || 0)
+    const retainedFloat = Number(session.retainedFloat || 0)
+    const expectedMobileMoney = getSessionMobileMoney(session)
+    const expectedSessionTotal = expectedAmount + retainedFloat + expectedMobileMoney
     const receivedAmount = Number(received[handoverId] ?? expectedAmount)
     if (savingId) return
     if (!window.confirm([
@@ -108,6 +111,9 @@ export function CashHandoverReviewPanel({
       `Caisse : session #${String(session.id).slice(-6).toUpperCase()}`,
       `Utilisateur : ${session.staffName || session.cashierName || session.userName || session.cashierId || session.userId || "Caissier"}`,
       `Montant attendu : ${expectedAmount.toLocaleString("fr-FR")} FCFA`,
+      `Fond conservé en caisse : ${retainedFloat.toLocaleString("fr-FR")} FCFA`,
+      `Mobile Money enregistré : ${expectedMobileMoney.toLocaleString("fr-FR")} FCFA`,
+      `Total de la session : ${expectedSessionTotal.toLocaleString("fr-FR")} FCFA`,
       `Montant reçu : ${receivedAmount.toLocaleString("fr-FR")} FCFA`,
       `Écart : ${(receivedAmount - expectedAmount).toLocaleString("fr-FR")} FCFA`,
     ].join("\n"))) return
@@ -155,23 +161,32 @@ export function CashHandoverReviewPanel({
             <p>{audience === "owner" ? "Les clôtures et remises en attente ne sont pas disponibles actuellement." : "Les règles Firestore refusent actuellement la lecture de cashHandovers. Aucune conclusion ne peut être tirée sur les remises en attente."}</p>
           </div>
         ) : null}
-        {awaitingSubmission.map((session: any) => (
+        {awaitingSubmission.map((session: any) => {
+          const expectedHandover = Number(session.expectedHandover || 0)
+          const retainedFloat = Number(session.retainedFloat || 0)
+          const expectedMobileMoney = getSessionMobileMoney(session)
+          const expectedSessionTotal = expectedHandover + retainedFloat + expectedMobileMoney
+
+          return (
           <article key={`awaiting-${session.id}`} className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
             <p className="font-bold">Session #{String(session.id).slice(-6).toUpperCase()}</p>
             <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
               Session clôturée — remise à soumettre par le caissier.
             </p>
-            <p className="text-sm text-muted-foreground">
-              Versement attendu {Number(session.expectedHandover || 0).toLocaleString()} FCFA
-            </p>
-            {Number(session.expectedHandover || 0) > 0 ? (
+            <dl className="grid gap-2 rounded-lg border border-amber-200/80 bg-white/70 p-3 text-sm dark:border-amber-900 dark:bg-background/40">
+              <SessionAmount label="Remise physique attendue" amount={expectedHandover} />
+              <SessionAmount label="Fond conservé en caisse" amount={retainedFloat} />
+              <SessionAmount label="Mobile Money enregistré" amount={expectedMobileMoney} />
+              <SessionAmount label="Total de la session" amount={expectedSessionTotal} strong />
+            </dl>
+            {expectedHandover > 0 ? (
               <div>
                 <Label htmlFor={`recovery-received-${session.id}`}>Montant réellement reçu</Label>
                 <Input
                   id={`recovery-received-${session.id}`}
                   type="number"
                   min={0}
-                  value={received[`session-${session.id}`] ?? String(session.expectedHandover || 0)}
+                  value={received[`session-${session.id}`] ?? String(expectedHandover)}
                   onChange={(event) => setReceived((current) => ({ ...current, [`session-${session.id}`]: event.target.value }))}
                 />
               </div>
@@ -181,10 +196,11 @@ export function CashHandoverReviewPanel({
               disabled={savingId === `session-${session.id}`}
               onClick={() => recoverAndValidate(session)}
             >
-              {Number(session.expectedHandover || 0) > 0 ? "Valider la réception" : "Valider la session Mobile Money"}
+              {expectedHandover > 0 ? "Valider la réception" : "Valider la session Mobile Money"}
             </Button>
           </article>
-        ))}
+          )
+        })}
         {!isLoading && !handoversError && !pending.length && !awaitingSubmission.length ? (
           <ReportsEmptyState title={audience === "owner" ? "Aucune clôture n’attend votre validation." : "Aucune remise en attente"} />
         ) : pending.map((handover: any) => {
@@ -239,5 +255,20 @@ export function CashHandoverReviewPanel({
         })}
       </div>
     </DashboardWidget>
+  )
+}
+
+function getSessionMobileMoney(session: any) {
+  return Number(
+    session.expectedMobileMoney ?? session.totalMobileMoney ?? session.totalMobile ?? 0
+  )
+}
+
+function SessionAmount({ label, amount, strong = false }: { label: string; amount: number; strong?: boolean }) {
+  return (
+    <div className={`grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-baseline gap-3 ${strong ? "border-t border-amber-200 pt-2 font-bold dark:border-amber-900" : ""}`}>
+      <dt className="min-w-0 break-words text-muted-foreground">{label}</dt>
+      <dd className="whitespace-nowrap tabular-nums text-foreground">{amount.toLocaleString("fr-FR")} FCFA</dd>
+    </div>
   )
 }

@@ -116,6 +116,111 @@ test("la clôture libère atomiquement le poste configuré", { skip: !enabled },
   assert.equal(session.closeSnapshot.posStationId, "main")
 })
 
+test("le fond de caisse persiste sur le poste entre deux caissiers", { skip: !enabled }, async () => {
+  const { restaurantId, root } = await seedRestaurant("cash-float", {
+    stations: [{ id: "main", cashFloat: { amount: 5_000, updatedBy: "manager" } }],
+    cashiers: [
+      { id: "alice", allowedPosStationIds: ["main"] },
+      { id: "bob", allowedPosStationIds: ["main"] },
+    ],
+  })
+  const opener = new FirestoreCashSessionOpen(db)
+  const alice = await opener.open({
+    restaurantId,
+    cashierId: "alice",
+    requestedBy: "alice",
+    requestedByRole: "cashier",
+    posStationId: "main",
+    deviceInstanceId: "device-alice",
+    openingBalance: 0,
+  })
+  assert.equal(alice.session.openingBalance, 5_000)
+
+  await root.collection("payments").doc("alice-cash").set({
+    orderId: "order-alice",
+    sessionId: alice.sessionId,
+    cashierId: "alice",
+    source: "pos",
+    type: "cash",
+    amount: 120_000,
+    status: "confirmed",
+    idempotencyKey: "alice-cash",
+  })
+  await new FirestoreCashSessionClose(db).close({
+    restaurantId,
+    sessionId: alice.sessionId,
+    cashierId: "alice",
+    countedPhysicalCash: 125_000,
+    retainedFloat: 5_000,
+    idempotencyKey: "close-alice",
+  })
+  assert.equal((await root.collection("posStations").doc("main").get()).data().cashFloat.amount, 5_000)
+
+  const bob = await opener.open({
+    restaurantId,
+    cashierId: "bob",
+    requestedBy: "bob",
+    requestedByRole: "cashier",
+    posStationId: "main",
+    deviceInstanceId: "device-bob",
+    openingBalance: 0,
+  })
+  assert.equal(bob.session.openingBalance, 5_000)
+})
+
+test("les soldes moyens de paiement persistent sur le poste entre deux sessions", { skip: !enabled }, async () => {
+  const { restaurantId, root } = await seedRestaurant("payment-balances", {
+    stations: [{ id: "main", paymentBalances: { orange_money: 100_000, wave: 50_000 } }],
+    cashiers: [
+      { id: "alice", allowedPosStationIds: ["main"] },
+      { id: "bob", allowedPosStationIds: ["main"] },
+    ],
+  })
+  const opener = new FirestoreCashSessionOpen(db)
+  const alice = await opener.open({
+    restaurantId,
+    cashierId: "alice",
+    requestedBy: "alice",
+    requestedByRole: "cashier",
+    posStationId: "main",
+    deviceInstanceId: "device-alice",
+  })
+  assert.equal(alice.session.openingPaymentBalances.orange_money, 100_000)
+  assert.equal(alice.session.openingPaymentBalances.wave, 50_000)
+  await Promise.all([
+    root.collection("payments").doc("orange-payment").set({
+      orderId: "order-orange", sessionId: alice.sessionId, cashierId: "alice", source: "pos",
+      type: "mobile_money", provider: "orange_money", amount: 25_000, status: "confirmed", idempotencyKey: "orange-payment",
+    }),
+    root.collection("payments").doc("wave-payment").set({
+      orderId: "order-wave", sessionId: alice.sessionId, cashierId: "alice", source: "pos",
+      type: "mobile_money", provider: "wave", amount: 10_000, status: "confirmed", idempotencyKey: "wave-payment",
+    }),
+  ])
+  await new FirestoreCashSessionClose(db).close({
+    restaurantId,
+    sessionId: alice.sessionId,
+    cashierId: "alice",
+    countedPhysicalCash: 0,
+    retainedFloat: 0,
+    idempotencyKey: "close-payment-balances",
+  })
+  const station = (await root.collection("posStations").doc("main").get()).data()
+  assert.equal(station.paymentBalances.orange_money, 125_000)
+  assert.equal(station.paymentBalances.wave, 60_000)
+
+  const bob = await opener.open({
+    restaurantId,
+    cashierId: "bob",
+    requestedBy: "bob",
+    requestedByRole: "cashier",
+    posStationId: "main",
+    deviceInstanceId: "device-bob",
+  })
+  assert.equal(bob.session.openingPaymentBalances.orange_money, 125_000)
+  assert.equal(bob.session.openingPaymentBalances.wave, 60_000)
+})
+
 test("la commande et le paiement utilisent l’instantané immuable de la session", { skip: !enabled }, async () => {
   const { restaurantId, root } = await seedRestaurant("catalog-snapshot", {
     stations: [{ id: "main", catalogMode: "RESTRICTED", allowedProductIds: ["meal"] }],

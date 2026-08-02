@@ -617,6 +617,7 @@ async function preparePaymentWrites(
         source: resolveFinancialSource(order as unknown as Record<string, unknown>),
         type: ledger.method,
         provider: ledger.provider,
+        paymentAccountId: ledger.paymentAccountId ?? null,
         externalReference: ledger.externalReference,
         amount: ledger.amount,
         receivedAmount: ledger.receivedAmount,

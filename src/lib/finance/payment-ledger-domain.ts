@@ -12,6 +12,7 @@ export interface FinancialLedgerEntry {
   source: FinancialPaymentSource
   type: FinancialPaymentMethod
   provider?: string | null
+  paymentAccountId?: string | null
   amount: number
   status: FinancialPaymentStatus | string
   entryType?: FinancialEntryType

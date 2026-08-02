@@ -20,6 +20,7 @@ import { submitCashHandover } from "@/modules/pos/canonical/cash-handover-comman
 import { CashierService, type CashSession } from "@/services/cashier.service"
 import { PosSessionReportsView } from "../session/PosSessionReportsView"
 import { buildPosSessionReportsViewModel } from "../session/pos-session-reports-view-model"
+import { POS_STATION_PAYMENT_BALANCE_KEYS, normalizePaymentProviderToBalanceKey, resolvePaymentBalances } from "@/lib/pos-stations"
 
 export default function CashierSessionPage() {
   const db = useFirestore()
@@ -27,7 +28,6 @@ export default function CashierSessionPage() {
   const { user } = useTenant()
   const { toast } = useToast()
   const [session, setSession] = React.useState<CashSession | null>(null)
-  const [openingBalance, setOpeningBalance] = React.useState("0")
   const [countedPhysicalCash, setCountedPhysicalCash] = React.useState("0")
   const [retainedFloat, setRetainedFloat] = React.useState("0")
   const [loading, setLoading] = React.useState(true)
@@ -96,7 +96,7 @@ export default function CashierSessionPage() {
     sessionMutationLockRef.current = true
     setSaving(true)
     try {
-      await openCashSession({ restaurantId, user, openingBalance: Number(openingBalance || 0) })
+      await openCashSession({ restaurantId, user })
       toast({ title: "Session ouverte" })
       await loadSession()
     } catch (error: any) {
@@ -195,7 +195,8 @@ export default function CashierSessionPage() {
           </DashboardWidget>
         )
   const expectedPhysicalCash = Number(session?.openingBalance || 0) + Number(session?.totalCash || 0)
-  const dialogs = <>{!session && !latestClosedSession ? <PosSessionOpeningDialog open={openingDialogOpen} onOpenChange={setOpeningDialogOpen} title="Ouvrir ma caisse" description="Saisissez le montant initial avant de commencer les ventes." user={user?.email || user?.uid} openingAmount={`${Number(openingBalance || 0).toLocaleString()} FCFA`} date={new Date().toLocaleDateString("fr-FR")} footer={<><Button variant="outline" className="min-h-12" disabled={saving} onClick={() => setOpeningDialogOpen(false)}>Annuler</Button><Button className="min-h-12" disabled={saving} onClick={handleOpenShift}>{saving ? <Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none"/> : null}Ouvrir ma caisse</Button></>}><div><Label htmlFor="opening-balance">Montant initial</Label><Input autoFocus id="opening-balance" type="number" inputMode="numeric" min="0" value={openingBalance} onChange={(event) => setOpeningBalance(event.target.value)} className="mt-1 min-h-14 text-right text-2xl font-bold tabular-nums" /></div></PosSessionOpeningDialog> : null}{session ? <PosSessionClosingDialog open={closingDialogOpen} onOpenChange={setClosingDialogOpen} title="Clôturer la caisse" description="Comptez uniquement les espèces physiques. Le Mobile Money provient du registre des paiements." summary={<div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><MetricCard icon={Receipt} label="Espèces attendues (fond inclus)" value={expectedPhysicalCash}/><MetricCard icon={Receipt} label="Mobile Money enregistré" value={session.totalMobile}/><MetricCard icon={Wallet} label="Fond initial" value={session.openingBalance}/></div>} expectedCash={<AmountField id="session-counted-cash" label="Espèces physiques comptées" value={countedPhysicalCash} onChange={setCountedPhysicalCash}/>} declaredCash={<AmountField id="session-retained-float" label="Fond conservé en caisse" value={retainedFloat} onChange={setRetainedFloat}/>} variance={<SessionDiff countedPhysicalCash={Number(countedPhysicalCash || 0)} retainedFloat={Number(retainedFloat || 0)} expectedPhysicalCash={expectedPhysicalCash} />} footer={<><Button variant="outline" className="min-h-12" disabled={saving} onClick={() => setClosingDialogOpen(false)}>Annuler</Button><Button variant="destructive" className="min-h-12" disabled={saving} onClick={handleCloseShift}>{saving ? <Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none"/> : null}Confirmer la clôture</Button></>} /> : null}</>
+  const paymentBalanceRows = buildPaymentBalanceRows(session?.openingPaymentBalances, session?.totalsByProvider)
+  const dialogs = <>{!session && !latestClosedSession ? <PosSessionOpeningDialog open={openingDialogOpen} onOpenChange={setOpeningDialogOpen} title="Ouvrir ma caisse" description="Le fond initial est repris automatiquement depuis le poste de caisse." user={user?.email || user?.uid} openingAmount="Fond du poste" date={new Date().toLocaleDateString("fr-FR")} footer={<><Button variant="outline" className="min-h-12" disabled={saving} onClick={() => setOpeningDialogOpen(false)}>Annuler</Button><Button className="min-h-12" disabled={saving} onClick={handleOpenShift}>{saving ? <Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none"/> : null}Ouvrir ma caisse</Button></>}><p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">Le montant exact sera affiché après l’ouverture, à partir du fond conservé sur le poste.</p></PosSessionOpeningDialog> : null}{session ? <PosSessionClosingDialog open={closingDialogOpen} onOpenChange={setClosingDialogOpen} title="Clôturer la caisse" description="Comptez uniquement les espèces physiques. Le Mobile Money provient du registre des paiements." summary={<div className="space-y-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><MetricCard icon={Receipt} label="Espèces attendues (fond inclus)" value={expectedPhysicalCash}/><MetricCard icon={Receipt} label="Mobile Money enregistré" value={session.totalMobile}/><MetricCard icon={Wallet} label="Fond initial" value={session.openingBalance}/></div><PaymentBalanceSummary rows={paymentBalanceRows}/></div>} expectedCash={<AmountField id="session-counted-cash" label="Espèces physiques comptées" value={countedPhysicalCash} onChange={setCountedPhysicalCash}/>} declaredCash={<AmountField id="session-retained-float" label="Fond conservé en caisse" value={retainedFloat} onChange={setRetainedFloat}/>} variance={<SessionDiff countedPhysicalCash={Number(countedPhysicalCash || 0)} retainedFloat={Number(retainedFloat || 0)} expectedPhysicalCash={expectedPhysicalCash} />} footer={<><Button variant="outline" className="min-h-12" disabled={saving} onClick={() => setClosingDialogOpen(false)}>Annuler</Button><Button variant="destructive" className="min-h-12" disabled={saving} onClick={handleCloseShift}>{saving ? <Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none"/> : null}Confirmer la clôture</Button></>} /> : null}</>
   return <><div className="mx-auto flex max-w-3xl gap-2 px-4 pt-4" aria-label="Période du rapport">{(["day", "week", "month"] as const).map((value) => <Button key={value} size="sm" variant={period === value ? "default" : "outline"} onClick={() => setPeriod(value)}>{value === "day" ? "Jour" : value === "week" ? "Semaine" : "Mois"}</Button>)}</div><PosSessionReportsView model={reportsModel} errors={[historyError && "historique personnel", handoversError && "remises"].filter(Boolean) as string[]} sessionControl={sessionControl} dialogs={dialogs} canValidate={false} saving={saving} onValidate={() => undefined} /></>
 }
 
@@ -228,6 +229,39 @@ function SessionDiff({
   const state = diff === 0 ? "balanced" : diff > 0 ? "positive" : "negative"
   const label = diff === 0 ? "Correct" : diff > 0 ? "Excédent" : "Manque"
   return <PosVarianceDisplay expected={`${expectedPhysicalCash.toLocaleString()} FCFA`} received={`${countedPhysicalCash.toLocaleString()} FCFA`} variance={`${diff.toLocaleString()} FCFA · Versement attendu ${expectedHandover.toLocaleString()} FCFA`} state={state} label={label} />
+}
+
+const PAYMENT_BALANCE_LABELS: Record<string, string> = {
+  orange_money: "Orange Money",
+  wave: "Wave",
+  moov_money: "Moov Money",
+  card: "Carte bancaire",
+  bank_transfer: "Virement bancaire",
+}
+
+function buildPaymentBalanceRows(openingValue: unknown, totalsByProvider: unknown) {
+  const opening = resolvePaymentBalances(openingValue)
+  const changes = resolvePaymentBalanceChanges(totalsByProvider)
+  return POS_STATION_PAYMENT_BALANCE_KEYS.map((key) => {
+    const before = Number(opening[key] || 0)
+    const session = Number(changes[key] || 0)
+    return { key, label: PAYMENT_BALANCE_LABELS[key], before, session, after: Math.max(0, before + session) }
+  })
+}
+
+function resolvePaymentBalanceChanges(value: unknown) {
+  const changes = resolvePaymentBalances(null)
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  for (const [provider, amountValue] of Object.entries(source)) {
+    const key = normalizePaymentProviderToBalanceKey(provider)
+    const amount = Math.round(Number(amountValue || 0))
+    if (key && Number.isFinite(amount)) changes[key] += amount
+  }
+  return changes
+}
+
+function PaymentBalanceSummary({ rows }: { rows: Array<{ key: string; label: string; before: number; session: number; after: number }> }) {
+  return <div className="rounded-xl bg-secondary/30 p-4"><p className="text-[10px] font-black uppercase text-muted-foreground">Soldes moyens de paiement</p><div className="mt-2 grid gap-2">{rows.map((row) => <div key={row.key} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 text-xs"><span className="min-w-0 truncate font-semibold">{row.label}</span><span className="tabular-nums text-muted-foreground">Avant {row.before.toLocaleString("fr-FR")}</span><span className="tabular-nums text-muted-foreground">Session {row.session.toLocaleString("fr-FR")}</span><span className="tabular-nums font-black">Après {row.after.toLocaleString("fr-FR")}</span></div>)}</div></div>
 }
 
 function getSystemTotal(session: CashSession) {

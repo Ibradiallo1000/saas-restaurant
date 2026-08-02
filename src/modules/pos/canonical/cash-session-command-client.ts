@@ -58,7 +58,6 @@ export async function openCashSession(input: {
   posStationId?: string | null
   legacySessionId?: string | null
   cashierId?: string | null
-  openingBalance?: number
   deviceInstanceId?: string | null
 }) {
   const token = await input.user.getIdToken()
@@ -70,13 +69,14 @@ export async function openCashSession(input: {
       posStationId: input.posStationId ?? null,
       legacySessionId: input.legacySessionId ?? null,
       cashierId: input.cashierId ?? null,
-      openingBalance: input.openingBalance ?? 0,
       deviceInstanceId: input.deviceInstanceId ?? null,
     }),
   })
   const payload = await response.json().catch(() => null)
   if (!response.ok || payload?.ok !== true) {
-    throw new CashSessionCommandClientError(payload?.error?.code || "CASH_SESSION_OPEN_FAILED", payload?.error?.message || "L’ouverture de caisse a échoué.", response.status)
+    const code = payload?.error?.code || "CASH_SESSION_OPEN_FAILED"
+    const message = payload?.error?.message || (response.status >= 500 ? "Erreur serveur lors de l'ouverture de caisse." : "L'ouverture de caisse a échoué.")
+    throw new CashSessionCommandClientError(code, message, response.status)
   }
   return payload.result
 }

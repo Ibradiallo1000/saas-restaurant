@@ -4,6 +4,7 @@ import * as React from "react"
 import { signOut } from "firebase/auth"
 import { useRouter } from "next/navigation"
 import {
+  AlertTriangle,
   ChefHat,
   CheckCircle2,
   CalendarCheck2,
@@ -25,6 +26,7 @@ import {
 } from "@/components/operational-ui"
 import { PosHeader } from "@/components/pos-ui"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useRestaurant } from "@/design-system/context/RestaurantContext"
 import { useTenant } from "@/design-system/context/TenantProvider"
@@ -50,6 +52,16 @@ import { playNewOrderNotificationSound } from "@/services/notification-sound.ser
 import { isKitchenItem, orderHasKitchenItems } from "@/utils/preparation-logic"
 import { KitchenAvailabilityPanel } from "@/modules/kitchen/KitchenAvailabilityPanel"
 import { resolveStaffDisplayName, resolveStaffRoleLabel } from "@/lib/staff-identity"
+import { executePreparationIssue } from "@/modules/preparation/preparation-issue-client"
+
+type OpenPreparationIssue = {
+  id: string
+  orderId: string
+  orderItemId: string
+  productName?: string
+  comment?: string
+  reason?: string
+}
 
 type KitchenBoardProps = {
   orders: RestaurantOrder[]
@@ -59,6 +71,7 @@ type KitchenBoardProps = {
   servedItems?: ServedPreparationItem[]
   servedHistoryLoading?: boolean
   servedHistoryError?: Error | null
+  openIssues?: OpenPreparationIssue[]
 }
 
 type KitchenColumnStatus =
@@ -93,7 +106,7 @@ const KITCHEN_COLUMNS: Array<{
   },
 ]
 
-export function KitchenBoard({ orders, servedItems = [], servedHistoryLoading = false, servedHistoryError = null, restaurantId, stationName = "Cuisine principale", stationSelector }: KitchenBoardProps) {
+export function KitchenBoard({ orders, servedItems = [], servedHistoryLoading = false, servedHistoryError = null, openIssues = [], restaurantId, stationName = "Cuisine principale", stationSelector }: KitchenBoardProps) {
   const auth = useAuth()
   const router = useRouter()
   const { restaurant } = useRestaurant()
@@ -114,6 +127,7 @@ export function KitchenBoard({ orders, servedItems = [], servedHistoryLoading = 
     ORDER_OPERATION_STATUS.PENDING
   )
   const [workspaceTab, setWorkspaceTab] = React.useState<"orders" | "availability" | "served">("orders")
+  const [resolvingIssueId, setResolvingIssueId] = React.useState<string | null>(null)
   React.useEffect(() => {
     const interval = window.setInterval(() => setNowMs(Date.now()), 30_000)
     return () => window.clearInterval(interval)
@@ -276,6 +290,29 @@ export function KitchenBoard({ orders, servedItems = [], servedHistoryLoading = 
     })
   }, [restaurantId, user])
 
+  const resolveOpenIssue = React.useCallback(async (issue: OpenPreparationIssue) => {
+    if (!user || resolvingIssueId) return
+    setResolvingIssueId(issue.id)
+    try {
+      await executePreparationIssue({
+        user,
+        restaurantId,
+        type: "RESOLVE",
+        orderId: issue.orderId,
+        orderItemId: issue.orderItemId,
+      })
+      toast({ title: "Signalement résolu", description: `${issue.productName || "Produit"} peut reprendre son traitement.` })
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Résolution impossible",
+        description: error instanceof Error ? error.message : "Le signalement reste actif.",
+      })
+    } finally {
+      setResolvingIssueId(null)
+    }
+  }, [restaurantId, resolvingIssueId, toast, user])
+
   const mobileTabs = React.useMemo(() => [
     { id: "pending", label: "Nouvelles", value: groupedOrders.pending.length },
     { id: "preparing", label: "Préparation", value: groupedOrders.preparing.length },
@@ -361,6 +398,27 @@ export function KitchenBoard({ orders, servedItems = [], servedHistoryLoading = 
           <PreparationCounter label="Servies aujourd’hui" value={servedQuantity} />
           <PreparationCounter label="Encore prêtes à remettre" value={readyQuantity} />
         </div>
+        {openIssues.length ? (
+          <section className="shrink-0 rounded-xl border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100" aria-labelledby="open-preparation-issues-title">
+            <div className="flex items-center gap-2 font-bold">
+              <AlertTriangle aria-hidden="true" className="size-5 shrink-0" />
+              <h2 id="open-preparation-issues-title">Signalements ouverts ({openIssues.length})</h2>
+            </div>
+            <div className="mt-2 grid gap-2 lg:grid-cols-2">
+              {openIssues.map((issue) => (
+                <div key={issue.id} className="flex min-w-0 flex-col gap-2 rounded-lg border border-amber-200 bg-white/70 p-3 sm:flex-row sm:items-center dark:border-amber-900 dark:bg-background/40">
+                  <p className="min-w-0 flex-1 break-words text-sm">
+                    <strong>{issue.productName || "Produit"}</strong>
+                    {issue.comment || issue.reason ? ` · ${issue.comment || issue.reason}` : ""}
+                  </p>
+                  <Button type="button" size="sm" variant="outline" className="min-h-11 shrink-0" disabled={Boolean(resolvingIssueId)} onClick={() => void resolveOpenIssue(issue)}>
+                    {resolvingIssueId === issue.id ? "Résolution…" : "Résoudre"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
         <div className="grid shrink-0 grid-cols-3 gap-2 py-2 md:hidden" role="tablist" aria-label="Colonnes Cuisine">
           {mobileTabs.map((tab) => {
             const activeTab = mobileColumn === tab.id

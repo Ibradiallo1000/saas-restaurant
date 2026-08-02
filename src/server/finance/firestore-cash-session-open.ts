@@ -3,6 +3,8 @@ import { Timestamp } from "firebase-admin/firestore"
 
 import {
   DEFAULT_POS_STATION_ID,
+  normalizePaymentProviderToBalanceKey,
+  resolvePaymentBalances,
   resolvePosStation,
   resolveSessionPosStationId,
   resolveStaffDefaultPosStationId,
@@ -25,18 +27,18 @@ export class FirestoreCashSessionOpen {
     posStationId?: string | null
     legacySessionId?: string | null
     deviceInstanceId?: string | null
-    openingBalance?: number
   }) {
     const root = this.db.collection("restaurants").doc(input.restaurantId)
     const sessionRef = input.legacySessionId
       ? root.collection("cashSessions").doc(input.legacySessionId)
       : root.collection("cashSessions").doc()
     return this.db.runTransaction(async (transaction) => {
-      const [restaurantSnapshot, staffSnapshot, userSnapshot, stationsSnapshot, openSessionsSnapshot, legacySessionSnapshot] = await Promise.all([
+      const [restaurantSnapshot, staffSnapshot, userSnapshot, stationsSnapshot, treasuryAccountsSnapshot, openSessionsSnapshot, legacySessionSnapshot] = await Promise.all([
         transaction.get(root),
         transaction.get(root.collection("staff").doc(input.cashierId)),
         transaction.get(this.db.collection("users").doc(input.cashierId)),
         transaction.get(root.collection("posStations")),
+        transaction.get(root.collection("treasuryAccounts")),
         transaction.get(root.collection("cashSessions").where("status", "==", "open")),
         input.legacySessionId ? transaction.get(sessionRef) : Promise.resolve(null),
       ])
@@ -49,16 +51,25 @@ export class FirestoreCashSessionOpen {
         throw error("FORBIDDEN", "Ce compte ne peut pas ouvrir de session de caisse.")
       }
       if (input.requestedBy !== input.cashierId && !["manager", "owner"].includes(input.requestedByRole)) {
-        throw error("FORBIDDEN", "Seul un Manager ou Owner peut ouvrir la session d’un autre caissier.")
+        throw error("FORBIDDEN", "Seul un Manager ou Owner peut ouvrir la session d'un autre caissier.")
       }
 
       const allowed = resolveStaffPosStationIds(staff)
       const requestedStationId = String(input.posStationId || resolveStaffDefaultPosStationId(staff))
-      if (!allowed.includes(requestedStationId)) throw error("POS_STATION_FORBIDDEN", "Ce caissier n’est pas affecté à ce poste.")
+      if (!allowed.includes(requestedStationId)) throw error("POS_STATION_FORBIDDEN", "Ce caissier n'est pas affecté à ce poste.")
       const stationSnapshot = stationsSnapshot.docs.find((entry) => entry.id === requestedStationId)
+      const restaurant = restaurantSnapshot.data() ?? {}
       const station = requestedStationId === DEFAULT_POS_STATION_ID
-        ? resolvePosStation(null)
+        ? {
+          ...resolvePosStation(null),
+          cashFloat: normalizeCashFloat(restaurant.defaultPosStationCashFloat),
+          paymentBalances: resolvePaymentBalances(restaurant.defaultPosStationPaymentBalances),
+        }
         : resolvePosStation(stationSnapshot ? { id: stationSnapshot.id, ...stationSnapshot.data() } : null)
+      station.paymentBalances = resolveTreasuryPaymentBalances(
+        treasuryAccountsSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })),
+        station.paymentBalances
+      )
       if (requestedStationId !== DEFAULT_POS_STATION_ID && !stationSnapshot) throw error("POS_STATION_NOT_FOUND", "Poste de caisse introuvable.")
       if (!station.isActive) throw error("POS_STATION_INACTIVE", "Ce poste de caisse est désactivé.")
 
@@ -85,13 +96,13 @@ export class FirestoreCashSessionOpen {
       if (stationRef && stationSnapshot?.data()?.activeSessionId) {
         throw error("POS_STATION_ALREADY_OPEN", "Une session est déjà ouverte sur ce poste.")
       }
-      const restaurant = restaurantSnapshot.data() ?? {}
       if (requestedStationId === DEFAULT_POS_STATION_ID && restaurant.defaultPosStationActiveSessionId) {
         throw error("POS_STATION_ALREADY_OPEN", "Une session est déjà ouverte sur la caisse principale.")
       }
 
       const now = Timestamp.now()
       const cashierName = String(staff.nomComplet || staff.name || staff.staffName || user.nomComplet || user.name || user.email || "Caissier")
+      const openingPaymentBalances = resolvePaymentBalances(station.paymentBalances)
       const session: DocumentData = {
         restaurantId: input.restaurantId,
         cashierId: input.cashierId,
@@ -99,20 +110,25 @@ export class FirestoreCashSessionOpen {
         staffId: input.cashierId,
         cashierName,
         staffName: cashierName,
-        posStationId: station.id,
-        posStationName: station.name,
-        posStationCode: station.code,
+        posStationId: station.id || DEFAULT_POS_STATION_ID,
+        posStationName: station.name || "Caisse principale",
+        posStationCode: station.code || DEFAULT_POS_STATION_ID,
         posCatalogScopeSnapshot: {
-          mode: station.catalogMode,
-          allowedCategoryIds: station.allowedCategoryIds,
-          allowedProductIds: station.allowedProductIds,
-          excludedProductIds: station.excludedProductIds,
+          mode: station.catalogMode || "ALL",
+          allowedCategoryIds: station.allowedCategoryIds || [],
+          allowedProductIds: station.allowedProductIds || [],
+          excludedProductIds: station.excludedProductIds || [],
         },
         deviceInstanceId: cleanDeviceId(input.deviceInstanceId),
         status: "open",
         openedAt: now,
         closedAt: null,
-        openingBalance: normalizeOpeningBalance(input.openingBalance),
+        openingBalance: typeof station.cashFloat?.amount === "number" && Number.isFinite(station.cashFloat.amount) && station.cashFloat.amount >= 0
+          ? Math.round(station.cashFloat.amount)
+          : 0,
+        openingFloatSource: station.virtual ? "restaurant_default_pos_station" : "pos_station",
+        openingPaymentBalances,
+        paymentBalanceSource: "treasury_accounts",
         closingBalance: null,
         totalCash: 0,
         totalMobile: 0,
@@ -133,5 +149,33 @@ export class FirestoreCashSessionOpen {
 }
 
 function error(code: string, message: string) { return new FinancialLedgerError(code, message) }
-function normalizeOpeningBalance(value: unknown) { const amount = Math.round(Number(value || 0)); if (!Number.isFinite(amount) || amount < 0) throw error("INVALID_OPENING_BALANCE", "Fond de caisse invalide."); return amount }
 function cleanDeviceId(value: unknown) { return typeof value === "string" && value.trim() ? value.trim().slice(0, 128) : null }
+function normalizeCashFloat(value: unknown) {
+  const source = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+  const amount = Math.round(Number(source.amount || 0))
+  return {
+    amount: Number.isFinite(amount) && amount >= 0 ? amount : 0,
+    updatedAt: source.updatedAt ?? null,
+    updatedBy: typeof source.updatedBy === "string" && source.updatedBy.trim() ? source.updatedBy.trim() : null,
+  }
+}
+
+function resolveTreasuryPaymentBalances(
+  accounts: Array<Record<string, unknown>>,
+  fallback: unknown
+) {
+  const balances = resolvePaymentBalances(fallback)
+  for (const account of accounts) {
+    if (account.active === false) continue
+    const key =
+      normalizePaymentProviderToBalanceKey(account.id) ||
+      normalizePaymentProviderToBalanceKey(account.provider) ||
+      normalizePaymentProviderToBalanceKey(account.name)
+    if (!key) continue
+    const amount = Math.round(Number(account.balance || 0))
+    balances[key] = Number.isFinite(amount) && amount >= 0 ? amount : 0
+  }
+  return balances
+}

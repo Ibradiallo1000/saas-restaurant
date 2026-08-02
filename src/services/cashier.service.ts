@@ -42,6 +42,10 @@ export type CashSession = {
   retainedFloat?: number
   expectedHandover?: number
   expectedMobileMoney?: number
+  openingPaymentBalances?: Record<string, number>
+  sessionPaymentBalanceChanges?: Record<string, number>
+  closingPaymentBalances?: Record<string, number>
+  totalsByProvider?: Record<string, number>
   netCashSales?: number
   closeSnapshot?: Record<string, any>
   totalCash: number

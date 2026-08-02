@@ -90,7 +90,7 @@ import {
   useCanonicalPosOrders,
 } from "@/modules/pos/canonical"
 import { closeCashSessionV2, openCashSession } from "@/modules/pos/canonical/cash-session-command-client"
-import { DEFAULT_POS_STATION, isProductAllowedAtPosStation, resolvePosStation, resolveStaffDefaultPosStationId, resolveStaffPosStationIds } from "@/lib/pos-stations"
+import { DEFAULT_POS_STATION, POS_STATION_PAYMENT_BALANCE_KEYS, isProductAllowedAtPosStation, normalizePaymentProviderToBalanceKey, resolvePaymentBalances, resolvePosStation, resolveStaffDefaultPosStationId, resolveStaffPosStationIds } from "@/lib/pos-stations"
 import { resolveStaffDisplayName } from "@/lib/staff-identity"
 import type { SelectedCartOption } from "@/modules/restaurant/types"
 import {
@@ -767,16 +767,21 @@ function POSPageContent() {
     const systemCash = openingBalance + sessionCalculatedTotals.totalCash
     const systemMobile = sessionCalculatedTotals.totalMobile
     const systemTotal = systemCash + systemMobile
+    const paymentBalanceRows = buildPaymentBalanceRows(
+      activeCashSession?.openingPaymentBalances,
+      authoritativeSessionAggregate?.totalsByProvider ?? activeCashSession?.totalsByProvider
+    )
 
     return {
       openingBalance,
       systemCash,
       systemMobile,
       systemTotal,
+      paymentBalanceRows,
       cash: declaredCashAmount - systemCash,
       expectedHandover: Math.max(0, declaredCashAmount - retainedFloatAmount),
     }
-  }, [activeCashSession?.openingBalance, declaredCashAmount, retainedFloatAmount, sessionCalculatedTotals])
+  }, [activeCashSession?.openingBalance, activeCashSession?.openingPaymentBalances, activeCashSession?.totalsByProvider, authoritativeSessionAggregate?.totalsByProvider, declaredCashAmount, retainedFloatAmount, sessionCalculatedTotals])
 
   React.useEffect(() => {
     if (!activeCashSession?.id || activeCashSession.status !== "open") return
@@ -1205,6 +1210,7 @@ function POSPageContent() {
             : Number(canonicalCreation?.total ?? total),
           method: method === "cash" ? "cash" : "mobile_money",
           provider: method === "mobile" ? selectedMobileConfig?.code ?? null : null,
+          paymentAccountId: method === "mobile" ? selectedMobileConfig?.paymentAccountId ?? null : null,
           externalReference: mobilePaymentCode,
           cashSessionId: activeCashSession.id,
           idempotencyKey: posCommandIdempotencyKey([
@@ -1379,6 +1385,7 @@ function POSPageContent() {
         receivedAmount,
         method: method === "cash" ? "cash" : "mobile_money",
         provider: method === "mobile" ? mobileMoneyProvider : null,
+        paymentAccountId: method === "mobile" ? order.paymentAccountId ?? order.paymentRequest?.paymentAccountId ?? null : null,
         externalReference: null,
         cashSessionId: activeCashSession.id,
         idempotencyKey: posCommandIdempotencyKey([
@@ -2694,7 +2701,7 @@ function POSPageContent() {
       }}
     />
 
-    <PosSessionClosingDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} title="Clôture de caisse" description="Comptez uniquement les espèces physiques. Le Mobile Money est issu du registre des paiements." summary={<div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><CloseAmount label="Fond initial" value={closeSessionDiff.openingBalance}/><CloseAmount label="Espèces attendues (fond inclus)" value={closeSessionDiff.systemCash}/><CloseAmount label="Mobile Money enregistré" value={closeSessionDiff.systemMobile}/><CloseAmount label="Total théorique" value={closeSessionDiff.systemTotal} strong/></div>} expectedCash={<div><Label htmlFor="declared-cash">Espèces physiques comptées</Label><Input autoFocus id="declared-cash" inputMode="numeric" type="number" min={0} value={declaredCashInput} onChange={(event) => setDeclaredCashInput(event.target.value)} className="mt-1 min-h-12 text-right text-xl font-bold tabular-nums" aria-invalid={closeSessionDiff.cash !== 0}/></div>} declaredCash={<div><Label htmlFor="retained-float">Fond conservé en caisse</Label><Input id="retained-float" inputMode="numeric" type="number" min={0} value={retainedFloatInput} onChange={(event) => setRetainedFloatInput(event.target.value)} className="mt-1 min-h-12 text-right text-xl font-bold tabular-nums"/></div>} variance={<div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><VarianceCard label="Écart espèces" expected={closeSessionDiff.systemCash} received={declaredCashAmount} variance={closeSessionDiff.cash}/><CloseAmount label="Versement attendu" value={closeSessionDiff.expectedHandover} strong/></div>} footer={<><Button variant="outline" className="min-h-12" disabled={processing} onClick={() => setCloseDialogOpen(false)}>Annuler</Button><Button className="min-h-12" disabled={processing || retainedFloatAmount > declaredCashAmount} onClick={closeMyCashSession}>{processing ? <Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none"/> : null}Confirmer clôture</Button></>} />
+    <PosSessionClosingDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} title="Clôture de caisse" description="Comptez uniquement les espèces physiques. Le Mobile Money est issu du registre des paiements." summary={<div className="space-y-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><CloseAmount label="Fond initial" value={closeSessionDiff.openingBalance}/><CloseAmount label="Espèces attendues (fond inclus)" value={closeSessionDiff.systemCash}/><CloseAmount label="Mobile Money enregistré" value={closeSessionDiff.systemMobile}/><CloseAmount label="Total théorique" value={closeSessionDiff.systemTotal} strong/></div><PaymentBalanceSummary rows={closeSessionDiff.paymentBalanceRows}/></div>} expectedCash={<div><Label htmlFor="declared-cash">Espèces physiques comptées</Label><Input autoFocus id="declared-cash" inputMode="numeric" type="number" min={0} value={declaredCashInput} onChange={(event) => setDeclaredCashInput(event.target.value)} className="mt-1 min-h-12 text-right text-xl font-bold tabular-nums" aria-invalid={closeSessionDiff.cash !== 0}/></div>} declaredCash={<div><Label htmlFor="retained-float">Fond conservé en caisse</Label><Input id="retained-float" inputMode="numeric" type="number" min={0} value={retainedFloatInput} onChange={(event) => setRetainedFloatInput(event.target.value)} className="mt-1 min-h-12 text-right text-xl font-bold tabular-nums"/></div>} variance={<div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><VarianceCard label="Écart espèces" expected={closeSessionDiff.systemCash} received={declaredCashAmount} variance={closeSessionDiff.cash}/><CloseAmount label="Versement attendu" value={closeSessionDiff.expectedHandover} strong/></div>} footer={<><Button variant="outline" className="min-h-12" disabled={processing} onClick={() => setCloseDialogOpen(false)}>Annuler</Button><Button className="min-h-12" disabled={processing || retainedFloatAmount > declaredCashAmount} onClick={closeMyCashSession}>{processing ? <Loader2 className="mr-2 size-4 animate-spin motion-reduce:animate-none"/> : null}Confirmer clôture</Button></>} />
     </>
   )
 }
@@ -2714,6 +2721,39 @@ function VarianceCard({ label, expected, received, variance }: { label: string; 
   const state = variance === 0 ? "balanced" : variance > 0 ? "positive" : "negative"
   const stateLabel = variance === 0 ? `${label} · Correct` : variance > 0 ? `${label} · Excédent` : `${label} · Manque`
   return <PosVarianceDisplay label={stateLabel} expected={`${expected.toLocaleString("fr-FR")} FCFA`} received={`${received.toLocaleString("fr-FR")} FCFA`} variance={`${variance.toLocaleString("fr-FR")} FCFA`} state={state} />
+}
+
+const PAYMENT_BALANCE_LABELS: Record<string, string> = {
+  orange_money: "Orange Money",
+  wave: "Wave",
+  moov_money: "Moov Money",
+  card: "Carte bancaire",
+  bank_transfer: "Virement bancaire",
+}
+
+function buildPaymentBalanceRows(openingValue: unknown, totalsByProvider: unknown) {
+  const opening = resolvePaymentBalances(openingValue)
+  const changes = resolvePaymentBalanceChanges(totalsByProvider)
+  return POS_STATION_PAYMENT_BALANCE_KEYS.map((key) => {
+    const before = Number(opening[key] || 0)
+    const session = Number(changes[key] || 0)
+    return { key, label: PAYMENT_BALANCE_LABELS[key], before, session, after: Math.max(0, before + session) }
+  })
+}
+
+function resolvePaymentBalanceChanges(value: unknown) {
+  const changes = resolvePaymentBalances(null)
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  for (const [provider, amountValue] of Object.entries(source)) {
+    const key = normalizePaymentProviderToBalanceKey(provider)
+    const amount = Math.round(Number(amountValue || 0))
+    if (key && Number.isFinite(amount)) changes[key] += amount
+  }
+  return changes
+}
+
+function PaymentBalanceSummary({ rows }: { rows: Array<{ key: string; label: string; before: number; session: number; after: number }> }) {
+  return <div className="rounded-[var(--radius-dashboard-widget)] border border-[var(--pos-border)] bg-[var(--pos-muted)] p-3"><p className="text-[10px] font-black uppercase text-muted-foreground">Soldes moyens de paiement</p><div className="mt-2 grid gap-2">{rows.map((row) => <div key={row.key} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 text-xs"><span className="min-w-0 truncate font-semibold">{row.label}</span><span className="tabular-nums text-muted-foreground">Avant {row.before.toLocaleString("fr-FR")}</span><span className="tabular-nums text-muted-foreground">Session {row.session.toLocaleString("fr-FR")}</span><span className="tabular-nums font-black">Après {row.after.toLocaleString("fr-FR")}</span></div>)}</div></div>
 }
 
 function POSFooterCard({

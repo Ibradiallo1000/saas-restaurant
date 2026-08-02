@@ -47,7 +47,16 @@ type RestaurantPaymentConfig = {
   methodCode: string
   variantId: string
   merchantNumber: string
+  paymentAccountId?: string | null
   isActive: boolean
+}
+
+type TreasuryAccount = {
+  id: string
+  name?: string
+  provider?: string
+  kind?: string
+  active?: boolean
 }
 
 export default function RestaurantPaymentsSettingsClient() {
@@ -56,6 +65,7 @@ export default function RestaurantPaymentsSettingsClient() {
   const { toast } = useToast()
   const [methodCode, setMethodCode] = React.useState("")
   const [merchantNumber, setMerchantNumber] = React.useState("")
+  const [paymentAccountId, setPaymentAccountId] = React.useState("")
   const [isSaving, setIsSaving] = React.useState(false)
   const [pendingId, setPendingId] = React.useState<string | null>(null)
   const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null)
@@ -99,6 +109,17 @@ export default function RestaurantPaymentsSettingsClient() {
   const { data: configs, isLoading: isLoadingConfigs, error: configsError, refetch: refetchConfigs } =
     useCollectionOnce<RestaurantPaymentConfig>(configsQuery)
 
+  const treasuryAccountsQuery = useMemoFirebase(() => {
+    if (!db || !restaurantId) return null
+    return query(
+      collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, COLLECTION_NAMES.TREASURY_ACCOUNTS),
+      where("active", "==", true),
+      limit(50)
+    )
+  }, [db, restaurantId])
+  const { data: treasuryAccounts, isLoading: isLoadingTreasuryAccounts } =
+    useCollectionOnce<TreasuryAccount>(treasuryAccountsQuery)
+
   const compatibleMethods = React.useMemo(() => {
     const availableVariants = variants ?? []
     const availableMethodCodes = new Set(availableVariants.map(v => v.methodCode))
@@ -119,6 +140,12 @@ export default function RestaurantPaymentsSettingsClient() {
       setMethodCode(compatibleMethods[0].code)
     }
   }, [compatibleMethods, methodCode])
+
+  React.useEffect(() => {
+    if (!paymentAccountId && treasuryAccounts?.[0]) {
+      setPaymentAccountId(treasuryAccounts[0].id)
+    }
+  }, [paymentAccountId, treasuryAccounts])
 
   React.useEffect(() => {
     let cancelled = false
@@ -189,12 +216,14 @@ export default function RestaurantPaymentsSettingsClient() {
         methodCode,
         variantId: selectedVariant.id,
         merchantNumber: merchantNumber.trim(),
+        paymentAccountId: paymentAccountId || null,
         isActive: true,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
 
       setMerchantNumber("")
+      setPaymentAccountId("")
       refetchConfigs()
       toast({ 
         title: "✅ Paiement configuré", 
@@ -264,13 +293,14 @@ export default function RestaurantPaymentsSettingsClient() {
   const paymentMethods = (configs ?? []).map((config) => {
     const variant = variants?.find((item) => item.id === config.variantId)
     const method = methods?.find((item) => item.code === (variant?.methodCode || config.methodCode))
+    const account = treasuryAccounts?.find((item) => item.id === config.paymentAccountId)
     return {
       id: config.id,
       name: method?.name ?? config.methodCode,
       provider: variant?.type === "ussd" ? "USSD" : variant?.type === "link" ? "Lien" : undefined,
       logo: method?.logoUrl ? <img src={method.logoUrl} alt="" className="size-8 object-contain"/> : undefined,
       status: <span className="text-xs font-semibold">{config.isActive ? "Actif" : "Inactif"}</span>,
-      maskedIdentifier: <>Marchand : {config.merchantNumber}</>,
+      maskedIdentifier: <>Marchand : {config.merchantNumber}{config.paymentAccountId ? <span className="block">Compte : {account?.name || config.paymentAccountId}</span> : null}</>,
       enabled: config.isActive,
       onEnabledChange: (checked: boolean) => toggleConfig(config.id, checked),
       disabled: pendingId === config.id,
@@ -292,11 +322,12 @@ export default function RestaurantPaymentsSettingsClient() {
           <SettingsEmptyState title={`Aucun moyen de paiement disponible pour ${countryCode}`}/>
         )}
         {selectedVariant && !isAlreadyConfigured ? <SettingsTextField label="Numéro marchand" description="Le numéro fourni par votre opérateur de paiement mobile" value={merchantNumber} onChange={(event) => setMerchantNumber(event.target.value)} placeholder="Ex: 123456789" className="font-mono"/> : null}
+        {selectedVariant && !isAlreadyConfigured ? <SettingsSelect label="Compte financier" value={paymentAccountId} onChange={(event) => setPaymentAccountId(event.target.value)} options={[{ value: "", label: "Fallback historique — pas de compte rattaché" }, ...((treasuryAccounts ?? []).map((account) => ({ value: account.id, label: account.name || account.id })))]} /> : null}
         {selectedVariant && merchantNumber.trim() && !isAlreadyConfigured ? <div className="rounded-[var(--radius-dashboard-widget)] border border-[var(--settings-border)] bg-[var(--settings-section)] p-4"><p className="mb-3 flex items-center gap-2 text-sm font-semibold"><Smartphone aria-hidden="true" className="size-4"/>Test de paiement</p><SettingsNumberField label="Montant (FCFA)" value={testAmount} onChange={(event) => setTestAmount(Number(event.target.value))} min={100} step={100}/><div className="mt-3 rounded-[var(--radius-dashboard-input)] bg-[var(--settings-panel)] p-3"><p className="text-xs text-[var(--settings-muted)]">Code à générer :</p><p className="break-all font-mono text-sm font-semibold">{preview || selectedVariant.ussdTemplate || "En attente..."}</p></div></div> : null}
       </SettingsFieldGroup>
       {selectedVariant && !isAlreadyConfigured ? <Button type="submit" disabled={!merchantNumber.trim() || isSaving} className="min-h-11 w-full sm:w-auto">{isSaving ? <Loader2 aria-hidden="true" className="mr-2 size-4 animate-spin motion-reduce:animate-none"/> : <Plus aria-hidden="true" className="mr-2 size-4"/>}{isSaving ? "Configuration..." : "Ajouter"}</Button> : null}
     </SettingsForm>}
-    {(isLoadingVariants || isLoadingMethods || isLoadingConfigs) ? (
+    {(isLoadingVariants || isLoadingMethods || isLoadingConfigs || isLoadingTreasuryAccounts) ? (
       <SettingsLoadingState label="Chargement des configurations de paiement"/>
     ) : configsError ? (
       <SettingsErrorState title="Configurations indisponibles" description="Impossible de charger les configurations de paiement du restaurant."/>

@@ -442,6 +442,7 @@ export function planPayment(
       changeDue: input.receivedAmount - due,
       method: input.method,
       provider: input.provider,
+      paymentAccountId: input.paymentAccountId ?? null,
       externalReference: input.externalReference,
       cashSessionId: input.cashSessionId,
     },

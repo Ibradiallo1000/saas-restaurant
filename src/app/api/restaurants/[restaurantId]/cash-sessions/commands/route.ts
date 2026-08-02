@@ -26,16 +26,18 @@ export async function POST(request: NextRequest, context: { params: Promise<{ re
       posStationId: typeof body.posStationId === "string" ? body.posStationId : null,
       legacySessionId: typeof body.legacySessionId === "string" ? body.legacySessionId : null,
       deviceInstanceId: typeof body.deviceInstanceId === "string" ? body.deviceInstanceId : null,
-      openingBalance: body.openingBalance,
     })
     return Response.json({ ok: true, result })
   } catch (error) {
     if (error instanceof FinancialLedgerError) {
       const status = error.code === "FORBIDDEN" || error.code === "POS_STATION_FORBIDDEN" ? 403 : error.code.includes("NOT_FOUND") ? 404 : 409
+      console.error("CASH_SESSION_OPEN_BUSINESS_ERROR", { code: error.code, message: error.message, restaurantId: (await context.params)?.restaurantId })
       return failure(error.code, error.message, status)
     }
-    console.error("CASH_SESSION_OPEN_FAILED", error)
-    return failure("INTERNAL_ERROR", "L’ouverture de caisse a échoué.", 500)
+    const metadata = error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { value: String(error) }
+    console.error("CASH_SESSION_OPEN_FAILED", metadata)
+    const cause = error instanceof Error ? error.message : String(error)
+    return failure("INTERNAL_ERROR", cause, 500)
   }
 }
 

@@ -96,6 +96,7 @@ export async function handlePosCommandRequest(
           ? "mobile_money"
           : invalid("method"),
         provider: nullableString(body.provider),
+        paymentAccountId: nullableString(body.paymentAccountId),
         externalReference: nullableString(body.externalReference),
         cashSessionId: requiredString(body.cashSessionId, "cashSessionId"),
       })
