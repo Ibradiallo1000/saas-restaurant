@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       scope: "/",
       display: "standalone",
       orientation: "portrait-primary",
-      background_color: "#ffffff",
+      background_color: "#fffaf3",
       theme_color: themeColor,
       categories: ["food", "business", "productivity"],
       icons: [

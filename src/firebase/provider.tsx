@@ -5,6 +5,7 @@ import { FirebaseApp } from 'firebase/app';
 import { Firestore } from 'firebase/firestore';
 import { Auth, User, browserLocalPersistence, onAuthStateChanged, setPersistence } from 'firebase/auth';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener'
+import { AppSplashScreen } from '@/components/brand/AppSplashScreen'
 
 interface FirebaseProviderProps {
   children: ReactNode;
@@ -136,11 +137,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
 };
 
 function AuthLoadingScreen() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-    </div>
-  );
+  return <AppSplashScreen />;
 }
 
 /**

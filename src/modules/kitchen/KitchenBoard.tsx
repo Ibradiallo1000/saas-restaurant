@@ -334,7 +334,24 @@ export function KitchenBoard({ orders, servedItems = [], servedHistoryLoading = 
     >
       <div className="-mt-[var(--kitchen-gutter-y)] flex h-[calc(100%+var(--kitchen-gutter-y))] min-h-0 flex-col gap-2 md:mt-0 md:h-full md:gap-[var(--pos-layout-gap)]">
         <div className="grid shrink-0 grid-cols-3 gap-2 py-2" role="tablist" aria-label="Espace Cuisine">
-          <button type="button" role="tab" aria-selected={workspaceTab === "orders"} onClick={() => setWorkspaceTab("orders")} className={workspaceTab === "orders" ? "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-bold text-white" : "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--order-surface-muted)] px-4 text-sm font-bold"}>Commandes</button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={workspaceTab === "orders"}
+            aria-label={`Commandes, ${groupedOrders.pending.length} en attente`}
+            onClick={() => setWorkspaceTab("orders")}
+            className={workspaceTab === "orders" ? "dashboard-focus-visible flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl bg-[var(--brand-primary)] px-3 text-sm font-bold text-white" : "dashboard-focus-visible flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl bg-[var(--order-surface-muted)] px-3 text-sm font-bold"}
+          >
+            <span className="min-w-0 truncate">Commandes</span>
+            {groupedOrders.pending.length > 0 ? (
+              <span
+                className={workspaceTab === "orders" ? "inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-white px-1.5 py-0.5 text-[10px] font-black leading-none text-[var(--brand-primary)]" : "inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-[var(--brand-primary)] px-1.5 py-0.5 text-[10px] font-black leading-none text-white"}
+                aria-hidden="true"
+              >
+                {groupedOrders.pending.length > 99 ? "99+" : groupedOrders.pending.length}
+              </span>
+            ) : null}
+          </button>
           <button type="button" role="tab" aria-selected={workspaceTab === "availability"} onClick={() => setWorkspaceTab("availability")} className={workspaceTab === "availability" ? "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--brand-primary)] px-4 text-sm font-bold text-white" : "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--order-surface-muted)] px-4 text-sm font-bold"}>Disponibilités</button>
           <button type="button" role="tab" aria-selected={workspaceTab === "served"} onClick={() => setWorkspaceTab("served")} className={workspaceTab === "served" ? "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--brand-primary)] px-2 text-sm font-bold text-white" : "dashboard-focus-visible min-h-11 rounded-xl bg-[var(--order-surface-muted)] px-2 text-sm font-bold"}>Servies aujourd’hui</button>
         </div>

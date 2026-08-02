@@ -175,7 +175,7 @@ export default function CheckoutQRModal({
       open={open}
       onOpenChange={(nextOpen) => !nextOpen && onClose()}
       title="Commander"
-      description={`Service à la table ${tableContext.name || tableContext.id}`}
+      description={`Service à la ${tableContext.name || tableContext.id}`}
       closeOnOverlayClick={!loading}
       footer={
         <PublicButton fullWidth size="action" loading={loading} loadingLabel="Validation en cours" onClick={handleSubmit}>
