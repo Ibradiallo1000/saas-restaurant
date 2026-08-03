@@ -146,6 +146,20 @@ export async function issueCanonicalReviewAccess(input: {
   return parseResponse(response, "Impossible d’ouvrir l’accès aux avis.")
 }
 
+export async function getCanonicalTableSession(input: {
+  app: FirebaseApp
+  user: User
+  restaurantId: string
+  tableSessionId: string
+}) {
+  const headers = await publicHeaders(input.app, input.user)
+  const response = await fetch(
+    `/api/restaurants/${encodeURIComponent(input.restaurantId)}/table-sessions/${encodeURIComponent(input.tableSessionId)}`,
+    { headers }
+  )
+  return parseResponse(response, "Impossible de charger la session de table.")
+}
+
 export function rememberQrCapability(orderId: string, capability: string) {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(`oordera:qr-capability:${orderId}`, capability)

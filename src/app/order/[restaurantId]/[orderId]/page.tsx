@@ -48,6 +48,7 @@ import {
 } from "@/services/payment-methods.service"
 import {
   getCanonicalPublicOrder,
+  getCanonicalTableSession,
   getRememberedQrCapability,
   qrCanonicalEnabled,
   requestCanonicalTablePayment,
@@ -98,6 +99,18 @@ function ClientOrderTrackingContent() {
   const [paymentMethods, setPaymentMethods] = React.useState<AvailablePaymentMethod[]>([])
   const [paymentMethodsLoading, setPaymentMethodsLoading] = React.useState(false)
   const [highlightedOrderIds, setHighlightedOrderIds] = React.useState<Set<string>>(new Set())
+  const [sessionAggregatesOrders, setSessionAggregatesOrders] = React.useState<any[] | null>(null)
+  const [sessionAggregates, setSessionAggregates] = React.useState<{
+    totalDue: number
+    totalOrdered: number
+    totalPaid: number
+    totalCancelled: number
+    totalDiscount: number
+    totalRefunded: number
+    orderCount: number
+    paidOrderCount: number
+    unpaidOrderCount: number
+  } | null>(null)
   const feedbackInitializedRef = React.useRef(false)
   const lastFeedbackAtRef = React.useRef(0)
   const hasInteractedRef = React.useRef(false)
@@ -153,7 +166,52 @@ function ClientOrderTrackingContent() {
   }, [activeTableSessionId, db, restaurantId])
   const { data: tableSession } = useDoc(tableSessionQuery)
 
-  const localTableUserId = getLocalTableUserId()
+const localTableUserId = getLocalTableUserId()
+
+  // En mode canonique, on interroge le serveur pour obtenir les agrégats de la session de table
+  // (totalDue, liste des commandes de la session) afin d'afficher le cumul de toutes les commandes
+  // et non seulement la dernière commande scannée.
+  React.useEffect(() => {
+    if (!useCanonicalQr || !restaurantId || !order || !user?.isAnonymous || !activeTableSessionId) return
+    let cancelled = false
+    let timeout: number | null = null
+    const load = async () => {
+      try {
+        const response = await getCanonicalTableSession({
+          app,
+          user,
+          restaurantId,
+          tableSessionId: activeTableSessionId,
+        })
+        if (cancelled) return
+        setSessionAggregates({
+          totalDue: response.totalDue ?? 0,
+          totalOrdered: response.totalOrdered ?? 0,
+          totalPaid: response.totalPaid ?? 0,
+          totalCancelled: response.totalCancelled ?? 0,
+          totalDiscount: response.totalDiscount ?? 0,
+          totalRefunded: response.totalRefunded ?? 0,
+          orderCount: response.orderCount ?? 0,
+          paidOrderCount: response.paidOrderCount ?? 0,
+          unpaidOrderCount: response.unpaidOrderCount ?? 0,
+        })
+        if (response.orders) {
+          setSessionAggregatesOrders(response.orders)
+        }
+      } catch (sessionError) {
+        console.error("[SESSION_AGGREGATES_ERROR]", sessionError)
+      } finally {
+        if (!cancelled) {
+          timeout = window.setTimeout(load, 5000)
+        }
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+      if (timeout !== null) window.clearTimeout(timeout)
+    }
+  }, [app, order, restaurantId, useCanonicalQr, user, activeTableSessionId])
 
   React.useEffect(() => {
     if (!db || !restaurantId || !orderId || useCanonicalQr) return
@@ -468,7 +526,13 @@ function ClientOrderTrackingContent() {
   const activeOrders = tableSessionOrders.filter((sessionOrder: any) => getClientOrderStep(sessionOrder) !== 4)
   const servedOrders = tableSessionOrders.filter((sessionOrder: any) => getClientOrderStep(sessionOrder) === 4)
   const allServed = tableSessionOrders.length > 0 && activeOrders.length === 0
-  const sessionTotal = tableSessionOrders.reduce((sum: number, sessionOrder: any) => sum + getOrderTotal(sessionOrder), 0)
+  const sessionTotal =
+    useCanonicalQr && sessionAggregates
+      ? sessionAggregates.totalDue
+      : tableSessionOrders.reduce(
+          (sum: number, sessionOrder: any) => sum + getOrderTotal(sessionOrder),
+          0
+        )
   const paymentTargetOrders = tableSessionOrders.filter((sessionOrder: any) => sessionOrder.paymentStatus !== "paid")
   const hasPendingPayment = paymentTargetOrders.length > 0
   const shouldShowPostServicePayment = allServed && isQrTableOrder

@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server"
-import { FieldValue, Timestamp } from "firebase-admin/firestore"
+import { FieldValue } from "firebase-admin/firestore"
 
 import { getAdminAuth, getAdminFirestore } from "@/server/firebase-admin"
 import { createTableCapability } from "@/server/orders/create/security"
 import { assertPublicOrderSecurityConfigured } from "@/server/orders/public-security-config"
 import { verifyOrderAppCheckToken } from "@/server/orders/verify-app-check"
-
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000
 
 type RouteContext = {
   params: Promise<{ restaurantId: string }>
@@ -47,75 +45,12 @@ export async function POST(request: Request, context: RouteContext) {
       const table = tableSnap.data() || {}
       const tableName = typeof table.name === "string" ? table.name : tableId
       const zoneId = typeof table.zoneId === "string" && table.zoneId ? table.zoneId : "main"
-      const activeSessionsQuery = sessionsRef
-        .where("tableId", "==", tableId)
-        .where("status", "==", "active")
-      const activeSessionsSnap = await transaction.get(activeSessionsQuery)
-      const reusableSessions = activeSessionsSnap.docs.filter((sessionDoc) => {
-        const session = sessionDoc.data() || {}
-        return !isSessionExpired(session.lastActivityAt || session.startedAt || session.createdAt)
-      })
 
-      if (reusableSessions.length > 0) {
-        const selectedSessionDoc = reusableSessions[0]
-        const selectedSession = selectedSessionDoc.data() || {}
-
-        reusableSessions.slice(1).forEach((duplicateSessionDoc) => {
-          transaction.update(duplicateSessionDoc.ref, {
-            status: "closed",
-            closedAt: FieldValue.serverTimestamp(),
-            lastActivityAt: FieldValue.serverTimestamp(),
-            closedReason: "duplicate_active_session",
-          })
-        })
-
-        activeSessionsSnap.docs
-          .filter((sessionDoc) => !reusableSessions.some((reusable) => reusable.id === sessionDoc.id))
-          .forEach((expiredSessionDoc) => {
-            transaction.update(expiredSessionDoc.ref, {
-              status: "closed",
-              closedAt: FieldValue.serverTimestamp(),
-              lastActivityAt: FieldValue.serverTimestamp(),
-              closedReason: "expired_active_session",
-            })
-          })
-
-        transaction.update(selectedSessionDoc.ref, {
-          lastActivityAt: FieldValue.serverTimestamp(),
-        })
-        transaction.update(tableRef, {
-          status: "occupied",
-          currentSessionId: selectedSessionDoc.id,
-          updatedAt: FieldValue.serverTimestamp(),
-          lastActivityAt: FieldValue.serverTimestamp(),
-        })
-        transaction.create(visitsRef.doc(), {
-          tableId,
-          sessionId: selectedSessionDoc.id,
-          tableSessionId: selectedSessionDoc.id,
-          createdAt: FieldValue.serverTimestamp(),
-        })
-
-        return {
-          tableId,
-          tableName,
-          zoneId,
-          sessionId: selectedSessionDoc.id,
-          tableSessionId: selectedSessionDoc.id,
-          totalAmount: Number(selectedSession.totalAmount || 0),
-          status: "active",
-        }
-      }
-
-      activeSessionsSnap.docs.forEach((expiredSessionDoc) => {
-        transaction.update(expiredSessionDoc.ref, {
-          status: "closed",
-          closedAt: FieldValue.serverTimestamp(),
-          lastActivityAt: FieldValue.serverTimestamp(),
-          closedReason: "expired_active_session",
-        })
-      })
-
+      // The table's currentSessionId is the single source of truth for which
+      // session is active. A session stays active as long as the table is
+      // occupied; there is no automatic 30-minute expiry. The table is only
+      // released explicitly by the staff (closeActiveTableSession), at which
+      // point currentSessionId is cleared and a new scan creates a new session.
       const currentSessionId =
         typeof table.currentSessionId === "string" ? table.currentSessionId : ""
       if (currentSessionId) {
@@ -125,14 +60,42 @@ export async function POST(request: Request, context: RouteContext) {
 
         if (existingSessionSnap.exists && existingSession.status === "active") {
           transaction.update(existingSessionRef, {
-            status: "closed",
-            closedAt: FieldValue.serverTimestamp(),
             lastActivityAt: FieldValue.serverTimestamp(),
-            closedReason: "stale_table_pointer",
+          })
+          transaction.update(tableRef, {
+            status: "occupied",
+            updatedAt: FieldValue.serverTimestamp(),
+            lastActivityAt: FieldValue.serverTimestamp(),
+          })
+          transaction.create(visitsRef.doc(), {
+            tableId,
+            sessionId: currentSessionId,
+            tableSessionId: currentSessionId,
+            createdAt: FieldValue.serverTimestamp(),
+          })
+
+          return {
+            tableId,
+            tableName,
+            zoneId,
+            sessionId: currentSessionId,
+            tableSessionId: currentSessionId,
+            totalAmount: Number(existingSession.totalAmount || 0),
+            status: "active",
+          }
+        }
+
+        if (existingSessionSnap.exists) {
+          // Session was closed (table released explicitly). A new scan must
+          // create a fresh session instead of resurrecting the closed one.
+          transaction.update(existingSessionRef, {
+            lastActivityAt: FieldValue.serverTimestamp(),
+            closedReason: "closed_table_pointer",
           })
         }
       }
 
+      // No active session for this table: create a new one.
       const sessionRef = sessionsRef.doc()
       transaction.create(sessionRef, {
         tableId,
@@ -173,7 +136,7 @@ export async function POST(request: Request, context: RouteContext) {
       restaurantId,
       tableId: result.tableId,
       tableSessionId: result.tableSessionId,
-      expiresAt: Date.now() + SESSION_TIMEOUT_MS,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
     })
 
     return NextResponse.json({
@@ -212,19 +175,3 @@ async function authenticatePublic(request: Request) {
   }
 }
 
-function isSessionExpired(value: unknown) {
-  const millis = timestampToMillis(value)
-  if (!millis) return false
-  return Date.now() - millis > SESSION_TIMEOUT_MS
-}
-
-function timestampToMillis(value: unknown) {
-  if (value instanceof Timestamp) return value.toMillis()
-
-  if (value && typeof value === "object" && "_seconds" in value) {
-    const seconds = Number((value as { _seconds?: unknown })._seconds)
-    return Number.isFinite(seconds) ? seconds * 1000 : null
-  }
-
-  return null
-}

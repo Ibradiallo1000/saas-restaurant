@@ -143,11 +143,46 @@ export type CartItem = {
 // types.ts - AJOUTE À LA FIN
 export type KitchenStatus = OrderStatus
 
+export type TableSessionStatus = "ORDERING" | "READY_TO_CLOSE" | "CLOSED"
+
 export type TableSessionPaymentRequest = {
   status: "none" | "requested" | "processing" | "pending_confirmation" | "validated" | "rejected"
   method?: "cash" | "mobile"
   provider?: string
+  totalAmount?: number | null
   requestedAt?: any
   handledAt?: any
   handledBy?: string
+}
+
+export type TableSessionAggregates = {
+  totalOrdered: number
+  totalCancelled: number
+  totalDiscount: number
+  totalRefunded: number
+  totalPaid: number
+  totalDue: number
+  aggregateVersion: number
+  aggregateUpdatedAt?: any
+}
+
+export type TableSessionRecord = {
+  id: string
+  tableId: string
+  zoneId: string
+  status: TableSessionStatus | "active" | "closed"
+  totalAmount?: number
+  paymentRequest?: TableSessionPaymentRequest
+  createdAt?: any
+  startedAt?: any
+  lastActivityAt?: any
+  closedAt?: any
+  totalOrdered?: number
+  totalCancelled?: number
+  totalDiscount?: number
+  totalRefunded?: number
+  totalPaid?: number
+  totalDue?: number
+  aggregateVersion?: number
+  aggregateUpdatedAt?: any
 }

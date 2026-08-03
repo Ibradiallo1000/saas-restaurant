@@ -101,6 +101,13 @@ export interface TableSessionAuthority {
   tableName: string | null
   zoneId: string | null
   active: boolean
+  paymentRequest?: { status: string }
+  totalOrdered?: number
+  totalDue?: number
+  totalPaid?: number
+  totalCancelled?: number
+  totalDiscount?: number
+  totalRefunded?: number
 }
 
 export interface OrderCreationAuthorities {

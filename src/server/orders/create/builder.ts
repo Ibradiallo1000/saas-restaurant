@@ -214,6 +214,14 @@ function assertTableSession(
   ) {
     throw new CanonicalOrderError("TABLE_SESSION_INACTIVE", "La session de table n'est plus active.")
   }
+  // Bloquer les nouvelles commandes pendant un cycle de paiement
+  const paymentStatus = session.paymentRequest?.status
+  if (paymentStatus && paymentStatus !== "none" && paymentStatus !== "rejected") {
+    throw new CanonicalOrderError(
+      "PAYMENT_IN_PROGRESS",
+      "Un paiement est en cours sur cette table. Veuillez attendre la fin du paiement avant de commander à nouveau."
+    )
+  }
 }
 
 function resolvePreparationMode(

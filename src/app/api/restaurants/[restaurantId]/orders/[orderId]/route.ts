@@ -34,9 +34,9 @@ export async function GET(
     }
     return NextResponse.json({
       ok: true,
-      order: serialize({ id: orderSnapshot.id, ...order }),
+      order: serializePublicOrder({ id: orderSnapshot.id, ...order }),
       orderItems: itemSnapshots.docs.map((snapshot) =>
-        serialize({ id: snapshot.id, ...snapshot.data() })
+        serializePublicOrder({ id: snapshot.id, ...snapshot.data() })
       ),
       legacy: itemSnapshots.empty,
     })
@@ -55,11 +55,40 @@ async function authenticatePublic(request: NextRequest) {
   return decoded.uid
 }
 
-function serialize(value: any): any {
+// Champs internes/sensibles jamais exposés via l'API publique.
+// Le client de suivi n'a besoin que des données d'affichage et de statut.
+// createdBy est conservé pour le marquage "Toi" / "Invitée" côté client.
+// statusHistory, timestamps et kitchenStatus sont nécessaires au stepper.
+const SENSITIVE_ORDER_FIELDS = new Set([
+  "clientRequestId",
+  "idempotencyKey",
+  "requestHash",
+  "aggregateVersion",
+  "schemaVersion",
+  "cashSessionId",
+  "cashierId",
+  "originPosStationId",
+  "originPosStationName",
+  "originPosStationCode",
+  "paymentCode",
+  "paymentProofSms",
+  "paymentReference",
+  "preparationStationId",
+  "preparationStationName",
+  "preparationStationCode",
+  "portionReserved",
+  "serverTimestamps",
+])
+
+function serializePublicOrder(value: any): any {
   if (value?.toDate instanceof Function) return value.toDate().toISOString()
-  if (Array.isArray(value)) return value.map(serialize)
+  if (Array.isArray(value)) return value.map(serializePublicOrder)
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, serialize(child)]))
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !SENSITIVE_ORDER_FIELDS.has(key))
+        .map(([key, child]) => [key, serializePublicOrder(child)])
+    )
   }
   return value
 }

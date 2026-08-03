@@ -23,7 +23,8 @@ export type CanonicalOrderErrorCode =
   | "IDEMPOTENCY_CORRUPTED"
   | "PAYLOAD_TOO_LARGE"
   | "RATE_LIMITED"
-  | "ORDER_CREATION_FAILED"
+| "ORDER_CREATION_FAILED"
+  | "PAYMENT_IN_PROGRESS"
 
 const HTTP_STATUS: Record<CanonicalOrderErrorCode, number> = {
   INVALID_JSON: 400,
@@ -51,6 +52,7 @@ const HTTP_STATUS: Record<CanonicalOrderErrorCode, number> = {
   PAYLOAD_TOO_LARGE: 413,
   RATE_LIMITED: 429,
   ORDER_CREATION_FAILED: 500,
+  PAYMENT_IN_PROGRESS: 409,
 }
 
 export class CanonicalOrderError extends Error {

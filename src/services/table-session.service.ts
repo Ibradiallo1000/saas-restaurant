@@ -7,7 +7,6 @@ import {
   getDoc,
   runTransaction,
   serverTimestamp,
-  Timestamp,
   type Firestore,
   writeBatch,
 } from "firebase/firestore"
@@ -55,8 +54,6 @@ export type ActiveTableSession = {
   lastActivityAt?: unknown
   capability?: string
 }
-
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000
 
 function restaurantCollection(db: Firestore, restaurantId: string, name: string) {
   return collection(db, COLLECTION_NAMES.RESTAURANTS, restaurantId, name)
@@ -166,11 +163,11 @@ export async function getOrCreateActiveTableSession(
       const existingSessionSnap = await transaction.get(existingSessionRef)
       const existingSession = existingSessionSnap.data() as TableSessionRecord | undefined
 
-      if (
-        existingSessionSnap.exists() &&
-        existingSession?.status === "active" &&
-        !isSessionExpired(existingSession.lastActivityAt ?? existingSession.startedAt)
-      ) {
+      // A session stays active as long as the table is occupied and the
+      // session itself is still "active". There is no automatic timeout: the
+      // table is only released explicitly (closeActiveTableSession), at which
+      // point currentSessionId is cleared and a new scan creates a new session.
+      if (existingSessionSnap.exists() && existingSession?.status === "active") {
         transaction.update(existingSessionRef, {
           lastActivityAt: serverTimestamp(),
         })
@@ -192,14 +189,6 @@ export async function getOrCreateActiveTableSession(
           startedAt: existingSession.startedAt,
           lastActivityAt: existingSession.lastActivityAt,
         }
-      }
-
-      if (existingSessionSnap.exists() && existingSession?.status === "active") {
-        transaction.update(existingSessionRef, {
-          status: "closed",
-          closedAt: serverTimestamp(),
-          lastActivityAt: serverTimestamp(),
-        })
       }
     }
 
@@ -330,24 +319,3 @@ export async function closeActiveTableSession(
   })
 }
 
-function isSessionExpired(value: unknown) {
-  const lastActivityMs = timestampToMillis(value)
-  if (!lastActivityMs) return false
-
-  return Date.now() - lastActivityMs > SESSION_TIMEOUT_MS
-}
-
-function timestampToMillis(value: unknown) {
-  if (value instanceof Timestamp) return value.toMillis()
-
-  if (
-    value &&
-    typeof value === "object" &&
-    "toMillis" in value &&
-    typeof value.toMillis === "function"
-  ) {
-    return value.toMillis()
-  }
-
-  return null
-}
