@@ -21,12 +21,79 @@ export class PublicOrderApiError extends Error {
 
 const appCheckInstances = new WeakMap<FirebaseApp, AppCheck>()
 
+// ============================================================================
+// TYPES DE RÉPONSES API
+// ============================================================================
+
+interface ApiResponse<T = unknown> {
+  ok: boolean
+  data: T
+  message?: string
+  code?: string
+  error?: {
+    code: string
+    message: string
+    retryable?: boolean
+  }
+}
+
+interface TableSessionResponse {
+  id: string
+  tableId: string
+  status: "active" | "closed"
+  startedAt: string
+  endedAt: string | null
+  totalDue: number
+  orderCount: number
+}
+
+interface OrderResponse {
+  id: string
+  tableId: string
+  sessionId: string
+  total: number
+  status: string
+  paymentStatus: string
+  itemCount: number
+  createdAt: string
+}
+
+interface PaymentRequestResponse {
+  id: string
+  status: "pending" | "paid" | "failed"
+  amount: number
+  method: string
+  provider: string | null
+  createdAt: string
+}
+
+interface ReviewAccessResponse {
+  accessGranted: boolean
+  reviewId?: string
+  orderId: string
+}
+
+interface TableSessionFullResponse {
+  id: string
+  tableId: string
+  status: "active" | "closed"
+  startedAt: string
+  endedAt: string | null
+  orders: OrderResponse[]
+  totalAmount: number
+  orderCount: number
+}
+
+// ============================================================================
+// FONCTIONS API
+// ============================================================================
+
 export async function createCanonicalTableSession(input: {
   app: FirebaseApp
   user: User
   restaurantId: string
   tableId: string
-}) {
+}): Promise<TableSessionResponse> {
   const headers = await publicHeaders(input.app, input.user)
   const response = await fetch(
     `/api/restaurants/${encodeURIComponent(input.restaurantId)}/table-sessions`,
@@ -36,7 +103,7 @@ export async function createCanonicalTableSession(input: {
       body: JSON.stringify({ tableId: input.tableId }),
     }
   )
-  return parseResponse(response, "Impossible de préparer la session de table.")
+  return parseResponse<TableSessionResponse>(response, "Impossible de préparer la session de table.")
 }
 
 export async function createCanonicalQrOrder(input: {
@@ -45,7 +112,7 @@ export async function createCanonicalQrOrder(input: {
   restaurantId: string
   idempotencyKey: string
   body: Record<string, unknown>
-}) {
+}): Promise<OrderResponse> {
   const headers = await publicHeaders(input.app, input.user)
   const response = await fetch(
     `/api/restaurants/${encodeURIComponent(input.restaurantId)}/orders`,
@@ -59,7 +126,7 @@ export async function createCanonicalQrOrder(input: {
       body: JSON.stringify(input.body),
     }
   )
-  return parseResponse(response, "La commande n’a pas pu être envoyée.")
+  return parseResponse<OrderResponse>(response, "La commande n’a pas pu être envoyée.")
 }
 
 export async function requestCanonicalTablePayment(input: {
@@ -72,7 +139,7 @@ export async function requestCanonicalTablePayment(input: {
   method: "cash" | "mobile"
   provider?: string | null
   paymentProofSms?: string | null
-}) {
+}): Promise<PaymentRequestResponse> {
   const headers = await publicHeaders(input.app, input.user)
   const response = await fetch(
     `/api/restaurants/${encodeURIComponent(input.restaurantId)}/table-sessions/${encodeURIComponent(input.tableSessionId)}/payment-requests`,
@@ -88,7 +155,7 @@ export async function requestCanonicalTablePayment(input: {
       }),
     }
   )
-  return parseResponse(response, "La demande de paiement n’a pas pu être envoyée.")
+  return parseResponse<PaymentRequestResponse>(response, "La demande de paiement n’a pas pu être envoyée.")
 }
 
 export async function requestCanonicalOrderPayment(input: {
@@ -100,7 +167,7 @@ export async function requestCanonicalOrderPayment(input: {
   method: "cash" | "mobile"
   provider?: string | null
   paymentProofSms?: string | null
-}) {
+}): Promise<PaymentRequestResponse> {
   const headers = await publicHeaders(input.app, input.user)
   const response = await fetch(
     `/api/restaurants/${encodeURIComponent(input.restaurantId)}/orders/${encodeURIComponent(input.orderId)}/payment-requests`,
@@ -115,7 +182,7 @@ export async function requestCanonicalOrderPayment(input: {
       }),
     }
   )
-  return parseResponse(response, "La demande de paiement n’a pas pu être envoyée.")
+  return parseResponse<PaymentRequestResponse>(response, "La demande de paiement n’a pas pu être envoyée.")
 }
 
 export async function getCanonicalPublicOrder(input: {
@@ -123,13 +190,13 @@ export async function getCanonicalPublicOrder(input: {
   user: User
   restaurantId: string
   orderId: string
-}) {
+}): Promise<OrderResponse> {
   const headers = await publicHeaders(input.app, input.user)
   const response = await fetch(
     `/api/restaurants/${encodeURIComponent(input.restaurantId)}/orders/${encodeURIComponent(input.orderId)}`,
     { headers }
   )
-  return parseResponse(response, "Impossible de charger le suivi de commande.")
+  return parseResponse<OrderResponse>(response, "Impossible de charger le suivi de commande.")
 }
 
 export async function issueCanonicalReviewAccess(input: {
@@ -137,13 +204,13 @@ export async function issueCanonicalReviewAccess(input: {
   user: User
   restaurantId: string
   orderId: string
-}) {
+}): Promise<ReviewAccessResponse> {
   const headers = await publicHeaders(input.app, input.user)
   const response = await fetch(
     `/api/restaurants/${encodeURIComponent(input.restaurantId)}/orders/${encodeURIComponent(input.orderId)}/review-access`,
     { method: "POST", headers }
   )
-  return parseResponse(response, "Impossible d’ouvrir l’accès aux avis.")
+  return parseResponse<ReviewAccessResponse>(response, "Impossible d’ouvrir l’accès aux avis.")
 }
 
 export async function getCanonicalTableSession(input: {
@@ -151,13 +218,13 @@ export async function getCanonicalTableSession(input: {
   user: User
   restaurantId: string
   tableSessionId: string
-}) {
+}): Promise<TableSessionFullResponse> {
   const headers = await publicHeaders(input.app, input.user)
   const response = await fetch(
     `/api/restaurants/${encodeURIComponent(input.restaurantId)}/table-sessions/${encodeURIComponent(input.tableSessionId)}`,
     { headers }
   )
-  return parseResponse(response, "Impossible de charger la session de table.")
+  return parseResponse<TableSessionFullResponse>(response, "Impossible de charger la session de table.")
 }
 
 export function rememberQrCapability(orderId: string, capability: string) {
@@ -171,6 +238,10 @@ export function getRememberedQrCapability(orderId: string) {
   return window.localStorage.getItem(`oordera:qr-capability:${orderId}`)
 }
 
+// ============================================================================
+// FONCTIONS INTERNES - GESTION DES HEADERS
+// ============================================================================
+
 async function publicHeaders(app: FirebaseApp, user: User) {
   const localProof = localAppCheckProof(app)
   if (localProof) {
@@ -180,6 +251,7 @@ async function publicHeaders(app: FirebaseApp, user: User) {
       "x-firebase-appcheck": localProof,
     }
   }
+  
   const siteKey = resolveFirebaseAppCheckSiteKey()
   if (!siteKey) {
     throw new PublicOrderApiError(
@@ -187,6 +259,7 @@ async function publicHeaders(app: FirebaseApp, user: User) {
       "La protection de la commande publique n’est pas configurée."
     )
   }
+  
   let appCheck = appCheckInstances.get(app)
   if (!appCheck) {
     enableLocalAppCheckDebugToken()
@@ -196,17 +269,26 @@ async function publicHeaders(app: FirebaseApp, user: User) {
     })
     appCheckInstances.set(app, appCheck)
   }
-  // Firebase Auth and App Check are independent proofs. Preparing both at the
-  // same time removes one network round-trip from every public action while
-  // preserving the exact same server-side verification.
+  
+  // Récupération des tokens - on NE stocke PAS appCheckToken dans une variable exposée
   let idToken: string
-  let appCheckToken: Awaited<ReturnType<typeof getToken>>
+  let appCheckToken: string
+  
   try {
-    ;[idToken, appCheckToken] = await Promise.all([
+    // Exécution en parallèle pour la performance
+    const [idTokenResult, appCheckTokenResult] = await Promise.all([
       user.getIdToken(),
-      getToken(appCheck, false),
+      getToken(appCheck, false)
     ])
+    
+    idToken = idTokenResult
+    appCheckToken = appCheckTokenResult.token
+    
+    // ⚠️ IMPORTANT: On ne logge JAMAIS le token App Check
+    // et on ne l'inclut JAMAIS dans les réponses d'erreur
+    
   } catch (error) {
+    // Gestion des erreurs SANS exposer le token
     if (typeof window !== "undefined" && isLocalHostname(window.location.hostname)) {
       throw new PublicOrderApiError(
         "APP_CHECK_DEBUG_TOKEN_NOT_REGISTERED",
@@ -219,9 +301,11 @@ async function publicHeaders(app: FirebaseApp, user: User) {
       true
     )
   }
+  
+  // Retour des headers - appCheckToken n'est exposé qu'ici, pas dans les logs ou les erreurs
   return {
     authorization: `Bearer ${idToken}`,
-    "x-firebase-appcheck": appCheckToken.token,
+    "x-firebase-appcheck": appCheckToken,
   }
 }
 
@@ -264,8 +348,17 @@ function isLocalHostname(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
 }
 
-async function parseResponse(response: Response, fallback: string) {
+// ============================================================================
+// PARSEUR DE RÉPONSES
+// ============================================================================
+
+/**
+ * Parse une réponse API et retourne les données typées.
+ * Ne manipule jamais directement les tokens ou données sensibles.
+ */
+async function parseResponse<T>(response: Response, fallback: string): Promise<T> {
   const body = await response.json().catch(() => null)
+  
   if (!response.ok || !body?.ok) {
     throw new PublicOrderApiError(
       body?.code ?? body?.error?.code ?? "NETWORK_ERROR",
@@ -273,8 +366,13 @@ async function parseResponse(response: Response, fallback: string) {
       body?.retryable === true || body?.error?.retryable === true
     )
   }
-  return body
+
+  return body.data as T
 }
+
+// ============================================================================
+// FONCTIONS UTILITAIRES
+// ============================================================================
 
 export function stablePublicIdempotencyKey(scope: string, seed?: string) {
   const storageKey = `oordera:${scope}:idempotency`

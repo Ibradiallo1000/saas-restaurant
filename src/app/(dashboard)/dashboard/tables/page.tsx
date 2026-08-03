@@ -472,49 +472,105 @@ function TablesLoading() {
   )
 }
 
-function getQrSvg(qrId: string) {
-  const svg = document.getElementById(qrId)
-  if (!(svg instanceof SVGElement)) {
+function getQrSvg(qrId: string): SVGElement {
+  const element = document.getElementById(qrId)
+  if (!(element instanceof SVGElement)) {
     throw new Error("QR introuvable.")
   }
-
-  return svg
+  return element
 }
 
+/**
+ * Imprime un QR code en utilisant l'API DOM.
+ * La construction sécurisée évite les vulnérabilités XSS.
+ */
 function printQr(tableName: string, qrUrl: string, qrId: string) {
-  const svg = getQrSvg(qrId).outerHTML
-  const printWindow = window.open("", "_blank", "width=420,height=620")
-  if (!printWindow) return
+  // Récupérer l'élément SVG source
+  const sourceSvg = getQrSvg(qrId)
+  
+  // Cloner le SVG pour éviter de modifier l'original
+  const clonedSvg = sourceSvg.cloneNode(true) as SVGElement
+  
+  // Ouvrir la fenêtre d'impression
+  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=420,height=620")
+  if (!printWindow) {
+    console.error("Impossible d'ouvrir la fenêtre d'impression")
+    return
+  }
 
-  printWindow.document.write(`
-    <!doctype html>
-    <html>
-      <head>
-        <title>QR ${escapeHtml(tableName)}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 0; padding: 32px; text-align: center; }
-          h1 { font-size: 42px; margin: 0 0 24px; }
-          .qr { display: inline-flex; border: 1px solid #ddd; padding: 18px; }
-          p { margin-top: 18px; font-size: 12px; color: #555; word-break: break-all; }
-          @media print { button { display: none; } }
-        </style>
-      </head>
-      <body>
-        <h1>${escapeHtml(tableName)}</h1>
-        <div class="qr">${svg}</div>
-        <p>${escapeHtml(qrUrl)}</p>
-        <script>
-          window.onload = () => {
-            window.print();
-            window.onafterprint = () => window.close();
-          };
-        </script>
-      </body>
-    </html>
-  `)
-  printWindow.document.close()
+  const doc = printWindow.document
+
+  // Construire le document avec l'API DOM (sécurisé)
+  const html = doc.createElement("html")
+  const head = doc.createElement("head")
+  const title = doc.createElement("title")
+  title.textContent = `QR ${tableName}`
+  head.appendChild(title)
+
+  const style = doc.createElement("style")
+  style.textContent = `
+    body { font-family: Arial, sans-serif; margin: 0; padding: 32px; text-align: center; }
+    h1 { font-size: 42px; margin: 0 0 24px; }
+    .qr { display: inline-flex; border: 1px solid #ddd; padding: 18px; }
+    p { margin-top: 18px; font-size: 12px; color: #555; word-break: break-all; }
+    @media print { button { display: none; } }
+  `
+  head.appendChild(style)
+
+  const body = doc.createElement("body")
+  
+  const heading = doc.createElement("h1")
+  heading.textContent = tableName
+  body.appendChild(heading)
+
+  const qrContainer = doc.createElement("div")
+  qrContainer.className = "qr"
+  
+  // ✅ SOLUTION SÉCURISÉE : Utiliser appendChild au lieu de innerHTML
+  // Cela évite les risques XSS car le SVG est un élément DOM, pas une chaîne HTML
+  qrContainer.appendChild(clonedSvg)
+  body.appendChild(qrContainer)
+
+  const urlParagraph = doc.createElement("p")
+  urlParagraph.textContent = qrUrl
+  body.appendChild(urlParagraph)
+
+  html.appendChild(head)
+  html.appendChild(body)
+  doc.appendChild(html)
+
+  // Fonction de gestionnaire d'impression
+  const handlePrint = () => {
+    printWindow.focus()
+    printWindow.print()
+  }
+
+  // Fonction de gestionnaire de nettoyage
+  const cleanup = () => {
+    printWindow.onafterprint = null
+    doc.removeEventListener("DOMContentLoaded", handlePrint)
+  }
+
+  // Ajouter l'écouteur avec nettoyage
+  doc.addEventListener("DOMContentLoaded", handlePrint)
+
+  // Gérer l'événement afterprint pour nettoyer et fermer
+  printWindow.onafterprint = () => {
+    cleanup()
+    printWindow.close()
+  }
+
+  // Fallback si DOMContentLoaded est déjà passé
+  if (doc.readyState === "complete" || doc.readyState === "interactive") {
+    doc.removeEventListener("DOMContentLoaded", handlePrint)
+    handlePrint()
+  }
 }
 
+/**
+ * Télécharge un QR code.
+ * Le nom de fichier est nettoyé pour éviter les problèmes de sécurité.
+ */
 function downloadQr(tableName: string, qrId: string) {
   const svg = getQrSvg(qrId)
   const serialized = new XMLSerializer().serializeToString(svg)
@@ -529,15 +585,12 @@ function downloadQr(tableName: string, qrId: string) {
   URL.revokeObjectURL(url)
 }
 
-function sanitizeFileName(value: string) {
-  return value.trim().replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "") || "table"
-}
-
-function escapeHtml(value: string) {
+/**
+ * Nettoie un nom de fichier en supprimant les caractères dangereux.
+ */
+function sanitizeFileName(value: string): string {
   return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;")
+    .trim()
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "") || "table"
 }
