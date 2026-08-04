@@ -111,6 +111,16 @@ function ClientOrderTrackingContent() {
     paidOrderCount: number
     unpaidOrderCount: number
   } | null>(null)
+  // En mode canonique, les données de session (status, paymentRequest) proviennent de
+  // getCanonicalTableSession() via l'API, jamais d'un listener Firestore direct.
+  const [canonicalTableSession, setCanonicalTableSession] = React.useState<{
+    status?: string
+    paymentRequest?: {
+      status?: string
+      method?: string
+      provider?: string | null
+    }
+  } | null>(null)
   const feedbackInitializedRef = React.useRef(false)
   const lastFeedbackAtRef = React.useRef(0)
   const hasInteractedRef = React.useRef(false)
@@ -161,10 +171,16 @@ function ClientOrderTrackingContent() {
   const { data: tableSessionOrdersData } = useCollection(tableSessionOrdersQuery)
 
   const tableSessionQuery = useMemoFirebase(() => {
-    if (!db || !restaurantId || !activeTableSessionId) return null
+    // En mode canonique, la session de table est lue via getCanonicalTableSession()
+    // (polling API) et jamais via un listener Firestore direct.
+    if (!db || !restaurantId || !activeTableSessionId || useCanonicalQr) return null
     return doc(db, "restaurants", restaurantId, "tableSessions", activeTableSessionId)
-  }, [activeTableSessionId, db, restaurantId])
-  const { data: tableSession } = useDoc(tableSessionQuery)
+}, [activeTableSessionId, db, restaurantId, useCanonicalQr])
+  const { data: legacyTableSession } = useDoc(tableSessionQuery)
+  // En mode canonique, les données de session (status, paymentRequest) proviennent de
+  // getCanonicalTableSession() via l'API (polling) et non d'un listener Firestore direct.
+  // En mode legacy, le listener Firestore direct est conservé.
+  const tableSession = useCanonicalQr ? canonicalTableSession : legacyTableSession
 
 const localTableUserId = getLocalTableUserId()
 
@@ -184,16 +200,23 @@ const localTableUserId = getLocalTableUserId()
           tableSessionId: activeTableSessionId,
         })
         if (cancelled) return
+        // L'API renvoie les données de session de table sous les clés `session`
+        // (status, paymentRequest) et `counts` (agrégats), conformément au type
+        // TableSessionFullResponse du client canonique.
+        setCanonicalTableSession({
+          status: response.session?.status,
+          paymentRequest: response.session?.paymentRequest,
+        })
         setSessionAggregates({
-          totalDue: response.totalDue ?? 0,
-          totalOrdered: response.totalOrdered ?? 0,
-          totalPaid: response.totalPaid ?? 0,
-          totalCancelled: response.totalCancelled ?? 0,
-          totalDiscount: response.totalDiscount ?? 0,
-          totalRefunded: response.totalRefunded ?? 0,
-          orderCount: response.orderCount ?? 0,
-          paidOrderCount: response.paidOrderCount ?? 0,
-          unpaidOrderCount: response.unpaidOrderCount ?? 0,
+          totalDue: response.counts.totalDue,
+          totalOrdered: response.counts.totalOrdered,
+          totalPaid: response.counts.totalPaid,
+          totalCancelled: response.counts.totalCancelled,
+          totalDiscount: response.counts.totalDiscount,
+          totalRefunded: response.counts.totalRefunded,
+          orderCount: response.counts.orderCount,
+          paidOrderCount: response.counts.paidOrderCount,
+          unpaidOrderCount: response.counts.unpaidOrderCount,
         })
         if (response.orders) {
           setSessionAggregatesOrders(response.orders)

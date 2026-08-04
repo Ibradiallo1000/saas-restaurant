@@ -2,6 +2,7 @@ import type { FirebaseApp } from "firebase/app"
 import { resolveFirebaseAppCheckSiteKey } from "@/lib/firebase-app-check-config"
 import { getToken, initializeAppCheck, ReCaptchaV3Provider, type AppCheck } from "firebase/app-check"
 import type { User } from "firebase/auth"
+import type { RestaurantOrder } from "@/modules/restaurant/types"
 
 declare global {
   var FIREBASE_APPCHECK_DEBUG_TOKEN: boolean | string | undefined
@@ -38,13 +39,33 @@ interface ApiResponse<T = unknown> {
 }
 
 interface TableSessionResponse {
-  id: string
+  ok: true
   tableId: string
-  status: "active" | "closed"
-  startedAt: string
-  endedAt: string | null
-  totalDue: number
-  orderCount: number
+  tableName: string
+  zoneId: string
+  sessionId: string
+  tableSessionId: string
+  totalAmount: number
+  status: "active"
+  capability: string
+}
+
+interface CreateOrderResponse {
+  ok: true
+  requestId: string
+  orderId: string
+  displayId: string
+  schemaVersion: 1
+  channel: string
+  serviceMode: string
+  orderStatus: string
+  paymentStatus: string
+  total: number
+  currency: string
+  orderItemIds: string[]
+  idempotencyKey: string
+  replayed: boolean
+  createdAt: string
 }
 
 interface OrderResponse {
@@ -68,20 +89,52 @@ interface PaymentRequestResponse {
 }
 
 interface ReviewAccessResponse {
-  accessGranted: boolean
-  reviewId?: string
-  orderId: string
+  reviewToken: string
+  replayed: boolean
+}
+
+interface PublicOrderDetailResponse {
+  order: RestaurantOrder
+  orderItems: RestaurantOrder["items"]
+  legacy: boolean
 }
 
 interface TableSessionFullResponse {
-  id: string
-  tableId: string
-  status: "active" | "closed"
-  startedAt: string
-  endedAt: string | null
+  session: {
+    id: string
+    tableId: string
+    zoneId?: string
+    status: string
+    totalAmount: number
+    paymentRequest?: {
+      status?: string
+      method?: string
+      provider?: string | null
+    }
+    createdAt?: string
+    startedAt?: string
+    lastActivityAt?: string
+    closedAt?: string | null
+    totalOrdered: number
+    totalPaid: number
+    totalCancelled: number
+    totalDiscount: number
+    totalRefunded: number
+    totalDue: number
+    aggregateVersion?: number
+  }
   orders: OrderResponse[]
-  totalAmount: number
-  orderCount: number
+  counts: {
+    totalOrdered: number
+    totalPaid: number
+    totalCancelled: number
+    totalDiscount: number
+    totalRefunded: number
+    totalDue: number
+    orderCount: number
+    paidOrderCount: number
+    unpaidOrderCount: number
+  }
 }
 
 // ============================================================================
@@ -112,7 +165,7 @@ export async function createCanonicalQrOrder(input: {
   restaurantId: string
   idempotencyKey: string
   body: Record<string, unknown>
-}): Promise<OrderResponse> {
+}): Promise<CreateOrderResponse> {
   const headers = await publicHeaders(input.app, input.user)
   const response = await fetch(
     `/api/restaurants/${encodeURIComponent(input.restaurantId)}/orders`,
@@ -126,7 +179,7 @@ export async function createCanonicalQrOrder(input: {
       body: JSON.stringify(input.body),
     }
   )
-  return parseResponse<OrderResponse>(response, "La commande n’a pas pu être envoyée.")
+  return parseResponse<CreateOrderResponse>(response, "La commande n’a pas pu être envoyée.")
 }
 
 export async function requestCanonicalTablePayment(input: {
@@ -190,13 +243,13 @@ export async function getCanonicalPublicOrder(input: {
   user: User
   restaurantId: string
   orderId: string
-}): Promise<OrderResponse> {
+}): Promise<PublicOrderDetailResponse> {
   const headers = await publicHeaders(input.app, input.user)
   const response = await fetch(
     `/api/restaurants/${encodeURIComponent(input.restaurantId)}/orders/${encodeURIComponent(input.orderId)}`,
     { headers }
   )
-  return parseResponse<OrderResponse>(response, "Impossible de charger le suivi de commande.")
+return parseResponse<PublicOrderDetailResponse>(response, "Impossible de charger le suivi de commande.")
 }
 
 export async function issueCanonicalReviewAccess(input: {
