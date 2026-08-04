@@ -90,7 +90,7 @@ import {
   useCanonicalPosOrders,
 } from "@/modules/pos/canonical"
 import { closeCashSessionV2, openCashSession } from "@/modules/pos/canonical/cash-session-command-client"
-import { DEFAULT_POS_STATION, POS_STATION_PAYMENT_BALANCE_KEYS, isProductAllowedAtPosStation, normalizePaymentProviderToBalanceKey, resolvePaymentBalances, resolvePosStation, resolveStaffDefaultPosStationId, resolveStaffPosStationIds } from "@/lib/pos-stations"
+import { DEFAULT_POS_STATION, isProductAllowedAtPosStation, resolvePaymentBalances, resolvePosStation, resolveStaffDefaultPosStationId, resolveStaffPosStationIds } from "@/lib/pos-stations"
 import { resolveStaffDisplayName } from "@/lib/staff-identity"
 import type { SelectedCartOption } from "@/modules/restaurant/types"
 import {
@@ -769,7 +769,10 @@ function POSPageContent() {
     const systemTotal = systemCash + systemMobile
     const paymentBalanceRows = buildPaymentBalanceRows(
       activeCashSession?.openingPaymentBalances,
-      authoritativeSessionAggregate?.totalsByProvider ?? activeCashSession?.totalsByProvider
+      authoritativeSessionAggregate?.totalsByProvider ?? activeCashSession?.totalsByProvider,
+      mobilePaymentMethods,
+      safePayments,
+      activeCashSession?.id
     )
 
     return {
@@ -781,7 +784,7 @@ function POSPageContent() {
       cash: declaredCashAmount - systemCash,
       expectedHandover: Math.max(0, declaredCashAmount - retainedFloatAmount),
     }
-  }, [activeCashSession?.openingBalance, activeCashSession?.openingPaymentBalances, activeCashSession?.totalsByProvider, authoritativeSessionAggregate?.totalsByProvider, declaredCashAmount, retainedFloatAmount, sessionCalculatedTotals])
+  }, [activeCashSession?.id, activeCashSession?.openingBalance, activeCashSession?.openingPaymentBalances, activeCashSession?.totalsByProvider, authoritativeSessionAggregate?.totalsByProvider, declaredCashAmount, mobilePaymentMethods, retainedFloatAmount, safePayments, sessionCalculatedTotals])
 
   React.useEffect(() => {
     if (!activeCashSession?.id || activeCashSession.status !== "open") return
@@ -2727,33 +2730,262 @@ const PAYMENT_BALANCE_LABELS: Record<string, string> = {
   orange_money: "Orange Money",
   wave: "Wave",
   moov_money: "Moov Money",
+  mtn_money: "MTN Money",
   card: "Carte bancaire",
   bank_transfer: "Virement bancaire",
 }
 
-function buildPaymentBalanceRows(openingValue: unknown, totalsByProvider: unknown) {
+function buildPaymentBalanceRows(
+  openingValue: unknown,
+  totalsByProvider: unknown,
+  configuredMethods: any[],
+  ledgerPayments: any[] | null,
+  ledgerSessionId?: string | null
+) {
   const opening = resolvePaymentBalances(openingValue)
-  const changes = resolvePaymentBalanceChanges(totalsByProvider)
-  return POS_STATION_PAYMENT_BALANCE_KEYS.map((key) => {
-    const before = Number(opening[key] || 0)
-    const session = Number(changes[key] || 0)
-    return { key, label: PAYMENT_BALANCE_LABELS[key], before, session, after: Math.max(0, before + session) }
-  })
+  const rawOpening = openingValue && typeof openingValue === "object" && !Array.isArray(openingValue)
+    ? openingValue as Record<string, unknown>
+    : {}
+const changes = resolvePaymentBalanceChanges(
+    totalsByProvider,
+    configuredMethods,
+    ledgerPayments,
+    ledgerSessionId
+  )
+  const sessionBalanceKeyByMethod = resolveMethodSessionBalanceKeys(
+    configuredMethods,
+    ledgerPayments,
+    ledgerSessionId
+  )
+  const paymentAccountNameByAccountId = resolvePaymentAccountNames(ledgerPayments, ledgerSessionId)
+
+  // La liste des soldes reflète exclusivement les moyens de paiement réellement
+  // configurés et actifs du restaurant (mobilePaymentMethods). Les clés legacy
+  // ne sont plus rendues comme liste par défaut.
+  return (Array.isArray(configuredMethods) ? configuredMethods : [])
+    .filter((method: any) => {
+      const code = method?.code || method?.methodCode
+      if (!code) return false
+      if (method.isActive === false) return false
+      return true
+})
+    .map((method: any) => {
+      const code = method?.code || method?.methodCode
+      const resolvedBefore = Number((opening as Record<string, number>)[code])
+      const rawBefore = Math.round(Number(rawOpening[code] || 0))
+      const before = Number.isFinite(resolvedBefore)
+        ? resolvedBefore
+        : Number.isFinite(rawBefore) && rawBefore >= 0
+          ? rawBefore
+          : 0
+// Le montant de session est résolu avec la même clé que celle utilisée
+      // par le registre des paiements (paymentAccountId, puis provider réel,
+      // puis method.code en dernier recours). Ceci garantit qu'un moyen
+      // configuré avec un code différent de son provider (ex. Sarali /
+      // orange_money) lit bien le bon total agrégé.
+const sessionBalanceKey =
+        sessionBalanceKeyByMethod.get(String(code)) ||
+        String(method.paymentAccountId || "").trim() ||
+        ""
+      const normalizedCodeKey = normalizePaymentMethodToBalanceKey(code)
+      const session = Number(
+        (sessionBalanceKey && changes[sessionBalanceKey]) ??
+        changes[code] ??
+        (normalizedCodeKey ? changes[normalizedCodeKey] : undefined) ??
+        0
+      )
+const methodName = typeof method.name === "string" ? String(method.name).trim() : ""
+      const paymentAccountName = paymentAccountNameByAccountId.get(
+        String(method.paymentAccountId || "")
+      )
+      const label = methodName || paymentAccountName || code
+      const logoUrl =
+        typeof method.logoUrl === "string" && method.logoUrl.trim() ? method.logoUrl : null
+      return {
+        key: code,
+        code,
+        label,
+        logoUrl,
+        before,
+        session,
+        after: Math.max(0, before + session),
+      }
+    })
 }
 
-function resolvePaymentBalanceChanges(value: unknown) {
-  const changes = resolvePaymentBalances(null)
+// Retrouve le nom commercial du compte financier depuis le registre des
+// paiements (safePayments) pour servir de libellé quand le nom du moyen
+// configuré n'est pas disponible.
+function resolvePaymentAccountNames(ledgerPayments: any[] | null, ledgerSessionId?: string | null) {
+  const namesByAccountId = new Map<string, string>()
+  if (!Array.isArray(ledgerPayments)) return namesByAccountId
+  ledgerPayments.forEach((payment: any) => {
+    if (ledgerSessionId && payment?.sessionId && payment.sessionId !== ledgerSessionId) return
+    const accountId = String(payment?.paymentAccountId || "").trim()
+    const accountName = String(payment?.paymentAccountName || "").trim()
+    if (!accountId || !accountName) return
+    if (!namesByAccountId.has(accountId)) namesByAccountId.set(accountId, accountName)
+  })
+  return namesByAccountId
+}
+
+// Pour chaque moyen configuré, retrouve la clé du décompte de session
+// (changes) dans laquelle ses encaissements ont été agrégés. On privilégie
+// l'attribution par paymentAccountId (le code du moyen configuré est alors la
+// clé), puis on retombe sur le provider réel normalisé du paiement quand aucun
+// compte configuré ne correspond.
+function resolveMethodSessionBalanceKeys(
+  configuredMethods: any[],
+  ledgerPayments: any[] | null,
+  ledgerSessionId?: string | null
+) {
+  const balanceKeyByMethodCode = new Map<string, string>()
+
+  // Correspondance paymentAccountId -> code du moyen configuré, comme dans
+  // resolvePaymentBalanceChanges.
+  const methodsByAccountId = new Map<string, string>()
+  ;(Array.isArray(configuredMethods) ? configuredMethods : []).forEach((method) => {
+    const code = method?.code || method?.methodCode
+    const accountId = String(method?.paymentAccountId || "").trim()
+    if (code) balanceKeyByMethodCode.set(code, code)
+    if (code && accountId) methodsByAccountId.set(accountId, code)
+  })
+
+  if (!Array.isArray(ledgerPayments)) return balanceKeyByMethodCode
+
+  const seen = new Set<string>()
+  ledgerPayments.forEach((payment: any) => {
+    if (ledgerSessionId && payment?.sessionId && payment.sessionId !== ledgerSessionId) return
+    const status = String(payment?.status || payment?.paymentStatus || "").toLowerCase()
+    if (status && status !== "confirmed" && status !== "paid" && status !== "verified") return
+    const methodValue = String(payment?.method || payment?.paymentMethod || "").toLowerCase()
+    if (methodValue === "cash") return
+    const amount = Math.round(Number(payment?.amount || payment?.totalAmount || 0))
+    if (!Number.isFinite(amount) || amount <= 0) return
+    const identity = String(payment?.idempotencyKey || payment?.id || "").trim()
+    if (identity) {
+      if (seen.has(identity)) return
+      seen.add(identity)
+    }
+
+    const accountId = String(payment?.paymentAccountId || "").trim()
+    if (accountId && methodsByAccountId.has(accountId)) {
+      const methodCode = methodsByAccountId.get(accountId)!
+      balanceKeyByMethodCode.set(methodCode, methodCode)
+      return
+    }
+
+    // Repli : agrégation par provider réel quand aucun compte n'est rattaché.
+    const provider = String(payment?.provider || payment?.paymentProvider || "").toLowerCase()
+    const fallbackKey = normalizePaymentMethodToBalanceKey(provider || methodValue)
+    if (fallbackKey && balanceKeyByMethodCode.has(fallbackKey)) {
+      balanceKeyByMethodCode.set(fallbackKey, fallbackKey)
+    }
+  })
+
+  return balanceKeyByMethodCode
+}
+
+function resolvePaymentBalanceChanges(
+  value: unknown,
+  configuredMethods: any[],
+  ledgerPayments: any[] | null,
+  ledgerSessionId?: string | null
+) {
+  const changes: Record<string, number> = {}
+  const addChange = (key: string | null, amount: number) => {
+    if (!key || !Number.isFinite(amount)) return
+    changes[key] = (changes[key] || 0) + amount
+  }
+
+  // Correspondance paymentAccountId -> code du moyen configuré. C'est cette
+  // règle qui permet de raisonner par moyen de paiement configuré (ex. Sarali)
+  // plutôt que par fournisseur interne (orange_money, wave...).
+  const methodsByAccountId = new Map<string, string>()
+  ;(Array.isArray(configuredMethods) ? configuredMethods : []).forEach((method) => {
+    const code = method?.code || method?.methodCode
+    const accountId = String(method?.paymentAccountId || "").trim()
+    if (code && accountId) methodsByAccountId.set(accountId, code)
+  })
+
+  // Source principale : le registre des paiements, agrégé par paymentAccountId
+  // du moyen configuré. Pour chaque paiement confirmé mobile, on attribue le
+  // montant au moyen configuré dont le paymentAccountId correspond.
+  if (Array.isArray(ledgerPayments)) {
+    const seen = new Set<string>()
+    ledgerPayments.forEach((payment: any) => {
+      if (ledgerSessionId && payment?.sessionId && payment.sessionId !== ledgerSessionId) return
+      const status = String(payment?.status || payment?.paymentStatus || "").toLowerCase()
+      if (status && status !== "confirmed" && status !== "paid" && status !== "verified") return
+      const method = String(payment?.method || payment?.paymentMethod || "").toLowerCase()
+      if (method === "cash") return
+      const amount = Math.round(Number(payment?.amount || payment?.totalAmount || 0))
+      if (!Number.isFinite(amount) || amount <= 0) return
+      const identity = String(payment?.idempotencyKey || payment?.id || "").trim()
+      if (identity) {
+        if (seen.has(identity)) return
+        seen.add(identity)
+      }
+
+// Résolution du moyen configuré par paymentAccountId d'abord.
+      const accountId = String(payment?.paymentAccountId || "").trim()
+      let key: string | null = null
+      if (accountId && methodsByAccountId.has(accountId)) {
+        key = methodsByAccountId.get(accountId)!
+      } else {
+        // Repli : agrégation par provider quand aucun compte n'est rattaché.
+        const provider = String(payment?.provider || payment?.paymentProvider || "").toLowerCase()
+        key = normalizePaymentMethodToBalanceKey(provider || method)
+      }
+addChange(key, amount)
+    })
+  }
+
+  // Filet de sécurité : le décompte par fournisseur (serveur) n'est utilisé que
+  // pour les moyens absents du registre par paymentAccountId, afin d'éviter tout
+  // double comptage (on ne l'ajoute que si la clé n'est pas déjà renseignée).
   const source = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
   for (const [provider, amountValue] of Object.entries(source)) {
-    const key = normalizePaymentProviderToBalanceKey(provider)
     const amount = Math.round(Number(amountValue || 0))
-    if (key && Number.isFinite(amount)) changes[key] += amount
+    const key = normalizePaymentProviderToBalanceKey(provider)
+    if (key && changes[key] === undefined) addChange(key, amount)
   }
+
   return changes
 }
 
-function PaymentBalanceSummary({ rows }: { rows: Array<{ key: string; label: string; before: number; session: number; after: number }> }) {
-  return <div className="rounded-[var(--radius-dashboard-widget)] border border-[var(--pos-border)] bg-[var(--pos-muted)] p-3"><p className="text-[10px] font-black uppercase text-muted-foreground">Soldes moyens de paiement</p><div className="mt-2 grid gap-2">{rows.map((row) => <div key={row.key} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 text-xs"><span className="min-w-0 truncate font-semibold">{row.label}</span><span className="tabular-nums text-muted-foreground">Avant {row.before.toLocaleString("fr-FR")}</span><span className="tabular-nums text-muted-foreground">Session {row.session.toLocaleString("fr-FR")}</span><span className="tabular-nums font-black">Après {row.after.toLocaleString("fr-FR")}</span></div>)}</div></div>
+const POS_STATION_PAYMENT_BALANCE_KEYS = [
+  "orange_money",
+  "wave",
+  "moov_money",
+  "mtn_money",
+  "card",
+  "bank_transfer",
+]
+
+function normalizePaymentProviderToBalanceKey(provider: string) {
+  const key = normalizePaymentMethodToBalanceKey(provider)
+  if (key) return key
+  const value = String(provider || "").toLowerCase().replace(/[^a-z0-9]/g, "_")
+  if (!value || value === "cash" || value === "mobile_money") return null
+  return value
+}
+
+function normalizePaymentMethodToBalanceKey(method: string) {
+  const value = String(method || "").toLowerCase().replace(/[^a-z0-9]/g, "_")
+  if (!value || value === "cash" || value === "mobile_money") return null
+  if (value === "orange" || value === "orange_money") return "orange_money"
+  if (value === "wave") return "wave"
+  if (value === "moov" || value === "moov_money") return "moov_money"
+  if (value === "mtn" || value === "mtn_money" || value === "mtn_mobile_money") return "mtn_money"
+  if (value === "card" || value === "visa" || value === "mastercard") return "card"
+  if (value === "bank_transfer" || value === "vir" || value === "virement" || value === "bank") return "bank_transfer"
+  return value
+}
+
+function PaymentBalanceSummary({ rows }: { rows: Array<{ key: string; code?: string; label: string; logoUrl?: string | null; before: number; session: number; after: number }> }) {
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  return <div className="rounded-[var(--radius-dashboard-widget)] border border-[var(--pos-border)] bg-[var(--pos-muted)] p-3"><p className="text-[10px] font-black uppercase text-muted-foreground">Soldes moyens de paiement</p><div className="mt-2 grid gap-2">{rows.map((row) => <div key={row.key} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 text-xs"><span className="flex min-w-0 items-center gap-2"><span className="flex items-center">{row.logoUrl ? <img src={row.logoUrl} alt="" className="mr-1 size-4 object-contain" /> : null}<span className="min-w-0 truncate font-semibold">{row.label}</span></span><span className="shrink-0 text-[9px] font-bold uppercase text-muted-foreground">{row.code}</span></span><span className="tabular-nums text-muted-foreground">Avant {row.before.toLocaleString("fr-FR")}</span><span className="tabular-nums text-muted-foreground">Session {row.session.toLocaleString("fr-FR")}</span><span className="tabular-nums font-black">Après {row.after.toLocaleString("fr-FR")}</span></div>)}</div></div>
 }
 
 function POSFooterCard({

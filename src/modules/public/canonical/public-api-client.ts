@@ -338,7 +338,17 @@ function enableLocalAppCheckDebugToken() {
     return
   }
 
-  self.FIREBASE_APPCHECK_DEBUG_TOKEN = true
+  const debugToken =
+  process.env.NEXT_PUBLIC_FIREBASE_APP_CHECK_DEBUG_TOKEN?.trim()
+
+if (!debugToken) {
+  throw new PublicOrderApiError(
+    "APP_CHECK_DEBUG_TOKEN_MISSING",
+    "Le jeton App Check local est absent de .env.local."
+  )
+}
+
+self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken
   console.info(
     "[APP_CHECK][DEBUG] Mode local activé. Firebase affiche le token de debug dans cette console ; enregistrez-le dans Firebase Console > App Check > Gérer les jetons de débogage."
   )
@@ -359,7 +369,7 @@ function isLocalHostname(hostname: string) {
 async function parseResponse<T>(response: Response, fallback: string): Promise<T> {
   const body = await response.json().catch(() => null)
   
-  if (!response.ok || !body?.ok) {
+  if (!response.ok || body?.ok === false) {
     throw new PublicOrderApiError(
       body?.code ?? body?.error?.code ?? "NETWORK_ERROR",
       body?.message ?? body?.error?.message ?? fallback,
@@ -367,7 +377,11 @@ async function parseResponse<T>(response: Response, fallback: string): Promise<T
     )
   }
 
-  return body.data as T
+  if (body?.data !== undefined) {
+    return body.data as T
+  }
+
+  return body as T
 }
 
 // ============================================================================
